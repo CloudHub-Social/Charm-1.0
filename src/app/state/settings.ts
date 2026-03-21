@@ -64,6 +64,7 @@ export interface Settings {
 
   developerTools: boolean;
   enableMSC4268CMD: boolean;
+  settingsSyncEnabled: boolean;
 
   // Cosmetics!
   jumboEmojiSize: JumboEmojiSize;
@@ -152,6 +153,7 @@ const defaultSettings: Settings = {
   dateFormatString: 'D MMM YYYY',
 
   developerTools: false,
+  settingsSyncEnabled: false,
 
   // Cosmetics!
   jumboEmojiSize: 'normal',
