@@ -1,26 +1,20 @@
 {
-    "allowCustomHomeservers": true,
-    "defaultHomeserver": 0,
-    "elementCallUrl": "matrix.cloudhub.social",
-    "featuredCommunities": {
-        "openAsDefault": false,
-        "rooms": [],
-        "servers": [
-            "matrixrooms.info",
-            "gitter.im",
-            "matrix.org"
-        ],
-        "spaces": []
-    },
-    "homeserverList": [
-        "https://matrix.cloudhub.social"
-    ],
-    "pushNotificationDetails": {
-        "pushNotifyUrl": "https://sygnal.cloudhub.social/_matrix/push/v1/notify",
-        "vapidPublicKey": "BEBdK6VUiqYxcOauFCM1ZB38llgiODAs6pR5EEcC7YBoUh2YvrULagwo5t-Ms0Is0lEmKDhpdUoMiy_i7ArI3oE",
-        "webPushAppID": "social.cloudhub.sable.web"
-    },
-    "slidingSync": {
-        "enabled": "true"
-    }
+  "allowCustomHomeservers": true,
+  "defaultHomeserver": 0,
+  "elementCallUrl": "matrix.cloudhub.social",
+  "featuredCommunities": {
+    "openAsDefault": false,
+    "rooms": [],
+    "servers": ["matrixrooms.info", "gitter.im", "matrix.org"],
+    "spaces": []
+  },
+  "homeserverList": ["https://matrix.cloudhub.social"],
+  "pushNotificationDetails": {
+    "pushNotifyUrl": "https://sygnal.cloudhub.social/_matrix/push/v1/notify",
+    "vapidPublicKey": "BEBdK6VUiqYxcOauFCM1ZB38llgiODAs6pR5EEcC7YBoUh2YvrULagwo5t-Ms0Is0lEmKDhpdUoMiy_i7ArI3oE",
+    "webPushAppID": "social.cloudhub.sable.web"
+  },
+  "slidingSync": {
+    "enabled": "true"
+  }
 }
