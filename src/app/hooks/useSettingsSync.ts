@@ -49,7 +49,9 @@ export function useSettingsSyncEffect(): void {
     const { _echo: _ignored, ...content } = event.getContent();
     const merged = deserializeFromSync(content, settingsRef.current);
     if (merged) {
-      setSettings(merged);
+      if (JSON.stringify(merged) !== JSON.stringify(settingsRef.current)) {
+        setSettings(merged);
+      }
       setLastSynced(Date.now());
     }
   }, [mx, syncEnabled, setSettings, setLastSynced]);
