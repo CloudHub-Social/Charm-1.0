@@ -74,12 +74,15 @@ export function useSettingsSyncEffect(): void {
         return;
       }
 
-      // Otherwise it came from another device — apply it only if values changed.
+      // Otherwise it came from another device — apply it.
       const merged = deserializeFromSync(content, settingsRef.current);
-      if (merged) {
-        if (JSON.stringify(merged) !== JSON.stringify(settingsRef.current)) {
-          setSettings(merged);
-        }
+      // Skip if nothing actually changed (deserializeFromSync always returns a
+      // new object, so compare values to avoid a spurious settings → upload loop).
+      if (merged && JSON.stringify(merged) !== JSON.stringify(settingsRef.current)) {
+        setSettings(merged);
+        setLastSynced(Date.now());
+      } else if (merged) {
+        // Same values — just update the last-synced timestamp without re-uploading.
         setLastSynced(Date.now());
       }
     },
