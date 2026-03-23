@@ -18,6 +18,7 @@ import FocusTrap from 'focus-trap-react';
 import { useRef, MouseEventHandler, ReactNode, useCallback, useEffect, useState } from 'react';
 import * as Sentry from '@sentry/react';
 import { useNavigate } from 'react-router-dom';
+import { markReloadReason } from '$utils/reloadDiag';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import {
   clearCacheAndReload,
@@ -159,6 +160,7 @@ const useLogoutListener = (mx?: MatrixClient) => {
       if (mx) stopClient(mx);
       await mx?.clearStores();
       window.localStorage.clear();
+      markReloadReason(`SessionLoggedOut userId=${mx?.getUserId() ?? 'unknown'}`);
       window.location.reload();
     };
 

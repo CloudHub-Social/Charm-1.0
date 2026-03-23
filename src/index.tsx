@@ -26,9 +26,20 @@ import {
 } from './app/state/sessions';
 import { createLogger } from './app/utils/debug';
 import { getLocalStorageItem } from './app/state/utils/atomWithLocalStorage';
+import { consumeReloadReason, markReloadReason } from './app/utils/reloadDiag';
 
 enableMapSet();
 const log = createLogger('index');
+
+// If the previous page was forcibly reloaded, show why in the console so we can
+// diagnose crashes without DevTools staying open across the reload.
+const _prevReload = consumeReloadReason();
+if (_prevReload) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[Sable] Previous page reloaded — reason: ${_prevReload.reason} at ${_prevReload.time}`
+  );
+}
 
 document.body.classList.add(configClass, varsClass);
 
@@ -52,8 +63,11 @@ if ('serviceWorker' in navigator) {
   let swUpdatePending = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (swRefreshing) return;
+    // Always log so we can diagnose unexpected controllerchange events.
+    log.warn('controllerchange fired — swUpdatePending:', swUpdatePending);
     if (!swUpdatePending) return; // SW restart, not a code update — skip reload
     swRefreshing = true;
+    markReloadReason('controllerchange (SW code update)');
     window.location.reload();
   });
 
@@ -156,6 +170,7 @@ window.addEventListener('error', (event) => {
       // Increment retry count and reload
       sessionStorage.setItem(CHUNK_RETRY_KEY, String(retryCount + 1));
       log.warn(`Chunk load failed, reloading (attempt ${retryCount + 1}/${MAX_CHUNK_RETRIES})`);
+      markReloadReason(`chunk-load-retry (attempt ${retryCount + 1}): ${event.message ?? event.error?.name}`);
       window.location.reload();
 
       // Prevent default error handling since we're reloading
