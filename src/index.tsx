@@ -43,11 +43,16 @@ if ('serviceWorker' in navigator) {
     swRegisterOptions.type = 'module';
   }
 
-  // When a new SW calls skipWaiting() + clients.claim(), reload so the page
-  // uses the fresh precached assets. Guard against firing twice.
+  // Reload when a *new* SW version (code update) takes control so the page
+  // picks up fresh precached assets.  Only fire once, and crucially only when
+  // a new SW was actually installing — NOT when the same SW is restarted after
+  // being killed (e.g. Vivaldi PWA aggressively kills the SW on blur; that
+  // restart also fires controllerchange but must not trigger a reload loop).
   let swRefreshing = false;
+  let swUpdatePending = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (swRefreshing) return;
+    if (!swUpdatePending) return; // SW restart, not a code update — skip reload
     swRefreshing = true;
     window.location.reload();
   });
@@ -63,7 +68,24 @@ if ('serviceWorker' in navigator) {
 
   navigator.serviceWorker
     .register(swUrl, swRegisterOptions)
-    .then(sendSessionToSW)
+    .then((registration) => {
+      // If a new SW is already installing when we register (e.g. the browser
+      // found an update while the old page was still open), mark it as pending
+      // so the controllerchange handler knows to reload.
+      if (registration.installing || registration.waiting) {
+        swUpdatePending = true;
+      }
+      registration.addEventListener('updatefound', () => {
+        swUpdatePending = true;
+        // Reset the flag if the installation is aborted so a spurious
+        // controllerchange from a later restart does not trigger a reload.
+        const newWorker = registration.installing;
+        newWorker?.addEventListener('statechange', () => {
+          if (newWorker.state === 'redundant') swUpdatePending = false;
+        });
+      });
+      sendSessionToSW();
+    })
     .catch((err) => {
       log.warn('SW registration failed:', err);
     });
