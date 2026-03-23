@@ -77,7 +77,12 @@ if ('serviceWorker' in navigator) {
     const activeId = getLocalStorageItem<string | undefined>(ACTIVE_SESSION_KEY, undefined);
     const active =
       sessions.find((s) => s.userId === activeId) ?? sessions[0] ?? getFallbackSession();
-    pushSessionToSW(active?.baseUrl, active?.accessToken, active?.userId);
+    // Guard: only send if we have real tokens. Sending undefined would cause the SW to
+    // call setSession("removed") and wipe preloadedSession — the fallback used while the
+    // page is still starting up. Actual logouts use logoutClient → pushSessionToSW()
+    // directly, bypassing this guard.
+    if (!active?.accessToken || !active?.baseUrl) return;
+    pushSessionToSW(active.baseUrl, active.accessToken, active.userId);
   };
 
   navigator.serviceWorker
