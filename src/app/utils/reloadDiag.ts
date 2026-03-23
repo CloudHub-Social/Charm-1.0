@@ -1,9 +1,10 @@
 /**
  * Tiny diagnostic helper for tracking which code path triggered a page reload.
  *
- * sessionStorage survives window.location.reload() AND survives
- * window.localStorage.clear() (they are separate storage namespaces), so we
- * can use it to pass a "reason" from the reloading page to the next one.
+ * We use localStorage (not sessionStorage) because Vivaldi's PWA mode handles
+ * window.location.reload() by closing and relaunching the window entirely,
+ * which creates a fresh browsing context and wipes sessionStorage.  localStorage
+ * persists across that relaunch, so the reason survives.
  *
  * Usage example:
  *   markReloadReason('SessionLoggedOut');
@@ -16,20 +17,20 @@ const RELOAD_REASON_KEY = 'sable_reload_reason';
 
 export function markReloadReason(reason: string): void {
   try {
-    sessionStorage.setItem(
+    localStorage.setItem(
       RELOAD_REASON_KEY,
       JSON.stringify({ reason, time: new Date().toISOString() })
     );
   } catch {
-    // sessionStorage unavailable (e.g. private-mode restrictions) — ignore
+    // localStorage unavailable — ignore
   }
 }
 
 export function consumeReloadReason(): { reason: string; time: string } | null {
   try {
-    const raw = sessionStorage.getItem(RELOAD_REASON_KEY);
+    const raw = localStorage.getItem(RELOAD_REASON_KEY);
     if (!raw) return null;
-    sessionStorage.removeItem(RELOAD_REASON_KEY);
+    localStorage.removeItem(RELOAD_REASON_KEY);
     return JSON.parse(raw) as { reason: string; time: string };
   } catch {
     return null;

@@ -83,10 +83,16 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker
     .register(swUrl, swRegisterOptions)
     .then((registration) => {
-      // If a new SW is already installing when we register (e.g. the browser
-      // found an update while the old page was still open), mark it as pending
-      // so the controllerchange handler knows to reload.
-      if (registration.installing || registration.waiting) {
+      // If a new SW version is already installing when we register, mark it as
+      // pending so the controllerchange handler knows to reload.
+      //
+      // IMPORTANT: only do this when there is already an active SW (i.e. this
+      // is a code *update*, not a first install).  On a first install
+      // registration.installing is also non-null, but the controllerchange
+      // that follows clients.claim() must NOT trigger a reload — Vivaldi PWA
+      // handles window.location.reload() by closing+relaunching the window,
+      // which looks like a crash to the user.
+      if (registration.active && (registration.installing || registration.waiting)) {
         swUpdatePending = true;
       }
       registration.addEventListener('updatefound', () => {
