@@ -43,36 +43,13 @@ if ('serviceWorker' in navigator) {
     swRegisterOptions.type = 'module';
   }
 
-  const showUpdateAvailablePrompt = (registration: ServiceWorkerRegistration) => {
-    const DONT_SHOW_PROMPT_KEY = 'cinny_dont_show_sw_update_prompt';
-    const userPreference = localStorage.getItem(DONT_SHOW_PROMPT_KEY);
-
-    if (userPreference === 'true') {
-      return;
-    }
-
-    if (window.confirm('A new version of the app is available. Refresh to update?')) {
-      if (registration.waiting) {
-        registration.waiting.postMessage({ type: 'SKIP_WAITING_AND_CLAIM' });
-      } else {
-        window.location.reload();
-      }
-    }
-  };
-
-  navigator.serviceWorker.register(swUrl, swRegisterOptions).then((registration) => {
-    registration.addEventListener('updatefound', () => {
-      const installingWorker = registration.installing;
-      if (installingWorker) {
-        installingWorker.onstatechange = () => {
-          if (installingWorker.state === 'installed') {
-            if (navigator.serviceWorker.controller) {
-              showUpdateAvailablePrompt(registration);
-            }
-          }
-        };
-      }
-    });
+  // When a new SW calls skipWaiting() + clients.claim(), reload so the page
+  // uses the fresh precached assets. Guard against firing twice.
+  let swRefreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (swRefreshing) return;
+    swRefreshing = true;
+    window.location.reload();
   });
 
   const sendSessionToSW = () => {
@@ -85,7 +62,7 @@ if ('serviceWorker' in navigator) {
   };
 
   navigator.serviceWorker
-    .register(swUrl)
+    .register(swUrl, swRegisterOptions)
     .then(sendSessionToSW)
     .catch((err) => {
       log.warn('SW registration failed:', err);
@@ -148,7 +125,6 @@ window.addEventListener('error', (event) => {
   // Check if this is a chunk loading error
   const isChunkLoadError =
     event.message?.includes('dynamically imported module') ||
-    event.message?.includes('Failed to fetch') ||
     event.error?.name === 'ChunkLoadError';
 
   if (isChunkLoadError) {
