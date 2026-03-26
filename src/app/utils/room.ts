@@ -291,8 +291,19 @@ type UnreadInfoOptions = {
 export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadInfo => {
   const userId = room.client.getUserId();
   if (userId && options?.applyFixup) {
-    // Reconcile known notification-count drift (notably with Sliding Sync / mixed receipts).
-    room.fixupNotifications(userId);
+    // Only run fixupNotifications when the live timeline actually contains the event the user
+    // last read. With sliding sync list subscriptions (timeline_limit=1) the live timeline
+    // often has only 1 event; if the read receipt is for an older event that isn't in memory,
+    // fixup re-derives the count from the truncated timeline (always 1) and overwrites the
+    // server-supplied notification_count. The receipt-in-timeline check ensures the timeline
+    // is deep enough that the fixup result is accurate.
+    const readUpToId = room.getEventReadUpTo(userId);
+    if (readUpToId) {
+      const liveEvents = room.getLiveTimeline().getEvents();
+      if (liveEvents.some((e) => e.getId() === readUpToId)) {
+        room.fixupNotifications(userId);
+      }
+    }
   }
 
   let total = room.getUnreadNotificationCount(NotificationCountType.Total);
