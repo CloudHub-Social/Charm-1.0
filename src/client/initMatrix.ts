@@ -267,7 +267,10 @@ export const clearMismatchedStores = async (): Promise<void> => {
   );
 };
 
-const buildClient = async (session: Session): Promise<MatrixClient> => {
+const buildClient = async (
+  session: Session,
+  onTokenRefresh?: (newAccessToken: string, newRefreshToken?: string) => void
+): Promise<MatrixClient> => {
   const storeName = getSessionStoreName(session);
 
   const indexedDBStore = new IndexedDBStore({
@@ -277,6 +280,11 @@ const buildClient = async (session: Session): Promise<MatrixClient> => {
   });
 
   const legacyCryptoStore = new IndexedDBCryptoStore(global.indexedDB, storeName.crypto);
+
+  // Pre-allocate a slot for the MatrixClient reference used by tokenRefreshFunction.
+  // The refresh function is only ever invoked after startClient, so mxRef is always
+  // assigned before it is called.
+  let mxRef!: MatrixClient;
 
   const mx = createClient({
     baseUrl: session.baseUrl,
@@ -288,13 +296,29 @@ const buildClient = async (session: Session): Promise<MatrixClient> => {
     timelineSupport: true,
     cryptoCallbacks: cryptoCallbacks as any,
     verificationMethods: ['m.sas.v1'],
+    ...(session.refreshToken && {
+      refreshToken: session.refreshToken,
+      tokenRefreshFunction: async (oldRefreshToken: string) => {
+        const res = await mxRef.refreshToken(oldRefreshToken);
+        onTokenRefresh?.(res.access_token, res.refresh_token);
+        return {
+          accessToken: res.access_token,
+          refreshToken: res.refresh_token ?? oldRefreshToken,
+          expiry: res.expires_in_ms ? new Date(Date.now() + res.expires_in_ms) : undefined,
+        };
+      },
+    }),
   });
 
+  mxRef = mx;
   await indexedDBStore.startup();
   return mx;
 };
 
-export const initClient = async (session: Session): Promise<MatrixClient> => {
+export const initClient = async (
+  session: Session,
+  onTokenRefresh?: (newAccessToken: string, newRefreshToken?: string) => void
+): Promise<MatrixClient> => {
   const storeName = getSessionStoreName(session);
   debugLog.info('sync', 'Initializing Matrix client', {
     userId: session.userId,
@@ -338,7 +362,7 @@ export const initClient = async (session: Session): Promise<MatrixClient> => {
 
   let mx: MatrixClient;
   try {
-    mx = await buildClient(session);
+    mx = await buildClient(session, onTokenRefresh);
   } catch (err) {
     if (!isMismatch(err)) {
       debugLog.error('sync', 'Failed to build client', { error: err });
@@ -347,7 +371,7 @@ export const initClient = async (session: Session): Promise<MatrixClient> => {
     log.warn('initClient: mismatch on buildClient — wiping and retrying:', err);
     debugLog.warn('sync', 'Client build mismatch - wiping stores and retrying', { error: err });
     await wipeAllStores();
-    mx = await buildClient(session);
+    mx = await buildClient(session, onTokenRefresh);
   }
 
   try {
@@ -361,7 +385,7 @@ export const initClient = async (session: Session): Promise<MatrixClient> => {
     debugLog.warn('sync', 'Crypto init mismatch - wiping stores and retrying', { error: err });
     mx.stopClient();
     await wipeAllStores();
-    mx = await buildClient(session);
+    mx = await buildClient(session, onTokenRefresh);
     await mx.initRustCrypto({ cryptoDatabasePrefix: storeName.rustCryptoPrefix });
   }
 

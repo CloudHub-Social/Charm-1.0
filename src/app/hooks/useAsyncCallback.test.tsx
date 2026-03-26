@@ -30,7 +30,7 @@ describe('useAsyncCallback', () => {
     );
 
     await act(async () => {
-      await result.current[1]().catch(() => {});
+      await result.current[1]();
     });
 
     expect(result.current[0]).toEqual({ status: AsyncStatus.Error, error: boom });
