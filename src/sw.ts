@@ -637,6 +637,37 @@ function fetchConfig(token: string): RequestInit {
   };
 }
 
+/**
+ * Fetch a media URL, retrying once with the most-current in-memory session on 401.
+ *
+ * There is a timing window between when the SDK refreshes its access token
+ * (tokenRefreshFunction resolves) and when the resulting pushSessionToSW()
+ * postMessage is processed by the SW. Media requests that land in this window
+ * are sent with the stale token and receive 401. By the time the retry runs,
+ * the setSession message will normally have been processed and sessions will
+ * hold the new token.
+ */
+async function fetchMediaWithRetry(
+  url: string,
+  token: string,
+  redirect: RequestRedirect,
+  clientId: string
+): Promise<Response> {
+  const response = await fetch(url, { ...fetchConfig(token), redirect });
+  if (response.status !== 401) return response;
+
+  const updated =
+    (clientId ? sessions.get(clientId) : undefined) ??
+    [...sessions.values()].find((s) => validMediaRequest(url, s.baseUrl)) ??
+    preloadedSession;
+
+  if (updated && updated.accessToken !== token && validMediaRequest(url, updated.baseUrl)) {
+    return fetch(url, { ...fetchConfig(updated.accessToken), redirect });
+  }
+
+  return response;
+}
+
 self.addEventListener('message', (event: ExtendableMessageEvent) => {
   if (event.data.type === 'togglePush') {
     const token = event.data?.token;
@@ -667,7 +698,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 
   const session = clientId ? sessions.get(clientId) : undefined;
   if (session && validMediaRequest(url, session.baseUrl)) {
-    event.respondWith(fetch(url, { ...fetchConfig(session.accessToken), redirect }));
+    event.respondWith(fetchMediaWithRetry(url, session.accessToken, redirect, clientId));
     return;
   }
 
@@ -687,7 +718,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
       ? preloadedSession
       : undefined);
   if (byBaseUrl) {
-    event.respondWith(fetch(url, { ...fetchConfig(byBaseUrl.accessToken), redirect }));
+    event.respondWith(fetchMediaWithRetry(url, byBaseUrl.accessToken, redirect, clientId));
     return;
   }
 
@@ -697,7 +728,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     event.respondWith(
       loadPersistedSession().then((persisted) => {
         if (persisted && validMediaRequest(url, persisted.baseUrl)) {
-          return fetch(url, { ...fetchConfig(persisted.accessToken), redirect });
+          return fetchMediaWithRetry(url, persisted.accessToken, redirect, '');
         }
         return fetch(event.request);
       })
@@ -709,13 +740,13 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     requestSessionWithTimeout(clientId).then(async (s) => {
       // Primary: session received from the live client window.
       if (s && validMediaRequest(url, s.baseUrl)) {
-        return fetch(url, { ...fetchConfig(s.accessToken), redirect });
+        return fetchMediaWithRetry(url, s.accessToken, redirect, clientId);
       }
       // Fallback: try the persisted session (helps when SW restarts on iOS and
       // the client window hasn't responded to requestSession yet).
       const persisted = await loadPersistedSession();
       if (persisted && validMediaRequest(url, persisted.baseUrl)) {
-        return fetch(url, { ...fetchConfig(persisted.accessToken), redirect });
+        return fetchMediaWithRetry(url, persisted.accessToken, redirect, clientId);
       }
       console.warn(
         '[SW fetch] No valid session for media request',
