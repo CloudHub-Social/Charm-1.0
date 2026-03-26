@@ -73,7 +73,11 @@ export const useAsync = <TData, TError, TArgs extends unknown[]>(
             });
           });
         }
-        throw e;
+        // Do not re-throw: the error is captured in state and callers use that
+        // for UI feedback (error state + retry button). Re-throwing here turns
+        // every fire-and-forget useEffect call site into an unhandled promise
+        // rejection (e.g. "Uncaught (in promise) Error: Mismatched SHA-256 digest").
+        return undefined as never;
       }
 
       if (currentReqNumber !== reqNumberRef.current) return undefined as never;
