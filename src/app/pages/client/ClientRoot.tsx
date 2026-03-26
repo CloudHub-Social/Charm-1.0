@@ -201,11 +201,21 @@ export function ClientRoot({ children }: ClientRootProps) {
       }
       await clearMismatchedStores();
       log.log('initClient for', activeSession.userId);
-      const newMx = await initClient(activeSession);
+      const newMx = await initClient(activeSession, (newAccessToken, newRefreshToken) => {
+        setSessions({
+          type: 'PUT',
+          session: {
+            ...activeSession,
+            accessToken: newAccessToken,
+            ...(newRefreshToken !== undefined && { refreshToken: newRefreshToken }),
+          },
+        });
+        pushSessionToSW(activeSession.baseUrl, newAccessToken);
+      });
       loadedUserIdRef.current = activeSession.userId;
       pushSessionToSW(activeSession.baseUrl, activeSession.accessToken);
       return newMx;
-    }, [activeSession, activeSessionId, setActiveSessionId])
+    }, [activeSession, activeSessionId, setActiveSessionId, setSessions])
   );
 
   const mx = loadState.status === AsyncStatus.Success ? loadState.data : undefined;
