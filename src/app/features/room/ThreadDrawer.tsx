@@ -362,7 +362,13 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     mx.paginateEventTimeline(currThread.timelineSet.getLiveTimeline(), { backwards: true })
       .then(() => forceUpdate((n) => n + 1))
       .catch(() => {});
-  }, [mx, room, threadRootId, forceUpdate]);
+  // forceUpdateCounter must be in deps so this effect re-runs after
+  // ThreadEvent.Update fires (which flips initialEventsFetched from false to
+  // true).  Without it the effect runs once on mount, hits Case B
+  // (initialEventsFetched=false) and never runs again — leaving the drawer
+  // empty on sliding sync where replyCount starts at 0.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mx, room, threadRootId, forceUpdate, forceUpdateCounter]);
 
   // Re-render when new thread events arrive (including reactions via ThreadEvent.Update).
   useEffect(() => {
