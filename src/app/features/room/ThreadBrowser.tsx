@@ -311,6 +311,14 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
         const hasMore = await mx.paginateEventTimeline(allThreadsSet.getLiveTimeline(), {
           backwards: true,
         });
+        // Ensure Thread objects exist for any server-returned thread roots not
+        // yet known locally (e.g. threads outside the current sliding-sync window).
+        for (const event of allThreadsSet.getLiveTimeline().getEvents()) {
+          const id = event.getId();
+          if (id && !room.getThread(id)) {
+            room.createThread(id, event, [], false);
+          }
+        }
         if (!cancelled) {
           setCanLoadMore(hasMore);
           forceUpdate((n) => n + 1);
@@ -333,6 +341,12 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
     setLoadingMore(true);
     try {
       const hasMore = await mx.paginateEventTimeline(tls.getLiveTimeline(), { backwards: true });
+      for (const event of tls.getLiveTimeline().getEvents()) {
+        const id = event.getId();
+        if (id && !room.getThread(id)) {
+          room.createThread(id, event, [], false);
+        }
+      }
       setCanLoadMore(hasMore);
       forceUpdate((n) => n + 1);
     } catch {
