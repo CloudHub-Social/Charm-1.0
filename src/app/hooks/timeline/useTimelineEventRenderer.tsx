@@ -110,6 +110,16 @@ function ThreadReplyChip({
 
   const thread = room.getThread(mEventId);
 
+  const [replyUpdateCounter, forceReplyUpdate] = useState(0);
+
+  useEffect(() => {
+    const onTimeline = (ev: MatrixEvent) => {
+      if (ev.threadRootId === mEventId) forceReplyUpdate((n) => n + 1);
+    };
+    room.on(RoomEvent.Timeline, onTimeline);
+    return () => room.off(RoomEvent.Timeline, onTimeline);
+  }, [room, mEventId]);
+
   const replyEvents = useMemo(() => {
     const linkedTimelines = getLinkedTimelines(getLiveTimeline(room));
     return linkedTimelines
@@ -117,11 +127,11 @@ function ThreadReplyChip({
       .filter(
         (ev) => ev.threadRootId === mEventId && ev.getId() !== mEventId && !reactionOrEditEvent(ev)
       );
-  }, [room, mEventId]);
+  }, [room, mEventId, replyUpdateCounter]);
 
   if (!thread) return null;
 
-  const replyCount = thread.length ?? 0;
+  const replyCount = replyEvents.length || (thread.length ?? 0);
   if (replyCount === 0) return null;
 
   const uniqueSenders: string[] = [];
