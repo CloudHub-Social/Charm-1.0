@@ -670,9 +670,6 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
           </Text>
         </Box>
         <Box alignItems="Center" gap="200" shrink="No">
-          <Text size="T300" priority="300" truncate>
-            # {room.name}
-          </Text>
           <IconButton
             onClick={onClose}
             variant="SurfaceVariant"
