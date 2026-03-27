@@ -313,11 +313,25 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
       // forceUpdate in a microtask so the timeline has been updated first.
       currThread.addEvents(liveEvents, false);
       Promise.resolve().then(() => forceUpdate((n) => n + 1));
-    } else {
-      // No events to backfill but timeline may have updated; force re-check.
-      forceUpdate((n) => n + 1);
+      return;
     }
-  }, [room, threadRootId, forceUpdate]);
+
+    // No local events. For threads discovered via fetchRoomThreads() the root
+    // event lives only in thread.rootEvent and is NOT indexed in the main
+    // timeline, so room.findEventById() returns undefined. Fall back to
+    // thread.replyCount (populated from bundled server relations) to decide
+    // whether a server fetch is needed.
+    if (!currThread.length) return; // server confirms no replies
+
+    // Safe to reset: initialEventsFetched=true means SDK init is complete; no
+    // concurrent updateThreadMetadata() can race with us. Resetting clears any
+    // null back-pagination token that was set at construction time (when
+    // replyCount happened to be 0), which would otherwise block the fetch.
+    currThread.timelineSet.resetLiveTimeline();
+    mx.paginateEventTimeline(currThread.timelineSet.getLiveTimeline(), { backwards: true }).catch(
+      () => {}
+    );
+  }, [mx, room, threadRootId, forceUpdate]);
 
   // Re-render when new thread events arrive (including reactions via ThreadEvent.Update).
   useEffect(() => {
