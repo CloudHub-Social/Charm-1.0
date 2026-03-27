@@ -13,11 +13,6 @@ import { useAtomValue, useSetAtom } from 'jotai';
 import { ReactEditor } from 'slate-react';
 import { HTMLReactParserOptions } from 'html-react-parser';
 import { Opts as LinkifyOpts } from 'linkifyjs';
-import { ImageContent, MSticker, RedactedContent, Reply } from '$components/message';
-import { RenderMessageContent } from '$components/RenderMessageContent';
-import { Image } from '$components/media';
-import { ImageViewer } from '$components/image-viewer';
-import { ClientSideHoverFreeze } from '$components/ClientSideHoverFreeze';
 import {
   factoryRenderLinkifyWithMention,
   getReactCustomHtmlParser,
@@ -27,23 +22,21 @@ import {
 } from '$plugins/react-custom-html-parser';
 import {
   getEditedEvent,
-  getEventReactions,
   getMemberDisplayName,
   reactionOrEditEvent,
 } from '$utils/room';
 import { getMxIdLocalPart, toggleReaction } from '$utils/matrix';
-import { minuteDifference } from '$utils/time';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { nicknamesAtom } from '$state/nicknames';
-import { MessageLayout, MessageSpacing, settingsAtom } from '$state/settings';
+import { MessageLayout, settingsAtom } from '$state/settings';
 import { useSetting } from '$state/hooks/settings';
 import { useRoomAbbreviationsContext } from '$hooks/useRoomAbbreviations';
 import { buildAbbrReplaceTextNode } from '$components/message/RenderBody';
 import { createMentionElement, moveCursor, useEditor } from '$components/editor';
 import { useMentionClickHandler } from '$hooks/useMentionClickHandler';
 import { useSpoilerClickHandler } from '$hooks/useSpoilerClickHandler';
-import { GetContentCallback, MessageEvent, StateEvent } from '$types/matrix/room';
+import { MessageEvent, StateEvent } from '$types/matrix/room';
 import { usePowerLevelsContext } from '$hooks/usePowerLevels';
 import { useRoomPermissions } from '$hooks/useRoomPermissions';
 import { useRoomCreators } from '$hooks/useRoomCreators';
@@ -51,7 +44,12 @@ import { useImagePackRooms } from '$hooks/useImagePackRooms';
 import { useOpenUserRoomProfile } from '$state/hooks/userRoomProfile';
 import { IReplyDraft, roomIdToReplyDraftAtomFamily } from '$state/room/roomInputDrafts';
 import { roomToParentsAtom } from '$state/room/roomToParents';
-import { EncryptedContent, Message, Reactions } from './message';
+import { useIgnoredUsers } from '$hooks/useIgnoredUsers';
+import { useGetMemberPowerTag } from '$hooks/useMemberPowerTag';
+import { useMemberEventParser } from '$hooks/useMemberEventParser';
+import { useMessageEdit } from '$hooks/useMessageEdit';
+import { useProcessedTimeline, ProcessedEvent } from '$hooks/timeline/useProcessedTimeline';
+import { useTimelineEventRenderer } from '$hooks/timeline/useTimelineEventRenderer';
 import { RoomInput } from './RoomInput';
 import { RoomViewFollowing, RoomViewFollowingPlaceholder } from './RoomViewFollowing';
 import * as css from './ThreadDrawer.css';
@@ -86,267 +84,6 @@ export function getThreadReplyEvents(room: Room, threadRootId: string): MatrixEv
     );
 }
 
-type ForwardedMessageProps = {
-  isForwarded: boolean;
-  originalTimestamp: number;
-  originalRoomId: string;
-  originalEventId: string;
-  originalEventPrivate: boolean;
-};
-
-type ThreadMessageProps = {
-  room: Room;
-  mEvent: MatrixEvent;
-  threadRootId: string;
-  editId: string | undefined;
-  onEditId: (id?: string) => void;
-  messageLayout: MessageLayout;
-  messageSpacing: MessageSpacing;
-  canDelete: boolean;
-  canSendReaction: boolean;
-  canPinEvent: boolean;
-  imagePackRooms: Room[];
-  activeReplyId: string | undefined;
-  hour24Clock: boolean;
-  dateFormatString: string;
-  onUserClick: MouseEventHandler<HTMLButtonElement>;
-  onUsernameClick: MouseEventHandler<HTMLButtonElement>;
-  onReplyClick: MouseEventHandler<HTMLButtonElement>;
-  onReactionToggle: (targetEventId: string, key: string, shortcode?: string) => void;
-  onResend?: (event: MatrixEvent) => void;
-  onDeleteFailedSend?: (event: MatrixEvent) => void;
-  pushProcessor: PushProcessor;
-  linkifyOpts: LinkifyOpts;
-  htmlReactParserOptions: HTMLReactParserOptions;
-  showHideReads: boolean;
-  showDeveloperTools: boolean;
-  onReferenceClick: MouseEventHandler<HTMLButtonElement>;
-  jumpToEventId?: string;
-  collapse?: boolean;
-};
-
-function ThreadMessage({
-  room,
-  threadRootId: threadRootIdProp,
-  mEvent,
-  editId,
-  onEditId,
-  messageLayout,
-  messageSpacing,
-  canDelete,
-  canSendReaction,
-  collapse = false,
-  canPinEvent,
-  imagePackRooms,
-  activeReplyId,
-  hour24Clock,
-  dateFormatString,
-  onUserClick,
-  onUsernameClick,
-  onReplyClick,
-  onReactionToggle,
-  onResend,
-  onDeleteFailedSend,
-  pushProcessor,
-  linkifyOpts,
-  htmlReactParserOptions,
-  showHideReads,
-  showDeveloperTools,
-  onReferenceClick,
-  jumpToEventId,
-}: ThreadMessageProps) {
-  // Use the thread's own timeline set so reactions/edits on thread events are found correctly
-  const threadTimelineSet = room.getThread(threadRootIdProp)?.timelineSet;
-  const timelineSet = threadTimelineSet ?? room.getUnfilteredTimelineSet();
-  const mEventId = mEvent.getId()!;
-  const senderId = mEvent.getSender() ?? '';
-  const nicknames = useAtomValue(nicknamesAtom);
-  const senderDisplayName =
-    getMemberDisplayName(room, senderId, nicknames) ?? getMxIdLocalPart(senderId) ?? senderId;
-
-  const [mediaAutoLoad] = useSetting(settingsAtom, 'mediaAutoLoad');
-  const [urlPreview] = useSetting(settingsAtom, 'urlPreview');
-  const [encUrlPreview] = useSetting(settingsAtom, 'encUrlPreview');
-  const showUrlPreview = room.hasEncryptionStateEvent() ? encUrlPreview : urlPreview;
-  const [autoplayStickers] = useSetting(settingsAtom, 'autoplayStickers');
-
-  const editedEvent = getEditedEvent(mEventId, mEvent, timelineSet);
-  const editedNewContent = editedEvent?.getContent()['m.new_content'];
-  const baseContent = mEvent.getContent();
-  const safeContent =
-    Object.keys(baseContent).length > 0 ? baseContent : mEvent.getOriginalContent();
-  const getContent = (() => editedNewContent ?? safeContent) as GetContentCallback;
-
-  const reactionRelations = getEventReactions(timelineSet, mEventId);
-  const reactions = reactionRelations?.getSortedAnnotationsByKey();
-  const hasReactions = reactions && reactions.length > 0;
-
-  const pushActions = pushProcessor.actionsForEvent(mEvent);
-  let notifyHighlight: 'silent' | 'loud' | undefined;
-  if (pushActions?.notify && pushActions.tweaks?.highlight) {
-    notifyHighlight = pushActions.tweaks?.sound ? 'loud' : 'silent';
-  }
-
-  // Extract message forwarding info
-  const forwardContent = safeContent['moe.sable.message.forward'] as
-    | {
-        original_timestamp?: unknown;
-        original_room_id?: string;
-        original_event_id?: string;
-        original_event_private?: boolean;
-      }
-    | undefined;
-
-  const messageForwardedProps: ForwardedMessageProps | undefined = forwardContent
-    ? {
-        isForwarded: true,
-        originalTimestamp:
-          typeof forwardContent.original_timestamp === 'number'
-            ? forwardContent.original_timestamp
-            : mEvent.getTs(),
-        originalRoomId: forwardContent.original_room_id ?? room.roomId,
-        originalEventId: forwardContent.original_event_id ?? '',
-        originalEventPrivate: forwardContent.original_event_private ?? false,
-      }
-    : undefined;
-
-  const { replyEventId } = mEvent;
-
-  const relation = mEvent.getRelation();
-  const contentRelatesTo = mEvent.getContent()?.['m.relates_to'];
-  const isFallback =
-    relation?.is_falling_back === true || contentRelatesTo?.is_falling_back === true;
-
-  return (
-    <Message
-      key={mEvent.getId()}
-      data-message-id={mEventId}
-      room={room}
-      mEvent={mEvent}
-      messageSpacing={messageSpacing}
-      messageLayout={messageLayout}
-      collapse={collapse}
-      highlight={jumpToEventId === mEventId}
-      notifyHighlight={notifyHighlight}
-      edit={editId === mEventId}
-      canDelete={canDelete}
-      canSendReaction={canSendReaction}
-      canPinEvent={canPinEvent}
-      imagePackRooms={imagePackRooms}
-      relations={hasReactions ? reactionRelations : undefined}
-      onUserClick={onUserClick}
-      onUsernameClick={onUsernameClick}
-      onReplyClick={onReplyClick}
-      onReactionToggle={onReactionToggle}
-      onEditId={onEditId}
-      senderId={senderId}
-      senderDisplayName={senderDisplayName}
-      messageForwardedProps={messageForwardedProps}
-      sendStatus={mEvent.getAssociatedStatus()}
-      onResend={onResend}
-      onDeleteFailedSend={onDeleteFailedSend}
-      activeReplyId={activeReplyId ?? null}
-      hour24Clock={hour24Clock}
-      dateFormatString={dateFormatString}
-      hideReadReceipts={showHideReads}
-      showDeveloperTools={showDeveloperTools}
-      reply={
-        replyEventId &&
-        !isFallback && (
-          <Reply
-            room={room}
-            timelineSet={timelineSet}
-            replyEventId={replyEventId}
-            mentions={baseContent['m.mentions']}
-            onClick={onReferenceClick}
-          />
-        )
-      }
-      reactions={
-        hasReactions ? (
-          <Reactions
-            style={{ marginTop: config.space.S200 }}
-            room={room}
-            relations={reactionRelations!}
-            mEventId={mEventId}
-            canSendReaction={canSendReaction}
-            canDeleteOwn={canDelete}
-            onReactionToggle={onReactionToggle}
-          />
-        ) : undefined
-      }
-    >
-      {mEvent.isRedacted() ? (
-        <RedactedContent reason={mEvent.getUnsigned().redacted_because?.content.reason} />
-      ) : (
-        <EncryptedContent mEvent={mEvent}>
-          {() => {
-            if (mEvent.isRedacted())
-              return (
-                <RedactedContent reason={mEvent.getUnsigned().redacted_because?.content.reason} />
-              );
-
-            if (mEvent.getType() === MessageEvent.Sticker)
-              return (
-                <MSticker
-                  content={mEvent.getContent()}
-                  renderImageContent={(props) => (
-                    <ImageContent
-                      {...props}
-                      autoPlay={mediaAutoLoad}
-                      renderImage={(p) => {
-                        if (!autoplayStickers && p.src) {
-                          return (
-                            <ClientSideHoverFreeze src={p.src}>
-                              <Image {...p} loading="lazy" />
-                            </ClientSideHoverFreeze>
-                          );
-                        }
-                        return <Image {...p} loading="lazy" />;
-                      }}
-                      renderViewer={(p) => <ImageViewer {...p} />}
-                    />
-                  )}
-                />
-              );
-
-            if (mEvent.getType() === MessageEvent.RoomMessage) {
-              return (
-                <RenderMessageContent
-                  displayName={senderDisplayName}
-                  msgType={(editedNewContent ?? safeContent).msgtype ?? ''}
-                  ts={mEvent.getTs()}
-                  edited={!!editedEvent}
-                  getContent={getContent}
-                  mediaAutoLoad={mediaAutoLoad}
-                  urlPreview={showUrlPreview}
-                  htmlReactParserOptions={htmlReactParserOptions}
-                  linkifyOpts={linkifyOpts}
-                  outlineAttachment={messageLayout === MessageLayout.Bubble}
-                />
-              );
-            }
-
-            return (
-              <RenderMessageContent
-                displayName={senderDisplayName}
-                msgType={(editedNewContent ?? safeContent).msgtype ?? ''}
-                ts={mEvent.getTs()}
-                edited={!!editedEvent}
-                getContent={getContent}
-                mediaAutoLoad={mediaAutoLoad}
-                urlPreview={showUrlPreview}
-                htmlReactParserOptions={htmlReactParserOptions}
-                linkifyOpts={linkifyOpts}
-                outlineAttachment={messageLayout === MessageLayout.Bubble}
-              />
-            );
-          }}
-        </EncryptedContent>
-      )}
-    </Message>
-  );
-}
 
 type ThreadDrawerProps = {
   room: Room;
@@ -360,11 +97,11 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   const drawerRef = useRef<HTMLDivElement>(null);
   const editor = useEditor();
   const [, forceUpdate] = useState(0);
-  const [editId, setEditId] = useState<string | undefined>(undefined);
   const [jumpToEventId, setJumpToEventId] = useState<string | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevReplyCountRef = useRef(0);
-  const replyEventsRef = useRef<MatrixEvent[]>([]);
+  const processedEventsRef = useRef<ProcessedEvent[]>([]);
+  const { editId, handleEdit } = useMessageEdit(editor);
   const nicknames = useAtomValue(nicknamesAtom);
   const pushProcessor = useMemo(() => new PushProcessor(mx), [mx]);
   const useAuthentication = useMediaAuthentication();
@@ -378,6 +115,18 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   const [dateFormatString] = useSetting(settingsAtom, 'dateFormatString');
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
   const [showDeveloperTools] = useSetting(settingsAtom, 'developerTools');
+  const [mediaAutoLoad] = useSetting(settingsAtom, 'mediaAutoLoad');
+  const [urlPreview] = useSetting(settingsAtom, 'urlPreview');
+  const [encUrlPreview] = useSetting(settingsAtom, 'encUrlPreview');
+  const [clientUrlPreview] = useSetting(settingsAtom, 'clientUrlPreview');
+  const [encClientUrlPreview] = useSetting(settingsAtom, 'encClientUrlPreview');
+  const [autoplayStickers] = useSetting(settingsAtom, 'autoplayStickers');
+  const [autoplayEmojis] = useSetting(settingsAtom, 'autoplayEmojis');
+  const [showHiddenEvents] = useSetting(settingsAtom, 'showHiddenEvents');
+  const [showTombstoneEvents] = useSetting(settingsAtom, 'showTombstoneEvents');
+  const [hideMemberInReadOnly] = useSetting(settingsAtom, 'hideMembershipInReadOnly');
+  const showUrlPreview = room.hasEncryptionStateEvent() ? encUrlPreview : urlPreview;
+  const showClientUrlPreview = room.hasEncryptionStateEvent() ? encClientUrlPreview : clientUrlPreview;
 
   // Memoized parsing options
   const linkifyOpts = useMemo<LinkifyOpts>(
@@ -406,6 +155,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
         handleSpoilerClick: spoilerClickHandler,
         handleMentionClick: mentionClickHandler,
         nicknames,
+        autoplayEmojis,
         replaceTextNode: buildAbbrReplaceTextNode(abbrMap),
       }),
     [
@@ -416,6 +166,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
       mentionClickHandler,
       useAuthentication,
       nicknames,
+      autoplayEmojis,
       abbrMap,
     ]
   );
@@ -428,6 +179,17 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   const canDeleteOwn = permissions.event(MessageEvent.RoomRedaction, mx.getSafeUserId());
   const canSendReaction = permissions.event(MessageEvent.Reaction, mx.getSafeUserId());
   const canPinEvent = permissions.stateEvent(StateEvent.RoomPinnedEvents, mx.getSafeUserId());
+  const isReadOnly = useMemo(() => {
+    const myPowerLevel = powerLevels?.users?.[mx.getUserId()!] ?? powerLevels?.users_default ?? 0;
+    const sendLevel = powerLevels?.events?.['m.room.message'] ?? powerLevels?.events_default ?? 0;
+    return myPowerLevel < sendLevel;
+  }, [powerLevels, mx]);
+  const getMemberPowerTag = useGetMemberPowerTag(room, creators, powerLevels);
+  const parseMemberEvent = useMemberEventParser();
+
+  // Ignored users
+  const ignoredUsersList = useIgnoredUsers();
+  const ignoredUsersSet = useMemo(() => new Set(ignoredUsersList), [ignoredUsersList]);
 
   // Image packs
   const roomToParents = useAtomValue(roomToParentsAtom);
@@ -443,7 +205,39 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
 
   const rootEvent = room.findEventById(threadRootId);
 
-  // When the drawer is opened with classic sync (no server-side thread support),
+  // Thread timeline data for useProcessedTimeline
+  const thread = room.getThread(threadRootId);
+  const threadTimeline = thread?.timelineSet.getLiveTimeline();
+  const totalEvents = threadTimeline?.getEvents().length ?? 0;
+  const linkedTimelines = useMemo(
+    () => (threadTimeline ? [threadTimeline] : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [threadTimeline, totalEvents]
+  );
+  const items = useMemo(
+    () => Array.from({ length: totalEvents }, (_, i) => i),
+    [totalEvents]
+  );
+
+  const processedEvents = useProcessedTimeline({
+    items,
+    linkedTimelines,
+    skipThreadFilter: true,
+    ignoredUsersSet,
+    showHiddenEvents,
+    showTombstoneEvents,
+    mxUserId: mx.getUserId(),
+    readUptoEventId: undefined,
+    hideMembershipEvents: true,
+    hideNickAvatarEvents: true,
+    isReadOnly,
+    hideMemberInReadOnly,
+  });
+
+  processedEventsRef.current = processedEvents;
+
+  const processedReplies = processedEvents.filter((e) => e.id !== threadRootId);
+
   // room.createThread() may have been called with empty initialEvents so
   // thread.events only has the root.  Backfill events from the main room
   // timeline so the authoritative source is populated for subsequent renders.
@@ -565,10 +359,6 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     markThreadAsRead();
   }, [mx, room, threadRootId, forceUpdate]);
 
-  const replyEvents = getThreadReplyEvents(room, threadRootId);
-
-  replyEventsRef.current = replyEvents;
-
   // Auto-scroll to bottom when event count grows (if the user is near the bottom).
   useEffect(() => {
     const el = scrollRef.current;
@@ -577,8 +367,8 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     if (prevReplyCountRef.current === 0 || isAtBottom) {
       el.scrollTop = el.scrollHeight;
     }
-    prevReplyCountRef.current = replyEvents.length;
-  }, [replyEvents.length]);
+    prevReplyCountRef.current = processedReplies.length;
+  }, [processedReplies.length]);
 
   const handleUserClick: MouseEventHandler<HTMLButtonElement> = useCallback(
     (evt) => {
@@ -670,16 +460,29 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     [mx, room, threadRootId]
   );
 
-  const handleEdit = useCallback(
-    (evtId?: string) => {
-      setEditId(evtId);
-      if (!evtId) {
-        ReactEditor.focus(editor);
-        moveCursor(editor);
+  const handleEditLastMessage = useCallback(() => {
+    const userId = mx.getUserId();
+    const ownReply = [...processedEventsRef.current]
+      .reverse()
+      .find(
+        (e) =>
+          e.id !== threadRootId &&
+          e.mEvent.getSender() === userId &&
+          !e.mEvent.isRedacted() &&
+          !reactionOrEditEvent(e.mEvent)
+      );
+    const ownId = ownReply?.id;
+    if (ownId) {
+      handleEdit(ownId);
+      const el = drawerRef.current;
+      if (el) {
+        el.querySelector(`[data-message-id="${ownId}"]`)?.scrollIntoView({
+          block: 'nearest',
+          behavior: 'smooth',
+        });
       }
-    },
-    [editor]
-  );
+    }
+  }, [mx, threadRootId, handleEdit]);
 
   const handleResend = useCallback(
     (event: MatrixEvent) => {
@@ -700,7 +503,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
       const targetId = evt.currentTarget.getAttribute('data-event-id');
       if (!targetId) return;
       const isRoot = targetId === threadRootId;
-      const isInReplies = replyEventsRef.current.some((e) => e.getId() === targetId);
+      const isInReplies = processedEventsRef.current.some((e) => e.id === targetId);
       if (!isRoot && !isInReplies) return;
       setJumpToEventId(targetId);
       setTimeout(() => setJumpToEventId(undefined), 2500);
@@ -713,42 +516,64 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     [threadRootId]
   );
 
-  const sharedMessageProps = {
+  // Map jumpToEventId to a focusItem index for useTimelineEventRenderer highlighting
+  const jumpIndex = jumpToEventId
+    ? processedEvents.findIndex((e) => e.id === jumpToEventId)
+    : -1;
+  const focusItem =
+    jumpIndex >= 0
+      ? { index: processedEvents[jumpIndex].itemIndex, highlight: true, scrollTo: false as const }
+      : undefined;
+
+  const renderMatrixEvent = useTimelineEventRenderer({
     room,
-    threadRootId,
-    editId,
-    onEditId: handleEdit,
-    messageLayout,
-    messageSpacing,
-    canDelete: canRedact || canDeleteOwn,
-    canSendReaction,
-    canPinEvent,
-    imagePackRooms,
-    activeReplyId,
-    hour24Clock,
-    dateFormatString,
-    onUserClick: handleUserClick,
-    onUsernameClick: handleUsernameClick,
-    onReplyClick: handleReplyClick,
-    onReactionToggle: handleReactionToggle,
-    onResend: handleResend,
-    onDeleteFailedSend: handleDeleteFailedSend,
+    mx,
     pushProcessor,
-    linkifyOpts,
-    htmlReactParserOptions,
-    showHideReads: hideReads,
-    showDeveloperTools,
-    onReferenceClick: handleOpenReply,
-    jumpToEventId,
-  };
+    nicknames,
+    imagePackRooms,
+    settings: {
+      messageLayout,
+      messageSpacing,
+      hideReads,
+      showDeveloperTools,
+      hour24Clock,
+      dateFormatString,
+      mediaAutoLoad,
+      showUrlPreview,
+      showClientUrlPreview,
+      autoplayStickers,
+      hideMemberInReadOnly,
+      isReadOnly,
+      hideMembershipEvents: true,
+      hideNickAvatarEvents: true,
+      showHiddenEvents,
+    },
+    state: { focusItem, editId, activeReplyId, openThreadId: threadRootId },
+    permissions: {
+      canRedact,
+      canDeleteOwn,
+      canSendReaction,
+      canPinEvent,
+    },
+    callbacks: {
+      onUserClick: handleUserClick,
+      onUsernameClick: handleUsernameClick,
+      onReplyClick: handleReplyClick,
+      onReactionToggle: handleReactionToggle,
+      onEditId: handleEdit,
+      onResend: handleResend,
+      onDeleteFailedSend: handleDeleteFailedSend,
+      setOpenThread: () => {},
+      handleOpenReply,
+    },
+    utils: { htmlReactParserOptions, linkifyOpts, getMemberPowerTag, parseMemberEvent },
+  });
 
   // Latest thread event for the following indicator (latest reply, or root if no replies)
   const threadParticipantIds = new Set(
-    [rootEvent, ...replyEvents].map((ev) => ev?.getSender()).filter(Boolean) as string[]
+    processedEvents.map((e) => e.mEvent.getSender()).filter(Boolean) as string[]
   );
-  const latestThreadEventId = (
-    replyEvents.length > 0 ? replyEvents[replyEvents.length - 1] : rootEvent
-  )?.getId();
+  const latestThreadEventId = processedEvents.at(-1)?.id ?? rootEvent?.getId();
 
   return (
     <Box
@@ -801,7 +626,15 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
               padding: `${config.space.S200} 0 ${config.space.S100} 0`,
             }}
           >
-            <ThreadMessage {...sharedMessageProps} mEvent={rootEvent} />
+            {renderMatrixEvent(
+                rootEvent.getType(),
+                typeof rootEvent.getStateKey() === 'string',
+                rootEvent.getId()!,
+                rootEvent,
+                processedEvents.find((e) => e.id === threadRootId)?.itemIndex ?? 0,
+                thread?.timelineSet ?? room.getUnfilteredTimelineSet(),
+                false
+              )}
           </Box>
         </Scroll>
       )}
@@ -816,7 +649,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
           hideTrack
           style={{ flexGrow: 1 }}
         >
-          {replyEvents.length === 0 ? (
+          {processedReplies.length === 0 ? (
             <Box
               direction="Column"
               alignItems="Center"
@@ -838,7 +671,8 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
                 }}
               >
                 <Text size="T300" priority="300">
-                  {replyEvents.length} {replyEvents.length === 1 ? 'reply' : 'replies'}
+                  {processedReplies.length}{' '}
+                  {processedReplies.length === 1 ? 'reply' : 'replies'}
                 </Text>
               </Box>
               <Box
@@ -846,22 +680,17 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
                 direction="Column"
                 style={{ padding: `0 0 ${config.space.S600} 0` }}
               >
-                {replyEvents.map((mEvent, i) => {
-                  const prevEvent = i > 0 ? replyEvents[i - 1] : undefined;
-                  const collapse =
-                    prevEvent !== undefined &&
-                    prevEvent.getSender() === mEvent.getSender() &&
-                    prevEvent.getType() === mEvent.getType() &&
-                    minuteDifference(prevEvent.getTs(), mEvent.getTs()) < 2;
-                  return (
-                    <ThreadMessage
-                      key={mEvent.getId()}
-                      {...sharedMessageProps}
-                      mEvent={mEvent}
-                      collapse={collapse}
-                    />
-                  );
-                })}
+                {processedReplies.map((e) =>
+                  renderMatrixEvent(
+                    e.mEvent.getType(),
+                    typeof e.mEvent.getStateKey() === 'string',
+                    e.id,
+                    e.mEvent,
+                    e.itemIndex,
+                    e.timelineSet,
+                    e.collapsed
+                  )
+                )}
               </Box>
             </>
           )}
@@ -878,6 +707,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
             threadRootId={threadRootId}
             editor={editor}
             fileDropContainerRef={drawerRef}
+            onEditLastMessage={handleEditLastMessage}
           />
         </div>
         {hideReads ? (

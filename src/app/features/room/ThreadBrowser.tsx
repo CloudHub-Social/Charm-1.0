@@ -15,12 +15,13 @@ import {
   Icons,
   Input,
   Scroll,
+  Spinner,
   Text,
   Avatar,
   config,
   Chip,
 } from 'folds';
-import { MatrixEvent, Room, Thread, ThreadEvent } from '$types/matrix-sdk';
+import { EventTimelineSet, MatrixEvent, NotificationCountType, Room, RoomEvent, Thread, ThreadEvent } from '$types/matrix-sdk';
 import { useAtomValue } from 'jotai';
 import { HTMLReactParserOptions } from 'html-react-parser';
 import { Opts as LinkifyOpts } from 'linkifyjs';
@@ -54,6 +55,7 @@ import {
   renderMatrixMention,
 } from '$plugins/react-custom-html-parser';
 import { EncryptedContent } from './message';
+import { UnreadBadge, UnreadBadgeCenter } from '$components/unread-badge';
 import * as css from './ThreadDrawer.css';
 
 type ThreadPreviewProps = {
@@ -108,6 +110,23 @@ function ThreadPreview({ room, thread, onClick }: ThreadPreviewProps) {
       navigateRoom(room.roomId, thread.id);
     },
     [navigateRoom, room.roomId, thread.id]
+  );
+
+  const [, forceUnread] = useState(0);
+  useEffect(() => {
+    const onUnread = (_count: unknown, threadId?: string) => {
+      if (!threadId || threadId === thread.id) forceUnread((n) => n + 1);
+    };
+    room.on(RoomEvent.UnreadNotifications as any, onUnread);
+    return () => room.off(RoomEvent.UnreadNotifications as any, onUnread);
+  }, [room, thread.id]);
+  const unreadTotal = room.getThreadUnreadNotificationCount(
+    thread.id,
+    NotificationCountType.Total
+  );
+  const unreadHighlight = room.getThreadUnreadNotificationCount(
+    thread.id,
+    NotificationCountType.Highlight
   );
 
   const { rootEvent } = thread;
@@ -174,7 +193,12 @@ function ThreadPreview({ room, thread, onClick }: ThreadPreviewProps) {
               dateFormatString={dateFormatString}
             />
           </Box>
-          <Box shrink="No">
+          <Box shrink="No" alignItems="Center" gap="200">
+            {unreadTotal > 0 && (
+              <UnreadBadgeCenter>
+                <UnreadBadge highlight={unreadHighlight > 0} count={unreadTotal} />
+              </UnreadBadgeCenter>
+            )}
             <Chip data-event-id={thread.id} onClick={handleJumpClick} radii="Pill">
               <Text size="T200">Jump</Text>
             </Chip>
@@ -256,6 +280,10 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
   const [, forceUpdate] = useState(0);
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+  const mx = useMatrixClient();
+  const threadListTimelineSetRef = useRef<EventTimelineSet | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [canLoadMore, setCanLoadMore] = useState(false);
 
   // Re-render when threads change.
   useEffect(() => {
@@ -269,6 +297,50 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
       room.off(ThreadEvent.NewReply as any, onUpdate);
     };
   }, [room]);
+
+  // On mount, paginate the server-side thread list to populate all threads.
+  useEffect(() => {
+    let cancelled = false;
+    const loadThreads = async () => {
+      setLoadingMore(true);
+      try {
+        const sets = await room.createThreadsTimelineSets();
+        if (!sets || cancelled) return;
+        const [allThreadsSet] = sets;
+        threadListTimelineSetRef.current = allThreadsSet;
+        const hasMore = await mx.paginateEventTimeline(allThreadsSet.getLiveTimeline(), {
+          backwards: true,
+        });
+        if (!cancelled) {
+          setCanLoadMore(hasMore);
+          forceUpdate((n) => n + 1);
+        }
+      } catch {
+        // Server doesn't support thread list API; fall back to locally known threads.
+      } finally {
+        if (!cancelled) setLoadingMore(false);
+      }
+    };
+    loadThreads();
+    return () => {
+      cancelled = true;
+    };
+  }, [room, mx]);
+
+  const handleLoadMore = useCallback(async () => {
+    const tls = threadListTimelineSetRef.current;
+    if (!tls || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const hasMore = await mx.paginateEventTimeline(tls.getLiveTimeline(), { backwards: true });
+      setCanLoadMore(hasMore);
+      forceUpdate((n) => n + 1);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [mx, loadingMore]);
 
   const allThreads = room.getThreads().sort((a: Thread, b: Thread) => {
     const aTs = a.events.at(-1)?.getTs() ?? a.rootEvent?.getTs() ?? 0;
@@ -359,7 +431,16 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
           hideTrack
           style={{ flexGrow: 1 }}
         >
-          {threads.length === 0 ? (
+          {threads.length === 0 && loadingMore ? (
+            <Box
+              direction="Column"
+              alignItems="Center"
+              justifyContent="Center"
+              style={{ padding: config.space.S400, gap: config.space.S200 }}
+            >
+              <Spinner variant="Secondary" size="400" />
+            </Box>
+          ) : threads.length === 0 ? (
             <Box
               direction="Column"
               alignItems="Center"
@@ -372,14 +453,35 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
               </Text>
             </Box>
           ) : (
-            <Box
-              direction="Column"
-              style={{ padding: `${config.space.S100} ${config.space.S200}` }}
-            >
-              {threads.map((thread: Thread) => (
-                <ThreadPreview key={thread.id} room={room} thread={thread} onClick={onOpenThread} />
-              ))}
-            </Box>
+            <>
+              <Box
+                direction="Column"
+                style={{ padding: `${config.space.S100} ${config.space.S200}` }}
+              >
+                {threads.map((thread: Thread) => (
+                  <ThreadPreview
+                    key={thread.id}
+                    room={room}
+                    thread={thread}
+                    onClick={onOpenThread}
+                  />
+                ))}
+              </Box>
+              {(loadingMore || canLoadMore) && (
+                <Box
+                  justifyContent="Center"
+                  style={{ padding: config.space.S300, flexShrink: 0 }}
+                >
+                  {loadingMore ? (
+                    <Spinner variant="Secondary" size="400" />
+                  ) : (
+                    <Chip variant="SurfaceVariant" radii="Pill" outlined onClick={handleLoadMore}>
+                      <Text size="B300">Load more threads</Text>
+                    </Chip>
+                  )}
+                </Box>
+              )}
+            </>
           )}
         </Scroll>
       </Box>
