@@ -337,19 +337,30 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
           const id = event.getId();
           if (!id) continue;
           const existingThread = room.getThread(id);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const bundled = (event.getUnsigned() as any)?.['m.relations']?.['m.thread'];
+          const bundledCount: number | undefined =
+            typeof bundled?.count === 'number' ? bundled.count : undefined;
           if (!existingThread) {
             room.createThread(id, event, [], false);
-          } else if (!existingThread.rootEvent) {
-            existingThread.rootEvent = event;
-            existingThread.setEventMetadata(event);
-            // Seed replyCount from bundled aggregations so the preview shows
-            // the right count before the SDK's async fetch updates it.
+          } else {
+            if (!existingThread.rootEvent) {
+              existingThread.rootEvent = event;
+              existingThread.setEventMetadata(event);
+            }
+            // Seed/update replyCount from bundled aggregations.  This is needed
+            // for threads that were created by sliding-sync BEFORE fetchRoomThreads
+            // ran: SS delivers root events without bundled aggregations, so
+            // room.createThread() sets replyCount=0 and the SDK's fast-path
+            // ("replyCount===0 → initialEventsFetched=true, no server fetch") fires.
+            // Later, fetchRoomThreads() brings events WITH bundled counts, but
+            // createThread() is idempotent and returns the stale thread unchanged.
+            // Backfilling replyCount here lets ThreadPreview show the right count
+            // and lets Case C in ThreadDrawer know there are replies to fetch.
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const bundled = (event.getUnsigned() as any)?.['m.relations']?.['m.thread'];
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            if (typeof bundled?.count === 'number' && (existingThread as any).replyCount === 0) {
+            if (bundledCount !== undefined && (existingThread as any).replyCount === 0) {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (existingThread as any).replyCount = bundled.count;
+              (existingThread as any).replyCount = bundledCount;
             }
           }
         }
@@ -383,17 +394,21 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
         const id = event.getId();
         if (!id) continue;
         const existingThread = room.getThread(id);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const bundled = (event.getUnsigned() as any)?.['m.relations']?.['m.thread'];
+        const bundledCount: number | undefined =
+          typeof bundled?.count === 'number' ? bundled.count : undefined;
         if (!existingThread) {
           room.createThread(id, event, [], false);
-        } else if (!existingThread.rootEvent) {
-          existingThread.rootEvent = event;
-          existingThread.setEventMetadata(event);
+        } else {
+          if (!existingThread.rootEvent) {
+            existingThread.rootEvent = event;
+            existingThread.setEventMetadata(event);
+          }
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const bundled = (event.getUnsigned() as any)?.['m.relations']?.['m.thread'];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          if (typeof bundled?.count === 'number' && (existingThread as any).replyCount === 0) {
+          if (bundledCount !== undefined && (existingThread as any).replyCount === 0) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (existingThread as any).replyCount = bundled.count;
+            (existingThread as any).replyCount = bundledCount;
           }
         }
       }

@@ -354,11 +354,18 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     if (serverFetchAttemptedRef.current === threadRootId) return;
     serverFetchAttemptedRef.current = threadRootId;
 
-    // Safe to reset: initialEventsFetched=true means SDK init is complete; no
-    // concurrent updateThreadMetadata() can race with us. Resetting clears any
-    // null back-pagination token that was set at construction time (when
-    // replyCount happened to be 0), which would otherwise block the fetch.
-    currThread.timelineSet.resetLiveTimeline();
+    // Do NOT call resetLiveTimeline() here.  Resetting a thread timeline emits
+    // RoomEvent.TimelineReset on the thread's EventTimelineSet; Thread's own
+    // onTimelineReset handler then awaits processRootEventPromise (a live
+    // fetchRootEvent network call).  If that promise is still pending this
+    // creates a deadlock that hangs and eventually crashes the app — observed
+    // on both classic sync and sliding sync.
+    //
+    // Calling paginateEventTimeline directly is safe: the thread's back-token
+    // is null (set by the fast path when replyCount was 0 at construction), but
+    // the SDK maps null → undefined for the `from` parameter and calls
+    // fetchRelations without a cursor, which correctly fetches the latest
+    // replies from the server.
     mx.paginateEventTimeline(currThread.timelineSet.getLiveTimeline(), { backwards: true })
       .then(() => forceUpdate((n) => n + 1))
       .catch(() => {});
