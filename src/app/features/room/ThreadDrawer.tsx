@@ -334,7 +334,14 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
       if (rootEvt) room.createThread(threadRootId, rootEvt, [], false);
       return;
     }
-    if (!thread.initialEventsFetched) return; // Case B: SDK still loading
+    if (!thread.initialEventsFetched) {
+      // Case B: SDK hasn't fetched yet. Explicitly kick pagination — for older threads
+      // the SDK may not auto-call fetchInitialEvents(), leaving the drawer stuck.
+      // paginateEventTimeline is safe to call here: it's a no-op if already in progress.
+      // We must NOT call thread.addEvents() here (see classic-sync backfill useEffect above).
+      mx.paginateEventTimeline(thread.liveTimeline, { backwards: true }).catch(() => {});
+      return;
+    }
     // Case C: loaded but empty
     const hasReplies = thread.events.some(
       (ev) => ev.getId() !== threadRootId && !reactionOrEditEvent(ev)
