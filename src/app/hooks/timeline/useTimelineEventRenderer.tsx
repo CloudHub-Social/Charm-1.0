@@ -258,6 +258,7 @@ export interface TimelineEventRendererOptions {
     hideMembershipEvents: boolean;
     hideNickAvatarEvents: boolean;
     showHiddenEvents: boolean;
+    hideThreadChip?: boolean;
   };
   state: {
     focusItem?: { index: number; highlight: boolean; scrollTo: boolean };
@@ -312,6 +313,7 @@ export function useTimelineEventRenderer({
     hideMembershipEvents,
     hideNickAvatarEvents,
     showHiddenEvents,
+    hideThreadChip,
   },
   state: { focusItem, editId, activeReplyId, openThreadId },
   permissions: { canRedact, canDeleteOwn, canSendReaction, canPinEvent },
@@ -440,7 +442,7 @@ export function useTimelineEventRenderer({
             }
             reactions={(() => {
               const threadChip =
-                room.getThread(mEventId) || threadRootId ? (
+                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
@@ -561,7 +563,7 @@ export function useTimelineEventRenderer({
             }
             reactions={(() => {
               const threadChip =
-                room.getThread(mEventId) || threadRootId ? (
+                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
@@ -723,7 +725,7 @@ export function useTimelineEventRenderer({
             }
             reactions={(() => {
               const threadChip =
-                room.getThread(mEventId) || threadRootId ? (
+                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
@@ -756,9 +758,6 @@ export function useTimelineEventRenderer({
             dateFormatString={dateFormatString}
           >
             {isRedacted.call(mEvent) ? (
-              <RedactedContent reason={getUnsigned.call(mEvent).redacted_because?.content.reason} />
-            ) : (
-              <MSticker
                 content={getEventContent.call(mEvent) as any}
                 renderImageContent={(props) => (
                   <ImageContent

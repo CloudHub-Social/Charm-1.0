@@ -1,6 +1,8 @@
 import { MouseEventHandler, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Header, Icon, IconButton, Icons, Scroll, Spinner, Text, config } from 'folds';
+import { Box, Chip, Header, Icon, IconButton, Icons, Scroll, Spinner, Text, config } from 'folds';
 import {
+  Direction,
+  IEvent,
   MatrixEvent,
   PushProcessor,
   ReceiptType,
@@ -98,6 +100,8 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   const editor = useEditor();
   const [forceUpdateCounter, forceUpdate] = useState(0);
   const [jumpToEventId, setJumpToEventId] = useState<string | undefined>(undefined);
+  const [canLoadOlderReplies, setCanLoadOlderReplies] = useState(false);
+  const [loadingOlderReplies, setLoadingOlderReplies] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevReplyCountRef = useRef(0);
   const processedEventsRef = useRef<ProcessedEvent[]>([]);
@@ -203,11 +207,14 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   // User profile popup
   const openUserRoomProfile = useOpenUserRoomProfile();
 
-  const rootEvent = room.findEventById(threadRootId);
-
   // Thread timeline data for useProcessedTimeline
   const thread = room.getThread(threadRootId);
   const threadTimeline = thread?.timelineSet.getLiveTimeline();
+
+  // Prefer the event from the main timeline (already indexed), but fall back
+  // to thread.rootEvent — populated from bundled /threads server data even when
+  // the root is outside the currently-loaded timeline window.
+  const rootEvent = room.findEventById(threadRootId) ?? thread?.rootEvent;
   const totalEvents = threadTimeline?.getEvents().length ?? 0;
   const linkedTimelines = useMemo(
     () => (threadTimeline ? [threadTimeline] : []),
@@ -270,6 +277,11 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   //   that would race with the SDK's own initialization and cause a flood of
   //   "Ignoring event … does not belong in timeline" warnings.
   //
+  //   If the root is also outside the local timeline (e.g. a thread discovered
+  //   via ThreadBrowser but whose root predates the sliding-sync window), we
+  //   fetch it bare with fetchRoomEvent — this does NOT add it to the main
+  //   room timeline or cause any TimelineRefresh side-effects.
+  //
   // Case B — Thread exists but initialEventsFetched is false (server-side thread
   //   support active; SDK's updateThreadMetadata() is running):
   //   Do nothing — the SDK will fire ThreadEvent.Update when done.
@@ -282,8 +294,19 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   useEffect(() => {
     // Case A: create thread shell; SDK handles the rest asynchronously.
     if (!room.getThread(threadRootId)) {
-      const rootEvt = room.findEventById(threadRootId);
-      if (rootEvt) room.createThread(threadRootId, rootEvt, [], false);
+      const localRoot = room.findEventById(threadRootId);
+      if (localRoot) {
+        room.createThread(threadRootId, localRoot, [], false);
+      } else {
+        // Root not in local timeline — fetch it from the server without
+        // touching the main timeline (no TimelineRefresh side-effect).
+        void mx.fetchRoomEvent(room.roomId, threadRootId)
+          .then((rawEvt) => {
+            if (room.getThread(threadRootId)) return; // created concurrently
+            room.createThread(threadRootId, new MatrixEvent(rawEvt as IEvent), [], false);
+          })
+          .catch(() => {});
+      }
     }
 
     const currThread = room.getThread(threadRootId);
@@ -420,6 +443,33 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   const threadObjForLoading = room.getThread(threadRootId);
   const isThreadLoading =
     !!threadObjForLoading && !threadObjForLoading.initialEventsFetched && replyEvents.length === 0;
+
+  // Track whether the thread timeline has older replies that can be loaded by
+  // paginating backwards.  Re-evaluates whenever forceUpdateCounter changes
+  // (i.e. whenever thread state changes via ThreadEvent.Update / NewReply).
+  useEffect(() => {
+    const t = room.getThread(threadRootId);
+    if (!t || !t.initialEventsFetched) {
+      setCanLoadOlderReplies(false);
+      return;
+    }
+    const backToken = t.timelineSet.getLiveTimeline().getPaginationToken(Direction.Backward);
+    setCanLoadOlderReplies(backToken !== null && backToken !== undefined);
+  }, [room, threadRootId, forceUpdateCounter]);
+
+  const handleLoadOlderReplies = useCallback(async () => {
+    const t = room.getThread(threadRootId);
+    if (!t || loadingOlderReplies) return;
+    setLoadingOlderReplies(true);
+    try {
+      await mx.paginateEventTimeline(t.timelineSet.getLiveTimeline(), { backwards: true });
+      forceUpdate((n) => n + 1);
+    } catch {
+      // ignore network errors
+    } finally {
+      setLoadingOlderReplies(false);
+    }
+  }, [mx, room, threadRootId, loadingOlderReplies]);
 
   // Auto-scroll to bottom when event count grows (if the user is near the bottom).
   useEffect(() => {
@@ -732,6 +782,29 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
             </Box>
           ) : (
             <>
+              {/* Load older replies button — shown when the thread timeline has
+                  a backward pagination token, i.e. more replies exist on the server. */}
+              {canLoadOlderReplies && (
+                <Box
+                  alignItems="Center"
+                  justifyContent="Center"
+                  style={{ padding: config.space.S200, flexShrink: 0 }}
+                >
+                  <Chip
+                    as="button"
+                    radii="Pill"
+                    aria-label="Load older replies"
+                    onClick={handleLoadOlderReplies}
+                    style={{ cursor: loadingOlderReplies ? 'default' : 'pointer' }}
+                  >
+                    {loadingOlderReplies ? (
+                      <Spinner variant="Secondary" size="200" />
+                    ) : (
+                      <Text size="T200">Load older replies</Text>
+                    )}
+                  </Chip>
+                </Box>
+              )}
               {/* Reply count label inside scroll area */}
               <Box
                 style={{

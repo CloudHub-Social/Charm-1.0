@@ -138,9 +138,15 @@ function ThreadPreview({ room, thread, onClick }: ThreadPreviewProps) {
   const senderAvatarMxc = getMemberAvatarMxc(room, senderId);
   const getContent = (() => rootEvent.getContent()) as GetContentCallback;
 
-  const replyCount = thread.events.filter(
+  // Prefer a locally-counted reply count (based on events already in the thread
+  // timeline) but fall back to thread.length which is the server-reported count
+  // from bundled m.thread aggregations.  This means that for threads discovered
+  // via fetchRoomThreads() whose timeline hasn't been paginated yet we still
+  // show the correct count rather than zero.
+  const localReplyCount = thread.events.filter(
     (ev: MatrixEvent) => ev.getId() !== thread.id && !reactionOrEditEvent(ev)
   ).length;
+  const replyCount = localReplyCount > 0 ? localReplyCount : thread.length;
 
   const lastReply = thread.events
     .filter((ev: MatrixEvent) => ev.getId() !== thread.id && !reactionOrEditEvent(ev))
