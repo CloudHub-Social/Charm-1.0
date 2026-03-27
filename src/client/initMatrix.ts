@@ -304,7 +304,10 @@ const buildClient = async (
         return {
           accessToken: res.access_token,
           refreshToken: res.refresh_token ?? oldRefreshToken,
-          expiry: res.expires_in_ms ? new Date(Date.now() + res.expires_in_ms) : undefined,
+          expiry:
+            typeof res.expires_in_ms === 'number'
+              ? new Date(Date.now() + res.expires_in_ms)
+              : undefined,
         };
       },
     }),
