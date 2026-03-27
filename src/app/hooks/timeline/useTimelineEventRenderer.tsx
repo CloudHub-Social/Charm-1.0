@@ -6,10 +6,11 @@ import {
   MatrixEvent,
   NotificationCountType,
   Room,
+  RoomEvent,
+  ThreadEvent,
   PushProcessor,
   EventTimelineSet,
   IContent,
-  RoomEvent,
 } from '$types/matrix-sdk';
 import { SessionMembershipData } from 'matrix-js-sdk/lib/matrixrtc/CallMembership';
 import { HTMLReactParserOptions } from 'html-react-parser';
@@ -108,17 +109,24 @@ function ThreadReplyChip({
   const useAuthentication = useMediaAuthentication();
   const nicknames = useAtomValue(nicknamesAtom);
 
+  const [counter, forceUpdate] = useState(0);
+
   const thread = room.getThread(mEventId);
 
-  const [replyUpdateCounter, forceReplyUpdate] = useState(0);
-
   useEffect(() => {
-    const onTimeline = (ev: MatrixEvent) => {
-      if (ev.threadRootId === mEventId) forceReplyUpdate((n) => n + 1);
+    if (!thread) return;
+    const onUpdate = () => forceUpdate((n) => n + 1);
+    thread.on(ThreadEvent.NewReply as any, onUpdate);
+    thread.on(ThreadEvent.Update as any, onUpdate);
+    room.on(RoomEvent.Redaction as any, onUpdate);
+    room.on(RoomEvent.UnreadNotifications as any, onUpdate);
+    return () => {
+      thread.off(ThreadEvent.NewReply as any, onUpdate);
+      thread.off(ThreadEvent.Update as any, onUpdate);
+      room.off(RoomEvent.Redaction as any, onUpdate);
+      room.off(RoomEvent.UnreadNotifications as any, onUpdate);
     };
-    room.on(RoomEvent.Timeline, onTimeline);
-    return () => room.off(RoomEvent.Timeline, onTimeline);
-  }, [room, mEventId]);
+  }, [room, thread]);
 
   const replyEvents = useMemo(() => {
     const linkedTimelines = getLinkedTimelines(getLiveTimeline(room));
@@ -127,16 +135,7 @@ function ThreadReplyChip({
       .filter(
         (ev) => ev.threadRootId === mEventId && ev.getId() !== mEventId && !reactionOrEditEvent(ev)
       );
-  }, [room, mEventId, replyUpdateCounter]);
-
-  const [, forceUnread] = useState(0);
-  useEffect(() => {
-    const onUnread = (_count: unknown, threadId?: string) => {
-      if (!threadId || threadId === mEventId) forceUnread((n) => n + 1);
-    };
-    room.on(RoomEvent.UnreadNotifications as any, onUnread);
-    return () => room.off(RoomEvent.UnreadNotifications as any, onUnread);
-  }, [room, mEventId]);
+  }, [room, mEventId, counter]);
 
   if (!thread) return null;
 
@@ -259,7 +258,6 @@ export interface TimelineEventRendererOptions {
     hideMembershipEvents: boolean;
     hideNickAvatarEvents: boolean;
     showHiddenEvents: boolean;
-    hideThreadChip?: boolean;
   };
   state: {
     focusItem?: { index: number; highlight: boolean; scrollTo: boolean };
@@ -314,7 +312,6 @@ export function useTimelineEventRenderer({
     hideMembershipEvents,
     hideNickAvatarEvents,
     showHiddenEvents,
-    hideThreadChip,
   },
   state: { focusItem, editId, activeReplyId, openThreadId },
   permissions: { canRedact, canDeleteOwn, canSendReaction, canPinEvent },
@@ -430,12 +427,12 @@ export function useTimelineEventRenderer({
             collapse={collapse}
             activeReplyId={activeReplyId}
             reply={
-              replyEventId && !(hideThreadChip && replyEventId === threadRootId) && (
+              replyEventId && (
                 <Reply
                   room={room}
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
-                  threadRootId={hideThreadChip ? undefined : threadRootId}
+                  threadRootId={threadRootId}
                   mentions={baseContent['m.mentions']}
                   onClick={handleOpenReply}
                 />
@@ -443,7 +440,7 @@ export function useTimelineEventRenderer({
             }
             reactions={(() => {
               const threadChip =
-                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
+                room.getThread(mEventId) || threadRootId ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
@@ -552,19 +549,19 @@ export function useTimelineEventRenderer({
             collapse={collapse}
             onDeleteFailedSend={onDeleteFailedSend}
             reply={
-              replyEventId && !(hideThreadChip && replyEventId === threadRootId) && (
+              replyEventId && (
                 <Reply
                   room={room}
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
-                  threadRootId={hideThreadChip ? undefined : threadRootId}
+                  threadRootId={threadRootId}
                   onClick={handleOpenReply}
                 />
               )
             }
             reactions={(() => {
               const threadChip =
-                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
+                room.getThread(mEventId) || threadRootId ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
@@ -713,12 +710,12 @@ export function useTimelineEventRenderer({
             onDeleteFailedSend={onDeleteFailedSend}
             collapse={collapse}
             reply={
-              replyEventId && !(hideThreadChip && replyEventId === threadRootId) && (
+              replyEventId && (
                 <Reply
                   room={room}
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
-                  threadRootId={hideThreadChip ? undefined : threadRootId}
+                  threadRootId={threadRootId}
                   mentions={content['m.mentions']}
                   onClick={handleOpenReply}
                 />
@@ -726,7 +723,7 @@ export function useTimelineEventRenderer({
             }
             reactions={(() => {
               const threadChip =
-                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
+                room.getThread(mEventId) || threadRootId ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
