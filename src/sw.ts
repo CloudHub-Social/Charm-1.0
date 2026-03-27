@@ -588,6 +588,11 @@ function fetchConfig(token: string): RequestInit {
  * are sent with the stale token and receive 401. By the time the retry runs,
  * the setSession message will normally have been processed and sessions will
  * hold the new token.
+ *
+ * A second timing window exists at startup: preloadedSession may hold a stale
+ * token but the live setSession from the page hasn't arrived yet. In that case
+ * the in-memory check yields no fresher token, so we ask the live client tab
+ * directly (requestSessionWithTimeout) before giving up.
  */
 async function fetchMediaWithRetry(
   url: string,
@@ -605,6 +610,17 @@ async function fetchMediaWithRetry(
 
   if (updated && updated.accessToken !== token && validMediaRequest(url, updated.baseUrl)) {
     return fetch(url, { ...fetchConfig(updated.accessToken), redirect });
+  }
+
+  // No fresher cached token available — ask the live client tab for its current
+  // session. This covers the startup window where preloadedSession is stale but
+  // the page hasn't yet sent setSession. Use a short timeout so we don't block
+  // image rendering for long on unresponsive clients.
+  if (clientId) {
+    const live = await requestSessionWithTimeout(clientId, 1500);
+    if (live && live.accessToken !== token && validMediaRequest(url, live.baseUrl)) {
+      return fetch(url, { ...fetchConfig(live.accessToken), redirect });
+    }
   }
 
   return response;
