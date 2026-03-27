@@ -210,10 +210,10 @@ export function ClientRoot({ children }: ClientRootProps) {
             ...(newRefreshToken !== undefined && { refreshToken: newRefreshToken }),
           },
         });
-        pushSessionToSW(activeSession.baseUrl, newAccessToken);
+        pushSessionToSW(activeSession.baseUrl, newAccessToken, activeSession.userId);
       });
       loadedUserIdRef.current = activeSession.userId;
-      pushSessionToSW(activeSession.baseUrl, activeSession.accessToken);
+      pushSessionToSW(activeSession.baseUrl, activeSession.accessToken, activeSession.userId);
       return newMx;
     }, [activeSession, activeSessionId, setActiveSessionId, setSessions])
   );
