@@ -105,6 +105,11 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevReplyCountRef = useRef(0);
   const processedEventsRef = useRef<ProcessedEvent[]>([]);
+  // Track whether we've already attempted a server fetch for a given threadRootId.
+  // Prevents infinite re-fetch loops on genuinely empty threads while still
+  // allowing the first fetch even when thread.length === 0 (sliding sync case
+  // where bundled aggregations are absent so replyCount defaults to 0).
+  const serverFetchAttemptedRef = useRef<string | null>(null);
   const { editId, handleEdit } = useMessageEdit(editor);
   const nicknames = useAtomValue(nicknamesAtom);
   const pushProcessor = useMemo(() => new PushProcessor(mx), [mx]);
@@ -339,21 +344,24 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
       return;
     }
 
-    // No local events. For threads discovered via fetchRoomThreads() the root
-    // event lives only in thread.rootEvent and is NOT indexed in the main
-    // timeline, so room.findEventById() returns undefined. Fall back to
-    // thread.replyCount (populated from bundled server relations) to decide
-    // whether a server fetch is needed.
-    if (!currThread.length) return; // server confirms no replies
+    // No local events anywhere. We always attempt one server fetch here because
+    // with sliding sync the server omits bundled aggregations from subscription
+    // timeline events, leaving thread.replyCount at 0 even when the server has
+    // replies (the old `if (!currThread.length) return` guard incorrectly bailed
+    // out in that case). We use serverFetchAttemptedRef to ensure we only try
+    // once per threadRootId — if the paginate truly returns nothing, the ref
+    // prevents an infinite re-fetch loop.
+    if (serverFetchAttemptedRef.current === threadRootId) return;
+    serverFetchAttemptedRef.current = threadRootId;
 
     // Safe to reset: initialEventsFetched=true means SDK init is complete; no
     // concurrent updateThreadMetadata() can race with us. Resetting clears any
     // null back-pagination token that was set at construction time (when
     // replyCount happened to be 0), which would otherwise block the fetch.
     currThread.timelineSet.resetLiveTimeline();
-    mx.paginateEventTimeline(currThread.timelineSet.getLiveTimeline(), { backwards: true }).catch(
-      () => {}
-    );
+    mx.paginateEventTimeline(currThread.timelineSet.getLiveTimeline(), { backwards: true })
+      .then(() => forceUpdate((n) => n + 1))
+      .catch(() => {});
   }, [mx, room, threadRootId, forceUpdate]);
 
   // Re-render when new thread events arrive (including reactions via ThreadEvent.Update).
@@ -462,7 +470,8 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     if (!t || loadingOlderReplies) return;
     setLoadingOlderReplies(true);
     try {
-      await mx.paginateEventTimeline(t.timelineSet.getLiveTimeline(), { backwards: true });
+      const hasMore = await mx.paginateEventTimeline(t.timelineSet.getLiveTimeline(), { backwards: true });
+      if (!hasMore) setCanLoadOlderReplies(false);
       forceUpdate((n) => n + 1);
     } catch {
       // ignore network errors

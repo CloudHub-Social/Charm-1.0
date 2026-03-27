@@ -434,7 +434,7 @@ export function useTimelineEventRenderer({
                   room={room}
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
-                  threadRootId={threadRootId}
+                  threadRootId={hideThreadChip ? undefined : threadRootId}
                   mentions={baseContent['m.mentions']}
                   onClick={handleOpenReply}
                 />
@@ -556,7 +556,7 @@ export function useTimelineEventRenderer({
                   room={room}
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
-                  threadRootId={threadRootId}
+                  threadRootId={hideThreadChip ? undefined : threadRootId}
                   onClick={handleOpenReply}
                 />
               )
@@ -717,7 +717,7 @@ export function useTimelineEventRenderer({
                   room={room}
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
-                  threadRootId={threadRootId}
+                  threadRootId={hideThreadChip ? undefined : threadRootId}
                   mentions={content['m.mentions']}
                   onClick={handleOpenReply}
                 />
