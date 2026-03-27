@@ -259,28 +259,44 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
 
   const processedReplies = displayReplies;
 
-  // room.createThread() may have been called with empty initialEvents so
-  // thread.events only has the root.  Backfill events from the main room
-  // timeline so the authoritative source is populated for subsequent renders.
+  // Ensure the Thread object exists and has its reply events loaded.
   //
-  // IMPORTANT: skip this backfill when server-side thread support is active
-  // (initialEventsFetched starts false).  In that case the SDK will call
-  // updateThreadMetadata() → resetLiveTimeline() + paginateEventTimeline()
-  // automatically.  Calling thread.addEvents() ourselves first would trigger
-  // that same cascade prematurely and cause a flood of
-  // "EventTimelineSet.addEventToTimeline: Ignoring event=…" warnings because
-  // canContain() fails while the timeline is in the middle of being reset and
-  // repopulated.
+  // Case A — no Thread object yet (e.g. root event was loaded via jump/backward
+  //   pagination but the SDK hasn't created a Thread shell for it):
+  //   Call room.createThread() so the SDK constructor kicks off
+  //   updateThreadMetadata() → resetLiveTimeline() + paginateEventTimeline()
+  //   automatically.  ThreadEvent.Update fires when done → forceUpdate → re-render.
+  //   DO NOT call resetLiveTimeline() or paginateEventTimeline() ourselves —
+  //   that would race with the SDK's own initialization and cause a flood of
+  //   "Ignoring event … does not belong in timeline" warnings.
+  //
+  // Case B — Thread exists but initialEventsFetched is false (server-side thread
+  //   support active; SDK's updateThreadMetadata() is running):
+  //   Do nothing — the SDK will fire ThreadEvent.Update when done.
+  //
+  // Case C — Thread exists, initialEventsFetched is true (classic sync or SDK
+  //   has already finished initialising):
+  //   With classic sync the SDK never paginates thread timelines, so we backfill
+  //   from the main live timeline.  With server-side threads the SDK already
+  //   populated thread.events; this block is a no-op in that case.
   useEffect(() => {
-    const thread = room.getThread(threadRootId);
-    if (!thread) return;
-    // initialEventsFetched === false  ↔  Thread.hasServerSideSupport is set.
-    // The SDK handles initialization itself; our manual backfill must not run.
-    if (!thread.initialEventsFetched) return;
-    const hasRepliesInThread = thread.events.some(
+    // Case A: create thread shell; SDK handles the rest asynchronously.
+    if (!room.getThread(threadRootId)) {
+      const rootEvt = room.findEventById(threadRootId);
+      if (rootEvt) room.createThread(threadRootId, rootEvt, [], false);
+    }
+
+    const currThread = room.getThread(threadRootId);
+    // Case B: SDK is actively initialising — don't interfere.
+    if (!currThread || !currThread.initialEventsFetched) return;
+
+    // Case C: SDK is done (or classic sync). Backfill from live timeline if
+    // thread.events is still empty (classic sync path; server-side was already
+    // populated by paginateEventTimeline inside updateThreadMetadata).
+    const hasRepliesInThread = currThread.events.some(
       (ev) => ev.getId() !== threadRootId && !reactionOrEditEvent(ev)
     );
-    if (hasRepliesInThread) return; // already populated, nothing to do
+    if (hasRepliesInThread) return;
 
     const liveEvents = room
       .getUnfilteredTimelineSet()
@@ -295,84 +311,13 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     if (liveEvents.length > 0) {
       // thread.addEvents() is typed as void but is internally async; schedule
       // forceUpdate in a microtask so the timeline has been updated first.
-      thread.addEvents(liveEvents, false);
+      currThread.addEvents(liveEvents, false);
       Promise.resolve().then(() => forceUpdate((n) => n + 1));
     } else {
       // No events to backfill but timeline may have updated; force re-check.
       forceUpdate((n) => n + 1);
     }
   }, [room, threadRootId, forceUpdate]);
-
-  // For server-side thread support (sliding sync + MSC3440): the SDK sets
-  // initialEventsFetched=false and handles fetching automatically, but it only
-  // does so when addEvent() is first called internally.  Explicitly kicking off
-  // pagination when the drawer opens ensures events load immediately.
-  useEffect(() => {
-    const thread = room.getThread(threadRootId);
-    if (!thread || thread.initialEventsFetched) return;
-    mx.paginateEventTimeline(thread.liveTimeline, { backwards: true }).catch(() => {});
-  }, [mx, room, threadRootId]);
-
-  // Ensure thread events are loaded when the drawer opens.
-  //
-  // Three scenarios:
-  //   A) Thread object doesn't exist → create it, then immediately kick pagination.
-  //      We CANNOT wait for a re-render to reach Case B: this useEffect has stable
-  //      deps [mx, room, threadRootId] so it won't re-run on the forceUpdate emitted
-  //      by ThreadEvent.New.
-  //   B) Thread exists but !initialEventsFetched → SDK hasn't fetched replies yet.
-  //      For old threads loaded via backward main-timeline pagination, the SDK never
-  //      auto-calls updateThreadMetadata()/fetchInitialEvents(), so we must kick it.
-  //      Must resetLiveTimeline() first: paginateEventTimeline bails early when
-  //      events.length > 0 && no back-token (the root event is always in the timeline),
-  //      same root cause as Case C.  Only reset if no replies are loaded yet to avoid
-  //      racing with an in-progress SDK fetch.
-  //   C) Thread exists, initialEventsFetched=true, but no replies in thread.events
-  //      (SDK took the replyCount===0 path and set a null pagination token even
-  //      though replies exist).  Detect via bundled-relation count and force a
-  //      proper paginate by first resetting the live timeline (which clears the
-  //      stale null back-token) then calling paginateEventTimeline — which for
-  //      thread timelines always works even with a null token (sends no `from`
-  //      param → server returns latest replies).
-  useEffect(() => {
-    const thread = room.getThread(threadRootId);
-    if (!thread) {
-      // Case A: create shell thread, then kick pagination immediately.
-      const rootEvt = room.findEventById(threadRootId);
-      if (!rootEvt) return;
-      room.createThread(threadRootId, rootEvt, [], false);
-      const newThread = room.getThread(threadRootId);
-      if (newThread) {
-        // Reset so paginateEventTimeline doesn't bail (events.length=1 root, null back-token).
-        newThread.timelineSet.resetLiveTimeline();
-        mx.paginateEventTimeline(newThread.liveTimeline, { backwards: true }).catch(() => {});
-      }
-      return;
-    }
-    if (!thread.initialEventsFetched) {
-      // Case B: kick pagination; reset first only when no replies are loaded yet.
-      const hasLoadedReplies = thread.liveTimeline
-        .getEvents()
-        .some((ev) => ev.getId() !== threadRootId && !reactionOrEditEvent(ev));
-      if (!hasLoadedReplies) {
-        thread.timelineSet.resetLiveTimeline();
-      }
-      mx.paginateEventTimeline(thread.liveTimeline, { backwards: true }).catch(() => {});
-      return;
-    }
-    // Case C: loaded but empty
-    const hasReplies = thread.events.some(
-      (ev) => ev.getId() !== threadRootId && !reactionOrEditEvent(ev)
-    );
-    if (hasReplies) return;
-    const rootEvt = room.findEventById(threadRootId);
-    const bundled = rootEvt?.getServerAggregatedRelation<{ count?: number }>(RelationType.Thread);
-    if (!bundled?.count) return; // root confirms no replies
-    // Force reload: clear stale state then re-paginate
-    thread.timelineSet.resetLiveTimeline();
-    mx.paginateEventTimeline(thread.liveTimeline, { backwards: true }).catch(() => {});
-    // paginateEventTimeline → ThreadEvent.Update → onThreadUpdate → forceUpdate → re-render
-  }, [mx, room, threadRootId]); // runs once on open (forceUpdate intentionally excluded)
 
   // Re-render when new thread events arrive (including reactions via ThreadEvent.Update).
   useEffect(() => {

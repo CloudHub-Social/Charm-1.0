@@ -285,12 +285,26 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
   const searchRef = useRef<HTMLInputElement>(null);
   const threadListTimelineSetRef = useRef<EventTimelineSet | null>(null);
 
-  // Re-render when threads change.
+  // Re-render when threads change AND fetch all thread roots from the server on
+  // mount.  room.getThreads() only returns threads whose root events happen to
+  // be inside the currently-loaded timeline window.  fetchRoomThreads() queries
+  // the dedicated /rooms/{id}/threads endpoint so every thread in the room
+  // appears in the list regardless of how far back its root is.  The method is
+  // idempotent (guarded by room.threadsReady) so calling it multiple times is
+  // harmless.  Each newly-discovered thread fires ThreadEvent.New → onUpdate →
+  // re-render, so the list populates progressively without extra state.
   useEffect(() => {
     const onUpdate = () => forceUpdate((n) => n + 1);
     room.on(ThreadEvent.New as any, onUpdate);
     room.on(ThreadEvent.Update as any, onUpdate);
     room.on(ThreadEvent.NewReply as any, onUpdate);
+
+    // Fetch all thread roots from the server.
+    room.fetchRoomThreads().catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn('ThreadBrowser: fetchRoomThreads failed', err);
+    });
+
     return () => {
       room.off(ThreadEvent.New as any, onUpdate);
       room.off(ThreadEvent.Update as any, onUpdate);
