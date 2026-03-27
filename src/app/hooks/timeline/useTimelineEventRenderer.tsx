@@ -112,6 +112,15 @@ function ThreadReplyChip({
       );
   }, [room, mEventId, replyUpdateCounter]);
 
+  const [, forceUnread] = useState(0);
+  useEffect(() => {
+    const onUnread = (_count: unknown, threadId?: string) => {
+      if (!threadId || threadId === mEventId) forceUnread((n) => n + 1);
+    };
+    room.on(RoomEvent.UnreadNotifications as any, onUnread);
+    return () => room.off(RoomEvent.UnreadNotifications as any, onUnread);
+  }, [room, mEventId]);
+
   if (!thread) return null;
 
   const replyCount = replyEvents.length || (thread.length ?? 0);
@@ -142,14 +151,6 @@ function ThreadReplyChip({
 
   const isOpen = openThreadId === mEventId;
 
-  const [, forceUnread] = useState(0);
-  useEffect(() => {
-    const onUnread = (_count: unknown, threadId?: string) => {
-      if (!threadId || threadId === mEventId) forceUnread((n) => n + 1);
-    };
-    room.on(RoomEvent.UnreadNotifications as any, onUnread);
-    return () => room.off(RoomEvent.UnreadNotifications as any, onUnread);
-  }, [room, mEventId]);
   const unreadTotal = room.getThreadUnreadNotificationCount(mEventId, NotificationCountType.Total);
   const unreadHighlight = room.getThreadUnreadNotificationCount(
     mEventId,
