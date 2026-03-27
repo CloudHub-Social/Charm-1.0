@@ -1,13 +1,15 @@
-import { MouseEventHandler, useMemo } from 'react';
+import { MouseEventHandler, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAtomValue } from 'jotai';
 import {
   MatrixClient,
   MatrixEvent,
+  NotificationCountType,
   Room,
   PushProcessor,
   EventTimelineSet,
   IContent,
+  RoomEvent,
 } from '$types/matrix-sdk';
 import { SessionMembershipData } from 'matrix-js-sdk/lib/matrixrtc/CallMembership';
 import { HTMLReactParserOptions } from 'html-react-parser';
@@ -46,6 +48,7 @@ import {
 } from '$utils/room';
 import { getLinkedTimelines, getLiveTimeline } from '$utils/timeline';
 import * as customHtmlCss from '$styles/CustomHtml.css';
+import { UnreadBadge, UnreadBadgeCenter } from '$components/unread-badge';
 import {
   EncryptedContent,
   Event,
@@ -129,6 +132,20 @@ function ThreadReplyChip({
 
   const isOpen = openThreadId === mEventId;
 
+  const [, forceUnread] = useState(0);
+  useEffect(() => {
+    const onUnread = (_count: unknown, threadId?: string) => {
+      if (!threadId || threadId === mEventId) forceUnread((n) => n + 1);
+    };
+    room.on(RoomEvent.UnreadNotifications as any, onUnread);
+    return () => room.off(RoomEvent.UnreadNotifications as any, onUnread);
+  }, [room, mEventId]);
+  const unreadTotal = room.getThreadUnreadNotificationCount(mEventId, NotificationCountType.Total);
+  const unreadHighlight = room.getThreadUnreadNotificationCount(
+    mEventId,
+    NotificationCountType.Highlight
+  );
+
   return (
     <Chip
       size="400"
@@ -183,6 +200,11 @@ function ThreadReplyChip({
         >
           &nbsp;·&nbsp;{latestSenderName}:&nbsp;{latestBody.slice(0, 60)}
         </Text>
+      )}
+      {unreadTotal > 0 && (
+        <UnreadBadgeCenter>
+          <UnreadBadge highlight={unreadHighlight > 0} count={unreadTotal} />
+        </UnreadBadgeCenter>
       )}
     </Chip>
   );
