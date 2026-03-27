@@ -118,7 +118,7 @@ function ThreadPreview({ room, thread, onClick }: ThreadPreviewProps) {
       if (!threadId || threadId === thread.id) forceUnread((n) => n + 1);
     };
     room.on(RoomEvent.UnreadNotifications as any, onUnread);
-    return () => room.off(RoomEvent.UnreadNotifications as any, onUnread);
+    return () => { room.off(RoomEvent.UnreadNotifications as any, onUnread); };
   }, [room, thread.id]);
   const unreadTotal = room.getThreadUnreadNotificationCount(
     thread.id,
@@ -277,13 +277,13 @@ type ThreadBrowserProps = {
 };
 
 export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBrowserProps) {
+  const mx = useMatrixClient();
   const [, forceUpdate] = useState(0);
   const [query, setQuery] = useState('');
-  const searchRef = useRef<HTMLInputElement>(null);
-  const mx = useMatrixClient();
-  const threadListTimelineSetRef = useRef<EventTimelineSet | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [canLoadMore, setCanLoadMore] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const threadListTimelineSetRef = useRef<EventTimelineSet | null>(null);
 
   // Re-render when threads change.
   useEffect(() => {

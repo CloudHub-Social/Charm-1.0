@@ -1,5 +1,5 @@
 import { MouseEventHandler, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Header, Icon, IconButton, Icons, Scroll, Text, config } from 'folds';
+import { Box, Header, Icon, IconButton, Icons, Scroll, Spinner, Text, config } from 'folds';
 import {
   MatrixEvent,
   PushProcessor,
@@ -313,6 +313,42 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     mx.paginateEventTimeline(thread.liveTimeline, { backwards: true }).catch(() => {});
   }, [mx, room, threadRootId]);
 
+  // Ensure thread events are loaded when the drawer opens.
+  //
+  // Three scenarios:
+  //   A) Thread object doesn't exist → create it; SDK will async-populate via
+  //      updateThreadMetadata() and emit ThreadEvent.Update when done.
+  //   B) Thread exists but !initialEventsFetched → SDK is still loading; wait.
+  //   C) Thread exists, initialEventsFetched=true, but no replies in thread.events
+  //      (SDK took the replyCount===0 path and set a null pagination token even
+  //      though replies exist).  Detect via bundled-relation count and force a
+  //      proper paginate by first resetting the live timeline (which clears the
+  //      stale null back-token) then calling paginateEventTimeline — which for
+  //      thread timelines always works even with a null token (sends no `from`
+  //      param → server returns latest replies).
+  useEffect(() => {
+    const thread = room.getThread(threadRootId);
+    if (!thread) {
+      // Case A: create shell thread; ThreadEvent.New/Update → forceUpdate → re-render
+      const rootEvt = room.findEventById(threadRootId);
+      if (rootEvt) room.createThread(threadRootId, rootEvt, [], false);
+      return;
+    }
+    if (!thread.initialEventsFetched) return; // Case B: SDK still loading
+    // Case C: loaded but empty
+    const hasReplies = thread.events.some(
+      (ev) => ev.getId() !== threadRootId && !reactionOrEditEvent(ev)
+    );
+    if (hasReplies) return;
+    const rootEvt = room.findEventById(threadRootId);
+    const bundled = rootEvt?.getServerAggregatedRelation<{ count?: number }>(RelationType.Thread);
+    if (!bundled?.count) return; // root confirms no replies
+    // Force reload: clear stale state then re-paginate
+    thread.timelineSet.resetLiveTimeline();
+    mx.paginateEventTimeline(thread.liveTimeline, { backwards: true }).catch(() => {});
+    // paginateEventTimeline → ThreadEvent.Update → onThreadUpdate → forceUpdate → re-render
+  }, [mx, room, threadRootId]); // runs once on open (forceUpdate intentionally excluded)
+
   // Re-render when new thread events arrive (including reactions via ThreadEvent.Update).
   useEffect(() => {
     const isEventInThread = (mEvent: MatrixEvent): boolean => {
@@ -395,6 +431,11 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     // Mark as read when opened and when new messages arrive
     markThreadAsRead();
   }, [mx, room, threadRootId, forceUpdateCounter]);
+
+  const replyEvents = getThreadReplyEvents(room, threadRootId);
+  const threadObjForLoading = room.getThread(threadRootId);
+  const isThreadLoading =
+    !!threadObjForLoading && !threadObjForLoading.initialEventsFetched && replyEvents.length === 0;
 
   // Auto-scroll to bottom when event count grows (if the user is near the bottom).
   useEffect(() => {
@@ -687,7 +728,16 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
           hideTrack
           style={{ flexGrow: 1 }}
         >
-          {processedReplies.length === 0 ? (
+          {isThreadLoading ? (
+            <Box
+              direction="Column"
+              alignItems="Center"
+              justifyContent="Center"
+              style={{ padding: config.space.S400 }}
+            >
+              <Spinner variant="Secondary" size="400" />
+            </Box>
+          ) : processedReplies.length === 0 ? (
             <Box
               direction="Column"
               alignItems="Center"
