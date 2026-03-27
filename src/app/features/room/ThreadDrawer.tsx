@@ -316,9 +316,17 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   // Ensure thread events are loaded when the drawer opens.
   //
   // Three scenarios:
-  //   A) Thread object doesn't exist → create it; SDK will async-populate via
-  //      updateThreadMetadata() and emit ThreadEvent.Update when done.
-  //   B) Thread exists but !initialEventsFetched → SDK is still loading; wait.
+  //   A) Thread object doesn't exist → create it, then immediately kick pagination.
+  //      We CANNOT wait for a re-render to reach Case B: this useEffect has stable
+  //      deps [mx, room, threadRootId] so it won't re-run on the forceUpdate emitted
+  //      by ThreadEvent.New.
+  //   B) Thread exists but !initialEventsFetched → SDK hasn't fetched replies yet.
+  //      For old threads loaded via backward main-timeline pagination, the SDK never
+  //      auto-calls updateThreadMetadata()/fetchInitialEvents(), so we must kick it.
+  //      Must resetLiveTimeline() first: paginateEventTimeline bails early when
+  //      events.length > 0 && no back-token (the root event is always in the timeline),
+  //      same root cause as Case C.  Only reset if no replies are loaded yet to avoid
+  //      racing with an in-progress SDK fetch.
   //   C) Thread exists, initialEventsFetched=true, but no replies in thread.events
   //      (SDK took the replyCount===0 path and set a null pagination token even
   //      though replies exist).  Detect via bundled-relation count and force a
@@ -329,16 +337,26 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   useEffect(() => {
     const thread = room.getThread(threadRootId);
     if (!thread) {
-      // Case A: create shell thread; ThreadEvent.New/Update → forceUpdate → re-render
+      // Case A: create shell thread, then kick pagination immediately.
       const rootEvt = room.findEventById(threadRootId);
-      if (rootEvt) room.createThread(threadRootId, rootEvt, [], false);
+      if (!rootEvt) return;
+      room.createThread(threadRootId, rootEvt, [], false);
+      const newThread = room.getThread(threadRootId);
+      if (newThread) {
+        // Reset so paginateEventTimeline doesn't bail (events.length=1 root, null back-token).
+        newThread.timelineSet.resetLiveTimeline();
+        mx.paginateEventTimeline(newThread.liveTimeline, { backwards: true }).catch(() => {});
+      }
       return;
     }
     if (!thread.initialEventsFetched) {
-      // Case B: SDK hasn't fetched yet. Explicitly kick pagination — for older threads
-      // the SDK may not auto-call fetchInitialEvents(), leaving the drawer stuck.
-      // paginateEventTimeline is safe to call here: it's a no-op if already in progress.
-      // We must NOT call thread.addEvents() here (see classic-sync backfill useEffect above).
+      // Case B: kick pagination; reset first only when no replies are loaded yet.
+      const hasLoadedReplies = thread.liveTimeline
+        .getEvents()
+        .some((ev) => ev.getId() !== threadRootId && !reactionOrEditEvent(ev));
+      if (!hasLoadedReplies) {
+        thread.timelineSet.resetLiveTimeline();
+      }
       mx.paginateEventTimeline(thread.liveTimeline, { backwards: true }).catch(() => {});
       return;
     }
