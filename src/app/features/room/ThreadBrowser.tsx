@@ -291,48 +291,43 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
   const searchRef = useRef<HTMLInputElement>(null);
   const threadListTimelineSetRef = useRef<EventTimelineSet | null>(null);
 
-  // Re-render when threads change AND fetch all thread roots from the server on
-  // mount.  room.getThreads() only returns threads whose root events happen to
-  // be inside the currently-loaded timeline window.  fetchRoomThreads() queries
-  // the dedicated /rooms/{id}/threads endpoint so every thread in the room
-  // appears in the list regardless of how far back its root is.  The method is
-  // idempotent (guarded by room.threadsReady) so calling it multiple times is
-  // harmless.  Each newly-discovered thread fires ThreadEvent.New → onUpdate →
-  // re-render, so the list populates progressively without extra state.
+  // On mount, set up thread event listeners, create the server-side thread
+  // timeline sets, then fetch page 1 via paginate.  The two operations are
+  // sequenced in a single effect so that createThreadsTimelineSets() always
+  // resolves before fetchRoomThreads() runs — the SDK's fetchRoomThreadList
+  // has an early-return guard (`if (this.threadsTimelineSets.length === 0)`)
+  // that silently no-ops when the sets haven't been created yet, so running
+  // both in parallel (the old two-effect approach) caused fetchRoomThreads to
+  // always be a no-op and left threadsReady=true prematurely.
   useEffect(() => {
     const onUpdate = () => forceUpdate((n) => n + 1);
     room.on(ThreadEvent.New as any, onUpdate);
     room.on(ThreadEvent.Update as any, onUpdate);
     room.on(ThreadEvent.NewReply as any, onUpdate);
 
-    // Fetch all thread roots from the server.
-    room.fetchRoomThreads().catch((err: unknown) => {
-      // eslint-disable-next-line no-console
-      console.warn('ThreadBrowser: fetchRoomThreads failed', err);
-    });
-
-    return () => {
-      room.off(ThreadEvent.New as any, onUpdate);
-      room.off(ThreadEvent.Update as any, onUpdate);
-      room.off(ThreadEvent.NewReply as any, onUpdate);
-    };
-  }, [room]);
-
-  // On mount, paginate the server-side thread list to populate all threads.
-  useEffect(() => {
     let cancelled = false;
     const loadThreads = async () => {
       setLoadingMore(true);
       try {
+        // Create the timeline sets first — required before fetchRoomThreads().
         const sets = await room.createThreadsTimelineSets();
         if (!sets || cancelled) return;
         const [allThreadsSet] = sets;
         threadListTimelineSetRef.current = allThreadsSet;
+
+        // Now fetch page 1 from the /threads endpoint.  threadsTimelineSets is
+        // populated so fetchRoomThreadList will not early-return.
+        await room.fetchRoomThreads().catch((err: unknown) => {
+          // eslint-disable-next-line no-console
+          console.warn('ThreadBrowser: fetchRoomThreads failed', err);
+        });
+
+        // Paginate to load the first page into the timeline set.
         const hasMore = await mx.paginateEventTimeline(allThreadsSet.getLiveTimeline(), {
           backwards: true,
         });
-        // Ensure Thread objects exist for any server-returned thread roots not
-        // yet known locally (e.g. threads outside the current sliding-sync window).
+        // Ensure Thread objects exist for server-returned thread roots not yet
+        // known locally (threads outside the current sliding-sync window).
         for (const event of allThreadsSet.getLiveTimeline().getEvents()) {
           const id = event.getId();
           if (id && !room.getThread(id)) {
@@ -350,8 +345,12 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
       }
     };
     loadThreads();
+
     return () => {
       cancelled = true;
+      room.off(ThreadEvent.New as any, onUpdate);
+      room.off(ThreadEvent.Update as any, onUpdate);
+      room.off(ThreadEvent.NewReply as any, onUpdate);
     };
   }, [room, mx]);
 
