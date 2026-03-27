@@ -380,7 +380,7 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
       direction="Column"
       shrink="No"
     >
-      <Header className={css.ThreadDrawerHeader} variant="Background" size="400">
+      <Header className={css.ThreadDrawerHeader} variant="Background" size="600">
         <Box grow="Yes" alignItems="Center" gap="200">
           <Icon size="200" src={Icons.Thread} />
           <Text size="H4" truncate>
@@ -388,9 +388,6 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
           </Text>
         </Box>
         <Box alignItems="Center" gap="200" shrink="No">
-          <Text size="T300" priority="300" truncate>
-            # {room.name}
-          </Text>
           <IconButton
             onClick={onClose}
             variant="SurfaceVariant"
