@@ -96,7 +96,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   const mx = useMatrixClient();
   const drawerRef = useRef<HTMLDivElement>(null);
   const editor = useEditor();
-  const [, forceUpdate] = useState(0);
+  const [forceUpdateCounter, forceUpdate] = useState(0);
   const [jumpToEventId, setJumpToEventId] = useState<string | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevReplyCountRef = useRef(0);
@@ -234,9 +234,30 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     hideMemberInReadOnly,
   });
 
-  processedEventsRef.current = processedEvents;
+  // When the thread's own timeline is empty (server-side threads not yet fetched,
+  // or classic sync before backfill completes), fall back to scanning the main
+  // room timeline directly so replies are shown immediately.
+  const displayReplies = useMemo((): ProcessedEvent[] => {
+    const filtered = processedEvents.filter((e) => e.id !== threadRootId);
+    if (filtered.length > 0) return filtered;
+    const timelineSet = thread?.timelineSet ?? room.getUnfilteredTimelineSet();
+    return getThreadReplyEvents(room, threadRootId).map((ev, idx) => ({
+      id: ev.getId()!,
+      itemIndex: idx,
+      mEvent: ev,
+      timelineSet,
+      eventSender: ev.getSender() ?? null,
+      collapsed: false,
+      willRenderNewDivider: false,
+      willRenderDayDivider: false,
+    }));
+    // forceUpdateCounter makes this recompute whenever events arrive
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room, threadRootId, thread, processedEvents, forceUpdateCounter]);
 
-  const processedReplies = processedEvents.filter((e) => e.id !== threadRootId);
+  processedEventsRef.current = displayReplies;
+
+  const processedReplies = displayReplies;
 
   // room.createThread() may have been called with empty initialEvents so
   // thread.events only has the root.  Backfill events from the main room
@@ -272,9 +293,25 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
           !reactionOrEditEvent(ev)
       );
     if (liveEvents.length > 0) {
+      // thread.addEvents() is typed as void but is internally async; schedule
+      // forceUpdate in a microtask so the timeline has been updated first.
       thread.addEvents(liveEvents, false);
+      Promise.resolve().then(() => forceUpdate((n) => n + 1));
+    } else {
+      // No events to backfill but timeline may have updated; force re-check.
+      forceUpdate((n) => n + 1);
     }
-  }, [room, threadRootId]);
+  }, [room, threadRootId, forceUpdate]);
+
+  // For server-side thread support (sliding sync + MSC3440): the SDK sets
+  // initialEventsFetched=false and handles fetching automatically, but it only
+  // does so when addEvent() is first called internally.  Explicitly kicking off
+  // pagination when the drawer opens ensures events load immediately.
+  useEffect(() => {
+    const thread = room.getThread(threadRootId);
+    if (!thread || thread.initialEventsFetched) return;
+    mx.paginateEventTimeline(thread.liveTimeline, { backwards: true }).catch(() => {});
+  }, [mx, room, threadRootId]);
 
   // Re-render when new thread events arrive (including reactions via ThreadEvent.Update).
   useEffect(() => {
@@ -357,7 +394,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
 
     // Mark as read when opened and when new messages arrive
     markThreadAsRead();
-  }, [mx, room, threadRootId, forceUpdate]);
+  }, [mx, room, threadRootId, forceUpdateCounter]);
 
   // Auto-scroll to bottom when event count grows (if the user is near the bottom).
   useEffect(() => {
