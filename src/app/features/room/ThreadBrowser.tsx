@@ -328,10 +328,29 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
         });
         // Ensure Thread objects exist for server-returned thread roots not yet
         // known locally (threads outside the current sliding-sync window).
+        // fetchRoomThreads() creates Thread objects internally but uses
+        // room.findEventById() to set rootEvent — if the root event isn't in
+        // the sliding-sync cache, rootEvent ends up undefined, and
+        // ThreadPreview returns null for those threads.  Backfill here using
+        // the event we already have from the threads timeline set.
         for (const event of allThreadsSet.getLiveTimeline().getEvents()) {
           const id = event.getId();
-          if (id && !room.getThread(id)) {
+          if (!id) continue;
+          const existingThread = room.getThread(id);
+          if (!existingThread) {
             room.createThread(id, event, [], false);
+          } else if (!existingThread.rootEvent) {
+            existingThread.rootEvent = event;
+            existingThread.setEventMetadata(event);
+            // Seed replyCount from bundled aggregations so the preview shows
+            // the right count before the SDK's async fetch updates it.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const bundled = (event.getUnsigned() as any)?.['m.relations']?.['m.thread'];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            if (typeof bundled?.count === 'number' && (existingThread as any).replyCount === 0) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (existingThread as any).replyCount = bundled.count;
+            }
           }
         }
         if (!cancelled) {
@@ -362,8 +381,20 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
       const hasMore = await mx.paginateEventTimeline(tls.getLiveTimeline(), { backwards: true });
       for (const event of tls.getLiveTimeline().getEvents()) {
         const id = event.getId();
-        if (id && !room.getThread(id)) {
+        if (!id) continue;
+        const existingThread = room.getThread(id);
+        if (!existingThread) {
           room.createThread(id, event, [], false);
+        } else if (!existingThread.rootEvent) {
+          existingThread.rootEvent = event;
+          existingThread.setEventMetadata(event);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const bundled = (event.getUnsigned() as any)?.['m.relations']?.['m.thread'];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if (typeof bundled?.count === 'number' && (existingThread as any).replyCount === 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (existingThread as any).replyCount = bundled.count;
+          }
         }
       }
       setCanLoadMore(hasMore);
