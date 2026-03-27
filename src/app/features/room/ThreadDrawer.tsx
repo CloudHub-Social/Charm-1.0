@@ -547,6 +547,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
       hideMembershipEvents: true,
       hideNickAvatarEvents: true,
       showHiddenEvents,
+      hideThreadChip: true,
     },
     state: { focusItem, editId, activeReplyId, openThreadId: threadRootId },
     permissions: {
