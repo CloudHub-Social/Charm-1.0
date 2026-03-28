@@ -2,7 +2,6 @@ import { MouseEventHandler, useCallback, useEffect, useMemo, useState } from 're
 import { useTranslation } from 'react-i18next';
 import { useAtomValue } from 'jotai';
 import {
-  IThreadBundledRelationship,
   MatrixClient,
   MatrixEvent,
   NotificationCountType,

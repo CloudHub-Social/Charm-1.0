@@ -41,27 +41,6 @@ export function DeveloperTools({ requestClose }: DeveloperToolsProps) {
             room.getMyMembership() === KnownMembership.Join && mx.isRoomEncrypted(room.roomId)
         );
 
-<<<<<<< HEAD
-      await Promise.all(encryptedRooms.map((room) => crypto.forceDiscardSession(room.roomId)));
-      const rotated = encryptedRooms.length;
-
-      // Proactively start session creation + key sharing with all devices
-      // (including bridge bots). fire-and-forget per room.
-      encryptedRooms.forEach((room) => crypto.prepareToEncrypt(room));
-||||||| 64082c4c
-=======
-      let rotated = 0;
-      for (const room of encryptedRooms) {
-        await crypto.forceDiscardSession(room.roomId);
-        rotated += 1;
-      }
-
-      // Proactively start session creation + key sharing with all devices
-      // (including bridge bots). fire-and-forget per room.
-      for (const room of encryptedRooms) {
-        crypto.prepareToEncrypt(room);
-      }
->>>>>>> fix/rotate-encryption-sessions
       await Promise.all(encryptedRooms.map((room) => crypto.forceDiscardSession(room.roomId)));
       const rotated = encryptedRooms.length;
 
