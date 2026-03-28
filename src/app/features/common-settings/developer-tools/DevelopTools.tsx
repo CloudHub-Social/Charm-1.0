@@ -58,6 +58,8 @@ export function DeveloperTools({ requestClose }: DeveloperToolsProps) {
   const [expandState, setExpandState] = useState(false);
   const [expandUnreadDiagnostics, setExpandUnreadDiagnostics] = useState(false);
   const [expandSlidingDiagnostics, setExpandSlidingDiagnostics] = useState(false);
+  const [expandThreadDiagnostics, setExpandThreadDiagnostics] = useState(false);
+  const [fetchingThreads, setFetchingThreads] = useState(false);
   const [expandStateType, setExpandStateType] = useState<string>();
   const [openStateEvent, setOpenStateEvent] = useState<StateEventInfo>();
   const [composeEvent, setComposeEvent] = useState<{ type?: string; stateKey?: string }>();
