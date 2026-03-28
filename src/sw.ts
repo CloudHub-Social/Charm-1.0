@@ -736,11 +736,13 @@ async function fetchMediaWithRetry(
   // multi-account sessions on the same homeserver, including no-clientId requests.
   for (let i = 0; i < retrySessions.length; i += 1) {
     const candidate = retrySessions[i];
-    if (!candidate || attemptedTokens.has(candidate.accessToken)) continue;
-
-    attemptedTokens.add(candidate.accessToken);
-    response = await fetch(url, { ...fetchConfig(candidate.accessToken), redirect });
-    if (!isAuthFailureStatus(response.status)) return response;
+    if (!candidate || attemptedTokens.has(candidate.accessToken)) {
+      // skip this candidate
+    } else {
+      attemptedTokens.add(candidate.accessToken);
+      response = await fetch(url, { ...fetchConfig(candidate.accessToken), redirect });
+      if (!isAuthFailureStatus(response.status)) return response;
+    }
   }
 
   return response;
