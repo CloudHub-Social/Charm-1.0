@@ -1,4 +1,10 @@
-import { Direction, EventTimeline, IThreadBundledRelationship, MatrixEvent, Room } from '$types/matrix-sdk';
+import {
+  Direction,
+  EventTimeline,
+  IThreadBundledRelationship,
+  MatrixEvent,
+  Room,
+} from '$types/matrix-sdk';
 import { roomHaveNotification, roomHaveUnread, reactionOrEditEvent } from '$utils/room';
 
 export const PAGINATION_LIMIT = 60;
@@ -152,8 +158,8 @@ export const getRoomUnreadInfo = (room: Room, scrollTo = false) => {
 export const getThreadReplyCount = (room: Room, mEventId: string): number => {
   const thread = room.getThread(mEventId);
   if (thread) {
-    const bundledCount = thread.rootEvent
-      ?.getServerAggregatedRelation<IThreadBundledRelationship>('m.thread')?.count;
+    const bundledCount =
+      thread.rootEvent?.getServerAggregatedRelation<IThreadBundledRelationship>('m.thread')?.count;
     return bundledCount ?? thread.length;
   }
 

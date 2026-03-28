@@ -122,8 +122,8 @@ function ThreadReplyChip({
   // Prefer the server-authoritative bundled count. thread.length only reflects
   // events fetched into the local timeline, which can be much lower than the
   // true total before the thread drawer is first opened and paginated.
-  const bundledCount = thread.rootEvent
-    ?.getServerAggregatedRelation<IThreadBundledRelationship>('m.thread')?.count;
+  const bundledCount =
+    thread.rootEvent?.getServerAggregatedRelation<IThreadBundledRelationship>('m.thread')?.count;
   const replyCount = bundledCount ?? thread.length ?? 0;
   if (replyCount === 0) return null;
 
