@@ -69,9 +69,12 @@ async function loadPersistedSettings() {
 async function persistSession(session: SessionInfo): Promise<void> {
   try {
     const cache = await self.caches.open(SW_SESSION_CACHE);
+    const sessionWithTimestamp = { ...session, persistedAt: Date.now() };
     await cache.put(
       SW_SESSION_URL,
-      new Response(JSON.stringify(session), { headers: { 'Content-Type': 'application/json' } })
+      new Response(JSON.stringify(sessionWithTimestamp), {
+        headers: { 'Content-Type': 'application/json' },
+      })
     );
   } catch {
     // Ignore — caches may be unavailable in some environments.
@@ -91,10 +94,21 @@ async function loadPersistedSession(): Promise<SessionInfo | undefined> {
   try {
     const cache = await self.caches.open(SW_SESSION_CACHE);
     const response = await cache.match(SW_SESSION_URL);
-    if (!response) return undefined;
-    const s = await response.json();
-    if (typeof s.accessToken === 'string' && typeof s.baseUrl === 'string') {
+    if// Reject persisted sessions older than 60 seconds to avoid using stale tokens.
+      // On iOS, the SW can be killed before persistSession completes, leaving a stale
+      // token in cache. By rejecting old sessions, we force the SW to wait for a fresh
+      // token from the live page via requestSession.
+      const age = typeof s.persistedAt === 'number' ? Date.now() - s.persistedAt : Infinity;
+      const MAX_SESSION_AGE_MS = 60000; // 60 seconds
+      if (age > MAX_SESSION_AGE_MS) {
+        console.debug('[SW] loadPersistedSession: session expired', { age, accessToken: s.accessToken.slice(0, 8) });
+        return undefined;
+      }
       return {
+        accessToken: s.accessToken,
+        baseUrl: s.baseUrl,
+        userId: typeof s.userId === 'string' ? s.userId : undefined,
+        persistedAt: s.persistedAt
         accessToken: s.accessToken,
         baseUrl: s.baseUrl,
         userId: typeof s.userId === 'string' ? s.userId : undefined,
@@ -111,6 +125,8 @@ type SessionInfo = {
   baseUrl: string;
   /** Matrix user ID of the account, used to identify which account a push belongs to. */
   userId?: string;
+  /** Timestamp when this session was persisted to cache, used to expire stale tokens. */
+  persistedAt?: number;
 };
 
 /**
