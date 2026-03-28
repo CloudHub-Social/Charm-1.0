@@ -20,9 +20,12 @@ const linkStyles = { color: color.Success.Main };
 // Inner cache keyed by URL only (not ts) — the same URL shows the same preview
 // regardless of which message referenced it. Promises are evicted after settling
 // so a later render can retry after network recovery.
-const previewRequestCache = new WeakMap<any, Map<string, Promise<IPreviewUrlResponse>>>();
+const previewRequestCache = new WeakMap<
+  any,
+  Map<string, Promise<IPreviewUrlResponse | null>>
+>();
 
-const getClientCache = (mx: any): Map<string, Promise<IPreviewUrlResponse>> => {
+const getClientCache = (mx: any): Map<string, Promise<IPreviewUrlResponse | null>> => {
   let clientCache = previewRequestCache.get(mx);
   if (!clientCache) {
     clientCache = new Map();
