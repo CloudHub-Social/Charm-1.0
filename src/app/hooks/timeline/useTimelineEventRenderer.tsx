@@ -1,10 +1,14 @@
-import { MouseEventHandler, useCallback, useMemo } from 'react';
+import { MouseEventHandler, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAtomValue } from 'jotai';
 import {
+  IThreadBundledRelationship,
   MatrixClient,
   MatrixEvent,
+  NotificationCountType,
   Room,
+  RoomEvent,
+  ThreadEvent,
   PushProcessor,
   EventTimelineSet,
   IContent,
@@ -48,6 +52,7 @@ import {
 } from '$utils/room';
 import { getLinkedTimelines, getLiveTimeline } from '$utils/timeline';
 import * as customHtmlCss from '$styles/CustomHtml.css';
+import { UnreadBadge, UnreadBadgeCenter } from '$components/unread-badge';
 import {
   EncryptedContent,
   Event,
@@ -106,16 +111,42 @@ function ThreadReplyChip({
   const useAuthentication = useMediaAuthentication();
   const nicknames = useAtomValue(nicknamesAtom);
 
+  const [counter, forceUpdate] = useState(0);
+
   const thread = room.getThread(mEventId);
 
+  useEffect(() => {
+    if (!thread) return () => {};
+    const onUpdate = () => forceUpdate((n) => n + 1);
+    thread.on(ThreadEvent.NewReply as any, onUpdate);
+    thread.on(ThreadEvent.Update as any, onUpdate);
+    room.on(RoomEvent.Redaction as any, onUpdate);
+    room.on(RoomEvent.UnreadNotifications as any, onUpdate);
+    return () => {
+      thread.off(ThreadEvent.NewReply as any, onUpdate);
+      thread.off(ThreadEvent.Update as any, onUpdate);
+      room.off(RoomEvent.Redaction as any, onUpdate);
+      room.off(RoomEvent.UnreadNotifications as any, onUpdate);
+    };
+  }, [room, thread]);
+
   const replyEvents = useMemo(() => {
+    // With threadSupport:true, reply events live in thread.timelineSet not the main room timeline.
+    // Prefer thread.events when available so avatars and preview text are populated.
+    if (thread) {
+      const fromThread = thread.events.filter(
+        (ev) => ev.getId() !== mEventId && !reactionOrEditEvent(ev)
+      );
+      if (fromThread.length > 0) return fromThread;
+    }
     const linkedTimelines = getLinkedTimelines(getLiveTimeline(room));
     return linkedTimelines
       .flatMap((tl) => tl.getEvents())
       .filter(
         (ev) => ev.threadRootId === mEventId && ev.getId() !== mEventId && !reactionOrEditEvent(ev)
       );
-  }, [room, mEventId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- counter is a cache-busting key, not used directly in body
+  }, [room, mEventId, thread, counter]);
 
   if (!thread) return null;
 
@@ -151,6 +182,12 @@ function ThreadReplyChip({
     latestSenderId;
 
   const isOpen = openThreadId === mEventId;
+
+  const unreadTotal = room.getThreadUnreadNotificationCount(mEventId, NotificationCountType.Total);
+  const unreadHighlight = room.getThreadUnreadNotificationCount(
+    mEventId,
+    NotificationCountType.Highlight
+  );
 
   return (
     <Chip
@@ -207,6 +244,11 @@ function ThreadReplyChip({
           &nbsp;·&nbsp;{latestSenderName}:&nbsp;{latestBody.slice(0, 60)}
         </Text>
       )}
+      {unreadTotal > 0 && (
+        <UnreadBadgeCenter>
+          <UnreadBadge highlight={unreadHighlight > 0} count={unreadTotal} />
+        </UnreadBadgeCenter>
+      )}
     </Chip>
   );
 }
@@ -232,6 +274,7 @@ export interface TimelineEventRendererOptions {
     hideMembershipEvents: boolean;
     hideNickAvatarEvents: boolean;
     showHiddenEvents: boolean;
+    hideThreadChip?: boolean;
   };
   state: {
     focusItem?: { index: number; highlight: boolean; scrollTo: boolean };
@@ -286,6 +329,7 @@ export function useTimelineEventRenderer({
     hideMembershipEvents,
     hideNickAvatarEvents,
     showHiddenEvents,
+    hideThreadChip,
   },
   state: { focusItem, editId, activeReplyId, openThreadId },
   permissions: { canRedact, canDeleteOwn, canSendReaction, canPinEvent },
@@ -315,9 +359,16 @@ export function useTimelineEventRenderer({
           isRedacted,
           getUnsigned,
           getTs,
-          replyEventId,
+          getWireContent,
+          replyEventId: rawReplyEventId,
           threadRootId,
         } = mEvent;
+        // In the thread drawer (hideThreadChip=true), suppress reply headers for events
+        // that only have m.in_reply_to as a non-thread-client fallback (is_falling_back: true).
+        const replyEventId =
+          hideThreadChip && getWireContent.call(mEvent)?.['m.relates_to']?.is_falling_back
+            ? undefined
+            : rawReplyEventId;
 
         const reactionRelations = getEventReactions(timelineSet, mEventId);
         const reactions = reactionRelations?.getSortedAnnotationsByKey();
@@ -406,7 +457,7 @@ export function useTimelineEventRenderer({
                   room={room}
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
-                  threadRootId={threadRootId}
+                  threadRootId={hideThreadChip ? undefined : threadRootId}
                   mentions={baseContent['m.mentions']}
                   onClick={handleOpenReply}
                 />
@@ -414,7 +465,7 @@ export function useTimelineEventRenderer({
             }
             reactions={(() => {
               const threadChip =
-                room.getThread(mEventId) || threadRootId ? (
+                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
@@ -475,9 +526,14 @@ export function useTimelineEventRenderer({
           getContent: getEventContent,
           getOriginalContent,
           getTs,
-          replyEventId,
+          getWireContent,
+          replyEventId: rawReplyEventId,
           threadRootId,
         } = mEvent;
+        const replyEventId =
+          hideThreadChip && getWireContent.call(mEvent)?.['m.relates_to']?.is_falling_back
+            ? undefined
+            : rawReplyEventId;
 
         const reactionRelations = getEventReactions(timelineSet, mEventId);
         const reactions = reactionRelations?.getSortedAnnotationsByKey();
@@ -528,14 +584,14 @@ export function useTimelineEventRenderer({
                   room={room}
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
-                  threadRootId={threadRootId}
+                  threadRootId={hideThreadChip ? undefined : threadRootId}
                   onClick={handleOpenReply}
                 />
               )
             }
             reactions={(() => {
               const threadChip =
-                room.getThread(mEventId) || threadRootId ? (
+                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
@@ -644,9 +700,14 @@ export function useTimelineEventRenderer({
           isRedacted,
           getUnsigned,
           getContent: getEventContent,
-          replyEventId,
+          getWireContent,
+          replyEventId: rawReplyEventId,
           threadRootId,
         } = mEvent;
+        const replyEventId =
+          hideThreadChip && getWireContent.call(mEvent)?.['m.relates_to']?.is_falling_back
+            ? undefined
+            : rawReplyEventId;
 
         const reactionRelations = getEventReactions(timelineSet, mEventId);
         const reactions = reactionRelations?.getSortedAnnotationsByKey();
@@ -689,7 +750,7 @@ export function useTimelineEventRenderer({
                   room={room}
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
-                  threadRootId={threadRootId}
+                  threadRootId={hideThreadChip ? undefined : threadRootId}
                   mentions={content['m.mentions']}
                   onClick={handleOpenReply}
                 />
@@ -697,7 +758,7 @@ export function useTimelineEventRenderer({
             }
             reactions={(() => {
               const threadChip =
-                room.getThread(mEventId) || threadRootId ? (
+                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}

@@ -58,6 +58,8 @@ export function DeveloperTools({ requestClose }: DeveloperToolsProps) {
   const [expandState, setExpandState] = useState(false);
   const [expandUnreadDiagnostics, setExpandUnreadDiagnostics] = useState(false);
   const [expandSlidingDiagnostics, setExpandSlidingDiagnostics] = useState(false);
+  const [expandThreadDiagnostics, setExpandThreadDiagnostics] = useState(false);
+  const [fetchingThreads, setFetchingThreads] = useState(false);
   const [expandStateType, setExpandStateType] = useState<string>();
   const [openStateEvent, setOpenStateEvent] = useState<StateEventInfo>();
   const [composeEvent, setComposeEvent] = useState<{ type?: string; stateKey?: string }>();
@@ -135,6 +137,20 @@ export function DeveloperTools({ requestClose }: DeveloperToolsProps) {
 
   const syncDiagnostics = getClientSyncDiagnostics(mx);
 
+  const threads = room.getThreads();
+  const threadDiagnostics = {
+    sdkThreadCount: threads.length,
+
+    threadsReady: (room as any).threadsReady as boolean,
+    threads: threads.map((t) => ({
+      id: t.id,
+      idShort: t.id.slice(-12),
+      replyCount: t.length,
+      initialEventsFetched: t.initialEventsFetched,
+      localEventCount: t.events.length,
+      hasRootEvent: !!t.rootEvent,
+    })),
+  };
   const handleClose = useCallback(() => {
     setOpenStateEvent(undefined);
     setComposeEvent(undefined);
@@ -148,6 +164,18 @@ export function DeveloperTools({ requestClose }: DeveloperToolsProps) {
     [mx, room.roomId]
   );
 
+  const handleFetchThreads = useCallback(async () => {
+    setFetchingThreads(true);
+    try {
+      // Reset the threadsReady guard so fetchRoomThreads() actually runs.
+      // Without this it silently returns if ThreadBrowser already called it.
+
+      (room as any).threadsReady = false;
+      await room.fetchRoomThreads();
+    } finally {
+      setFetchingThreads(false);
+    }
+  }, [room]);
   if (accountDataType !== undefined) {
     return (
       <AccountDataEditor
@@ -451,6 +479,85 @@ export function DeveloperTools({ requestClose }: DeveloperToolsProps) {
                                   </>
                                 ) : (
                                   <Text size="T200">Sliding manager: not attached</Text>
+                                )}
+                              </Box>
+                            )}
+                          </Box>
+                          <Box direction="Column" gap="100">
+                            <Box justifyContent="SpaceBetween" alignItems="Center">
+                              <Text size="L400">
+                                Thread Diagnostics ({threadDiagnostics.sdkThreadCount} SDK threads)
+                              </Text>
+                              <Box gap="200">
+                                <Button
+                                  onClick={handleFetchThreads}
+                                  disabled={fetchingThreads}
+                                  variant="Secondary"
+                                  fill="Soft"
+                                  size="300"
+                                  radii="300"
+                                  outlined
+                                >
+                                  <Text size="B300">
+                                    {fetchingThreads ? 'Fetching…' : 'Fetch from server'}
+                                  </Text>
+                                </Button>
+                                <Button
+                                  onClick={() =>
+                                    setExpandThreadDiagnostics(!expandThreadDiagnostics)
+                                  }
+                                  variant="Secondary"
+                                  fill="Soft"
+                                  size="300"
+                                  radii="300"
+                                  outlined
+                                  before={
+                                    <Icon
+                                      src={
+                                        expandThreadDiagnostics
+                                          ? Icons.ChevronTop
+                                          : Icons.ChevronBottom
+                                      }
+                                      size="100"
+                                      filled
+                                    />
+                                  }
+                                >
+                                  <Text size="B300">
+                                    {expandThreadDiagnostics ? 'Collapse' : 'Expand'}
+                                  </Text>
+                                </Button>
+                              </Box>
+                            </Box>
+                            {expandThreadDiagnostics && (
+                              <Box direction="Column" gap="100">
+                                <Button
+                                  onClick={() =>
+                                    copyToClipboard(JSON.stringify(threadDiagnostics, null, 2))
+                                  }
+                                  variant="Secondary"
+                                  fill="Soft"
+                                  size="300"
+                                  radii="300"
+                                  outlined
+                                >
+                                  <Text size="B300">Copy JSON</Text>
+                                </Button>
+                                <Text size="T200">
+                                  threadsReady:{' '}
+                                  {threadDiagnostics.threadsReady ? 'yes (prev fetch ran)' : 'no'}
+                                </Text>
+                                {threadDiagnostics.threads.length === 0 ? (
+                                  <Text size="T200">No threads known to SDK</Text>
+                                ) : (
+                                  threadDiagnostics.threads.map((t) => (
+                                    <Text size="T200" key={t.id}>
+                                      ...{t.idShort} | replies: {t.replyCount} | fetched:{' '}
+                                      {t.initialEventsFetched ? 'yes' : 'no'} | local:{' '}
+                                      {t.localEventCount} evts | root:{' '}
+                                      {t.hasRootEvent ? 'yes' : 'null'}
+                                    </Text>
+                                  ))
                                 )}
                               </Box>
                             )}

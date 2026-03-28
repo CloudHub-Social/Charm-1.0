@@ -8,6 +8,12 @@
             "rolloutPercentage": 0,
             "controlVariant": "control",
             "variants": ["session-sync-heartbeat", "session-sync-adaptive"]
+        },
+        "threadUI": {
+            "enabled": false,
+            "rolloutPercentage": 0,
+            "controlVariant": "control",
+            "variants": ["threads-enhanced"]
         }
     },
     "featuredCommunities": {

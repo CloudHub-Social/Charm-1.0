@@ -456,6 +456,7 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
     await mx.startClient({
       lazyLoadMembers: true,
       pollTimeout: FAST_SYNC_POLL_TIMEOUT_MS,
+      threadSupport: true,
     });
     // Attach an ongoing classic-sync observer — equivalent to SlidingSyncManager's
     // onLifecycle listener. Tracks state transitions, initial-sync timing, and errors.
@@ -608,6 +609,7 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
     await mx.startClient({
       lazyLoadMembers: true,
       slidingSync: manager.slidingSync,
+      threadSupport: true,
     });
   } catch (err) {
     debugLog.error('network', 'Failed to start client with sliding sync', {
