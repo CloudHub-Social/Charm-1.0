@@ -52,7 +52,7 @@ export function useAppVisibility(mx: MatrixClient | undefined, activeSession?: S
   const heartbeatFailuresRef = useRef(0);
 
   const pushSessionNow = useCallback(
-    (reason: 'foreground' | 'focus' | 'heartbeat'): boolean => {
+    (reason: 'foreground' | 'focus' | 'heartbeat'): 'sent' | 'skipped' => {
       const baseUrl = activeSession?.baseUrl;
       const accessToken = activeSession?.accessToken;
       const userId = activeSession?.userId;
@@ -73,7 +73,7 @@ export function useAppVisibility(mx: MatrixClient | undefined, activeSession?: S
           hasUserId: !!userId,
           hasSwController: !!navigator.serviceWorker?.controller,
         });
-        return false;
+        return 'skipped';
       }
 
       pushSessionToSW(baseUrl, accessToken, userId);
@@ -83,7 +83,7 @@ export function useAppVisibility(mx: MatrixClient | undefined, activeSession?: S
         phase2VisibleHeartbeat,
         phase3AdaptiveBackoffJitter,
       });
-      return true;
+      return 'sent';
     },
     [
       activeSession?.accessToken,
@@ -116,7 +116,7 @@ export function useAppVisibility(mx: MatrixClient | undefined, activeSession?: S
       if (now - lastForegroundPushAtRef.current < foregroundDebounceMs) return;
       lastForegroundPushAtRef.current = now;
 
-      if (pushSessionNow('foreground') && phase3AdaptiveBackoffJitter && phase2VisibleHeartbeat) {
+      if (pushSessionNow('foreground') === 'sent' && phase3AdaptiveBackoffJitter && phase2VisibleHeartbeat) {
         suppressHeartbeatUntilRef.current = now + resumeHeartbeatSuppressMs;
       }
     };
@@ -129,7 +129,7 @@ export function useAppVisibility(mx: MatrixClient | undefined, activeSession?: S
       if (now - lastForegroundPushAtRef.current < foregroundDebounceMs) return;
       lastForegroundPushAtRef.current = now;
 
-      if (pushSessionNow('focus') && phase3AdaptiveBackoffJitter && phase2VisibleHeartbeat) {
+      if (pushSessionNow('focus') === 'sent' && phase3AdaptiveBackoffJitter && phase2VisibleHeartbeat) {
         suppressHeartbeatUntilRef.current = now + resumeHeartbeatSuppressMs;
       }
     };
@@ -167,6 +167,10 @@ export function useAppVisibility(mx: MatrixClient | undefined, activeSession?: S
   useEffect(() => {
     if (!phase2VisibleHeartbeat) return undefined;
 
+    // Reset adaptive backoff/suppression so a config or session change starts fresh.
+    heartbeatFailuresRef.current = 0;
+    suppressHeartbeatUntilRef.current = 0;
+
     let timeoutId: number | undefined;
 
     const getDelayMs = (): number => {
@@ -198,9 +202,11 @@ export function useAppVisibility(mx: MatrixClient | undefined, activeSession?: S
         return;
       }
 
-      const ok = pushSessionNow('heartbeat');
+      const result = pushSessionNow('heartbeat');
       if (phase3AdaptiveBackoffJitter) {
-        heartbeatFailuresRef.current = ok ? 0 : heartbeatFailuresRef.current + 1;
+        // Only reset on a successful send; 'skipped' (prerequisites not ready)
+        // should not grow the backoff — those aren't push failures.
+        if (result === 'sent') heartbeatFailuresRef.current = 0;
       }
 
       timeoutId = window.setTimeout(tick, getDelayMs());
