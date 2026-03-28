@@ -106,26 +106,29 @@ export const ImageContent = as<'div', ImageContentProps>(
     const [didForceRemoteRetry, setDidForceRemoteRetry] = useState(false);
 
     const [srcState, loadSrc] = useAsyncCallback(
-      useCallback(async (forceRemote = false) => {
-        if (url.startsWith('http')) return forceRemote ? addCacheBuster(url) : url;
+      useCallback(
+        async (forceRemote = false) => {
+          if (url.startsWith('http')) return forceRemote ? addCacheBuster(url) : url;
 
-        const mediaUrl = mxcUrlToHttp(mx, url, useAuthentication);
-        if (!mediaUrl) throw new Error('Invalid media URL');
-        const resolvedUrl = forceRemote ? addCacheBuster(mediaUrl) : mediaUrl;
-        if (encInfo) {
-          const fileContent = await downloadEncryptedMedia(resolvedUrl, (encBuf) =>
-            decryptFile(encBuf, mimeType ?? FALLBACK_MIMETYPE, encInfo)
-          );
-          return URL.createObjectURL(fileContent);
-        }
-        return resolvedUrl;
-      }, [mx, url, useAuthentication, mimeType, encInfo])
+          const mediaUrl = mxcUrlToHttp(mx, url, useAuthentication);
+          if (!mediaUrl) throw new Error('Invalid media URL');
+          const resolvedUrl = forceRemote ? addCacheBuster(mediaUrl) : mediaUrl;
+          if (encInfo) {
+            const fileContent = await downloadEncryptedMedia(resolvedUrl, (encBuf) =>
+              decryptFile(encBuf, mimeType ?? FALLBACK_MIMETYPE, encInfo)
+            );
+            return URL.createObjectURL(fileContent);
+          }
+          return resolvedUrl;
+        },
+        [mx, url, useAuthentication, mimeType, encInfo]
+      )
     );
 
     const handleLoad = () => {
       setLoad(true);
       if (didForceRemoteRetry) {
-        debugLog.info('media', 'Image loaded after retry', {
+        debugLog.info('network', 'Image loaded after retry', {
           forcedRemoteRetry: true,
           encrypted: !!encInfo,
           isHttpUrl: url.startsWith('http'),
@@ -136,7 +139,7 @@ export const ImageContent = as<'div', ImageContentProps>(
       setLoad(false);
       setError(true);
       if (didForceRemoteRetry) {
-        debugLog.warn('media', 'Image still failed after retry', {
+        debugLog.warn('network', 'Image still failed after retry', {
           forcedRemoteRetry: true,
           encrypted: !!encInfo,
           isHttpUrl: url.startsWith('http'),
@@ -147,7 +150,7 @@ export const ImageContent = as<'div', ImageContentProps>(
     const handleRetry = () => {
       setError(false);
       const forceRemote = !didForceRemoteRetry;
-      debugLog.info('media', 'Image retry requested', {
+      debugLog.info('network', 'Image retry requested', {
         forceRemote,
         encrypted: !!encInfo,
         isHttpUrl: url.startsWith('http'),
@@ -156,13 +159,13 @@ export const ImageContent = as<'div', ImageContentProps>(
         setDidForceRemoteRetry(true);
         loadSrc(true)
           .then(() => {
-            debugLog.info('media', 'Forced remote retry source resolved', {
+            debugLog.info('network', 'Forced remote retry source resolved', {
               encrypted: !!encInfo,
               isHttpUrl: url.startsWith('http'),
             });
           })
           .catch((err) => {
-            debugLog.warn('media', 'Forced remote retry source failed', {
+            debugLog.warn('network', 'Forced remote retry source failed', {
               encrypted: !!encInfo,
               isHttpUrl: url.startsWith('http'),
               error: err instanceof Error ? err.message : String(err),
@@ -172,13 +175,13 @@ export const ImageContent = as<'div', ImageContentProps>(
       }
       loadSrc()
         .then(() => {
-          debugLog.info('media', 'Standard retry source resolved', {
+          debugLog.info('network', 'Standard retry source resolved', {
             encrypted: !!encInfo,
             isHttpUrl: url.startsWith('http'),
           });
         })
         .catch((err) => {
-          debugLog.warn('media', 'Standard retry source failed', {
+          debugLog.warn('network', 'Standard retry source failed', {
             encrypted: !!encInfo,
             isHttpUrl: url.startsWith('http'),
             error: err instanceof Error ? err.message : String(err),
