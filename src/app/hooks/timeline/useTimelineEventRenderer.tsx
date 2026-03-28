@@ -8,6 +8,7 @@ import {
   PushProcessor,
   EventTimelineSet,
   IContent,
+  IThreadBundledRelationship,
 } from '$types/matrix-sdk';
 import { SessionMembershipData } from 'matrix-js-sdk/lib/matrixrtc/CallMembership';
 import { HTMLReactParserOptions } from 'html-react-parser';
@@ -118,7 +119,12 @@ function ThreadReplyChip({
 
   if (!thread) return null;
 
-  const replyCount = thread.length ?? 0;
+  // Prefer the server-authoritative bundled count. thread.length only reflects
+  // events fetched into the local timeline, which can be much lower than the
+  // true total before the thread drawer is first opened and paginated.
+  const bundledCount =
+    thread.rootEvent?.getServerAggregatedRelation<IThreadBundledRelationship>('m.thread')?.count;
+  const replyCount = bundledCount ?? thread.length ?? 0;
   if (replyCount === 0) return null;
 
   const uniqueSenders: string[] = [];
