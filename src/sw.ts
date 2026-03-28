@@ -616,6 +616,12 @@ const MEDIA_PATHS = [
   '/_matrix/client/v3/media/download',
   '/_matrix/client/v3/media/thumbnail',
   '/_matrix/client/v3/media/preview_url',
+  '/_matrix/client/r0/media/download',
+  '/_matrix/client/r0/media/thumbnail',
+  '/_matrix/client/r0/media/preview_url',
+  '/_matrix/client/unstable/org.matrix.msc3916/media/download',
+  '/_matrix/client/unstable/org.matrix.msc3916/media/thumbnail',
+  '/_matrix/client/unstable/org.matrix.msc3916/media/preview_url',
   // Legacy unauthenticated endpoints — servers that require auth return 404/403
   // for these when no token is present, so intercept and add auth here too.
   '/_matrix/media/v3/download',
@@ -644,6 +650,35 @@ function validMediaRequest(url: string, baseUrl: string): boolean {
 
 function getMatchingSessions(url: string): SessionInfo[] {
   return [...sessions.values()].filter((s) => validMediaRequest(url, s.baseUrl));
+}
+
+function isAuthFailureStatus(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
+async function getLiveWindowSessions(url: string, clientId: string): Promise<SessionInfo[]> {
+  const collected: SessionInfo[] = [];
+  const seen = new Set<string>();
+  const add = (session?: SessionInfo) => {
+    if (!session || !validMediaRequest(url, session.baseUrl)) return;
+    const key = `${session.baseUrl}\x00${session.accessToken}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    collected.push(session);
+  };
+
+  if (clientId) {
+    add(await requestSessionWithTimeout(clientId, 1500));
+    return collected;
+  }
+
+  const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const liveSessions = await Promise.all(
+    windowClients.map((client) => requestSessionWithTimeout(client.id, 750))
+  );
+  liveSessions.forEach((session) => add(session));
+
+  return collected;
 }
 
 function fetchConfig(token: string): RequestInit {
@@ -676,29 +711,36 @@ async function fetchMediaWithRetry(
   redirect: RequestRedirect,
   clientId: string
 ): Promise<Response> {
-  const response = await fetch(url, { ...fetchConfig(token), redirect });
-  if (response.status !== 401) return response;
+  let response = await fetch(url, { ...fetchConfig(token), redirect });
+  if (!isAuthFailureStatus(response.status)) return response;
 
-  const byClientId = clientId ? sessions.get(clientId) : undefined;
-  const uniqueByBaseUrl = (() => {
-    const matching = getMatchingSessions(url);
-    return matching.length === 1 ? matching[0] : undefined;
-  })();
-  const updated = byClientId ?? uniqueByBaseUrl ?? preloadedSession;
+  const attemptedTokens = new Set<string>([token]);
+  const retrySessions: SessionInfo[] = [];
+  const seenSessions = new Set<string>();
 
-  if (updated && updated.accessToken !== token && validMediaRequest(url, updated.baseUrl)) {
-    return fetch(url, { ...fetchConfig(updated.accessToken), redirect });
-  }
+  const addRetrySession = (session?: SessionInfo) => {
+    if (!session || !validMediaRequest(url, session.baseUrl)) return;
+    const key = `${session.baseUrl}\x00${session.accessToken}`;
+    if (seenSessions.has(key)) return;
+    seenSessions.add(key);
+    retrySessions.push(session);
+  };
 
-  // No fresher cached token available — ask the live client tab for its current
-  // session. This covers the startup window where preloadedSession is stale but
-  // the page hasn't yet sent setSession. Use a short timeout so we don't block
-  // image rendering for long on unresponsive clients.
-  if (clientId) {
-    const live = await requestSessionWithTimeout(clientId, 1500);
-    if (live && live.accessToken !== token && validMediaRequest(url, live.baseUrl)) {
-      return fetch(url, { ...fetchConfig(live.accessToken), redirect });
-    }
+  if (clientId) addRetrySession(sessions.get(clientId));
+  getMatchingSessions(url).forEach((session) => addRetrySession(session));
+  addRetrySession(preloadedSession);
+  addRetrySession(await loadPersistedSession());
+  (await getLiveWindowSessions(url, clientId)).forEach((session) => addRetrySession(session));
+
+  // Try each plausible token once. This handles token-refresh races and ambiguous
+  // multi-account sessions on the same homeserver, including no-clientId requests.
+  for (let i = 0; i < retrySessions.length; i += 1) {
+    const candidate = retrySessions[i];
+    if (!candidate || attemptedTokens.has(candidate.accessToken)) continue;
+
+    attemptedTokens.add(candidate.accessToken);
+    response = await fetch(url, { ...fetchConfig(candidate.accessToken), redirect });
+    if (!isAuthFailureStatus(response.status)) return response;
   }
 
   return response;

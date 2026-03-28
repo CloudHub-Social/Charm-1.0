@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { IPreviewUrlResponse } from '$types/matrix-sdk';
+import { IPreviewUrlResponse, MatrixError } from '$types/matrix-sdk';
 import { Box, Icon, IconButton, Icons, Scroll, Spinner, Text, as, color, config } from 'folds';
 import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { useMatrixClient } from '$hooks/useMatrixClient';
@@ -31,6 +31,24 @@ const getClientCache = (mx: any): Map<string, Promise<IPreviewUrlResponse>> => {
   return clientCache;
 };
 
+const normalizePreviewUrl = (input: string): string => {
+  const trimmed = input.trim().replace(/^<+/, '').replace(/>+$/, '');
+
+  try {
+    const parsed = new URL(trimmed);
+    parsed.pathname = parsed.pathname.replace(/(?:%60|`)+$/gi, '');
+    return parsed.toString();
+  } catch {
+    // Keep the original-ish value; URL preview fetch will fail gracefully.
+    return trimmed.replace(/(?:%60|`)+$/gi, '');
+  }
+};
+
+const isIgnorablePreviewError = (error: unknown): boolean => {
+  if (!(error instanceof MatrixError)) return false;
+  return error.httpStatus === 404 || error.httpStatus === 502;
+};
+
 const openMediaInNewTab = async (url: string | undefined) => {
   if (!url) {
     console.warn('Attempted to open an empty url');
@@ -45,12 +63,14 @@ export const UrlPreviewCard = as<'div', { url: string; ts: number; mediaType?: s
   ({ url, ts, mediaType, ...props }, ref) => {
     const mx = useMatrixClient();
     const useAuthentication = useMediaAuthentication();
+    const previewUrl = normalizePreviewUrl(url);
 
     const isDirect = !!mediaType;
 
     const [previewStatus, loadPreview] = useAsyncCallback(
-      useCallback(() => {
+      useCallback(async () => {
         if (isDirect) return Promise.resolve(null);
+<<<<<<< HEAD
         const clientCache = getClientCache(mx);
         const cached = clientCache.get(url);
         if (cached !== undefined) return cached;
@@ -59,11 +79,23 @@ export const UrlPreviewCard = as<'div', { url: string; ts: number; mediaType?: s
         urlPreview.finally(() => clientCache.delete(url));
         return urlPreview;
       }, [url, ts, mx, isDirect])
+||||||| parent of 7d52f82b (fix: harden authenticated media and preview URL handling)
+        return mx.getUrlPreview(url, ts);
+      }, [url, ts, mx, isDirect])
+=======
+        try {
+          return await mx.getUrlPreview(previewUrl, ts);
+        } catch (error) {
+          if (isIgnorablePreviewError(error)) return null;
+          throw error;
+        }
+      }, [previewUrl, ts, mx, isDirect])
+>>>>>>> 7d52f82b (fix: harden authenticated media and preview URL handling)
     );
 
     useEffect(() => {
       loadPreview();
-    }, [url, loadPreview]);
+    }, [previewUrl, loadPreview]);
 
     if (previewStatus.status === AsyncStatus.Error) return null;
 
@@ -117,14 +149,14 @@ export const UrlPreviewCard = as<'div', { url: string; ts: number; mediaType?: s
               style={linkStyles}
               truncate
               as="a"
-              href={url}
+              href={previewUrl}
               target="_blank"
               rel="noreferrer"
               size="T200"
               priority="300"
             >
               {typeof siteName === 'string' && `${siteName} | `}
-              {safeDecodeUrl(url)}
+              {safeDecodeUrl(previewUrl)}
             </Text>
             {title && (
               <Text truncate priority="400">
@@ -216,13 +248,13 @@ export const UrlPreviewCard = as<'div', { url: string; ts: number; mediaType?: s
             style={linkStyles}
             truncate
             as="a"
-            href={url}
+            href={previewUrl}
             target="_blank"
             rel="noreferrer"
             size="T200"
             priority="300"
           >
-            {safeDecodeUrl(url)}
+            {safeDecodeUrl(previewUrl)}
           </Text>
         </UrlPreviewContent>
       );
