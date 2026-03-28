@@ -70,27 +70,23 @@ export const UrlPreviewCard = as<'div', { url: string; ts: number; mediaType?: s
     const [previewStatus, loadPreview] = useAsyncCallback(
       useCallback(async () => {
         if (isDirect) return Promise.resolve(null);
-<<<<<<< HEAD
         const clientCache = getClientCache(mx);
-        const cached = clientCache.get(url);
+        const cached = clientCache.get(previewUrl);
         if (cached !== undefined) return cached;
-        const urlPreview = mx.getUrlPreview(url, ts);
-        clientCache.set(url, urlPreview);
-        urlPreview.finally(() => clientCache.delete(url));
+
+        const urlPreview = (async () => {
+          try {
+            return await mx.getUrlPreview(previewUrl, ts);
+          } catch (error) {
+            if (isIgnorablePreviewError(error)) return null;
+            throw error;
+          }
+        })();
+
+        clientCache.set(previewUrl, urlPreview);
+        urlPreview.finally(() => clientCache.delete(previewUrl));
         return urlPreview;
-      }, [url, ts, mx, isDirect])
-||||||| parent of 7d52f82b (fix: harden authenticated media and preview URL handling)
-        return mx.getUrlPreview(url, ts);
-      }, [url, ts, mx, isDirect])
-=======
-        try {
-          return await mx.getUrlPreview(previewUrl, ts);
-        } catch (error) {
-          if (isIgnorablePreviewError(error)) return null;
-          throw error;
-        }
       }, [previewUrl, ts, mx, isDirect])
->>>>>>> 7d52f82b (fix: harden authenticated media and preview URL handling)
     );
 
     useEffect(() => {

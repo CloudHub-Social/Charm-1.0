@@ -94,24 +94,28 @@ async function loadPersistedSession(): Promise<SessionInfo | undefined> {
   try {
     const cache = await self.caches.open(SW_SESSION_CACHE);
     const response = await cache.match(SW_SESSION_URL);
-    if// Reject persisted sessions older than 60 seconds to avoid using stale tokens.
+    if (response) {
+      const s = await response.json();
+
+      // Reject persisted sessions older than 60 seconds to avoid using stale tokens.
       // On iOS, the SW can be killed before persistSession completes, leaving a stale
       // token in cache. By rejecting old sessions, we force the SW to wait for a fresh
       // token from the live page via requestSession.
       const age = typeof s.persistedAt === 'number' ? Date.now() - s.persistedAt : Infinity;
       const MAX_SESSION_AGE_MS = 60000; // 60 seconds
       if (age > MAX_SESSION_AGE_MS) {
-        console.debug('[SW] loadPersistedSession: session expired', { age, accessToken: s.accessToken.slice(0, 8) });
+        console.debug('[SW] loadPersistedSession: session expired', {
+          age,
+          accessToken: s.accessToken.slice(0, 8),
+        });
         return undefined;
       }
+
       return {
         accessToken: s.accessToken,
         baseUrl: s.baseUrl,
         userId: typeof s.userId === 'string' ? s.userId : undefined,
-        persistedAt: s.persistedAt
-        accessToken: s.accessToken,
-        baseUrl: s.baseUrl,
-        userId: typeof s.userId === 'string' ? s.userId : undefined,
+        persistedAt: s.persistedAt,
       };
     }
     return undefined;
