@@ -33,7 +33,10 @@ import { decryptFile, downloadEncryptedMedia, mxcUrlToHttp } from '$utils/matrix
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { ModalWide } from '$styles/Modal.css';
 import { validBlurHash } from '$utils/blurHash';
+import { createDebugLogger } from '$utils/debugLogger';
 import * as css from './style.css';
+
+const debugLog = createDebugLogger('ImageContent');
 
 const addCacheBuster = (inputUrl: string): string => {
   try {
@@ -121,20 +124,66 @@ export const ImageContent = as<'div', ImageContentProps>(
 
     const handleLoad = () => {
       setLoad(true);
+      if (didForceRemoteRetry) {
+        debugLog.info('media', 'Image loaded after retry', {
+          forcedRemoteRetry: true,
+          encrypted: !!encInfo,
+          isHttpUrl: url.startsWith('http'),
+        });
+      }
     };
     const handleError = () => {
       setLoad(false);
       setError(true);
+      if (didForceRemoteRetry) {
+        debugLog.warn('media', 'Image still failed after retry', {
+          forcedRemoteRetry: true,
+          encrypted: !!encInfo,
+          isHttpUrl: url.startsWith('http'),
+        });
+      }
     };
 
     const handleRetry = () => {
       setError(false);
-      if (!didForceRemoteRetry) {
+      const forceRemote = !didForceRemoteRetry;
+      debugLog.info('media', 'Image retry requested', {
+        forceRemote,
+        encrypted: !!encInfo,
+        isHttpUrl: url.startsWith('http'),
+      });
+      if (forceRemote) {
         setDidForceRemoteRetry(true);
-        loadSrc(true);
+        loadSrc(true)
+          .then(() => {
+            debugLog.info('media', 'Forced remote retry source resolved', {
+              encrypted: !!encInfo,
+              isHttpUrl: url.startsWith('http'),
+            });
+          })
+          .catch((err) => {
+            debugLog.warn('media', 'Forced remote retry source failed', {
+              encrypted: !!encInfo,
+              isHttpUrl: url.startsWith('http'),
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
         return;
       }
-      loadSrc();
+      loadSrc()
+        .then(() => {
+          debugLog.info('media', 'Standard retry source resolved', {
+            encrypted: !!encInfo,
+            isHttpUrl: url.startsWith('http'),
+          });
+        })
+        .catch((err) => {
+          debugLog.warn('media', 'Standard retry source failed', {
+            encrypted: !!encInfo,
+            isHttpUrl: url.startsWith('http'),
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
     };
 
     useEffect(() => {
