@@ -242,7 +242,7 @@ export function ClientRoot({ children }: ClientRootProps) {
         activeSession.userId,
         '— reloading client'
       );
-      pushSessionToSW(activeSession.baseUrl, activeSession.accessToken);
+      pushSessionToSW(activeSession.baseUrl, activeSession.accessToken, activeSession.userId);
       if (mx?.clientRunning) {
         stopClient(mx);
       }
