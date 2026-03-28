@@ -7,6 +7,11 @@ const OVERRIDES_ENV = 'CLIENT_CONFIG_OVERRIDES_JSON';
 const STRICT_ENV = 'CLIENT_CONFIG_OVERRIDES_STRICT';
 const logger = new PrefixedLogger('[config-inject]');
 
+const formatError = (error) => {
+  if (error instanceof Error) return error.stack ?? error.message;
+  return String(error);
+};
+
 const isPlainObject = (value) =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -37,7 +42,7 @@ try {
   const file = await readFile(CONFIG_PATH, 'utf8');
   fileConfig = JSON.parse(file);
 } catch (error) {
-  logger.error(`Failed reading ${CONFIG_PATH}:`, error);
+  logger.error(`Failed reading ${CONFIG_PATH}: ${formatError(error)}`);
   process.exit(1);
 }
 
@@ -51,10 +56,10 @@ try {
     failOnError ? 'failing build' : 'skipping overrides'
   }.`;
   if (failOnError) {
-    logger.error(message, error);
+    logger.error(`${message} ${formatError(error)}`);
     process.exit(1);
   }
-  logger.warn(message, error);
+  logger.info(`[warning] ${message} ${formatError(error)}`);
   process.exit(0);
 }
 
