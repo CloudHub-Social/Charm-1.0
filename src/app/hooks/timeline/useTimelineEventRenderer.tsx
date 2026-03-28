@@ -112,13 +112,21 @@ function ThreadReplyChip({
   }, [room, thread]);
 
   const replyEvents = useMemo(() => {
+    // With threadSupport:true, reply events live in thread.timelineSet not the main room timeline.
+    // Prefer thread.events when available so avatars and preview text are populated.
+    if (thread) {
+      const fromThread = thread.events.filter(
+        (ev) => ev.getId() !== mEventId && !reactionOrEditEvent(ev)
+      );
+      if (fromThread.length > 0) return fromThread;
+    }
     const linkedTimelines = getLinkedTimelines(getLiveTimeline(room));
     return linkedTimelines
       .flatMap((tl) => tl.getEvents())
       .filter(
         (ev) => ev.threadRootId === mEventId && ev.getId() !== mEventId && !reactionOrEditEvent(ev)
       );
-  }, [room, mEventId, counter]);
+  }, [room, mEventId, counter, thread]);
 
   if (!thread) return null;
 
@@ -326,9 +334,15 @@ export function useTimelineEventRenderer({
           isRedacted,
           getUnsigned,
           getTs,
-          replyEventId,
+          replyEventId: rawReplyEventId,
           threadRootId,
         } = mEvent;
+        // In the thread drawer (hideThreadChip=true), suppress reply headers for events
+        // that only have m.in_reply_to as a non-thread-client fallback (is_falling_back: true).
+        const replyEventId =
+          hideThreadChip && mEvent.getWireContent()?.['m.relates_to']?.is_falling_back
+            ? undefined
+            : rawReplyEventId;
 
         const reactionRelations = getEventReactions(timelineSet, mEventId);
         const reactions = reactionRelations?.getSortedAnnotationsByKey();
@@ -486,9 +500,13 @@ export function useTimelineEventRenderer({
           getContent: getEventContent,
           getOriginalContent,
           getTs,
-          replyEventId,
+          replyEventId: rawReplyEventId,
           threadRootId,
         } = mEvent;
+        const replyEventId =
+          hideThreadChip && mEvent.getWireContent()?.['m.relates_to']?.is_falling_back
+            ? undefined
+            : rawReplyEventId;
 
         const reactionRelations = getEventReactions(timelineSet, mEventId);
         const reactions = reactionRelations?.getSortedAnnotationsByKey();
@@ -655,9 +673,13 @@ export function useTimelineEventRenderer({
           isRedacted,
           getUnsigned,
           getContent: getEventContent,
-          replyEventId,
+          replyEventId: rawReplyEventId,
           threadRootId,
         } = mEvent;
+        const replyEventId =
+          hideThreadChip && mEvent.getWireContent()?.['m.relates_to']?.is_falling_back
+            ? undefined
+            : rawReplyEventId;
 
         const reactionRelations = getEventReactions(timelineSet, mEventId);
         const reactions = reactionRelations?.getSortedAnnotationsByKey();
@@ -741,6 +763,9 @@ export function useTimelineEventRenderer({
             dateFormatString={dateFormatString}
           >
             {isRedacted.call(mEvent) ? (
+              <RedactedContent reason={getUnsigned.call(mEvent).redacted_because?.content.reason} />
+            ) : (
+              <MSticker
                 content={getEventContent.call(mEvent) as any}
                 renderImageContent={(props) => (
                   <ImageContent
