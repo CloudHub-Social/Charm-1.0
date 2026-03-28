@@ -2,6 +2,7 @@ import { MouseEventHandler, useCallback, useEffect, useMemo, useState } from 're
 import { useTranslation } from 'react-i18next';
 import { useAtomValue } from 'jotai';
 import {
+  IThreadBundledRelationship,
   MatrixClient,
   MatrixEvent,
   NotificationCountType,
@@ -148,7 +149,12 @@ function ThreadReplyChip({
 
   if (!thread) return null;
 
-  const replyCount = Math.max(thread.length ?? 0, replyEvents.length);
+  // Prefer the server-authoritative bundled count. thread.length only reflects
+  // events fetched into the local timeline, which can be much lower than the
+  // true total before the thread drawer is first opened and paginated.
+  const bundledCount =
+    thread.rootEvent?.getServerAggregatedRelation<IThreadBundledRelationship>('m.thread')?.count;
+  const replyCount = bundledCount ?? thread.length ?? 0;
   if (replyCount === 0) return null;
 
   const uniqueSenders: string[] = [];
