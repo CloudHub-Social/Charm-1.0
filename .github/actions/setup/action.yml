@@ -43,6 +43,15 @@ runs:
         CLIENT_CONFIG_OVERRIDES_JSON: ${{ env.CLIENT_CONFIG_OVERRIDES_JSON }}
         CLIENT_CONFIG_OVERRIDES_STRICT: ${{ env.CLIENT_CONFIG_OVERRIDES_STRICT }}
 
+    - name: Display injected config
+      if: ${{ inputs.build == 'true' && env.CLIENT_CONFIG_OVERRIDES_JSON != '' }}
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        echo "::group::Injected Client Config"
+        cat config.json | jq '.experiments // "No experiments configured"' 2>/dev/null || echo "config.json not readable"
+        echo "::endgroup::"
+
     - name: Build app
       if: ${{ inputs.build == 'true' }}
       shell: bash

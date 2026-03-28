@@ -11,6 +11,7 @@ import { copyToClipboard } from '$utils/dom';
 import { SequenceCardStyle } from '$features/settings/styles.css';
 import { AccountData } from './AccountData';
 import { SyncDiagnostics } from './SyncDiagnostics';
+import { ExperimentsPanel } from './ExperimentsPanel';
 import { DebugLogViewer } from './DebugLogViewer';
 import { SentrySettings } from './SentrySettings';
 
@@ -115,6 +116,7 @@ export function DeveloperTools({ requestClose }: DeveloperToolsProps) {
                 )}
               </Box>
               {developerTools && <SyncDiagnostics />}
+              {developerTools && <ExperimentsPanel />}
               {developerTools && (
                 <AccountData
                   expand={expand}
