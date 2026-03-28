@@ -8,12 +8,6 @@
   "hideUsernamePasswordFields": false,
 
   "experiments": {
-    "sessionSyncStrategy": {
-      "enabled": false,
-      "rolloutPercentage": 0,
-      "controlVariant": "control",
-      "variants": ["heartbeat", "adaptive"]
-    },
     "threadUI": {
       "enabled": false,
       "rolloutPercentage": 0,
