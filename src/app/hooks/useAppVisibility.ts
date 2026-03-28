@@ -116,7 +116,11 @@ export function useAppVisibility(mx: MatrixClient | undefined, activeSession?: S
       if (now - lastForegroundPushAtRef.current < foregroundDebounceMs) return;
       lastForegroundPushAtRef.current = now;
 
-      if (pushSessionNow('foreground') === 'sent' && phase3AdaptiveBackoffJitter && phase2VisibleHeartbeat) {
+      if (
+        pushSessionNow('foreground') === 'sent' &&
+        phase3AdaptiveBackoffJitter &&
+        phase2VisibleHeartbeat
+      ) {
         suppressHeartbeatUntilRef.current = now + resumeHeartbeatSuppressMs;
       }
     };
@@ -129,7 +133,11 @@ export function useAppVisibility(mx: MatrixClient | undefined, activeSession?: S
       if (now - lastForegroundPushAtRef.current < foregroundDebounceMs) return;
       lastForegroundPushAtRef.current = now;
 
-      if (pushSessionNow('focus') === 'sent' && phase3AdaptiveBackoffJitter && phase2VisibleHeartbeat) {
+      if (
+        pushSessionNow('focus') === 'sent' &&
+        phase3AdaptiveBackoffJitter &&
+        phase2VisibleHeartbeat
+      ) {
         suppressHeartbeatUntilRef.current = now + resumeHeartbeatSuppressMs;
       }
     };
