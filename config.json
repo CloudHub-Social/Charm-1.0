@@ -2,6 +2,14 @@
     "allowCustomHomeservers": true,
     "defaultHomeserver": 0,
     "elementCallUrl": "matrix.cloudhub.social",
+    "experiments": {
+        "sessionSyncStrategy": {
+            "enabled": false,
+            "rolloutPercentage": 0,
+            "controlVariant": "control",
+            "variants": ["session-sync-heartbeat", "session-sync-adaptive"]
+        }
+    },
     "featuredCommunities": {
         "openAsDefault": false,
         "rooms": [],
@@ -19,6 +27,15 @@
         "pushNotifyUrl": "https://sygnal.cloudhub.social/_matrix/push/v1/notify",
         "vapidPublicKey": "BEBdK6VUiqYxcOauFCM1ZB38llgiODAs6pR5EEcC7YBoUh2YvrULagwo5t-Ms0Is0lEmKDhpdUoMiy_i7ArI3oE",
         "webPushAppID": "social.cloudhub.sable.web"
+    },
+    "sessionSync": {
+        "phase1ForegroundResync": false,
+        "phase2VisibleHeartbeat": false,
+        "phase3AdaptiveBackoffJitter": false,
+        "foregroundDebounceMs": 1500,
+        "heartbeatIntervalMs": 600000,
+        "resumeHeartbeatSuppressMs": 60000,
+        "heartbeatMaxBackoffMs": 1800000
     },
     "slidingSync": {
         "enabled": "true"

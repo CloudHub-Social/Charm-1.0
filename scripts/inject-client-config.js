@@ -12,6 +12,8 @@ const formatError = (error) => {
   return String(error);
 };
 
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 const isPlainObject = (value) =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -20,6 +22,7 @@ const deepMerge = (target, source) => {
 
   const merged = { ...target };
   Object.entries(source).forEach(([key, value]) => {
+    if (UNSAFE_KEYS.has(key)) return;
     const targetValue = merged[key];
     merged[key] =
       isPlainObject(targetValue) && isPlainObject(value) ? deepMerge(targetValue, value) : value;
