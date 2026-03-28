@@ -114,7 +114,7 @@ function ThreadReplyChip({
   const thread = room.getThread(mEventId);
 
   useEffect(() => {
-    if (!thread) return;
+    if (!thread) return () => {};
     const onUpdate = () => forceUpdate((n) => n + 1);
     thread.on(ThreadEvent.NewReply as any, onUpdate);
     thread.on(ThreadEvent.Update as any, onUpdate);
@@ -143,7 +143,8 @@ function ThreadReplyChip({
       .filter(
         (ev) => ev.threadRootId === mEventId && ev.getId() !== mEventId && !reactionOrEditEvent(ev)
       );
-  }, [room, mEventId, counter, thread]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- counter is a cache-busting key, not used directly in body
+  }, [room, mEventId, thread, counter]);
 
   if (!thread) return null;
 
@@ -351,13 +352,14 @@ export function useTimelineEventRenderer({
           isRedacted,
           getUnsigned,
           getTs,
+          getWireContent,
           replyEventId: rawReplyEventId,
           threadRootId,
         } = mEvent;
         // In the thread drawer (hideThreadChip=true), suppress reply headers for events
         // that only have m.in_reply_to as a non-thread-client fallback (is_falling_back: true).
         const replyEventId =
-          hideThreadChip && mEvent.getWireContent()?.['m.relates_to']?.is_falling_back
+          hideThreadChip && getWireContent.call(mEvent)?.['m.relates_to']?.is_falling_back
             ? undefined
             : rawReplyEventId;
 
@@ -517,11 +519,12 @@ export function useTimelineEventRenderer({
           getContent: getEventContent,
           getOriginalContent,
           getTs,
+          getWireContent,
           replyEventId: rawReplyEventId,
           threadRootId,
         } = mEvent;
         const replyEventId =
-          hideThreadChip && mEvent.getWireContent()?.['m.relates_to']?.is_falling_back
+          hideThreadChip && getWireContent.call(mEvent)?.['m.relates_to']?.is_falling_back
             ? undefined
             : rawReplyEventId;
 
@@ -690,11 +693,12 @@ export function useTimelineEventRenderer({
           isRedacted,
           getUnsigned,
           getContent: getEventContent,
+          getWireContent,
           replyEventId: rawReplyEventId,
           threadRootId,
         } = mEvent;
         const replyEventId =
-          hideThreadChip && mEvent.getWireContent()?.['m.relates_to']?.is_falling_back
+          hideThreadChip && getWireContent.call(mEvent)?.['m.relates_to']?.is_falling_back
             ? undefined
             : rawReplyEventId;
 

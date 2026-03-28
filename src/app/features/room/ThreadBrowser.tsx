@@ -21,7 +21,15 @@ import {
   config,
   Chip,
 } from 'folds';
-import { EventTimelineSet, MatrixEvent, NotificationCountType, Room, RoomEvent, Thread, ThreadEvent } from '$types/matrix-sdk';
+import {
+  EventTimelineSet,
+  MatrixEvent,
+  NotificationCountType,
+  Room,
+  RoomEvent,
+  Thread,
+  ThreadEvent,
+} from '$types/matrix-sdk';
 import { useAtomValue } from 'jotai';
 import { HTMLReactParserOptions } from 'html-react-parser';
 import { Opts as LinkifyOpts } from 'linkifyjs';
@@ -54,8 +62,8 @@ import {
   makeMentionCustomProps,
   renderMatrixMention,
 } from '$plugins/react-custom-html-parser';
-import { EncryptedContent } from './message';
 import { UnreadBadge, UnreadBadgeCenter } from '$components/unread-badge';
+import { EncryptedContent } from './message';
 import * as css from './ThreadDrawer.css';
 
 type ThreadPreviewProps = {
@@ -118,12 +126,11 @@ function ThreadPreview({ room, thread, onClick }: ThreadPreviewProps) {
       if (!threadId || threadId === thread.id) forceUnread((n) => n + 1);
     };
     room.on(RoomEvent.UnreadNotifications as any, onUnread);
-    return () => { room.off(RoomEvent.UnreadNotifications as any, onUnread); };
+    return () => {
+      room.off(RoomEvent.UnreadNotifications as any, onUnread);
+    };
   }, [room, thread.id]);
-  const unreadTotal = room.getThreadUnreadNotificationCount(
-    thread.id,
-    NotificationCountType.Total
-  );
+  const unreadTotal = room.getThreadUnreadNotificationCount(thread.id, NotificationCountType.Total);
   const unreadHighlight = room.getThreadUnreadNotificationCount(
     thread.id,
     NotificationCountType.Highlight
@@ -333,37 +340,39 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
         // the sliding-sync cache, rootEvent ends up undefined, and
         // ThreadPreview returns null for those threads.  Backfill here using
         // the event we already have from the threads timeline set.
-        for (const event of allThreadsSet.getLiveTimeline().getEvents()) {
-          const id = event.getId();
-          if (!id) continue;
-          const existingThread = room.getThread(id);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const bundled = (event.getUnsigned() as any)?.['m.relations']?.['m.thread'];
-          const bundledCount: number | undefined =
-            typeof bundled?.count === 'number' ? bundled.count : undefined;
-          if (!existingThread) {
-            room.createThread(id, event, [], false);
-          } else {
-            if (!existingThread.rootEvent) {
-              existingThread.rootEvent = event;
-              existingThread.setEventMetadata(event);
+        allThreadsSet
+          .getLiveTimeline()
+          .getEvents()
+          .filter((event) => !!event.getId())
+          .forEach((event) => {
+            const id = event.getId()!;
+            const existingThread = room.getThread(id);
+
+            const bundled = (event.getUnsigned() as any)?.['m.relations']?.['m.thread'];
+            const bundledCount: number | undefined =
+              typeof bundled?.count === 'number' ? bundled.count : undefined;
+            if (!existingThread) {
+              room.createThread(id, event, [], false);
+            } else {
+              if (!existingThread.rootEvent) {
+                existingThread.rootEvent = event;
+                existingThread.setEventMetadata(event);
+              }
+              // Seed/update replyCount from bundled aggregations.  This is needed
+              // for threads that were created by sliding-sync BEFORE fetchRoomThreads
+              // ran: SS delivers root events without bundled aggregations, so
+              // room.createThread() sets replyCount=0 and the SDK's fast-path
+              // ("replyCount===0 → initialEventsFetched=true, no server fetch") fires.
+              // Later, fetchRoomThreads() brings events WITH bundled counts, but
+              // createThread() is idempotent and returns the stale thread unchanged.
+              // Backfilling replyCount here lets ThreadPreview show the right count
+              // and lets Case C in ThreadDrawer know there are replies to fetch.
+
+              if (bundledCount !== undefined && (existingThread as any).replyCount === 0) {
+                (existingThread as any).replyCount = bundledCount;
+              }
             }
-            // Seed/update replyCount from bundled aggregations.  This is needed
-            // for threads that were created by sliding-sync BEFORE fetchRoomThreads
-            // ran: SS delivers root events without bundled aggregations, so
-            // room.createThread() sets replyCount=0 and the SDK's fast-path
-            // ("replyCount===0 → initialEventsFetched=true, no server fetch") fires.
-            // Later, fetchRoomThreads() brings events WITH bundled counts, but
-            // createThread() is idempotent and returns the stale thread unchanged.
-            // Backfilling replyCount here lets ThreadPreview show the right count
-            // and lets Case C in ThreadDrawer know there are replies to fetch.
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            if (bundledCount !== undefined && (existingThread as any).replyCount === 0) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (existingThread as any).replyCount = bundledCount;
-            }
-          }
-        }
+          });
         if (!cancelled) {
           setCanLoadMore(hasMore);
           forceUpdate((n) => n + 1);
@@ -390,28 +399,30 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
     setLoadingMore(true);
     try {
       const hasMore = await mx.paginateEventTimeline(tls.getLiveTimeline(), { backwards: true });
-      for (const event of tls.getLiveTimeline().getEvents()) {
-        const id = event.getId();
-        if (!id) continue;
-        const existingThread = room.getThread(id);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const bundled = (event.getUnsigned() as any)?.['m.relations']?.['m.thread'];
-        const bundledCount: number | undefined =
-          typeof bundled?.count === 'number' ? bundled.count : undefined;
-        if (!existingThread) {
-          room.createThread(id, event, [], false);
-        } else {
-          if (!existingThread.rootEvent) {
-            existingThread.rootEvent = event;
-            existingThread.setEventMetadata(event);
+      tls
+        .getLiveTimeline()
+        .getEvents()
+        .filter((event) => !!event.getId())
+        .forEach((event) => {
+          const id = event.getId()!;
+          const existingThread = room.getThread(id);
+
+          const bundled = (event.getUnsigned() as any)?.['m.relations']?.['m.thread'];
+          const bundledCount: number | undefined =
+            typeof bundled?.count === 'number' ? bundled.count : undefined;
+          if (!existingThread) {
+            room.createThread(id, event, [], false);
+          } else {
+            if (!existingThread.rootEvent) {
+              existingThread.rootEvent = event;
+              existingThread.setEventMetadata(event);
+            }
+
+            if (bundledCount !== undefined && (existingThread as any).replyCount === 0) {
+              (existingThread as any).replyCount = bundledCount;
+            }
           }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          if (bundledCount !== undefined && (existingThread as any).replyCount === 0) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (existingThread as any).replyCount = bundledCount;
-          }
-        }
-      }
+        });
       setCanLoadMore(hasMore);
       forceUpdate((n) => n + 1);
     } catch {
@@ -419,7 +430,7 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
     } finally {
       setLoadingMore(false);
     }
-  }, [mx, loadingMore]);
+  }, [mx, room, loadingMore]);
 
   const allThreads = room.getThreads().sort((a: Thread, b: Thread) => {
     const aTs = a.events.at(-1)?.getTs() ?? a.rootEvent?.getTs() ?? 0;
@@ -507,58 +518,64 @@ export function ThreadBrowser({ room, onOpenThread, onClose, overlay }: ThreadBr
           hideTrack
           style={{ flexGrow: 1 }}
         >
-          {threads.length === 0 && loadingMore ? (
-            <Box
-              direction="Column"
-              alignItems="Center"
-              justifyContent="Center"
-              style={{ padding: config.space.S400, gap: config.space.S200 }}
-            >
-              <Spinner variant="Secondary" size="400" />
-            </Box>
-          ) : threads.length === 0 ? (
-            <Box
-              direction="Column"
-              alignItems="Center"
-              justifyContent="Center"
-              style={{ padding: config.space.S400, gap: config.space.S200 }}
-            >
-              <Icon size="400" src={Icons.Thread} />
-              <Text size="T300" align="Center">
-                {lowerQuery ? 'No threads match your search.' : 'No threads yet.'}
-              </Text>
-            </Box>
-          ) : (
-            <>
-              <Box
-                direction="Column"
-                style={{ padding: `${config.space.S100} ${config.space.S200}` }}
-              >
-                {threads.map((thread: Thread) => (
-                  <ThreadPreview
-                    key={thread.id}
-                    room={room}
-                    thread={thread}
-                    onClick={onOpenThread}
-                  />
-                ))}
-              </Box>
-              {(loadingMore || canLoadMore) && (
+          {(() => {
+            if (threads.length === 0 && loadingMore)
+              return (
                 <Box
+                  direction="Column"
+                  alignItems="Center"
                   justifyContent="Center"
-                  style={{ padding: config.space.S300, flexShrink: 0 }}
+                  style={{ padding: config.space.S400, gap: config.space.S200 }}
                 >
-                  {loadingMore ? (
-                    <Spinner variant="Secondary" size="400" />
-                  ) : (
-                    <Chip variant="SurfaceVariant" radii="Pill" outlined onClick={handleLoadMore}>
-                      <Text size="B300">Load more threads</Text>
-                    </Chip>
-                  )}
+                  <Spinner variant="Secondary" size="400" />
                 </Box>
-              )}
-            </>
-          )}
+              );
+            if (threads.length === 0)
+              return (
+                <Box
+                  direction="Column"
+                  alignItems="Center"
+                  justifyContent="Center"
+                  style={{ padding: config.space.S400, gap: config.space.S200 }}
+                >
+                  <Icon size="400" src={Icons.Thread} />
+                  <Text size="T300" align="Center">
+                    {lowerQuery ? 'No threads match your search.' : 'No threads yet.'}
+                  </Text>
+                </Box>
+              );
+            return (
+              <>
+                <Box
+                  direction="Column"
+                  style={{ padding: `${config.space.S100} ${config.space.S200}` }}
+                >
+                  {threads.map((thread: Thread) => (
+                    <ThreadPreview
+                      key={thread.id}
+                      room={room}
+                      thread={thread}
+                      onClick={onOpenThread}
+                    />
+                  ))}
+                </Box>
+                {(loadingMore || canLoadMore) && (
+                  <Box
+                    justifyContent="Center"
+                    style={{ padding: config.space.S300, flexShrink: 0 }}
+                  >
+                    {loadingMore ? (
+                      <Spinner variant="Secondary" size="400" />
+                    ) : (
+                      <Chip variant="SurfaceVariant" radii="Pill" outlined onClick={handleLoadMore}>
+                        <Text size="B300">Load more threads</Text>
+                      </Chip>
+                    )}
+                  </Box>
+                )}
+              </>
+            );
+          })()}
         </Scroll>
       </Box>
     </Box>

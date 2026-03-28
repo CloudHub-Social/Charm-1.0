@@ -138,7 +138,7 @@ export function DeveloperTools({ requestClose }: DeveloperToolsProps) {
   const threads = room.getThreads();
   const threadDiagnostics = {
     sdkThreadCount: threads.length,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     threadsReady: (room as any).threadsReady as boolean,
     threads: threads.map((t) => ({
       id: t.id,
@@ -167,7 +167,7 @@ export function DeveloperTools({ requestClose }: DeveloperToolsProps) {
     try {
       // Reset the threadsReady guard so fetchRoomThreads() actually runs.
       // Without this it silently returns if ThreadBrowser already called it.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       (room as any).threadsReady = false;
       await room.fetchRoomThreads();
     } finally {
