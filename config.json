@@ -17,6 +17,16 @@
     "enabled": true
   },
 
+  "sessionSync": {
+    "phase1ForegroundResync": false,
+    "phase2VisibleHeartbeat": false,
+    "phase3AdaptiveBackoffJitter": false,
+    "foregroundDebounceMs": 1500,
+    "heartbeatIntervalMs": 600000,
+    "resumeHeartbeatSuppressMs": 60000,
+    "heartbeatMaxBackoffMs": 1800000
+  },
+
   "featuredCommunities": {
     "openAsDefault": false,
     "spaces": [

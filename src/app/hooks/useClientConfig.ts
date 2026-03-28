@@ -14,6 +14,16 @@ export type ClientConfig = {
   disableAccountSwitcher?: boolean;
   hideUsernamePasswordFields?: boolean;
 
+  sessionSync?: {
+    phase1ForegroundResync?: boolean;
+    phase2VisibleHeartbeat?: boolean;
+    phase3AdaptiveBackoffJitter?: boolean;
+    foregroundDebounceMs?: number;
+    heartbeatIntervalMs?: number;
+    resumeHeartbeatSuppressMs?: number;
+    heartbeatMaxBackoffMs?: number;
+  };
+
   pushNotificationDetails?: {
     pushNotifyUrl?: string;
     vapidPublicKey?: string;
