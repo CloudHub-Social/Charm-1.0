@@ -22,7 +22,7 @@ export function useMessageEdit(
 ): { editId: string | undefined; handleEdit: (editId?: string) => void } {
   const [editId, setEditId] = useState<string | undefined>(undefined);
 
-  // Use refs so the callback never stales on options changes.
+  // Use refs so the callback never goes stale on options changes.
   const aliveRef = useRef(options?.alive);
   aliveRef.current = options?.alive;
   const onResetRef = useRef(options?.onReset);

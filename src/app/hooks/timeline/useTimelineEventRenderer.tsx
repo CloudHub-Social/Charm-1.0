@@ -148,7 +148,7 @@ function ThreadReplyChip({
 
   if (!thread) return null;
 
-  const replyCount = replyEvents.length || (thread.length ?? 0);
+  const replyCount = Math.max(thread.length ?? 0, replyEvents.length);
   if (replyCount === 0) return null;
 
   const uniqueSenders: string[] = [];

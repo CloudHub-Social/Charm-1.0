@@ -153,7 +153,7 @@ function ThreadPreview({ room, thread, onClick }: ThreadPreviewProps) {
   const localReplyCount = thread.events.filter(
     (ev: MatrixEvent) => ev.getId() !== thread.id && !reactionOrEditEvent(ev)
   ).length;
-  const replyCount = localReplyCount > 0 ? localReplyCount : thread.length;
+  const replyCount = Math.max(thread.length ?? 0, localReplyCount);
 
   const lastReply = thread.events
     .filter((ev: MatrixEvent) => ev.getId() !== thread.id && !reactionOrEditEvent(ev))

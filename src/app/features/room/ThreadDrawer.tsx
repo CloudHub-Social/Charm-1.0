@@ -132,7 +132,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   const [hideMemberInReadOnly] = useSetting(settingsAtom, 'hideMembershipInReadOnly');
   const showUrlPreview = room.hasEncryptionStateEvent() ? encUrlPreview : urlPreview;
   const showClientUrlPreview = room.hasEncryptionStateEvent()
-    ? encClientUrlPreview
+    ? clientUrlPreview && encClientUrlPreview
     : clientUrlPreview;
 
   // Memoized parsing options
