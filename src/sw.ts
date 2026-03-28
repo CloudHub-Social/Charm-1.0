@@ -636,6 +636,10 @@ function validMediaRequest(url: string, baseUrl: string): boolean {
   });
 }
 
+function getMatchingSessions(url: string): SessionInfo[] {
+  return [...sessions.values()].filter((s) => validMediaRequest(url, s.baseUrl));
+}
+
 function fetchConfig(token: string): RequestInit {
   return {
     headers: {
@@ -669,10 +673,12 @@ async function fetchMediaWithRetry(
   const response = await fetch(url, { ...fetchConfig(token), redirect });
   if (response.status !== 401) return response;
 
-  const updated =
-    (clientId ? sessions.get(clientId) : undefined) ??
-    [...sessions.values()].find((s) => validMediaRequest(url, s.baseUrl)) ??
-    preloadedSession;
+  const byClientId = clientId ? sessions.get(clientId) : undefined;
+  const uniqueByBaseUrl = (() => {
+    const matching = getMatchingSessions(url);
+    return matching.length === 1 ? matching[0] : undefined;
+  })();
+  const updated = byClientId ?? uniqueByBaseUrl ?? preloadedSession;
 
   if (updated && updated.accessToken !== token && validMediaRequest(url, updated.baseUrl)) {
     return fetch(url, { ...fetchConfig(updated.accessToken), redirect });
@@ -726,33 +732,20 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     return;
   }
 
-  // Since widgets like element call have their own client ids,
-  // we need this logic. We just go through the sessions list and get a session
-  // with the right base url. Media requests to a homeserver simply are fine with any account
-  // on the homeserver authenticating it, so this is fine. But it can be technically wrong.
-  // If you have two tabs for different users on the same homeserver, it might authenticate
-  // as the wrong one.
-  // Thus any logic in the future which cares about which user is authenticating the request
-  // might break this. Also, again, it is technically wrong.
-  // Also checks preloadedSession — populated from cache at SW activate — for the window
-  // between SW restart and the first live setSession arriving from the page.
-  const byBaseUrl =
-    [...sessions.values()].find((s) => validMediaRequest(url, s.baseUrl)) ??
-    (preloadedSession && validMediaRequest(url, preloadedSession.baseUrl)
-      ? preloadedSession
-      : undefined);
-  if (byBaseUrl) {
-    event.respondWith(fetchMediaWithRetry(url, byBaseUrl.accessToken, redirect, clientId));
-    return;
-  }
-
   // No clientId: the fetch came from a context not associated with a specific
-  // window (e.g. a prerender). Fall back to the persisted session directly.
+  // window (e.g. a prerender). Fall back to persisted/unique-by-baseUrl sessions.
   if (!clientId) {
     event.respondWith(
       loadPersistedSession().then((persisted) => {
         if (persisted && validMediaRequest(url, persisted.baseUrl)) {
           return fetchMediaWithRetry(url, persisted.accessToken, redirect, '');
+        }
+        const matching = getMatchingSessions(url);
+        if (matching.length === 1) {
+          return fetchMediaWithRetry(url, matching[0].accessToken, redirect, '');
+        }
+        if (preloadedSession && validMediaRequest(url, preloadedSession.baseUrl)) {
+          return fetchMediaWithRetry(url, preloadedSession.accessToken, redirect, '');
         }
         return fetch(event.request);
       })
@@ -771,6 +764,16 @@ self.addEventListener('fetch', (event: FetchEvent) => {
       const persisted = await loadPersistedSession();
       if (persisted && validMediaRequest(url, persisted.baseUrl)) {
         return fetchMediaWithRetry(url, persisted.accessToken, redirect, clientId);
+      }
+      // Last resort: only use by-baseUrl auth if there is exactly one matching
+      // session. Multiple matches are ambiguous and can intermittently 401 if
+      // we pick the wrong account token.
+      const matching = getMatchingSessions(url);
+      if (matching.length === 1) {
+        return fetchMediaWithRetry(url, matching[0].accessToken, redirect, clientId);
+      }
+      if (preloadedSession && validMediaRequest(url, preloadedSession.baseUrl)) {
+        return fetchMediaWithRetry(url, preloadedSession.accessToken, redirect, clientId);
       }
       console.warn(
         '[SW fetch] No valid session for media request',
