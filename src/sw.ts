@@ -734,6 +734,8 @@ async function fetchMediaWithRetry(
 
   // Try each plausible token once. This handles token-refresh races and ambiguous
   // multi-account sessions on the same homeserver, including no-clientId requests.
+  // Sequential await is intentional: we want to try one token at a time until one succeeds.
+  // eslint-disable-next-line no-await-in-loop
   for (let i = 0; i < retrySessions.length; i += 1) {
     const candidate = retrySessions[i];
     if (!candidate || attemptedTokens.has(candidate.accessToken)) {
