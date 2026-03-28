@@ -35,6 +35,17 @@ import { ModalWide } from '$styles/Modal.css';
 import { validBlurHash } from '$utils/blurHash';
 import * as css from './style.css';
 
+const addCacheBuster = (inputUrl: string): string => {
+  try {
+    const parsed = new URL(inputUrl);
+    parsed.searchParams.set('_sable_retry', String(Date.now()));
+    return parsed.toString();
+  } catch {
+    const join = inputUrl.includes('?') ? '&' : '?';
+    return `${inputUrl}${join}_sable_retry=${Date.now()}`;
+  }
+};
+
 type RenderViewerProps = {
   src: string;
   alt: string;
@@ -89,20 +100,22 @@ export const ImageContent = as<'div', ImageContentProps>(
     const [viewer, setViewer] = useState(false);
     const [blurred, setBlurred] = useState(markedAsSpoiler ?? false);
     const [isHovered, setIsHovered] = useState(false);
+    const [didForceRemoteRetry, setDidForceRemoteRetry] = useState(false);
 
     const [srcState, loadSrc] = useAsyncCallback(
-      useCallback(async () => {
-        if (url.startsWith('http')) return url;
+      useCallback(async (forceRemote = false) => {
+        if (url.startsWith('http')) return forceRemote ? addCacheBuster(url) : url;
 
         const mediaUrl = mxcUrlToHttp(mx, url, useAuthentication);
         if (!mediaUrl) throw new Error('Invalid media URL');
+        const resolvedUrl = forceRemote ? addCacheBuster(mediaUrl) : mediaUrl;
         if (encInfo) {
-          const fileContent = await downloadEncryptedMedia(mediaUrl, (encBuf) =>
+          const fileContent = await downloadEncryptedMedia(resolvedUrl, (encBuf) =>
             decryptFile(encBuf, mimeType ?? FALLBACK_MIMETYPE, encInfo)
           );
           return URL.createObjectURL(fileContent);
         }
-        return mediaUrl;
+        return resolvedUrl;
       }, [mx, url, useAuthentication, mimeType, encInfo])
     );
 
@@ -116,8 +129,17 @@ export const ImageContent = as<'div', ImageContentProps>(
 
     const handleRetry = () => {
       setError(false);
+      if (!didForceRemoteRetry) {
+        setDidForceRemoteRetry(true);
+        loadSrc(true);
+        return;
+      }
       loadSrc();
     };
+
+    useEffect(() => {
+      setDidForceRemoteRetry(false);
+    }, [url]);
 
     useEffect(() => {
       if (autoPlay) loadSrc();
