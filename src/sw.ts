@@ -612,12 +612,18 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
 const MEDIA_PATHS = [
   '/_matrix/client/v1/media/download',
   '/_matrix/client/v1/media/thumbnail',
+  '/_matrix/client/v1/media/preview_url',
+  '/_matrix/client/v3/media/download',
+  '/_matrix/client/v3/media/thumbnail',
+  '/_matrix/client/v3/media/preview_url',
   // Legacy unauthenticated endpoints — servers that require auth return 404/403
   // for these when no token is present, so intercept and add auth here too.
   '/_matrix/media/v3/download',
   '/_matrix/media/v3/thumbnail',
+  '/_matrix/media/v3/preview_url',
   '/_matrix/media/r0/download',
   '/_matrix/media/r0/thumbnail',
+  '/_matrix/media/r0/preview_url',
 ];
 
 function mediaPath(url: string): boolean {
