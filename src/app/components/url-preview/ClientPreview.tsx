@@ -157,28 +157,32 @@ type YoutubeLink = {
 };
 
 function parseYoutubeLink(url: string): YoutubeLink | null {
-  const urlsplit = url.split('/');
-  const path = urlsplit[urlsplit.length - 1];
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
 
+  const host = parsed.hostname.toLowerCase();
+  const pathParts = parsed.pathname.split('/').filter(Boolean);
   let videoId: string | undefined;
-  let params: string[];
 
-  if (url.includes('youtu.be')) {
-    const split = path.split('?');
-    [videoId] = split;
-    params = split[1]?.split('&');
-  } else {
-    params = path.split('?')[1].split('&');
-    videoId = params.find((s) => s.startsWith('v='), params)?.split('v=')[1];
+  if (host === 'youtu.be') {
+    [videoId] = pathParts;
+  } else if (host.endsWith('youtube.com')) {
+    if (parsed.pathname === '/watch') {
+      videoId = parsed.searchParams.get('v') ?? undefined;
+    } else if (pathParts[0] === 'shorts' || pathParts[0] === 'live' || pathParts[0] === 'embed') {
+      videoId = pathParts[1];
+    }
   }
 
   if (!videoId) return null;
 
-  // playlist is not used for the embed, it can be appended as is
-  const playlist = params ? params.find((s) => s.startsWith('list='), params) : undefined;
-  const timestamp = params
-    ? params.find((s) => s.startsWith('t='), params)?.split('t=')[1]
-    : undefined;
+  const playlistValue = parsed.searchParams.get('list');
+  const playlist = playlistValue ? `list=${playlistValue}` : undefined;
+  const timestamp = parsed.searchParams.get('t') ?? undefined;
 
   return {
     videoId,
