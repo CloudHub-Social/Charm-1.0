@@ -2,4 +2,4 @@
 default: minor
 ---
 
-Add full thread support: ThreadDrawer and ThreadBrowser with server-side backfill, live reply counts, sliding sync integration, and pagination for historical threads.
+Add thread support: view and reply to message threads, browse all room threads, and see live reply counts on messages.
