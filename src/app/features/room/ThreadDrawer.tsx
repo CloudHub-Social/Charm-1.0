@@ -1,5 +1,5 @@
 import { MouseEventHandler, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Chip, Header, Icon, IconButton, Icons, Scroll, Spinner, Text, config } from 'folds';
+import { Box, Header, Icon, IconButton, Icons, Scroll, Spinner, Text, config } from 'folds';
 import {
   Direction,
   IEvent,
@@ -22,16 +22,12 @@ import {
   makeMentionCustomProps,
   renderMatrixMention,
 } from '$plugins/react-custom-html-parser';
-import {
-  getEditedEvent,
-  getMemberDisplayName,
-  reactionOrEditEvent,
-} from '$utils/room';
+import { getEditedEvent, getMemberDisplayName, reactionOrEditEvent } from '$utils/room';
 import { getMxIdLocalPart, toggleReaction } from '$utils/matrix';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { nicknamesAtom } from '$state/nicknames';
-import { MessageLayout, settingsAtom } from '$state/settings';
+import { settingsAtom } from '$state/settings';
 import { useSetting } from '$state/hooks/settings';
 import { useRoomAbbreviationsContext } from '$hooks/useRoomAbbreviations';
 import { buildAbbrReplaceTextNode } from '$components/message/RenderBody';
@@ -86,7 +82,6 @@ export function getThreadReplyEvents(room: Room, threadRootId: string): MatrixEv
     );
 }
 
-
 type ThreadDrawerProps = {
   room: Room;
   threadRootId: string;
@@ -100,8 +95,9 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   const editor = useEditor();
   const [forceUpdateCounter, forceUpdate] = useState(0);
   const [jumpToEventId, setJumpToEventId] = useState<string | undefined>(undefined);
-  const [canLoadOlderReplies, setCanLoadOlderReplies] = useState(false);
   const [loadingOlderReplies, setLoadingOlderReplies] = useState(false);
+  // Ref guard so the auto-paginate effect never starts a second concurrent request.
+  const paginatingOlderRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevReplyCountRef = useRef(0);
   const processedEventsRef = useRef<ProcessedEvent[]>([]);
@@ -135,7 +131,9 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   const [showTombstoneEvents] = useSetting(settingsAtom, 'showTombstoneEvents');
   const [hideMemberInReadOnly] = useSetting(settingsAtom, 'hideMembershipInReadOnly');
   const showUrlPreview = room.hasEncryptionStateEvent() ? encUrlPreview : urlPreview;
-  const showClientUrlPreview = room.hasEncryptionStateEvent() ? encClientUrlPreview : clientUrlPreview;
+  const showClientUrlPreview = room.hasEncryptionStateEvent()
+    ? encClientUrlPreview
+    : clientUrlPreview;
 
   // Memoized parsing options
   const linkifyOpts = useMemo<LinkifyOpts>(
@@ -226,10 +224,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [threadTimeline, totalEvents]
   );
-  const items = useMemo(
-    () => Array.from({ length: totalEvents }, (_, i) => i),
-    [totalEvents]
-  );
+  const items = useMemo(() => Array.from({ length: totalEvents }, (_, i) => i), [totalEvents]);
 
   const processedEvents = useProcessedTimeline({
     items,
@@ -305,7 +300,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
       } else {
         // Root not in local timeline — fetch it from the server without
         // touching the main timeline (no TimelineRefresh side-effect).
-        void mx.fetchRoomEvent(room.roomId, threadRootId)
+        mx.fetchRoomEvent(room.roomId, threadRootId)
           .then((rawEvt) => {
             if (room.getThread(threadRootId)) return; // created concurrently
             room.createThread(threadRootId, new MatrixEvent(rawEvt as IEvent), [], false);
@@ -369,12 +364,11 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
     mx.paginateEventTimeline(currThread.timelineSet.getLiveTimeline(), { backwards: true })
       .then(() => forceUpdate((n) => n + 1))
       .catch(() => {});
-  // forceUpdateCounter must be in deps so this effect re-runs after
-  // ThreadEvent.Update fires (which flips initialEventsFetched from false to
-  // true).  Without it the effect runs once on mount, hits Case B
-  // (initialEventsFetched=false) and never runs again — leaving the drawer
-  // empty on sliding sync where replyCount starts at 0.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // forceUpdateCounter must be in deps so this effect re-runs after
+    // ThreadEvent.Update fires (which flips initialEventsFetched from false to
+    // true).  Without it the effect runs once on mount, hits Case B
+    // (initialEventsFetched=false) and never runs again — leaving the drawer
+    // empty on sliding sync where replyCount starts at 0.
   }, [mx, room, threadRootId, forceUpdate, forceUpdateCounter]);
 
   // Re-render when new thread events arrive (including reactions via ThreadEvent.Update).
@@ -430,10 +424,10 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   // Mark thread as read when viewing it
   useEffect(() => {
     const markThreadAsRead = async () => {
-      const thread = room.getThread(threadRootId);
-      if (!thread) return;
+      const currentThread = room.getThread(threadRootId);
+      if (!currentThread) return;
 
-      const events = thread.events || [];
+      const events = currentThread.events || [];
       if (events.length === 0) return;
 
       const lastEvent = events[events.length - 1];
@@ -442,7 +436,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
       const userId = mx.getUserId();
       if (!userId) return;
 
-      const readUpToId = thread.getEventReadUpTo(userId, false);
+      const readUpToId = currentThread.getEventReadUpTo(userId, false);
       const lastEventId = lastEvent.getId();
 
       // Only send receipt if we haven't already read up to the last event
@@ -465,33 +459,28 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   const isThreadLoading =
     !!threadObjForLoading && !threadObjForLoading.initialEventsFetched && replyEvents.length === 0;
 
-  // Track whether the thread timeline has older replies that can be loaded by
-  // paginating backwards.  Re-evaluates whenever forceUpdateCounter changes
-  // (i.e. whenever thread state changes via ThreadEvent.Update / NewReply).
+  // Automatically paginate backwards until all older replies are loaded.
+  // Re-runs on each forceUpdateCounter tick so each completed page triggers the next.
   useEffect(() => {
     const t = room.getThread(threadRootId);
-    if (!t || !t.initialEventsFetched) {
-      setCanLoadOlderReplies(false);
+    if (!t || !t.initialEventsFetched || paginatingOlderRef.current) return;
+    const backToken = t.timelineSet.getLiveTimeline().getPaginationToken(Direction.Backward);
+    if (backToken == null) {
+      setLoadingOlderReplies(false);
       return;
     }
-    const backToken = t.timelineSet.getLiveTimeline().getPaginationToken(Direction.Backward);
-    setCanLoadOlderReplies(backToken !== null && backToken !== undefined);
-  }, [room, threadRootId, forceUpdateCounter]);
-
-  const handleLoadOlderReplies = useCallback(async () => {
-    const t = room.getThread(threadRootId);
-    if (!t || loadingOlderReplies) return;
+    paginatingOlderRef.current = true;
     setLoadingOlderReplies(true);
-    try {
-      const hasMore = await mx.paginateEventTimeline(t.timelineSet.getLiveTimeline(), { backwards: true });
-      if (!hasMore) setCanLoadOlderReplies(false);
-      forceUpdate((n) => n + 1);
-    } catch {
-      // ignore network errors
-    } finally {
-      setLoadingOlderReplies(false);
-    }
-  }, [mx, room, threadRootId, loadingOlderReplies]);
+    mx.paginateEventTimeline(t.timelineSet.getLiveTimeline(), { backwards: true })
+      .then(() => {
+        paginatingOlderRef.current = false;
+        forceUpdate((n) => n + 1);
+      })
+      .catch(() => {
+        paginatingOlderRef.current = false;
+        setLoadingOlderReplies(false);
+      });
+  }, [mx, room, threadRootId, forceUpdateCounter]);
 
   // Auto-scroll to bottom when event count grows (if the user is near the bottom).
   useEffect(() => {
@@ -651,9 +640,7 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
   );
 
   // Map jumpToEventId to a focusItem index for useTimelineEventRenderer highlighting
-  const jumpIndex = jumpToEventId
-    ? processedEvents.findIndex((e) => e.id === jumpToEventId)
-    : -1;
+  const jumpIndex = jumpToEventId ? processedEvents.findIndex((e) => e.id === jumpToEventId) : -1;
   const focusItem =
     jumpIndex >= 0
       ? { index: processedEvents[jumpIndex].itemIndex, highlight: true, scrollTo: false as const }
@@ -759,14 +746,14 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
             }}
           >
             {renderMatrixEvent(
-                rootEvent.getType(),
-                typeof rootEvent.getStateKey() === 'string',
-                rootEvent.getId()!,
-                rootEvent,
-                processedEvents.find((e) => e.id === threadRootId)?.itemIndex ?? 0,
-                thread?.timelineSet ?? room.getUnfilteredTimelineSet(),
-                false
-              )}
+              rootEvent.getType(),
+              typeof rootEvent.getStateKey() === 'string',
+              rootEvent.getId()!,
+              rootEvent,
+              processedEvents.find((e) => e.id === threadRootId)?.itemIndex ?? 0,
+              thread?.timelineSet ?? room.getUnfilteredTimelineSet(),
+              false
+            )}
           </Box>
         </Scroll>
       )}
@@ -781,83 +768,75 @@ export function ThreadDrawer({ room, threadRootId, onClose, overlay }: ThreadDra
           hideTrack
           style={{ flexGrow: 1 }}
         >
-          {isThreadLoading ? (
-            <Box
-              direction="Column"
-              alignItems="Center"
-              justifyContent="Center"
-              style={{ padding: config.space.S400 }}
-            >
-              <Spinner variant="Secondary" size="400" />
-            </Box>
-          ) : processedReplies.length === 0 ? (
-            <Box
-              direction="Column"
-              alignItems="Center"
-              justifyContent="Center"
-              style={{ padding: config.space.S400, gap: config.space.S200 }}
-            >
-              <Icon size="400" src={Icons.Thread} />
-              <Text size="T300" align="Center">
-                No replies yet. Start the thread below!
-              </Text>
-            </Box>
-          ) : (
-            <>
-              {/* Load older replies button — shown when the thread timeline has
-                  a backward pagination token, i.e. more replies exist on the server. */}
-              {canLoadOlderReplies && (
+          {(() => {
+            if (isThreadLoading)
+              return (
                 <Box
+                  direction="Column"
                   alignItems="Center"
                   justifyContent="Center"
-                  style={{ padding: config.space.S200, flexShrink: 0 }}
+                  style={{ padding: config.space.S400 }}
                 >
-                  <Chip
-                    as="button"
-                    radii="Pill"
-                    aria-label="Load older replies"
-                    onClick={handleLoadOlderReplies}
-                    style={{ cursor: loadingOlderReplies ? 'default' : 'pointer' }}
-                  >
-                    {loadingOlderReplies ? (
-                      <Spinner variant="Secondary" size="200" />
-                    ) : (
-                      <Text size="T200">Load older replies</Text>
-                    )}
-                  </Chip>
+                  <Spinner variant="Secondary" size="400" />
                 </Box>
-              )}
-              {/* Reply count label inside scroll area */}
-              <Box
-                style={{
-                  padding: `${config.space.S200} ${config.space.S400}`,
-                  flexShrink: 0,
-                }}
-              >
-                <Text size="T300" priority="300">
-                  {processedReplies.length}{' '}
-                  {processedReplies.length === 1 ? 'reply' : 'replies'}
-                </Text>
-              </Box>
-              <Box
-                className={css.messageList}
-                direction="Column"
-                style={{ padding: `0 0 ${config.space.S600} 0` }}
-              >
-                {processedReplies.map((e) =>
-                  renderMatrixEvent(
-                    e.mEvent.getType(),
-                    typeof e.mEvent.getStateKey() === 'string',
-                    e.id,
-                    e.mEvent,
-                    e.itemIndex,
-                    e.timelineSet,
-                    e.collapsed
-                  )
+              );
+            if (processedReplies.length === 0)
+              return (
+                <Box
+                  direction="Column"
+                  alignItems="Center"
+                  justifyContent="Center"
+                  style={{ padding: config.space.S400, gap: config.space.S200 }}
+                >
+                  <Icon size="400" src={Icons.Thread} />
+                  <Text size="T300" align="Center">
+                    No replies yet. Start the thread below!
+                  </Text>
+                </Box>
+              );
+            return (
+              <>
+                {/* Spinner shown while older replies are being auto-loaded */}
+                {loadingOlderReplies && (
+                  <Box
+                    alignItems="Center"
+                    justifyContent="Center"
+                    style={{ padding: config.space.S200, flexShrink: 0 }}
+                  >
+                    <Spinner variant="Secondary" size="200" />
+                  </Box>
                 )}
-              </Box>
-            </>
-          )}
+                {/* Reply count label inside scroll area */}
+                <Box
+                  style={{
+                    padding: `${config.space.S200} ${config.space.S400}`,
+                    flexShrink: 0,
+                  }}
+                >
+                  <Text size="T300" priority="300">
+                    {processedReplies.length} {processedReplies.length === 1 ? 'reply' : 'replies'}
+                  </Text>
+                </Box>
+                <Box
+                  className={css.messageList}
+                  direction="Column"
+                  style={{ padding: `0 0 ${config.space.S600} 0` }}
+                >
+                  {processedReplies.map((e) =>
+                    renderMatrixEvent(
+                      e.mEvent.getType(),
+                      typeof e.mEvent.getStateKey() === 'string',
+                      e.id,
+                      e.mEvent,
+                      e.itemIndex,
+                      e.timelineSet,
+                      e.collapsed
+                    )
+                  )}
+                </Box>
+              </>
+            );
+          })()}
         </Scroll>
       </Box>
 
