@@ -555,6 +555,14 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
 
   if (type === 'setSession') {
     setSession(client.id, accessToken, baseUrl, userId);
+    // Keep the SW alive until the cache write completes.  persistSession is
+    // called fire-and-forget inside setSession; without waitUntil the browser
+    // can kill the SW before caches.put resolves, leaving the persisted session
+    // stale on the next restart and causing intermittent 401s on media fetches.
+    const persisted = sessions.get(client.id);
+    event.waitUntil(
+      (persisted ? persistSession(persisted) : clearPersistedSession()).catch(() => undefined)
+    );
     event.waitUntil(cleanupDeadClients());
   }
   if (type === 'pushDecryptResult') {
