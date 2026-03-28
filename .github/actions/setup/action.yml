@@ -34,6 +34,15 @@ runs:
       env:
         INPUTS_INSTALL_COMMAND: ${{ inputs.install-command }}
 
+    - name: Inject runtime config overrides
+      if: ${{ inputs.build == 'true' }}
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: node scripts/inject-client-config.js
+      env:
+        CLIENT_CONFIG_OVERRIDES_JSON: ${{ env.CLIENT_CONFIG_OVERRIDES_JSON }}
+        CLIENT_CONFIG_OVERRIDES_STRICT: ${{ env.CLIENT_CONFIG_OVERRIDES_STRICT }}
+
     - name: Build app
       if: ${{ inputs.build == 'true' }}
       shell: bash
