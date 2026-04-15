@@ -33,6 +33,14 @@ export function DeveloperTools({ requestBack, requestClose }: DeveloperToolsProp
     []
   >(
     useCallback(async () => {
+      if (
+        !window.confirm(
+          'This will discard all current Megolm encryption sessions and start new ones. Continue?'
+        )
+      ) {
+        throw new Error('Cancelled');
+      }
+
       const crypto = mx.getCrypto();
       if (!crypto) throw new Error('Crypto module not available');
 
@@ -43,8 +51,10 @@ export function DeveloperTools({ requestBack, requestClose }: DeveloperToolsProp
             room.getMyMembership() === KnownMembership.Join && mx.isRoomEncrypted(room.roomId)
         );
 
-      await Promise.all(encryptedRooms.map((room) => crypto.forceDiscardSession(room.roomId)));
-      const rotated = encryptedRooms.length;
+      const results = await Promise.allSettled(
+        encryptedRooms.map((room) => crypto.forceDiscardSession(room.roomId))
+      );
+      const rotated = results.filter((r) => r.status === 'fulfilled').length;
 
       // Proactively start session creation + key sharing with all devices
       // (including bridge bots). fire-and-forget per room.
@@ -148,8 +158,8 @@ export function DeveloperTools({ requestBack, requestClose }: DeveloperToolsProp
                     gap="400"
                   >
                     <SettingTile
-                      title="Rotate Encryption Sessions"
                       focusId="rotate-encryption-sessions"
+                      title="Rotate Encryption Sessions"
                       description="Discard current Megolm sessions and begin sharing new keys with all room members. Key delivery happens in the background — send a message in each affected room to confirm the bridge has received the new keys."
                       after={
                         <Button
