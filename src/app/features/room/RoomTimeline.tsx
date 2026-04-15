@@ -97,6 +97,7 @@ type TimelineRenderFn = (eventData: ProcessedEvent) => ReactNode;
  * `isReplying`, `isOpenThread`, and `settingsEpoch` — re-rendering only the
  * specific item whose volatile state changed.
  */
+/* eslint-disable react/no-unused-prop-types -- props consumed in areEqual, not component body */
 interface TimelineItemProps {
   data: ProcessedEvent;
   renderRef: React.MutableRefObject<TimelineRenderFn | null>;
@@ -106,6 +107,7 @@ interface TimelineItemProps {
   isOpenThread: boolean;
   settingsEpoch: object;
 }
+/* eslint-enable react/no-unused-prop-types */
 
 // Declared outside memo() so the callback receives a reference, not an inline
 // function expression (satisfies prefer-arrow-callback).
@@ -169,6 +171,7 @@ export function RoomTimeline({
   onEditLastMessageRef,
 }: Readonly<RoomTimelineProps>) {
   const mx = useMatrixClient();
+  const mxUserId = mx.getUserId()!;
   const alive = useAlive();
 
   const { editId, handleEdit } = useMessageEdit(editor, { onReset: onEditorReset, alive });
@@ -251,7 +254,7 @@ export function RoomTimeline({
   // need to read the cache — the render-phase room-change block below only fires
   // in the (hypothetical) case where the room prop changes without a remount.
   const scrollCacheForRoomRef = useRef<RoomScrollCache | undefined>(
-    roomScrollCache.load(room.roomId)
+    roomScrollCache.load(mxUserId, room.roomId)
   );
   const [atBottomState, setAtBottomState] = useState(true);
   const atBottomRef = useRef(atBottomState);
@@ -295,7 +298,7 @@ export function RoomTimeline({
   if (currentRoomIdRef.current !== room.roomId) {
     // Load incoming room's scroll cache (undefined for first-visit rooms).
     // Covers the rare case where room prop changes without a remount.
-    const newCache = roomScrollCache.load(room.roomId);
+    const newCache = roomScrollCache.load(mxUserId, room.roomId);
     scrollCacheForRoomRef.current = newCache;
 
     hasInitialScrolledRef.current = false;
@@ -412,12 +415,14 @@ export function RoomTimeline({
             });
             const v = vListRef.current;
             if (v) {
-              roomScrollCache.save(room.roomId, {
+              roomScrollCache.save(mxUserId, room.roomId, {
                 cache: v.cache,
                 scrollOffset: v.scrollOffset,
                 atBottom: true,
               });
             }
+          } else {
+            pendingReadyRef.current = true;
           }
         }, 80);
       }
@@ -823,7 +828,7 @@ export function RoomTimeline({
       // live-timeline visit, producing stale VList measurements and making the
       // room appear to be at the wrong position (or visually empty) on re-entry.
       if (!eventId) {
-        roomScrollCache.save(room.roomId, {
+        roomScrollCache.save(mxUserId, room.roomId, {
           cache: v.cache,
           scrollOffset: offset,
           atBottom: isNowAtBottom,
@@ -936,7 +941,7 @@ export function RoomTimeline({
     ignoredUsersSet,
     showHiddenEvents,
     showTombstoneEvents,
-    mxUserId: mx.getUserId(),
+    mxUserId,
     readUptoEventId: readUptoEventIdRef.current,
     hideMembershipEvents,
     hideNickAvatarEvents,
@@ -960,7 +965,7 @@ export function RoomTimeline({
     // when it fired. Save now so the next visit skips the timer.
     const v = vListRef.current;
     if (v) {
-      roomScrollCache.save(room.roomId, {
+      roomScrollCache.save(mxUserId, room.roomId, {
         cache: v.cache,
         scrollOffset: v.scrollOffset,
         atBottom: true,
@@ -1074,7 +1079,7 @@ export function RoomTimeline({
           key={room.roomId}
           ref={vListRef}
           data={processedEvents}
-          cache={scrollCacheForRoomRef.current?.cache}
+          cache={!eventId ? scrollCacheForRoomRef.current?.cache : undefined}
           shift={shift}
           className={css.messageList}
           style={{

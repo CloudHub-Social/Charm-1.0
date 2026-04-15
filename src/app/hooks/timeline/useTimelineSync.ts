@@ -385,6 +385,16 @@ export function useTimelineSync({
     eventId ? getEmptyTimeline() : { linkedTimelines: getInitialTimeline(room).linkedTimelines }
   );
 
+  // Incremented whenever existing event content mutates (reactions, edits, thread
+  // updates, local-echo status) but NOT on live-event arrivals (those are signalled
+  // by eventsLength increasing).  Consumers use this to decide whether to
+  // re-create ProcessedEvent objects for stable-ref memoization.
+  const [mutationVersion, setMutationVersion] = useState(0);
+  const triggerMutation = useCallback(() => {
+    setTimeline((ct) => ({ ...ct }));
+    setMutationVersion((v) => v + 1);
+  }, []);
+
   const [focusItem, setFocusItem] = useState<
     | {
         index: number;
@@ -515,14 +525,14 @@ export function useTimelineSync({
       eventRoom: Room | undefined
     ) => {
       if (eventRoom?.roomId !== room.roomId) return;
-      setTimeline((ct) => ({ ...ct }));
+      triggerMutation();
     };
 
     room.on(RoomEvent.LocalEchoUpdated, handleLocalEchoUpdated);
     return () => {
       room.removeListener(RoomEvent.LocalEchoUpdated, handleLocalEchoUpdated);
     };
-  }, [room, setTimeline]);
+  }, [room, triggerMutation]);
 
   useLiveTimelineRefresh(
     room,
@@ -536,19 +546,9 @@ export function useTimelineSync({
     }, [room, isAtBottomRef])
   );
 
-  useRelationUpdate(
-    room,
-    useCallback(() => {
-      setTimeline((ct) => ({ ...ct }));
-    }, [])
-  );
+  useRelationUpdate(room, triggerMutation);
 
-  useThreadUpdate(
-    room,
-    useCallback(() => {
-      setTimeline((ct) => ({ ...ct }));
-    }, [])
-  );
+  useThreadUpdate(room, triggerMutation);
 
   // useLayoutEffect so the scroll position is corrected before the browser
   // paints. Without this, a sliding-sync subscription upgrade (timeline_limit
@@ -612,5 +612,6 @@ export function useTimelineSync({
     loadEventTimeline,
     focusItem,
     setFocusItem,
+    mutationVersion,
   };
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
 import { useNavigate } from 'react-router-dom';
-import { SyncState, ClientEvent, RoomEvent, Room, MatrixEvent } from '$types/matrix-sdk';
+import { SyncState, ClientEvent, RoomEvent, Room, MatrixEvent, RoomEventHandlerMap } from '$types/matrix-sdk';
 import { activeSessionIdAtom, pendingNotificationAtom } from '../state/sessions';
 import { mDirectAtom } from '../state/mDirectList';
 import { useSyncState } from './useSyncState';
@@ -162,12 +162,12 @@ export function NotificationJumper() {
       if (eventRoom?.roomId === pending.roomId) performJumpRef.current();
     };
     mx.on(ClientEvent.Room, onRoom);
-    mx.on(RoomEvent.Timeline, onTimeline);
+    mx.on(RoomEvent.Timeline, onTimeline as RoomEventHandlerMap[RoomEvent.Timeline]);
     performJumpRef.current();
 
     return () => {
       mx.removeListener(ClientEvent.Room, onRoom);
-      mx.removeListener(RoomEvent.Timeline, onTimeline);
+      mx.removeListener(RoomEvent.Timeline, onTimeline as RoomEventHandlerMap[RoomEvent.Timeline]);
     };
   }, [pending, mx]); // performJump intentionally omitted — use ref above
 
