@@ -128,6 +128,7 @@ export const selectExperimentVariant = (
     };
   }
 
+  // Two independent hashes keep rollout and variant assignment stable but decorrelated.
   const rolloutBucket = hashToUInt32(`${key}:rollout:${subjectId}`) % 10000;
   const rolloutCutoff = Math.floor(rolloutPercentage * 100);
   if (rolloutBucket >= rolloutCutoff) {
