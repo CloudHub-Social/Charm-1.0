@@ -131,9 +131,6 @@ export interface Settings {
   // experimental
   enableMessageBookmarks: boolean;
 
-  // experimental
-  enableMessageBookmarks: boolean;
-
   // furry stuff
   renderAnimals: boolean;
 }
@@ -238,9 +235,6 @@ const defaultSettings: Settings = {
   roomTopicPreview: false,
   roomMessagePreview: false,
   dmMessagePreview: true,
-
-  // experimental
-  enableMessageBookmarks: false,
 
   // experimental
   enableMessageBookmarks: false,
