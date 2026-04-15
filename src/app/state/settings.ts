@@ -93,6 +93,12 @@ export interface Settings {
 
   // Sable features!
   sendPresence: boolean;
+  /**
+   * Which presence mode to use when sendPresence is true.
+   * Matrix presence states are sent as-is; the app-specific `dnd` mode is
+   * broadcast as `presence=online` with a `status_msg`.
+   */
+  presenceMode: 'online' | 'unavailable' | 'dnd' | 'offline';
   mobileGestures: boolean;
   rightSwipeAction: RightSwipeAction;
   hideMembershipInReadOnly: boolean;
@@ -118,6 +124,9 @@ export interface Settings {
   mentionInReplies: boolean;
   showPersonaSetting: boolean;
   closeFoldersByDefault: boolean;
+
+  // experimental
+  enableMessageBookmarks: boolean;
 
   // furry stuff
   renderAnimals: boolean;
@@ -194,6 +203,7 @@ const defaultSettings: Settings = {
 
   // Sable features!
   sendPresence: true,
+  presenceMode: 'online',
   mobileGestures: true,
   rightSwipeAction: RightSwipeAction.Reply,
   hideMembershipInReadOnly: true,
@@ -219,6 +229,9 @@ const defaultSettings: Settings = {
   mentionInReplies: true,
   showPersonaSetting: false,
   closeFoldersByDefault: false,
+
+  // experimental
+  enableMessageBookmarks: false,
 
   // furry stuff
   renderAnimals: true,
@@ -256,3 +269,6 @@ export const settingsAtom = atom<Settings, [Settings], undefined>(
     setSettings(update);
   }
 );
+
+/** Ephemeral (not persisted) — true when auto-idled due to inactivity. */
+export const presenceAutoIdledAtom = atom(false);

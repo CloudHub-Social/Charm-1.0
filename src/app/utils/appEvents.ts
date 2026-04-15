@@ -1,4 +1,4 @@
-type VisibilityChangeHandler = (isVisible: boolean) => void;
+export type VisibilityChangeHandler = (isVisible: boolean) => void;
 type VisibilityHiddenHandler = () => void;
 
 const visibilityChangeHandlers = new Set<VisibilityChangeHandler>();
