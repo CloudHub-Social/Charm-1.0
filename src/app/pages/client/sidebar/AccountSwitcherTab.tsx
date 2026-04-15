@@ -397,7 +397,7 @@ export function AccountSwitcherTab() {
                   const badge =
                     mode === 'dnd' ? (
                       <Badge size="300" variant="Critical" fill="Solid" radii="Pill" />
-                    ) : (
+                    ) : mode === 'offline' ? undefined : (
                       <PresenceBadge presence={mode as Presence} size="300" />
                     );
                   return (
