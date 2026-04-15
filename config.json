@@ -19,6 +19,15 @@
 
   "presenceAutoIdleTimeoutMs": 300000,
 
+  "experiments": {
+    "messageBookmarks": {
+      "enabled": false,
+      "rolloutPercentage": 0,
+      "controlVariant": "control",
+      "variants": ["enabled"]
+    }
+  },
+
   "featuredCommunities": {
     "openAsDefault": false,
     "spaces": [
