@@ -518,8 +518,12 @@ function MessageNotifications() {
         });
       }
 
-      // In-app audio: play when notification sounds are enabled AND this notification is loud.
-      if (notificationSound && isLoud) {
+      // In-app audio: play when the app is in the foreground (has focus) and
+      // notification sounds are enabled for this notification type.
+      // Gating on hasFocus() rather than just visibilityState prevents a race
+      // where the page is still 'visible' for a brief window after the user
+      // backgrounds the app on mobile — hasFocus() flips false first.
+      if (notificationSound && isLoud && document.hasFocus()) {
         playSound();
       }
     };
@@ -770,7 +774,9 @@ function HandleDecryptPushEvent() {
 
     const handleMessage = async (ev: MessageEvent) => {
       const { data } = ev;
-      if (!data || data.type !== 'decryptPushEvent') return;
+      if (!data) return;
+
+      if (data.type !== 'decryptPushEvent') return;
 
       const { rawEvent } = data as { rawEvent: Record<string, unknown> };
       const eventId = rawEvent.event_id as string;
