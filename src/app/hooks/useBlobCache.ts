@@ -3,8 +3,41 @@ import { useState, useEffect } from 'react';
 const imageBlobCache = new Map<string, string>();
 const inflightRequests = new Map<string, Promise<string>>();
 
-export function getBlobCacheStats(): { cacheSize: number; inflightCount: number } {
-  return { cacheSize: imageBlobCache.size, inflightCount: inflightRequests.size };
+// Concurrency limiter: cap simultaneous remote fetches to avoid N+1 API call
+// detection when many components (e.g. room-list avatars) mount at once.
+const MAX_CONCURRENT_FETCHES = 4;
+let activeFetches = 0;
+const fetchQueue: Array<() => void> = [];
+
+function acquireFetchSlot(): Promise<void> {
+  if (activeFetches < MAX_CONCURRENT_FETCHES) {
+    activeFetches += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    fetchQueue.push(resolve);
+  });
+}
+
+function releaseFetchSlot(): void {
+  const next = fetchQueue.shift();
+  if (next) {
+    next();
+  } else {
+    activeFetches -= 1;
+  }
+}
+
+export function getBlobCacheStats(): {
+  cacheSize: number;
+  inflightCount: number;
+  queueDepth: number;
+} {
+  return {
+    cacheSize: imageBlobCache.size,
+    inflightCount: inflightRequests.size,
+    queueDepth: fetchQueue.length,
+  };
 }
 
 export function useBlobCache(url?: string): string | undefined {
@@ -23,6 +56,15 @@ export function useBlobCache(url?: string): string | undefined {
   useEffect(() => {
     if (!url || imageBlobCache.has(url)) return undefined;
 
+    // Blob URLs are already in-memory object URLs — no need to re-fetch them.
+    // Fetching a blob: URL just to create another blob URL is redundant and
+    // causes the N+1 API call pattern when many components mount simultaneously.
+    if (url.startsWith('blob:')) {
+      imageBlobCache.set(url, url);
+      setCacheState({ sourceUrl: url, blobUrl: url });
+      return undefined;
+    }
+
     let isMounted = true;
 
     const fetchBlob = async () => {
@@ -37,6 +79,7 @@ export function useBlobCache(url?: string): string | undefined {
       }
 
       const requestPromise = (async () => {
+        await acquireFetchSlot();
         try {
           const res = await fetch(url, { mode: 'cors' });
           if (!res.ok) {
@@ -50,6 +93,8 @@ export function useBlobCache(url?: string): string | undefined {
         } catch (e) {
           inflightRequests.delete(url);
           throw e;
+        } finally {
+          releaseFetchSlot();
         }
       })();
 
