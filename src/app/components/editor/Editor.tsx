@@ -473,9 +473,6 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
                 onPaste={onPaste}
                 // Defer to OS capitalization setting (respects iOS sentence-case toggle).
                 autoCapitalize="sentences"
-                // Detect text direction per-message so RTL languages (Arabic, Hebrew, etc.)
-                // automatically right-align without any toggle.
-                dir="auto"
                 // Trigger autocap re-evaluation when the editor gains focus empty.
                 // This handles the initial tap-to-focus case: Slate's DOM contains a
                 // \uFEFF placeholder that the keyboard sees as existing content and so

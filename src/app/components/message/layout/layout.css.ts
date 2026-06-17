@@ -236,10 +236,7 @@ export const PronounPill = style({
 export const MessageTextBody = recipe({
   base: {
     unicodeBidi: 'plaintext',
-    alignSelf: 'stretch',
-    // Full width ensures RTL text (direction:rtl from dir=auto) has room to right-align
-    // within the flex column that contains the message body.
-    width: '100%',
+    alignSelf: 'start',
     wordBreak: 'break-word',
     fontSize: '1rem !important', // Override folds Text component to enable page zoom scaling
   },
