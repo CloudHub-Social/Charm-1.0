@@ -114,7 +114,7 @@ export const MessageBase = recipe({
     space: SpacingVariant,
     collapse: {
       true: {
-        marginTop: 0,
+        marginTop: `calc(${SpacingVar} / 2)`,
       },
     },
     autoCollapse: {
@@ -253,7 +253,7 @@ export const PronounPill = style({
 export const MessageTextBody = recipe({
   base: {
     unicodeBidi: 'plaintext',
-    alignSelf: 'start',
+    alignSelf: 'stretch',
     // Full width ensures RTL text (direction:rtl from dir=auto) has room to right-align
     // within the flex column that contains the message body.
     width: '100%',
