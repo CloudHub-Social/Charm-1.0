@@ -155,24 +155,7 @@ export const AvatarBase = style({
 });
 
 export const ModernBefore = style({
-  minWidth: toRem(40),
-  display: 'flex',
-  justifyContent: 'center',
-});
-
-export const ModernRow = style({
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: config.space.S400,
-  minWidth: 0,
-  maxWidth: '100%',
-});
-
-export const ModernContent = style({
-  display: 'flex',
-  flexDirection: 'column',
-  flex: 1,
-  minWidth: 0,
+  minWidth: toRem(36),
 });
 
 export const BubbleBefore = style({
