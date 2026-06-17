@@ -114,7 +114,7 @@ export const MessageBase = recipe({
     space: SpacingVariant,
     collapse: {
       true: {
-        marginTop: `calc(${SpacingVar} / 2)`,
+        marginTop: 0,
       },
     },
     autoCollapse: {
