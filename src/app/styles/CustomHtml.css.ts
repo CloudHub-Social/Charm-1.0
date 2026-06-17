@@ -233,7 +233,9 @@ export const EmoticonBase = style([
   {
     display: 'inline-flex',
     alignItems: 'center',
-    padding: '0.05rem',
+    paddingTop: '0.12rem',
+    paddingBottom: '0.05rem',
+    paddingInline: '0.05rem',
     height: '1em',
     lineHeight: '1em',
     verticalAlign: 'middle',

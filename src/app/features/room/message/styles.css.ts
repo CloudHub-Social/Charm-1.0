@@ -20,7 +20,6 @@ export const MessageHeaderSender = style({
 export const ModernMessageInner = style({
   display: 'flex',
   flexDirection: 'column',
-  gap: config.space.S200,
   width: '100%',
   minWidth: 0,
   maxWidth: '100%',
