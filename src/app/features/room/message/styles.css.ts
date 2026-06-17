@@ -7,6 +7,7 @@ export const MessageBase = style({
 });
 
 export const MessageHeader = style({
+  width: '100%',
   minWidth: 0,
   maxWidth: '100%',
 });
@@ -19,11 +20,13 @@ export const MessageHeaderSender = style({
 export const ModernMessageInner = style({
   display: 'flex',
   flexDirection: 'column',
+  width: '100%',
   minWidth: 0,
   maxWidth: '100%',
 });
 
 export const ModernMessageContent = style({
+  width: '100%',
   minWidth: 0,
   maxWidth: '100%',
 });
