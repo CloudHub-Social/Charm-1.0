@@ -5,6 +5,32 @@ export const MessageBase = style({
   position: 'relative',
   maxWidth: '100%',
 });
+
+export const MessageHeader = style({
+  minWidth: 0,
+  width: '100%',
+  maxWidth: '100%',
+});
+
+export const MessageHeaderSender = style({
+  minWidth: 0,
+  flexWrap: 'wrap',
+});
+
+export const ModernMessageInner = style({
+  display: 'flex',
+  flexDirection: 'column',
+  minWidth: 0,
+  width: '100%',
+  maxWidth: '100%',
+});
+
+export const ModernMessageContent = style({
+  minWidth: 0,
+  width: '100%',
+  maxWidth: '100%',
+});
+
 export const MessageBaseBubbleCollapsed = style({
   paddingTop: 0,
 });

@@ -734,13 +734,14 @@ function MessageInternal(
 
   const headerJSX = !collapse && (
     <Box
+      className={css.MessageHeader}
       gap="300"
       direction={messageLayout === MessageLayout.Compact ? 'RowReverse' : 'Row'}
       justifyContent="SpaceBetween"
       alignItems="Baseline"
       grow="Yes"
     >
-      <Box alignItems="Center" gap="100">
+      <Box className={css.MessageHeaderSender} alignItems="Center" gap="100">
         <Username
           as="button"
           style={{
@@ -902,7 +903,7 @@ function MessageInternal(
       direction="Column"
       alignSelf="Start"
       style={MSG_CONTENT_STYLE}
-      className={classNames({
+      className={classNames(messageLayout === MessageLayout.Modern && css.ModernMessageContent, {
         [css.MessagePending]: isPendingSend,
         [css.MessageFailed]: isFailedSend,
       })}
@@ -1474,7 +1475,7 @@ function MessageInternal(
       {messageLayout !== MessageLayout.Compact && messageLayout !== MessageLayout.Bubble && (
         <SwipeableMessageWrapper onReply={handleSwipeReply}>
           <ModernLayout before={avatarJSX} onContextMenu={handleContextMenu}>
-            <div {...longPress}>
+            <div className={css.ModernMessageInner} {...longPress}>
               {headerJSX}
               {msgContentJSX}
             </div>
