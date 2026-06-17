@@ -1456,7 +1456,9 @@ function MessageInternal(
       {messageLayout === MessageLayout.Compact && (
         <SwipeableMessageWrapper onReply={handleSwipeReply}>
           <CompactLayout before={headerJSX} onContextMenu={handleContextMenu}>
-            <div {...longPress}>{msgContentJSX}</div>
+            <div {...longPress} data-gestures="ignore">
+              {msgContentJSX}
+            </div>
           </CompactLayout>
         </SwipeableMessageWrapper>
       )}
@@ -1468,14 +1470,16 @@ function MessageInternal(
             onContextMenu={handleContextMenu}
             align={useRightBubbles && senderId === mx.getUserId() ? 'right' : 'left'}
           >
-            <div {...longPress}>{msgContentJSX}</div>
+            <div {...longPress} data-gestures="ignore">
+              {msgContentJSX}
+            </div>
           </BubbleLayout>
         </SwipeableMessageWrapper>
       )}
       {messageLayout !== MessageLayout.Compact && messageLayout !== MessageLayout.Bubble && (
         <SwipeableMessageWrapper onReply={handleSwipeReply}>
           <ModernLayout before={avatarJSX} onContextMenu={handleContextMenu}>
-            <div className={css.ModernMessageInner} {...longPress}>
+            <div className={css.ModernMessageInner} {...longPress} data-gestures="ignore">
               {headerJSX}
               {msgContentJSX}
             </div>
@@ -1737,7 +1741,7 @@ export const Event = as<'div', EventProps>(
             </Menu>
           </div>
         )}
-        <div onContextMenu={handleContextMenu} {...longPress}>
+        <div onContextMenu={handleContextMenu} {...longPress} data-gestures="ignore">
           {children}
         </div>
         {mobileOptionsOpen && (
