@@ -58,10 +58,7 @@ function ActiveSwipeWrapper({ children, onReply }: { children: ReactNode; onRepl
   );
 
   return (
-    <div
-      {...bind()}
-      style={{ position: 'relative', touchAction: 'pan-y', width: '100%', minWidth: 0 }}
-    >
+    <div {...bind()} style={{ position: 'relative', touchAction: 'pan-y' }}>
       <div
         style={{
           position: 'absolute',
@@ -86,11 +83,7 @@ function ActiveSwipeWrapper({ children, onReply }: { children: ReactNode; onRepl
           />
         </motion.div>
       </div>
-      <motion.div
-        style={{ x: springX, position: 'relative', zIndex: 1, width: '100%', minWidth: 0 }}
-      >
-        {children}
-      </motion.div>
+      <motion.div style={{ x: springX, position: 'relative', zIndex: 1 }}>{children}</motion.div>
     </div>
   );
 }
