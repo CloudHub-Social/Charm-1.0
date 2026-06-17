@@ -734,14 +734,18 @@ function MessageInternal(
 
   const headerJSX = !collapse && (
     <Box
-      className={css.MessageHeader}
+      className={messageLayout === MessageLayout.Modern ? css.MessageHeader : undefined}
       gap="300"
       direction={messageLayout === MessageLayout.Compact ? 'RowReverse' : 'Row'}
       justifyContent="SpaceBetween"
       alignItems="Baseline"
       grow="Yes"
     >
-      <Box className={css.MessageHeaderSender} alignItems="Center" gap="100">
+      <Box
+        className={messageLayout === MessageLayout.Modern ? css.MessageHeaderSender : undefined}
+        alignItems="Center"
+        gap="100"
+      >
         <Username
           as="button"
           style={{
