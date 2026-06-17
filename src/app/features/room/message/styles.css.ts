@@ -6,31 +6,6 @@ export const MessageBase = style({
   maxWidth: '100%',
 });
 
-export const MessageHeader = style({
-  width: '100%',
-  minWidth: 0,
-  maxWidth: '100%',
-});
-
-export const MessageHeaderSender = style({
-  minWidth: 0,
-  flexWrap: 'wrap',
-});
-
-export const ModernMessageInner = style({
-  display: 'flex',
-  flexDirection: 'column',
-  width: '100%',
-  minWidth: 0,
-  maxWidth: '100%',
-});
-
-export const ModernMessageContent = style({
-  width: '100%',
-  minWidth: 0,
-  maxWidth: '100%',
-});
-
 export const MessageBaseBubbleCollapsed = style({
   paddingTop: 0,
 });

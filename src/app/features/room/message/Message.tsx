@@ -734,17 +734,19 @@ function MessageInternal(
 
   const headerJSX = !collapse && (
     <Box
-      className={messageLayout === MessageLayout.Modern ? css.MessageHeader : undefined}
       gap="300"
       direction={messageLayout === MessageLayout.Compact ? 'RowReverse' : 'Row'}
       justifyContent="SpaceBetween"
       alignItems="Baseline"
       grow="Yes"
+      style={messageLayout === MessageLayout.Modern ? { minWidth: 0 } : undefined}
     >
       <Box
-        className={messageLayout === MessageLayout.Modern ? css.MessageHeaderSender : undefined}
         alignItems="Center"
         gap="100"
+        style={
+          messageLayout === MessageLayout.Modern ? { minWidth: 0, flexWrap: 'wrap' } : undefined
+        }
       >
         <Username
           as="button"
@@ -905,9 +907,9 @@ function MessageInternal(
   const msgContentJSX = (
     <Box
       direction="Column"
-      alignSelf="Start"
+      alignSelf={messageLayout === MessageLayout.Modern ? 'Stretch' : 'Start'}
       style={MSG_CONTENT_STYLE}
-      className={classNames(messageLayout === MessageLayout.Modern && css.ModernMessageContent, {
+      className={classNames({
         [css.MessagePending]: isPendingSend,
         [css.MessageFailed]: isFailedSend,
       })}
@@ -1479,7 +1481,7 @@ function MessageInternal(
       {messageLayout !== MessageLayout.Compact && messageLayout !== MessageLayout.Bubble && (
         <SwipeableMessageWrapper onReply={handleSwipeReply}>
           <ModernLayout before={avatarJSX} onContextMenu={handleContextMenu}>
-            <div className={css.ModernMessageInner} {...longPress}>
+            <div style={{ minWidth: 0 }} {...longPress}>
               {headerJSX}
               {msgContentJSX}
             </div>
