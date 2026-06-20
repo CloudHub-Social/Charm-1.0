@@ -73,7 +73,9 @@ describe('mobile PWA dogfood contract', () => {
     expect(userRoomProfileRenderer).toContain('Member Profile');
     expect(modal500).toContain("top: 'var(--sable-safe-area-top, 0px)'");
     expect(modal500).toContain("right: 'var(--sable-safe-area-right, 0px)'");
-    expect(modal500).toContain("bottom: 'var(--sable-safe-area-bottom, 0px)'");
+    expect(modal500).toContain(
+      "bottom: 'var(--sable-safe-area-bottom-raw, var(--sable-safe-area-bottom, 0px))'"
+    );
     expect(modal500).toContain("left: 'var(--sable-safe-area-left, 0px)'");
     expect(membersDrawer).toContain(
       "top: isMobile ? 'var(--sable-safe-area-top, 0px)' : undefined"

@@ -1,44 +1,37 @@
-import { type CSSProperties, type ReactNode } from "react";
-import { isTauri } from "@tauri-apps/api/core";
-import { type as osType } from "@tauri-apps/plugin-os";
-import { mobileOrTablet } from "$utils/user-agent";
+import { type CSSProperties, type ReactNode } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
+import { type as osType } from '@tauri-apps/plugin-os';
+import { mobileOrTablet } from '$utils/user-agent';
 
-const safeAreaTop = "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))";
-const safeAreaBottom =
-  "var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))";
-const safeAreaLeft =
-  "var(--safe-area-inset-left, env(safe-area-inset-left, 0px))";
-const safeAreaRight =
-  "var(--safe-area-inset-right, env(safe-area-inset-right, 0px))";
+const safeAreaTop = 'var(--safe-area-inset-top, env(safe-area-inset-top, 0px))';
+const safeAreaBottom = 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))';
+const safeAreaLeft = 'var(--safe-area-inset-left, env(safe-area-inset-left, 0px))';
+const safeAreaRight = 'var(--safe-area-inset-right, env(safe-area-inset-right, 0px))';
 
 type SystemBarStripProps = {
-  position: "top" | "bottom";
+  position: 'top' | 'bottom';
   size: string;
 };
 
 function SystemBarStrip({ position, size }: SystemBarStripProps) {
   const background =
-    position === "top"
-      ? "var(--sable-surface-container)"
-      : "var(--sable-bg-container)";
+    position === 'top' ? 'var(--sable-surface-container)' : 'var(--sable-bg-container)';
   const borderColor =
-    position === "top"
-      ? "var(--sable-surface-container-line)"
-      : "var(--sable-bg-container-line)";
+    position === 'top' ? 'var(--sable-surface-container-line)' : 'var(--sable-bg-container-line)';
   return (
     <div
       style={{
         height: size,
         flexShrink: 0,
-        overflow: "hidden",
+        overflow: 'hidden',
       }}
     >
       <div
         style={{
-          width: "100%",
-          height: "100%",
+          width: '100%',
+          height: '100%',
           background,
-          ...(position === "top"
+          ...(position === 'top'
             ? { borderBottom: `1px solid ${borderColor}` }
             : { borderTop: `1px solid ${borderColor}` }),
         }}
@@ -52,13 +45,10 @@ type SystemBarShellProps = {
   onPortalContainerChange: (node: HTMLDivElement | null) => void;
 };
 
-export function SystemBarShell({
-  children,
-  onPortalContainerChange,
-}: SystemBarShellProps) {
+export function SystemBarShell({ children, onPortalContainerChange }: SystemBarShellProps) {
   const tauriOs = isTauri() ? osType() : undefined;
-  const isTauriMobile = tauriOs === "android" || tauriOs === "ios";
-  const needsBottomSystemBar = tauriOs === "android";
+  const isTauriMobile = tauriOs === 'android' || tauriOs === 'ios';
+  const needsBottomSystemBar = tauriOs === 'android';
   const isBrowserMobile = !isTauri() && mobileOrTablet();
   const enabled = isTauriMobile || isBrowserMobile;
 
@@ -69,16 +59,15 @@ export function SystemBarShell({
       <div
         style={
           {
-            "--sable-safe-area-top": enabled ? safeAreaTop : "0px",
-            "--sable-safe-area-bottom":
-              enabled && !needsBottomSystemBar ? safeAreaBottom : "0px",
-            "--sable-safe-area-bottom-raw": enabled ? safeAreaBottom : "0px",
-            "--sable-safe-area-left": enabled ? safeAreaLeft : "0px",
-            "--sable-safe-area-right": enabled ? safeAreaRight : "0px",
-            position: "relative",
-            display: "flex",
-            flexDirection: "column",
-            width: "100%",
+            '--sable-safe-area-top': enabled ? safeAreaTop : '0px',
+            '--sable-safe-area-bottom': enabled && !needsBottomSystemBar ? safeAreaBottom : '0px',
+            '--sable-safe-area-bottom-raw': enabled ? safeAreaBottom : '0px',
+            '--sable-safe-area-left': enabled ? safeAreaLeft : '0px',
+            '--sable-safe-area-right': enabled ? safeAreaRight : '0px',
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            width: '100%',
             minHeight: 0,
             flex: 1,
             paddingLeft: enabled ? safeAreaLeft : 0,
@@ -88,9 +77,9 @@ export function SystemBarShell({
       >
         <div
           style={{
-            display: "flex",
-            flexDirection: "column",
-            width: "100%",
+            display: 'flex',
+            flexDirection: 'column',
+            width: '100%',
             minHeight: 0,
             flex: 1,
           }}
@@ -101,9 +90,7 @@ export function SystemBarShell({
         <div id="portalContainer" ref={onPortalContainerChange} />
       </div>
 
-      {needsBottomSystemBar && (
-        <SystemBarStrip position="bottom" size={safeAreaBottom} />
-      )}
+      {needsBottomSystemBar && <SystemBarStrip position="bottom" size={safeAreaBottom} />}
     </>
   );
 }

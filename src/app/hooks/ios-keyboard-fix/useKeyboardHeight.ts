@@ -1,6 +1,6 @@
 // Vendored from https://github.com/Crscristi28/ios-pwa-keyboard-fix (MIT)
 // Replace this import path with 'ios-pwa-keyboard-fix' once published to npm.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from 'react';
 
 // Measures iOS keyboard height via the Visual Viewport API and synchronously
 // manages the --sable-visible-height / --sable-safe-bottom CSS custom properties
@@ -44,18 +44,11 @@ function isEditableElement(element: Element | null): boolean {
   const tagName = element.tagName.toLowerCase();
   return (
     element.isContentEditable ||
-    tagName === "textarea" ||
-    (tagName === "input" &&
-      ![
-        "button",
-        "checkbox",
-        "file",
-        "hidden",
-        "radio",
-        "range",
-        "reset",
-        "submit",
-      ].includes((element as HTMLInputElement).type))
+    tagName === 'textarea' ||
+    (tagName === 'input' &&
+      !['button', 'checkbox', 'file', 'hidden', 'radio', 'range', 'reset', 'submit'].includes(
+        (element as HTMLInputElement).type
+      ))
   );
 }
 
@@ -80,16 +73,16 @@ export function useKeyboardHeight() {
 
     const setCSSVars = (viewportHeight: number) => {
       document.documentElement.style.setProperty(
-        "--sable-visible-height",
-        `${Math.round(viewportHeight)}px`,
+        '--sable-visible-height',
+        `${Math.round(viewportHeight)}px`
       );
-      document.documentElement.style.setProperty("--sable-safe-bottom", "0px");
+      document.documentElement.style.setProperty('--sable-safe-bottom', '0px');
       cssVarsApplied = true;
     };
 
     const clearCSSVars = () => {
-      document.documentElement.style.removeProperty("--sable-visible-height");
-      document.documentElement.style.removeProperty("--sable-safe-bottom");
+      document.documentElement.style.removeProperty('--sable-visible-height');
+      document.documentElement.style.removeProperty('--sable-safe-bottom');
       cssVarsApplied = false;
     };
 
@@ -116,10 +109,7 @@ export function useKeyboardHeight() {
       const check = () => {
         closeVerificationTimer = null;
 
-        if (
-          !isEditableElement(document.activeElement) ||
-          baselineHeight - viewport.height < 30
-        ) {
+        if (!isEditableElement(document.activeElement) || baselineHeight - viewport.height < 30) {
           markKeyboardClosed();
           return;
         }
@@ -162,15 +152,13 @@ export function useKeyboardHeight() {
       // timeline stutter during the keyboard animation.
       if (!cssVarsApplied) {
         const estimatedViewportHeight =
-          sharedSavedHeight > 0
-            ? baselineHeight - sharedSavedHeight
-            : viewport.height;
+          sharedSavedHeight > 0 ? baselineHeight - sharedSavedHeight : viewport.height;
         setCSSVars(estimatedViewportHeight);
       }
 
       // Cancel any document scroll iOS may have applied as scroll-prediction.
       if (window.scrollY !== 0) {
-        window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+        window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
       }
 
       // Wait for the height to settle. Each resize within STABILITY_MS
@@ -209,18 +197,18 @@ export function useKeyboardHeight() {
       }, 200);
     };
 
-    viewport.addEventListener("resize", handleResize);
-    viewport.addEventListener("scroll", verifyKeyboardClosed);
-    window.addEventListener("orientationchange", handleOrientationChange);
-    window.addEventListener("focusout", verifyKeyboardClosed);
+    viewport.addEventListener('resize', handleResize);
+    viewport.addEventListener('scroll', verifyKeyboardClosed);
+    window.addEventListener('orientationchange', handleOrientationChange);
+    window.addEventListener('focusout', verifyKeyboardClosed);
     return () => {
       mountCount -= 1;
       if (stabilityTimer) clearTimeout(stabilityTimer);
       if (closeVerificationTimer) clearTimeout(closeVerificationTimer);
-      viewport.removeEventListener("resize", handleResize);
-      viewport.removeEventListener("scroll", verifyKeyboardClosed);
-      window.removeEventListener("orientationchange", handleOrientationChange);
-      window.removeEventListener("focusout", verifyKeyboardClosed);
+      viewport.removeEventListener('resize', handleResize);
+      viewport.removeEventListener('scroll', verifyKeyboardClosed);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+      window.removeEventListener('focusout', verifyKeyboardClosed);
       // Only clear CSS vars when the last instance unmounts — prevents the thread
       // drawer unmounting mid-keyboard-open from wiping the variable while the
       // main room's RoomInput still has the keyboard open.
@@ -234,11 +222,7 @@ export function useKeyboardHeight() {
   // Reads from refs so it always sees the latest state, even when
   // captured by an onMouseDown handler that mounted earlier.
   const triggerPreLift = () => {
-    if (
-      hasOpenedOnce.current &&
-      sharedSavedHeight > 0 &&
-      isVisibleRef.current
-    ) {
+    if (hasOpenedOnce.current && sharedSavedHeight > 0 && isVisibleRef.current) {
       setKeyboardHeight(sharedSavedHeight);
     }
   };

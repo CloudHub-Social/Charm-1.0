@@ -1,14 +1,7 @@
-import type { MouseEventHandler } from "react";
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { useAtom, useAtomValue } from "jotai";
-import type { RectCords } from "folds";
+import type { MouseEventHandler } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAtom, useAtomValue } from 'jotai';
+import type { RectCords } from 'folds';
 import {
   Avatar,
   Box,
@@ -22,7 +15,7 @@ import {
   Text,
   config,
   toRem,
-} from "folds";
+} from 'folds';
 import {
   At,
   ArrowsClockwise,
@@ -34,14 +27,14 @@ import {
   getPhosphorIconSize,
   Plus,
   User,
-} from "$components/icons/phosphor";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import FocusTrap from "focus-trap-react";
-import { useNavigate } from "react-router-dom";
-import type { RoomEventHandlerMap } from "$types/matrix-sdk";
-import { RoomEvent } from "$types/matrix-sdk";
-import { useMatrixClient } from "$hooks/useMatrixClient";
-import { factoryRoomIdByActivity } from "$utils/sort";
+} from '$components/icons/phosphor';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import FocusTrap from 'focus-trap-react';
+import { useNavigate } from 'react-router-dom';
+import type { RoomEventHandlerMap } from '$types/matrix-sdk';
+import { RoomEvent } from '$types/matrix-sdk';
+import { useMatrixClient } from '$hooks/useMatrixClient';
+import { factoryRoomIdByActivity } from '$utils/sort';
 import {
   NavButton,
   NavCategory,
@@ -51,51 +44,44 @@ import {
   NavItem,
   NavItemContent,
   NavLink,
-} from "$components/nav";
-import {
-  getDirectCreatePath,
-  getDirectRoomPath,
-  getDirectSearchPath,
-} from "$pages/pathUtils";
-import { getCanonicalAliasOrRoomId } from "$utils/matrix";
-import { useSelectedRoom } from "$hooks/router/useSelectedRoom";
-import { VirtualTile } from "$components/virtualizer";
-import { RoomNavCategoryButton, RoomNavItem } from "$features/room-nav";
-import { makeNavCategoryId } from "$state/closedNavCategories";
-import { roomToUnreadAtom } from "$state/room/roomToUnread";
-import { useCategoryHandler } from "$hooks/useCategoryHandler";
-import { useNavToActivePathMapper } from "$hooks/useNavToActivePathMapper";
-import { PageNav, PageNavContent, PageNavHeader } from "$components/page";
-import { useClosedNavCategoriesAtom } from "$state/hooks/closedNavCategories";
-import { useRoomsUnread } from "$state/hooks/unread";
-import { markAsRead } from "$utils/notifications";
-import { stopPropagation } from "$utils/keyboard";
-import { useSetting } from "$state/hooks/settings";
-import { settingsAtom } from "$state/settings";
+} from '$components/nav';
+import { getDirectCreatePath, getDirectRoomPath, getDirectSearchPath } from '$pages/pathUtils';
+import { getCanonicalAliasOrRoomId } from '$utils/matrix';
+import { useSelectedRoom } from '$hooks/router/useSelectedRoom';
+import { VirtualTile } from '$components/virtualizer';
+import { RoomNavCategoryButton, RoomNavItem } from '$features/room-nav';
+import { makeNavCategoryId } from '$state/closedNavCategories';
+import { roomToUnreadAtom } from '$state/room/roomToUnread';
+import { useCategoryHandler } from '$hooks/useCategoryHandler';
+import { useNavToActivePathMapper } from '$hooks/useNavToActivePathMapper';
+import { PageNav, PageNavContent, PageNavHeader } from '$components/page';
+import { useClosedNavCategoriesAtom } from '$state/hooks/closedNavCategories';
+import { useRoomsUnread } from '$state/hooks/unread';
+import { markAsRead } from '$utils/notifications';
+import { stopPropagation } from '$utils/keyboard';
+import { useSetting } from '$state/hooks/settings';
+import { settingsAtom } from '$state/settings';
 import {
   getRoomNotificationMode,
   useRoomsNotificationPreferencesContext,
-} from "$hooks/useRoomsNotificationPreferences";
-import {
-  useDirectCreateSelected,
-  useDirectSearchSelected,
-} from "$hooks/router/useDirectSelected";
-import { useDirectRooms } from "./useDirectRooms";
-import { SidebarResizer } from "$pages/client/sidebar/SidebarResizer";
-import { mobileOrTabletLayout } from "$utils/user-agent";
-import { useScreenSizeContext, ScreenSize } from "$hooks/useScreenSize";
-import { usePullToRefresh } from "$hooks/usePullToRefresh";
-import { getSlidingSyncManager } from "$client/initMatrix";
-import { LIST_DMS } from "$client/slidingSync";
-import { getNextSlidingSyncListWindowEnd } from "$client/slidingSyncListPaging";
-import { allRoomsAtom } from "$state/room-list/roomList";
-import { markStartupRoomListReady } from "$utils/perfTelemetry";
+} from '$hooks/useRoomsNotificationPreferences';
+import { useDirectCreateSelected, useDirectSearchSelected } from '$hooks/router/useDirectSelected';
+import { useDirectRooms } from './useDirectRooms';
+import { SidebarResizer } from '$pages/client/sidebar/SidebarResizer';
+import { mobileOrTabletLayout } from '$utils/user-agent';
+import { useScreenSizeContext, ScreenSize } from '$hooks/useScreenSize';
+import { usePullToRefresh } from '$hooks/usePullToRefresh';
+import { getSlidingSyncManager } from '$client/initMatrix';
+import { LIST_DMS } from '$client/slidingSync';
+import { getNextSlidingSyncListWindowEnd } from '$client/slidingSyncListPaging';
+import { allRoomsAtom } from '$state/room-list/roomList';
+import { markStartupRoomListReady } from '$utils/perfTelemetry';
 import {
   ensureManualRefreshSpinStyle,
   getManualRefreshSpinStyle,
   triggerManualRefresh,
-} from "$utils/manualRefresh";
-import { SwipeableOverlayWrapper } from "$components/SwipeableOverlayWrapper";
+} from '$utils/manualRefresh';
+import { SwipeableOverlayWrapper } from '$components/SwipeableOverlayWrapper';
 
 type DirectMenuProps = {
   isRefreshing: boolean;
@@ -105,7 +91,7 @@ type DirectMenuProps = {
 const DirectMenu = forwardRef<HTMLDivElement, DirectMenuProps>(
   ({ isRefreshing, onRefresh, requestClose }, ref) => {
     const mx = useMatrixClient();
-    const [hideReads] = useSetting(settingsAtom, "hideReads");
+    const [hideReads] = useSetting(settingsAtom, 'hideReads');
     const orphanRooms = useDirectRooms();
     const unread = useRoomsUnread(orphanRooms, roomToUnreadAtom);
 
@@ -116,12 +102,8 @@ const DirectMenu = forwardRef<HTMLDivElement, DirectMenuProps>(
     };
 
     return (
-      <Menu ref={ref} style={{ maxWidth: toRem(160), width: "100vw" }}>
-        <Box
-          direction="Column"
-          gap="100"
-          style={{ padding: config.space.S100 }}
-        >
+      <Menu ref={ref} style={{ maxWidth: toRem(160), width: '100vw' }}>
+        <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
           <MenuItem
             onClick={handleMarkAsRead}
             size="300"
@@ -151,7 +133,7 @@ const DirectMenu = forwardRef<HTMLDivElement, DirectMenuProps>(
         </Box>
       </Menu>
     );
-  },
+  }
 );
 
 function DirectHeader({
@@ -177,14 +159,10 @@ function DirectHeader({
       <PageNavHeader size="600">
         {hideText ? (
           <Box alignItems="Center" grow="Yes" justifyContent="Center">
-            <IconButton
-              aria-pressed={!!menuAnchor}
-              variant="Background"
-              onClick={handleOpenMenu}
-            >
+            <IconButton aria-pressed={!!menuAnchor} variant="Background" onClick={handleOpenMenu}>
               <User
-                size={getPhosphorIconSize("toolbar")}
-                weight={menuAnchor ? "fill" : "regular"}
+                size={getPhosphorIconSize('toolbar')}
+                weight={menuAnchor ? 'fill' : 'regular'}
               />
             </IconButton>
           </Box>
@@ -196,13 +174,9 @@ function DirectHeader({
               </Text>
             </Box>
             <Box shrink="No">
-              <IconButton
-                aria-pressed={!!menuAnchor}
-                variant="Background"
-                onClick={handleOpenMenu}
-              >
+              <IconButton aria-pressed={!!menuAnchor} variant="Background" onClick={handleOpenMenu}>
                 {composerIcon(DotsThreeOutlineVerticalIcon, {
-                  weight: menuAnchor ? "fill" : "regular",
+                  weight: menuAnchor ? 'fill' : 'regular',
                 })}
               </IconButton>
             </Box>
@@ -221,8 +195,8 @@ function DirectHeader({
               returnFocusOnDeactivate: false,
               onDeactivate: () => setMenuAnchor(undefined),
               clickOutsideDeactivates: true,
-              isKeyForward: (evt: KeyboardEvent) => evt.key === "ArrowDown",
-              isKeyBackward: (evt: KeyboardEvent) => evt.key === "ArrowUp",
+              isKeyForward: (evt: KeyboardEvent) => evt.key === 'ArrowDown',
+              isKeyBackward: (evt: KeyboardEvent) => evt.key === 'ArrowUp',
               escapeDeactivates: stopPropagation,
             }}
           >
@@ -256,11 +230,7 @@ function DirectEmpty() {
           </Text>
         }
         options={
-          <Button
-            variant="Secondary"
-            size="300"
-            onClick={() => navigate(getDirectCreatePath())}
-          >
+          <Button variant="Secondary" size="300" onClick={() => navigate(getDirectCreatePath())}>
             <Text size="B300" truncate>
               Direct Message
             </Text>
@@ -271,40 +241,32 @@ function DirectEmpty() {
   );
 }
 
-const DEFAULT_CATEGORY_ID = makeNavCategoryId("direct", "direct");
+const DEFAULT_CATEGORY_ID = makeNavCategoryId('direct', 'direct');
 export function Direct() {
   const mx = useMatrixClient();
-  useNavToActivePathMapper("direct");
+  useNavToActivePathMapper('direct');
   const scrollRef = useRef<HTMLDivElement>(null);
   const directs = useDirectRooms();
   const allRoomCount = useAtomValue(allRoomsAtom).length;
   const notificationPreferences = useRoomsNotificationPreferencesContext();
   const roomToUnread = useAtomValue(roomToUnreadAtom);
   const navigate = useNavigate();
-  const [customDMCards] = useSetting(settingsAtom, "customDMCards");
-  const [roomSidebarWidth, setRoomSidebarWidth] = useSetting(
-    settingsAtom,
-    "roomSidebarWidth",
-  );
+  const [customDMCards] = useSetting(settingsAtom, 'customDMCards');
+  const [roomSidebarWidth, setRoomSidebarWidth] = useSetting(settingsAtom, 'roomSidebarWidth');
   const [curWidth, setCurWidth] = useState(roomSidebarWidth);
 
   useEffect(() => {
     setCurWidth(roomSidebarWidth);
   }, [roomSidebarWidth]);
 
-  const [joinCallOnSingleClick] = useSetting(
-    settingsAtom,
-    "joinCallOnSingleClick",
-  );
+  const [joinCallOnSingleClick] = useSetting(settingsAtom, 'joinCallOnSingleClick');
 
   const createDirectSelected = useDirectCreateSelected();
   const searchSelected = useDirectSearchSelected();
 
   const selectedRoomId = useSelectedRoom();
   const noRoomToDisplay = directs.length === 0;
-  const [closedCategories, setClosedCategories] = useAtom(
-    useClosedNavCategoriesAtom(),
-  );
+  const [closedCategories, setClosedCategories] = useAtom(useClosedNavCategoriesAtom());
 
   // Track timeline activity to trigger re-sorting when messages arrive.
   // Without this, DMs only re-sort when you switch rooms because getLastActiveTimestamp()
@@ -318,7 +280,7 @@ export function Direct() {
       room,
       _toStartOfTimeline,
       _removed,
-      data,
+      data
     ) => {
       const eventId = mEvent.getId();
       const isRecentSlidingSyncEvent =
@@ -357,14 +319,7 @@ export function Direct() {
       return items.filter((rId) => hasUnread(rId) || rId === selectedRoomId);
     }
     return items;
-  }, [
-    mx,
-    directs,
-    closedCategories,
-    roomToUnread,
-    selectedRoomId,
-    activityCounter,
-  ]);
+  }, [mx, directs, closedCategories, roomToUnread, selectedRoomId, activityCounter]);
 
   const virtualizer = useVirtualizer({
     count: sortedDirects.length,
@@ -395,13 +350,12 @@ export function Direct() {
 
   useEffect(() => {
     if (sortedDirects.length > 0 || allRoomCount === 0) {
-      markStartupRoomListReady("direct", sortedDirects.length);
+      markStartupRoomListReady('direct', sortedDirects.length);
     }
   }, [sortedDirects.length, allRoomCount]);
 
-  const handleCategoryClick = useCategoryHandler(
-    setClosedCategories,
-    (categoryId) => closedCategories.has(categoryId),
+  const handleCategoryClick = useCategoryHandler(setClosedCategories, (categoryId) =>
+    closedCategories.has(categoryId)
   );
 
   const screenSize = useScreenSizeContext();
@@ -432,28 +386,20 @@ export function Direct() {
     <Box
       shrink="No"
       style={{
-        position: "relative",
-        width: isMobile ? "100%" : toRem(curWidth),
+        position: 'relative',
+        width: isMobile ? '100%' : toRem(curWidth),
       }}
     >
       <PageNav>
         <SwipeableOverlayWrapper direction="left" onClose={handleSwipeToRoom}>
-          <DirectHeader
-            hideText={hideText}
-            isRefreshing={isRefreshing}
-            onRefresh={handleRefresh}
-          />
+          <DirectHeader hideText={hideText} isRefreshing={isRefreshing} onRefresh={handleRefresh} />
           {noRoomToDisplay ? (
             <DirectEmpty />
           ) : (
             <PageNavContent scrollRef={scrollRef}>
               <Box direction="Column" gap="300">
                 <NavCategory>
-                  <NavItem
-                    variant="Background"
-                    radii="400"
-                    aria-selected={createDirectSelected}
-                  >
+                  <NavItem variant="Background" radii="400" aria-selected={createDirectSelected}>
                     <NavButton onClick={() => navigate(getDirectCreatePath())}>
                       <NavItemContent>
                         <Box
@@ -477,11 +423,7 @@ export function Direct() {
                       </NavItemContent>
                     </NavButton>
                   </NavItem>
-                  <NavItem
-                    variant="Background"
-                    radii="400"
-                    aria-selected={searchSelected}
-                  >
+                  <NavItem variant="Background" radii="400" aria-selected={searchSelected}>
                     <NavLink to={getDirectSearchPath()}>
                       <NavItemContent>
                         <Box
@@ -492,15 +434,11 @@ export function Direct() {
                           gap="200"
                         >
                           <Avatar
-                            size={hideText ? undefined : "200"}
+                            size={hideText ? undefined : '200'}
                             radii="400"
-                            style={hideText ? { width: "100%" } : undefined}
+                            style={hideText ? { width: '100%' } : undefined}
                           >
-                            <Icon
-                              src={Icons.Search}
-                              size="100"
-                              filled={searchSelected}
-                            />
+                            <Icon src={Icons.Search} size="100" filled={searchSelected} />
                           </Avatar>
                           <Box as="span" grow="Yes">
                             {!hideText && (
@@ -521,14 +459,14 @@ export function Direct() {
                       data-category-id={DEFAULT_CATEGORY_ID}
                       onClick={handleCategoryClick}
                     >
-                      {!hideText && "Chats"}
+                      {!hideText && 'Chats'}
                     </RoomNavCategoryButton>
                   </NavCategoryHeader>
                   <div
                     style={{
-                      position: "relative",
+                      position: 'relative',
                       height: virtualizer.getTotalSize(),
-                      overflow: "clip",
+                      overflow: 'clip',
                     }}
                   >
                     {virtualItems.map((vItem) => {
@@ -548,11 +486,11 @@ export function Direct() {
                             style={
                               hideText
                                 ? {
-                                    padding: "0",
-                                    width: "100%",
+                                    padding: '0',
+                                    width: '100%',
                                     aspectRatio: 1,
-                                    display: "flex",
-                                    flexDirection: "column",
+                                    display: 'flex',
+                                    flexDirection: 'column',
                                   }
                                 : {}
                             }
@@ -564,12 +502,10 @@ export function Direct() {
                               direct
                               customDMCards={customDMCards}
                               hideText={hideText}
-                              linkPath={getDirectRoomPath(
-                                getCanonicalAliasOrRoomId(mx, roomId),
-                              )}
+                              linkPath={getDirectRoomPath(getCanonicalAliasOrRoomId(mx, roomId))}
                               notificationMode={getRoomNotificationMode(
                                 notificationPreferences,
-                                room.roomId,
+                                room.roomId
                               )}
                               joinCallOnSingleClick={joinCallOnSingleClick}
                             />

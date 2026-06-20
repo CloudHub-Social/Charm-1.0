@@ -1,48 +1,45 @@
-import { useCallback, useRef, useState } from "react";
-import { useAtomValue } from "jotai";
-import { Transforms } from "slate";
-import { Box, Text, config } from "folds";
-import { EventType } from "$types/matrix-sdk";
-import { ReactEditor } from "slate-react";
-import { isKeyHotkey } from "is-hotkey";
-import { useStateEvent } from "$hooks/useStateEvent";
+import { useCallback, useRef, useState } from 'react';
+import { useAtomValue } from 'jotai';
+import { Transforms } from 'slate';
+import { Box, Text, config } from 'folds';
+import { EventType } from '$types/matrix-sdk';
+import { ReactEditor } from 'slate-react';
+import { isKeyHotkey } from 'is-hotkey';
+import { useStateEvent } from '$hooks/useStateEvent';
 
-import { usePowerLevelsContext } from "$hooks/usePowerLevels";
-import { useMatrixClient } from "$hooks/useMatrixClient";
-import { useEditor, resetEditor } from "$components/editor";
-import { Page } from "$components/page";
-import { useKeyDown } from "$hooks/useKeyDown";
-import { editableActiveElement } from "$utils/dom";
-import { settingsAtom } from "$state/settings";
-import { useSetting } from "$state/hooks/settings";
-import { useRoomPermissions } from "$hooks/useRoomPermissions";
-import { useRoomCreators } from "$hooks/useRoomCreators";
-import { ScreenSize, useScreenSizeContext } from "$hooks/useScreenSize";
-import { SwipeableChatWrapper } from "$components/SwipeableChatWrapper";
-import { BackRouteHandler } from "$components/BackRouteHandler";
-import { useKeyboardHeight } from "$hooks/ios-keyboard-fix/useKeyboardHeight";
-import { useOpenRoomSettings } from "$state/hooks/roomSettings";
-import { useSpaceOptionally } from "$hooks/useSpace";
-import { RoomSettingsPage } from "$state/roomSettings";
-import { GlobalModalManager } from "$components/message/modals/GlobalModalManager";
-import { useDelayedEventsSupport } from "$hooks/useDelayedEventsSupport";
-import { delayedEventsSupportedAtom } from "$state/scheduledMessages";
-import { useCallMembers, useCallSession } from "$hooks/useCall";
-import { callEmbedAtom } from "$state/callEmbed";
-import { useCallJoined } from "$hooks/useCallEmbed";
-import { useRoomTypingMember } from "$hooks/useRoomTypingMembers";
-import { CallView } from "$features/call/CallView";
-import { useRoom } from "$hooks/useRoom";
-import {
-  RoomViewFollowing,
-  RoomViewFollowingPlaceholder,
-} from "./RoomViewFollowing";
-import { RoomInput } from "./RoomInput";
-import { RoomTombstone } from "./RoomTombstone";
-import { RoomViewTyping } from "./RoomViewTyping";
-import { RoomTimeline } from "./RoomTimeline";
-import { RoomInputPlaceholder } from "./RoomInputPlaceholder";
-import { ScheduledMessagesList } from "./schedule-send";
+import { usePowerLevelsContext } from '$hooks/usePowerLevels';
+import { useMatrixClient } from '$hooks/useMatrixClient';
+import { useEditor, resetEditor } from '$components/editor';
+import { Page } from '$components/page';
+import { useKeyDown } from '$hooks/useKeyDown';
+import { editableActiveElement } from '$utils/dom';
+import { settingsAtom } from '$state/settings';
+import { useSetting } from '$state/hooks/settings';
+import { useRoomPermissions } from '$hooks/useRoomPermissions';
+import { useRoomCreators } from '$hooks/useRoomCreators';
+import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
+import { SwipeableChatWrapper } from '$components/SwipeableChatWrapper';
+import { BackRouteHandler } from '$components/BackRouteHandler';
+import { useKeyboardHeight } from '$hooks/ios-keyboard-fix/useKeyboardHeight';
+import { useOpenRoomSettings } from '$state/hooks/roomSettings';
+import { useSpaceOptionally } from '$hooks/useSpace';
+import { RoomSettingsPage } from '$state/roomSettings';
+import { GlobalModalManager } from '$components/message/modals/GlobalModalManager';
+import { useDelayedEventsSupport } from '$hooks/useDelayedEventsSupport';
+import { delayedEventsSupportedAtom } from '$state/scheduledMessages';
+import { useCallMembers, useCallSession } from '$hooks/useCall';
+import { callEmbedAtom } from '$state/callEmbed';
+import { useCallJoined } from '$hooks/useCallEmbed';
+import { useRoomTypingMember } from '$hooks/useRoomTypingMembers';
+import { CallView } from '$features/call/CallView';
+import { useRoom } from '$hooks/useRoom';
+import { RoomViewFollowing, RoomViewFollowingPlaceholder } from './RoomViewFollowing';
+import { RoomInput } from './RoomInput';
+import { RoomTombstone } from './RoomTombstone';
+import { RoomViewTyping } from './RoomViewTyping';
+import { RoomTimeline } from './RoomTimeline';
+import { RoomInputPlaceholder } from './RoomInputPlaceholder';
+import { ScheduledMessagesList } from './schedule-send';
 
 const FN_KEYS_REGEX = /^F\d+$/;
 const shouldFocusMessageField = (evt: KeyboardEvent): boolean => {
@@ -54,20 +51,20 @@ const shouldFocusMessageField = (evt: KeyboardEvent): boolean => {
   if (FN_KEYS_REGEX.test(code)) return false;
 
   if (
-    code.startsWith("OS") ||
-    code.startsWith("Meta") ||
-    code.startsWith("Shift") ||
-    code.startsWith("Alt") ||
-    code.startsWith("Control") ||
-    code.startsWith("Arrow") ||
-    code.startsWith("Page") ||
-    code.startsWith("End") ||
-    code.startsWith("Home") ||
-    code === "Tab" ||
-    code === "Space" ||
-    code === "Enter" ||
-    code === "NumLock" ||
-    code === "ScrollLock"
+    code.startsWith('OS') ||
+    code.startsWith('Meta') ||
+    code.startsWith('Shift') ||
+    code.startsWith('Alt') ||
+    code.startsWith('Control') ||
+    code.startsWith('Arrow') ||
+    code.startsWith('Page') ||
+    code.startsWith('End') ||
+    code.startsWith('Home') ||
+    code === 'Tab' ||
+    code === 'Space' ||
+    code === 'Enter' ||
+    code === 'NumLock' ||
+    code === 'ScrollLock'
   ) {
     return false;
   }
@@ -82,7 +79,7 @@ export function RoomView({
   onOpenMobileMembersDrawer,
 }: {
   eventId?: string;
-  jumpMode?: "notification_live" | "history_context";
+  jumpMode?: 'notification_live' | 'history_context';
   hasDesktopRightDrawer?: boolean;
   onOpenMobileMembersDrawer?: () => void;
 }) {
@@ -92,7 +89,7 @@ export function RoomView({
 
   const { isKeyboardVisible } = useKeyboardHeight();
   const screenSize = useScreenSizeContext();
-  const [hideReads] = useSetting(settingsAtom, "hideReads");
+  const [hideReads] = useSetting(settingsAtom, 'hideReads');
 
   const room = useRoom();
   const { roomId } = room;
@@ -106,16 +103,10 @@ export function RoomView({
   const creators = useRoomCreators(room);
 
   const permissions = useRoomPermissions(creators, powerLevels);
-  const canMessage = permissions.event(
-    EventType.RoomMessage,
-    mx.getSafeUserId(),
-  );
+  const canMessage = permissions.event(EventType.RoomMessage, mx.getSafeUserId());
 
   const [editorResetKey, setEditorResetKey] = useState(0);
-  const handleResetEditor = useCallback(
-    () => setEditorResetKey((prev) => prev + 1),
-    [],
-  );
+  const handleResetEditor = useCallback(() => setEditorResetKey((prev) => prev + 1), []);
 
   useDelayedEventsSupport();
   const delayedEventsSupported = useAtomValue(delayedEventsSupportedAtom);
@@ -126,7 +117,7 @@ export function RoomView({
       if (body) Transforms.insertText(editor, body);
       ReactEditor.focus(editor);
     },
-    [editor],
+    [editor]
   );
 
   useKeyDown(
@@ -134,16 +125,16 @@ export function RoomView({
     useCallback(
       (evt) => {
         if (editableActiveElement()) return;
-        const portalContainer = document.getElementById("portalContainer");
+        const portalContainer = document.getElementById('portalContainer');
         if (portalContainer && portalContainer.children.length > 0) {
           return;
         }
-        if (shouldFocusMessageField(evt) || isKeyHotkey("mod+v", evt)) {
+        if (shouldFocusMessageField(evt) || isKeyHotkey('mod+v', evt)) {
           ReactEditor.focus(editor);
         }
       },
-      [editor],
-    ),
+      [editor]
+    )
   );
 
   const openSettings = useOpenRoomSettings();
@@ -156,41 +147,24 @@ export function RoomView({
     } else {
       openSettings(room.roomId, space?.roomId, RoomSettingsPage.MembersPage);
     }
-  }, [
-    isMobileMembersSurface,
-    onOpenMobileMembersDrawer,
-    openSettings,
-    room.roomId,
-    space?.roomId,
-  ]);
+  }, [isMobileMembersSurface, onOpenMobileMembersDrawer, openSettings, room.roomId, space?.roomId]);
 
   const callSession = useCallSession(room);
   const callMembers = useCallMembers(room, callSession);
   const callEmbed = useAtomValue(callEmbedAtom);
-  const isJoinedInThisRoom =
-    useCallJoined(callEmbed) && callEmbed?.roomId === room.roomId;
-  const showCallView =
-    !room.isCallRoom() && (callMembers.length > 0 || isJoinedInThisRoom);
-  const hideFollowingBar =
-    screenSize === ScreenSize.Mobile && isKeyboardVisible;
-  const hasTypingIndicator = typingMembers.some(
-    (receipt) => receipt.userId !== mx.getUserId(),
-  );
+  const isJoinedInThisRoom = useCallJoined(callEmbed) && callEmbed?.roomId === room.roomId;
+  const showCallView = !room.isCallRoom() && (callMembers.length > 0 || isJoinedInThisRoom);
+  const hideFollowingBar = screenSize === ScreenSize.Mobile && isKeyboardVisible;
+  const hasTypingIndicator = typingMembers.some((receipt) => receipt.userId !== mx.getUserId());
 
   return (
     <BackRouteHandler>
       {(onBack) => (
         <Page ref={roomViewRef}>
-          <SwipeableChatWrapper
-            onOpenSidebar={onBack}
-            onOpenMembers={handleOpenMembers}
-          >
+          <SwipeableChatWrapper onOpenSidebar={onBack} onOpenMembers={handleOpenMembers}>
             <Box grow="Yes" direction="Column">
               {showCallView && (
-                <Box
-                  shrink="No"
-                  style={{ width: "100%", position: "relative" }}
-                >
+                <Box shrink="No" style={{ width: '100%', position: 'relative' }}>
                   <CallView resizable />
                 </Box>
               )}
@@ -212,25 +186,19 @@ export function RoomView({
               shrink="No"
               direction="Column"
               style={{
-                backgroundColor: "var(--sable-surface-container)",
-                paddingBottom:
-                  "var(--sable-safe-bottom, var(--sable-safe-area-bottom, 0px))",
+                backgroundColor: 'var(--sable-surface-container)',
+                paddingBottom: 'var(--sable-safe-bottom, var(--sable-safe-area-bottom, 0px))',
               }}
             >
               {canMessage && delayedEventsSupported && (
-                <ScheduledMessagesList
-                  room={room}
-                  onEditMessage={handleEditMessage}
-                />
+                <ScheduledMessagesList room={room} onEditMessage={handleEditMessage} />
               )}
               <div style={{ padding: `0 ${config.space.S400}` }}>
                 {tombstoneEvent ? (
                   <RoomTombstone
                     roomId={roomId}
                     body={tombstoneEvent.getContent().body}
-                    replacementRoomId={
-                      tombstoneEvent.getContent().replacement_room
-                    }
+                    replacementRoomId={tombstoneEvent.getContent().replacement_room}
                   />
                 ) : (
                   <>
@@ -251,9 +219,7 @@ export function RoomView({
                         alignItems="Center"
                         justifyContent="Center"
                       >
-                        <Text align="Center">
-                          You do not have permission to post in this room
-                        </Text>
+                        <Text align="Center">You do not have permission to post in this room</Text>
                       </RoomInputPlaceholder>
                     )}
                   </>
