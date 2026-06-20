@@ -577,7 +577,9 @@ function MessageNotifications() {
       };
 
       mEvent.once(MatrixEventEvent.Decrypted, handleDecrypted);
-      pendingDecryptListeners.set(eventId, () => mEvent.off(MatrixEventEvent.Decrypted, handleDecrypted));
+      pendingDecryptListeners.set(eventId, () =>
+        mEvent.off(MatrixEventEvent.Decrypted, handleDecrypted)
+      );
     };
 
     queuedNotificationEventsRef.current.forEach(({ mEvent, room, data }, queuedEventId) => {
