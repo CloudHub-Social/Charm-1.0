@@ -473,4 +473,38 @@ describe('useNotificationDeviceScope', () => {
 
     expect(client.setAccountData).toHaveBeenCalledTimes(1);
   });
+
+  it('ignores stale lease publish failures after unmount', async () => {
+    notificationDeviceScope = 'desktop_delay';
+    let rejectSetAccountData: ((reason?: unknown) => void) | undefined;
+    const { client } = createMockMatrixClient();
+    client.setAccountData = vi.fn(
+      () =>
+        new Promise<Record<string, never>>((_, reject) => {
+          rejectSetAccountData = reject;
+        })
+    ) as unknown as typeof client.setAccountData;
+
+    const localUpdates: Array<LeaseContent | null> = [];
+    const handleLeaseUpdate = (event: Event) => {
+      localUpdates.push((event as CustomEvent<LeaseContent | null>).detail);
+    };
+    window.addEventListener('sable:notification-device-lease-update', handleLeaseUpdate);
+
+    const { unmount } = renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    unmount();
+
+    await act(async () => {
+      rejectSetAccountData?.(new Error('stale publish failed'));
+      await Promise.resolve();
+    });
+
+    window.removeEventListener('sable:notification-device-lease-update', handleLeaseUpdate);
+    expect(localUpdates.at(-1)).not.toBeNull();
+  });
 });

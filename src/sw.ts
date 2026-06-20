@@ -215,6 +215,7 @@ type DelayedPushQueueEntry = {
   queuedAt: number;
   userId?: string;
   eventId?: string;
+  retryCount?: number;
 };
 
 async function loadDelayedPushQueue(): Promise<DelayedPushQueueEntry[]> {
@@ -232,11 +233,13 @@ async function loadDelayedPushQueue(): Promise<DelayedPushQueueEntry[]> {
         queuedAt?: unknown;
         userId?: unknown;
         eventId?: unknown;
+        retryCount?: unknown;
       };
       return (
         queued.payload !== undefined &&
         typeof queued.releaseAt === 'number' &&
-        typeof queued.queuedAt === 'number'
+        typeof queued.queuedAt === 'number' &&
+        (queued.retryCount === undefined || typeof queued.retryCount === 'number')
       );
     });
   } catch {
@@ -710,7 +713,11 @@ async function flushDelayedPushQueue(): Promise<'idle' | 'paused_visible' | 'del
       await deliverPushPayload(entry.payload, clients);
       deliveredAny = true;
     } catch {
-      nextQueue.push(entry);
+      nextQueue.push({
+        ...entry,
+        retryCount: (entry.retryCount ?? 0) + 1,
+        releaseAt: Date.now() + DELAYED_PUSH_RETRY_BACKOFF_MS,
+      });
     }
   }
   nextQueue.sort((a, b) => a.releaseAt - b.releaseAt);
@@ -1272,6 +1279,7 @@ type NotificationClickWaiter = {
 const notificationClickPendingMap = new Map<string, NotificationClickWaiter>();
 const SW_FETCH_RETRY_DELAYS_MS = [250, 750] as const;
 const NOTIFICATION_CLICK_HANDLED_TIMEOUT_MS = 4_000;
+const DELAYED_PUSH_RETRY_BACKOFF_MS = 30_000;
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -2570,6 +2578,7 @@ const onPushNotification = async (event: PushEvent) => {
   ]);
 
   await flushDelayedPushQueue();
+  scheduleDelayedPushQueueFlush();
   const pushData = event.data.json();
   const pushUserId = extractPushUserId(pushData) ?? session?.userId;
   await refreshNotificationLeaseStateForUser(pushUserId);
