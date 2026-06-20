@@ -38,7 +38,6 @@ import { useMatrixClient } from '$hooks/useMatrixClient';
 import { allRoomsAtom } from '$state/room-list/roomList';
 import { getCanonicalAliasOrRoomId, rateLimitedActions } from '$utils/matrix';
 import { getSpaceRoomPath } from '$pages/pathUtils';
-import { mobileOrTabletLayout } from '$utils/user-agent';
 
 import { ASCIILexicalTable, orderKeys } from '$utils/ASCIILexicalTable';
 import { getStateEvent } from '$utils/room';
@@ -179,7 +178,7 @@ export function Lobby() {
   const [spaceRooms, setSpaceRooms] = useAtom(spaceRoomsAtom);
   const [isDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
   const screenSize = useScreenSizeContext();
-  const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile;
   const [mobileMembersDrawerOpen, setMobileMembersDrawerOpen] = useState(false);
   const isMembersDrawerOpen = isMobileMembersSurface ? mobileMembersDrawerOpen : isDrawer;
   const [onTop, setOnTop] = useState(true);
