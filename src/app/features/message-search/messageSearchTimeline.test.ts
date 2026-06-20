@@ -1,3 +1,4 @@
+import { SearchOrderBy } from '$types/matrix-sdk';
 import { describe, expect, it } from 'vitest';
 import { flattenTimelineSearchItems } from './messageSearchTimeline';
 import type { ResultGroup } from './useMessageSearch';
@@ -32,11 +33,33 @@ describe('flattenTimelineSearchItems', () => {
     ];
 
     expect(
-      flattenTimelineSearchItems(groups).map((item) => [item.roomId, item.event.origin_server_ts])
+      flattenTimelineSearchItems(groups, SearchOrderBy.Recent).map((item) => [
+        item.roomId,
+        item.event.origin_server_ts,
+      ])
     ).toEqual([
       ['!room-a:smoke.test', 100],
       ['!room-b:smoke.test', 95],
       ['!room-a:smoke.test', 90],
+      ['!room-b:smoke.test', 85],
+    ]);
+  });
+
+  it('preserves ranked timeline ordering when the user selects relevance sorting', () => {
+    const groups = [
+      makeGroup('!room-a:smoke.test', [100, 90]),
+      makeGroup('!room-b:smoke.test', [95, 85]),
+    ];
+
+    expect(
+      flattenTimelineSearchItems(groups, SearchOrderBy.Rank).map((item) => [
+        item.roomId,
+        item.event.origin_server_ts,
+      ])
+    ).toEqual([
+      ['!room-a:smoke.test', 100],
+      ['!room-a:smoke.test', 90],
+      ['!room-b:smoke.test', 95],
       ['!room-b:smoke.test', 85],
     ]);
   });

@@ -158,8 +158,8 @@ export function MessageSearch({
   const isGrouped = searchPathSearchParams.grouped !== 'false';
   const flatItems = useMemo(() => {
     if (isGrouped) return [];
-    return flattenTimelineSearchItems(groups);
-  }, [groups, isGrouped]);
+    return flattenTimelineSearchItems(groups, msgSearchParams.order as SearchOrderBy);
+  }, [groups, isGrouped, msgSearchParams.order]);
 
   const virtualizer = useVirtualizer({
     count: isGrouped ? groups.length : flatItems.length,
