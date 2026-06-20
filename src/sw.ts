@@ -262,15 +262,31 @@ async function persistDelayedPushQueue(queue: DelayedPushQueueEntry[]): Promise<
   }
 }
 
+async function removeDelayedPushQueueEntriesForUser(userId: string | undefined): Promise<void> {
+  if (!userId) {
+    await persistDelayedPushQueue([]);
+    return;
+  }
+  const queue = await loadDelayedPushQueue();
+  await persistDelayedPushQueue(queue.filter((entry) => entry.userId !== userId));
+}
+
 function extractPushEventId(pushData: unknown): string | undefined {
   if (!pushData || typeof pushData !== 'object') return undefined;
   const payload = pushData as {
     event_id?: unknown;
-    notification?: { event_id?: unknown };
+    notification?: { event_id?: unknown; data?: { event_id?: unknown } };
+    data?: { event_id?: unknown };
   };
   if (typeof payload.event_id === 'string') return payload.event_id;
   if (typeof payload.notification?.event_id === 'string') {
     return payload.notification.event_id;
+  }
+  if (typeof payload.notification?.data?.event_id === 'string') {
+    return payload.notification.data.event_id;
+  }
+  if (typeof payload.data?.event_id === 'string') {
+    return payload.data.event_id;
   }
   return undefined;
 }
@@ -383,13 +399,14 @@ function isCountOnlyReadStatePush(pushData: unknown): boolean {
 
 async function fetchNotificationLeaseForSession(
   session: SessionInfo | undefined
-): Promise<NotificationLeaseState['lease'] | null> {
+): Promise<NotificationLeaseState['lease'] | null | undefined> {
   if (!session?.userId) return null;
   const url = `${session.baseUrl}/_matrix/client/v3/user/${encodeURIComponent(
     session.userId
   )}/account_data/${encodeURIComponent(NOTIFICATION_DEVICE_LEASE_EVENT_TYPE)}`;
   const response = await fetch(url, fetchConfig(session.accessToken));
-  if (!response.ok) return null;
+  if (response.status === 404) return null;
+  if (!response.ok) return undefined;
   const content = (await response.json()) as {
     deviceId?: unknown;
     updatedAt?: unknown;
@@ -422,6 +439,9 @@ async function refreshNotificationLeaseStateForUser(pushUserId: string | undefin
   if (!session?.userId || session.userId !== pushUserId) return;
   try {
     const lease = await fetchNotificationLeaseForSession(session);
+    if (lease === undefined) {
+      return;
+    }
     notificationLeaseState = {
       ...notificationLeaseState,
       userId: pushUserId,
@@ -799,7 +819,7 @@ async function setSession(
     preloadedSession = undefined;
     console.debug('[SW] setSession: removed', clientId);
     syncPersistedSessionFromLiveSessions().catch(() => undefined);
-    persistDelayedPushQueue([]).catch(() => undefined);
+    removeDelayedPushQueueEntriesForUser(removedSession?.userId).catch(() => undefined);
     if (shouldClearMediaCacheAfterSessionRemoval(removedSession?.accessToken, sessions.values())) {
       self.caches.delete(SW_MEDIA_CACHE).catch(() => undefined);
     }
@@ -2470,7 +2490,7 @@ const onPushNotification = async (event: PushEvent) => {
   // The SW may have been restarted by the OS (iOS is aggressive about this),
   // so in-memory settings would be at their defaults.  Reload from cache and
   // match active clients in parallel — they are independent operations.
-  const [, , clients] = await Promise.all([
+  const [, session, clients] = await Promise.all([
     loadPersistedSettings(),
     loadPersistedSession(),
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }),
@@ -2478,7 +2498,7 @@ const onPushNotification = async (event: PushEvent) => {
 
   await flushDelayedPushQueue();
   const pushData = event.data.json();
-  const pushUserId = extractPushUserId(pushData);
+  const pushUserId = extractPushUserId(pushData) ?? session?.userId;
   await refreshNotificationLeaseStateForUser(pushUserId);
   if (await handleReadStateOnlyPush(pushData)) {
     return;
