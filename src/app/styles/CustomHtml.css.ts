@@ -16,7 +16,7 @@ export const MarginSpaced = style({
   },
 });
 
-export const Paragraph = style([DefaultReset, MarginSpaced]);
+export const Paragraph = style([DefaultReset]);
 
 export const Heading = style([
   DefaultReset,
