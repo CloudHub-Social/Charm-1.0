@@ -14,6 +14,10 @@ type SystemBarStripProps = {
 };
 
 function SystemBarStrip({ position, size }: SystemBarStripProps) {
+  const background =
+    position === 'top' ? 'var(--sable-surface)' : 'var(--sable-bg-container)';
+  const borderColor =
+    position === 'top' ? 'var(--sable-surface-line)' : 'var(--sable-bg-container-line)';
   return (
     <div
       style={{
@@ -26,10 +30,10 @@ function SystemBarStrip({ position, size }: SystemBarStripProps) {
         style={{
           width: '100%',
           height: '100%',
-          background: 'var(--sable-bg-container)',
+          background,
           ...(position === 'top'
-            ? { borderBottom: '1px solid var(--sable-bg-container-line)' }
-            : { borderTop: '1px solid var(--sable-bg-container-line)' }),
+            ? { borderBottom: `1px solid ${borderColor}` }
+            : { borderTop: `1px solid ${borderColor}` }),
         }}
       />
     </div>
