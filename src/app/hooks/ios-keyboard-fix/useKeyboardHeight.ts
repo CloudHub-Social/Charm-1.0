@@ -126,7 +126,7 @@ export function useKeyboardHeight() {
       closeVerificationTimer = window.setTimeout(check, 50);
     };
 
-    if (!isEditableElement(document.activeElement) && cssVarsApplied) {
+    if (mountCount === 1 && !isEditableElement(document.activeElement) && cssVarsApplied) {
       verifyKeyboardClosed();
     }
 
