@@ -383,9 +383,7 @@ export function Direct() {
     if (!mobileOrTablet()) return;
 
     const resolvedLastRoomId =
-      lastRoomId && isRoomAlias(lastRoomId)
-        ? (getCanonicalAliasRoomId(mx, lastRoomId) ?? lastRoomId)
-        : lastRoomId;
+      lastRoomId && isRoomAlias(lastRoomId) ? getCanonicalAliasRoomId(mx, lastRoomId) : lastRoomId;
     const fallbackRoomId =
       selectedRoomId && directs.includes(selectedRoomId)
         ? selectedRoomId
