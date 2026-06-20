@@ -357,6 +357,15 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         return t;
       });
     }, [editor]);
+    const focusEditorNextFrame = useCallback(() => {
+      requestAnimationFrame(() => {
+        try {
+          ReactEditor.focus(editor);
+        } catch {
+          // Ignore focus errors if the editor remounted before the callback ran.
+        }
+      });
+    }, [editor]);
     const micBtnRef = useRef<HTMLButtonElement>(null);
     // Preserve stable list keys across metadata/description replacements without
     // storing UI-only IDs in the upload draft state.
@@ -1128,7 +1137,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           setEditDraft(undefined);
           sendTypingStatus(false);
           if (mobileOrTablet()) {
-            requestAnimationFrame(() => ReactEditor.focus(editor));
+            focusEditorNextFrame();
           }
 
           mx.sendMessage(roomId, sendContent as RoomMessageEventContent).catch((error: unknown) => {
@@ -1146,7 +1155,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           resetEditorHistory(editor);
           sendTypingStatus(false);
           if (mobileOrTablet()) {
-            requestAnimationFrame(() => ReactEditor.focus(editor));
+            focusEditorNextFrame();
           }
         }
         return;
@@ -1272,7 +1281,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         setReplyDraft(replyDraftBase);
         sendTypingStatus(false);
         if (mobileOrTablet()) {
-          requestAnimationFrame(() => ReactEditor.focus(editor));
+          focusEditorNextFrame();
         }
       };
       if (scheduledTime) {
