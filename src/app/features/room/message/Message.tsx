@@ -363,6 +363,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
   const restoreSelectionRef = useRef<(() => void) | null>(null);
   const removeSelectionGuardRef = useRef<(() => void) | null>(null);
+  const mountedRef = useRef(true);
 
   const installSelectionGuard = useCallback(() => {
     removeSelectionGuardRef.current?.();
@@ -396,6 +397,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
         requestAnimationFrame(() => {
+          if (!mountedRef.current) return;
           const selection = window.getSelection();
           if (selection && !selection.isCollapsed) return;
           restoreSelectionRef.current?.();
@@ -427,6 +429,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
 
   useEffect(
     () => () => {
+      mountedRef.current = false;
       cancel();
     },
     [cancel]
