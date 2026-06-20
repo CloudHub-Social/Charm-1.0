@@ -351,6 +351,8 @@ export function RoomTimeline({
   // recovery scroll should never fire for this eventId, even after focusItem
   // is cleared (highlight ends). Reset only when eventId or room changes.
   const jumpSucceededRef = useRef(false);
+  const unreadBridgeActiveRef = useRef(false);
+  const unreadBridgeAttemptsRef = useRef(0);
 
   const lastProgrammaticBottomPinAtRef = useRef(0);
 
@@ -360,6 +362,8 @@ export function RoomTimeline({
     currentRoomIdRef.current = room.roomId;
     pendingReadyRef.current = false;
     jumpSucceededRef.current = false;
+    unreadBridgeActiveRef.current = false;
+    unreadBridgeAttemptsRef.current = 0;
     if (initialScrollTimerRef.current !== undefined) {
       clearTimeout(initialScrollTimerRef.current);
       initialScrollTimerRef.current = undefined;
@@ -776,10 +780,12 @@ export function RoomTimeline({
           },
         });
 
-        // An event-targeted jump should no longer be treated as bottom-pinned.
-        // If we leave atBottom=true from the room's previous state, the scroll
-        // handler can immediately "chase" the live bottom after this jump.
-        setAtBottom(false);
+        const keepBottomPinned =
+          (focusJumpMode ?? jumpMode) === 'notification_live' && timelineSync.liveTimelineLinked;
+        // An event-targeted history jump should no longer be treated as
+        // bottom-pinned. Notification-live jumps, however, should keep the
+        // bottom chip cleared when the target is already near the live tail.
+        setAtBottom(keepBottomPinned);
         startJumpScrollBlock();
 
         // Reveal timeline and scroll in the same frame to avoid flash
@@ -787,6 +793,9 @@ export function RoomTimeline({
         vListRef.current.scrollToIndex(processedIndex, {
           align: timelineSync.focusItem.align ?? 'center',
         });
+        if (keepBottomPinned) {
+          lastProgrammaticBottomPinAtRef.current = Date.now();
+        }
         timelineSync.setFocusItem((prev) => (prev ? { ...prev, scrollTo: false } : undefined));
         scrollSucceeded = true;
 
@@ -1133,6 +1142,40 @@ export function RoomTimeline({
     observer.observe(el);
     return () => observer.disconnect();
   }, [isKeyboardVisible, keyboardHeight, setAtBottom]);
+
+  useEffect(() => {
+    if (!unreadBridgeActiveRef.current) return;
+
+    if (timelineSync.liveTimelineLinked) {
+      unreadBridgeActiveRef.current = false;
+      unreadBridgeAttemptsRef.current = 0;
+      setUnreadInfo((prev) =>
+        prev
+          ? {
+              ...prev,
+              inLiveTimeline: true,
+              scrollTo: false,
+            }
+          : prev
+      );
+      return;
+    }
+
+    if (timelineSync.forwardStatus !== 'idle') return;
+    if (unreadBridgeAttemptsRef.current >= 12) {
+      unreadBridgeActiveRef.current = false;
+      return;
+    }
+
+    unreadBridgeAttemptsRef.current += 1;
+    void timelineSync.handleTimelinePagination(false);
+  }, [
+    setUnreadInfo,
+    timelineSync,
+    timelineSync.eventsLength,
+    timelineSync.forwardStatus,
+    timelineSync.liveTimelineLinked,
+  ]);
 
   // When the thread drawer opens/closes on desktop, the main timeline column
   // changes width and Virtua remeasures all item heights.  Save the scroll
@@ -1884,11 +1927,13 @@ export function RoomTimeline({
             radii="Pill"
             outlined
             before={chipIcon(ChatTeardropDots)}
-            onClick={() =>
-              timelineSync.loadEventTimeline(unreadInfo.readUptoEventId, undefined, {
+            onClick={() => {
+              unreadBridgeActiveRef.current = true;
+              unreadBridgeAttemptsRef.current = 0;
+              void timelineSync.loadEventTimeline(unreadInfo.readUptoEventId, undefined, {
                 jumpMode: 'history_context',
-              })
-            }
+              });
+            }}
           >
             <Text size="L400">Jump to Unread</Text>
           </Chip>
