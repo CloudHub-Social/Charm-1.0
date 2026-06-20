@@ -111,6 +111,14 @@ export function useKeyboardHeight() {
       }, 50);
     };
 
+    if (!isEditableElement(document.activeElement)) {
+      sharedSavedHeight = 0;
+      clearCSSVars();
+      setKeyboardHeight(0);
+      setIsKeyboardVisible(false);
+      isVisibleRef.current = false;
+    }
+
     const handleResize = () => {
       const calculatedHeight = baselineHeight - viewport.height;
 
