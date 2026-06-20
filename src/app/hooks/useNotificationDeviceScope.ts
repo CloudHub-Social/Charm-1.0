@@ -177,7 +177,7 @@ export function useNotificationDeviceScope(
       if (
         !force &&
         currentLease?.deviceId === deviceId &&
-        currentLease.expiresAt - nextNow > LEASE_RENEW_MS / 2 &&
+        currentLease.expiresAt - nextNow > LEASE_RENEW_MS &&
         !leaseDurationChanged
       ) {
         return;
