@@ -240,8 +240,9 @@ describe('useNotificationDeviceScope', () => {
     expect(shouldEnableNotificationPusher(true, false, 'all_clients', true)).toBe(true);
   });
 
-  it('does not re-enable a visible mobile pusher while another desktop holds the lease', () => {
-    expect(shouldEnableNotificationPusher(true, true, 'desktop_delay', false)).toBe(false);
+  it('keeps pushers registered while desktop-delay suppression is active', () => {
+    expect(shouldEnableNotificationPusher(true, true, 'desktop_delay', false)).toBe(true);
+    expect(shouldEnableNotificationPusher(false, false, 'desktop_delay', false)).toBe(true);
   });
 
   it('treats a zero-minute desktop delay like notify-all semantics', () => {
@@ -365,6 +366,41 @@ describe('useNotificationDeviceScope', () => {
       CustomAccountDataEvent.SableNotificationDeviceLease,
       {}
     );
+  });
+
+  it('backs off before retrying a failed lease clear', async () => {
+    notificationDeviceScope = 'desktop_delay';
+    notificationDesktopDelayMinutes = 0;
+    const now = Date.now();
+    const { client } = createMockMatrixClient({
+      deviceId: 'DEVICE_A',
+      updatedAt: now,
+      expiresAt: now + 120_000,
+    });
+
+    vi.mocked(client.setAccountData).mockRejectedValueOnce(new Error('network'));
+
+    renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(45_000);
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledTimes(2);
   });
 
   it('publishes a shorter lease immediately when the selected delay is reduced', async () => {

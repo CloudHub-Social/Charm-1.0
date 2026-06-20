@@ -29,7 +29,8 @@ export const NON_SYNCABLE_KEYS = new Set<keyof Settings>([
   'settingsSyncEnabled',
 ]);
 
-export const SETTINGS_SYNC_VERSION = 1;
+export const SETTINGS_SYNC_VERSION = 2;
+const LEGACY_SETTINGS_SYNC_VERSION = 1;
 
 export type SettingsSyncContent = {
   v: number;
@@ -51,7 +52,12 @@ export const serializeForSync = (settings: Settings): SettingsSyncContent => {
 export const deserializeFromSync = (data: unknown, currentSettings: Settings): Settings | null => {
   if (!data || typeof data !== 'object') return null;
   const content = data as Record<string, unknown>;
-  if (content.v !== SETTINGS_SYNC_VERSION) return null;
+  if (
+    content.v !== SETTINGS_SYNC_VERSION &&
+    content.v !== LEGACY_SETTINGS_SYNC_VERSION
+  ) {
+    return null;
+  }
   const remote = content.settings;
   if (!remote || typeof remote !== 'object' || Array.isArray(remote)) return null;
 

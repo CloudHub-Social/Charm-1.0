@@ -115,6 +115,12 @@ describe('deserializeFromSync', () => {
     expect(deserializeFromSync({ v: 0, settings: {} }, base)).toBeNull();
   });
 
+  it('accepts legacy v1 payloads during sync migration', () => {
+    const result = deserializeFromSync({ v: 1, settings: { twitterEmoji: false } }, base);
+    expect(result).not.toBeNull();
+    expect(result!.twitterEmoji).toBe(false);
+  });
+
   it('returns null when the settings field is missing', () => {
     expect(deserializeFromSync({ v: SETTINGS_SYNC_VERSION }, base)).toBeNull();
   });

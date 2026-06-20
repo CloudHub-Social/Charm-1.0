@@ -44,9 +44,15 @@ export function shouldEnableNotificationPusher(
   _isVisible: boolean,
   _isMobile: boolean,
   notificationDeviceScope: NotificationDeviceScopeSetting,
-  isActiveNotificationClient: boolean
+  _isActiveNotificationClient: boolean
 ): boolean {
-  return notificationDeviceScope !== 'desktop_delay' || isActiveNotificationClient;
+  void _isVisible;
+  void _isMobile;
+  void _isActiveNotificationClient;
+  // Desktop-delay is enforced by the in-memory lease. Persistently disabling the
+  // pusher can strand a secondary client without pushes if it closes before the
+  // lease expires, so keep the server-side pusher registered in that mode.
+  return notificationDeviceScope === 'desktop_delay' || notificationDeviceScope === 'all_clients';
 }
 
 type UseNotificationDeviceScopeOptions = {
@@ -55,6 +61,7 @@ type UseNotificationDeviceScopeOptions = {
 
 const LEASE_RENEW_MS = 30_000;
 const LEASE_CLOCK_TICK_MS = 15_000;
+const CLEAR_LEASE_RETRY_DELAY_MS = 60_000;
 const resolveLeaseDurationMs = (delayMinutes: NotificationDesktopDelayMinutes): number =>
   delayMinutes * 60_000;
 
@@ -101,6 +108,8 @@ export function useNotificationDeviceScope(
 
   const leaseRef = useRef(lease);
   leaseRef.current = lease;
+  const clearLeaseInFlightRef = useRef(false);
+  const clearLeaseRetryAtRef = useRef(0);
 
   const deviceId =
     mx && typeof mx.getDeviceId === 'function' ? (mx.getDeviceId() ?? undefined) : undefined;
@@ -130,14 +139,25 @@ export function useNotificationDeviceScope(
   const clearLease = useCallback(
     (currentLease: NotificationDeviceLease | null): void => {
       if (!mx || !deviceId || typeof mx.setAccountData !== 'function') return;
+      if (clearLeaseInFlightRef.current) return;
 
+      clearLeaseInFlightRef.current = true;
       setLease(null);
       broadcastLocalLeaseUpdate(null);
       const clearedLease = {} as never;
-      mx.setAccountData(NOTIFICATION_DEVICE_LEASE_EVENT_TYPE, clearedLease).catch(() => {
-        setLease(currentLease ?? null);
-        broadcastLocalLeaseUpdate(currentLease ?? null);
-      });
+      mx.setAccountData(NOTIFICATION_DEVICE_LEASE_EVENT_TYPE, clearedLease)
+        .then(() => {
+          clearLeaseRetryAtRef.current = 0;
+        })
+        .catch(() => {
+          clearLeaseRetryAtRef.current = Date.now() + CLEAR_LEASE_RETRY_DELAY_MS;
+          setLease(currentLease ?? null);
+          broadcastLocalLeaseUpdate(currentLease ?? null);
+          setNow(Date.now());
+        })
+        .finally(() => {
+          clearLeaseInFlightRef.current = false;
+        });
     },
     [deviceId, mx]
   );
@@ -231,10 +251,11 @@ export function useNotificationDeviceScope(
       return;
     }
     if (desktopDelayEnabled) return;
+    if (now < clearLeaseRetryAtRef.current) return;
     const currentLease = lease;
     if (currentLease?.deviceId !== deviceId) return;
     clearLease(currentLease);
-  }, [clearLease, desktopDelayEnabled, deviceId, lease, mx, shouldPublishLease]);
+  }, [clearLease, desktopDelayEnabled, deviceId, lease, mx, now, shouldPublishLease]);
 
   useEffect(() => {
     const handleLocalLeaseUpdate = (event: Event) => {
