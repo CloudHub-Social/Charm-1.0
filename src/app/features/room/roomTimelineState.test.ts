@@ -66,6 +66,30 @@ describe('roomTimelineState', () => {
     ).toBe('stop');
   });
 
+  it('retries unread bridging after a fresh pagination error, then stops repeated failures', () => {
+    expect(
+      getUnreadBridgeAction({
+        active: true,
+        awaitingContextLoad: false,
+        liveTimelineLinked: false,
+        reachedTarget: false,
+        forwardStatus: 'error',
+        attempts: 0,
+      })
+    ).toBe('paginate');
+
+    expect(
+      getUnreadBridgeAction({
+        active: true,
+        awaitingContextLoad: false,
+        liveTimelineLinked: false,
+        reachedTarget: false,
+        forwardStatus: 'error',
+        attempts: 1,
+      })
+    ).toBe('stop');
+  });
+
   it('waits for unread context loading to finish before deciding whether to stop or paginate', () => {
     expect(
       getUnreadBridgeAction({

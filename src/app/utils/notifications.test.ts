@@ -67,6 +67,23 @@ describe('markAsRead', () => {
     expect(sendReadReceipt).toHaveBeenCalledWith(latestEvent, ReceiptType.Read);
   });
 
+  it('creates the fully-read marker when the receipt is current but the marker is missing', async () => {
+    const latestEvent = makeEvent('$latest');
+    const setRoomReadMarkers = vi.fn<() => Promise<undefined>>().mockResolvedValue(undefined);
+    const sendReadReceipt = vi.fn<() => Promise<undefined>>().mockResolvedValue(undefined);
+    const { mx } = makeRoom({
+      receiptEventId: '$latest',
+      events: [latestEvent],
+      setRoomReadMarkers,
+      sendReadReceipt,
+    });
+
+    await markAsRead(mx, '!room:example.com', false);
+
+    expect(setRoomReadMarkers).toHaveBeenCalledWith('!room:example.com', '$latest', latestEvent);
+    expect(sendReadReceipt).toHaveBeenCalledWith(latestEvent, ReceiptType.Read);
+  });
+
   it('no-ops once both the receipt and fully-read marker already point at the latest event', async () => {
     const latestEvent = makeEvent('$latest');
     const setRoomReadMarkers = vi.fn<() => Promise<undefined>>().mockResolvedValue(undefined);

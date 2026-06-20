@@ -24,7 +24,7 @@ export async function markAsRead(mx: MatrixClient, roomId: string, privateReceip
       if (
         latestEventId &&
         latestEventId === receiptEventId &&
-        (!fullyReadEventId || latestEventId === fullyReadEventId)
+        latestEventId === fullyReadEventId
       ) {
         return null;
       }

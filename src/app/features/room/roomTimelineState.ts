@@ -35,8 +35,8 @@ export const getUnreadBridgeAction = ({
 }: UnreadBridgeActionInput): UnreadBridgeAction => {
   if (!active) return 'idle';
   if (awaitingContextLoad || forwardStatus === 'loading') return 'idle';
+  if (forwardStatus === 'error') return attempts === 0 ? 'paginate' : 'stop';
   if (liveTimelineLinked) return reachedTarget ? 'complete' : 'stop';
-  if (forwardStatus !== 'idle') return 'idle';
   if (attempts >= maxAttempts) return 'stop';
   return 'paginate';
 };
