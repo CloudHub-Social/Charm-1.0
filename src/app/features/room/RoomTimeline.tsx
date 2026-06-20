@@ -143,6 +143,17 @@ const getDayDividerText = (ts: number) => {
 
 const SCROLL_SETTLE_MS = 250;
 
+const getUnreadDividerTarget = (
+  events: ProcessedEvent[],
+  readUptoEventId: string | undefined
+): ProcessedEvent | undefined => {
+  if (!readUptoEventId) return undefined;
+  return (
+    events.find((event) => event.willRenderNewDivider) ??
+    events.find((event) => event.mEvent.getId() === readUptoEventId)
+  );
+};
+
 export type RoomTimelineProps = {
   room: Room;
   eventId?: string;
@@ -1094,6 +1105,20 @@ export function RoomTimeline({
     if (isReady) return;
     const { readUptoEventId, inLiveTimeline, scrollTo } = unreadInfo ?? {};
     if (readUptoEventId && inLiveTimeline && scrollTo) {
+      const dividerTarget = getUnreadDividerTarget(processedEventsRef.current, readUptoEventId);
+      if (dividerTarget && vListRef.current) {
+        const processedIndex = processedEventsRef.current.indexOf(dividerTarget);
+        if (processedIndex !== -1) {
+          vListRef.current.scrollToIndex(processedIndex, { align: 'start' });
+        }
+        // Always consume the scroll intent once the event is located in the
+        // linked timelines, even if its processedIndex is undefined (filtered
+        // event). Without this, each linkedTimelines reference change retries
+        // the scroll indefinitely.
+        setUnreadInfo((prev) => (prev ? { ...prev, scrollTo: false } : prev));
+        return;
+      }
+
       const evtTimeline = getEventTimeline(room, readUptoEventId);
       const absoluteIndex = evtTimeline
         ? getEventIdAbsoluteIndex(
@@ -1108,10 +1133,6 @@ export function RoomTimeline({
         if (processedIndex !== undefined && vListRef.current) {
           vListRef.current.scrollToIndex(processedIndex, { align: 'start' });
         }
-        // Always consume the scroll intent once the event is located in the
-        // linked timelines, even if its processedIndex is undefined (filtered
-        // event). Without this, each linkedTimelines reference change retries
-        // the scroll indefinitely.
         setUnreadInfo((prev) => (prev ? { ...prev, scrollTo: false } : prev));
       }
     }
@@ -1171,20 +1192,18 @@ export function RoomTimeline({
   useEffect(() => {
     const unreadEventId = unreadInfo?.readUptoEventId;
     const reachedUnreadTarget =
-      !!unreadEventId &&
-      (() => {
-        if (processedEventsRef.current.some((event) => event.mEvent.getId() === unreadEventId)) {
-          return true;
-        }
-        const evtTimeline = getEventTimeline(room, unreadEventId);
-        if (!evtTimeline) return false;
-        const absoluteIndex = getEventIdAbsoluteIndex(
-          timelineSync.timeline.linkedTimelines,
-          evtTimeline,
-          unreadEventId
-        );
-        return absoluteIndex !== undefined;
-      })();
+      !!getUnreadDividerTarget(processedEventsRef.current, unreadEventId) ||
+      (!!unreadEventId &&
+        (() => {
+          const evtTimeline = getEventTimeline(room, unreadEventId);
+          if (!evtTimeline) return false;
+          const absoluteIndex = getEventIdAbsoluteIndex(
+            timelineSync.timeline.linkedTimelines,
+            evtTimeline,
+            unreadEventId
+          );
+          return absoluteIndex !== undefined;
+        })());
 
     const unreadBridgeAction = getUnreadBridgeAction({
       active: unreadBridgeActiveRef.current,
@@ -2169,6 +2188,12 @@ export function RoomTimeline({
               onClick={() => {
                 if (eventId) navigateRoom(room.roomId, undefined, { replace: true });
                 releaseJumpLock('jump_to_latest');
+                unreadBridgeActiveRef.current = false;
+                unreadBridgeAttemptsRef.current = 0;
+                unreadBridgeAwaitingContextLoadRef.current = false;
+                lastProgrammaticBottomPinAtRef.current = Date.now();
+                setAtBottom(true);
+                startJumpScrollBlock(true);
                 setUnreadInfo((prev) => getUnreadInfoAfterJumpToLatest(prev));
                 timelineSync.setTimeline(getInitialTimeline(room));
                 scrollToBottom();
