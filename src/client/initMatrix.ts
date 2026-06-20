@@ -56,9 +56,12 @@ type SyncTransportMeta = {
 const syncTransportByClient = new WeakMap<MatrixClient, SyncTransportMeta>();
 const fetchRoomEventStartupCleanupByClient = new WeakMap<MatrixClient, () => void>();
 const classicSyncNetworkCleanupByClient = new WeakMap<MatrixClient, () => void>();
+const runtimeCryptoStoreRecoveryCleanupByClient = new WeakMap<MatrixClient, () => void>();
 const MATRIX_DEVICE_ID_SENTRY_TAG = 'matrix.device_id';
 type MatrixClientScope = 'app' | 'background';
 const CLASSIC_SYNC_FOREGROUND_RETRY_THROTTLE_MS = 15_000;
+const CRYPTO_STORE_RUNTIME_RECOVERY_KEY = 'sable.cryptoStoreRuntimeRecovery.lastReloadAt';
+const CRYPTO_STORE_RUNTIME_RECOVERY_COOLDOWN_MS = 5 * 60_000;
 let activeAppClient: MatrixClient | undefined;
 let activeAppClientStartPromise: Promise<void> | undefined;
 let activeAppClientStopPromise: Promise<void> | undefined;
@@ -132,6 +135,121 @@ const isRecoverableStoreInitError = (err: unknown): boolean => {
     msg.includes('The database connection is closing') ||
     msg.includes('The database connection is closed')
   );
+};
+
+const getCryptoStoreRuntimeRecoveryTimestamp = (): number | undefined => {
+  try {
+    const raw = window.sessionStorage.getItem(CRYPTO_STORE_RUNTIME_RECOVERY_KEY);
+    if (!raw) return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const setCryptoStoreRuntimeRecoveryTimestamp = (value: number): void => {
+  try {
+    window.sessionStorage.setItem(CRYPTO_STORE_RUNTIME_RECOVERY_KEY, String(value));
+  } catch {
+    // Ignore storage failures; telemetry still captures the request.
+  }
+};
+
+const isVisibleFocusedApp = (): boolean =>
+  document.visibilityState === 'visible' &&
+  (typeof document.hasFocus !== 'function' || document.hasFocus());
+
+type CryptoStoreRuntimeRecoveryContext = {
+  source: 'sync_listener' | 'unhandledrejection' | 'error';
+  errorMessage: string;
+  userId?: string | null;
+  syncState?: string;
+};
+
+const requestCryptoStoreRuntimeRecovery = (context: CryptoStoreRuntimeRecoveryContext): boolean => {
+  if (!isVisibleFocusedApp()) {
+    Sentry.addBreadcrumb({
+      category: 'crypto-store.runtime-recovery',
+      message: 'Suppressed crypto store runtime recovery while app was not visible',
+      level: 'info',
+      data: context,
+    });
+    return false;
+  }
+
+  const now = Date.now();
+  const lastRecoveryAt = getCryptoStoreRuntimeRecoveryTimestamp();
+  if (
+    lastRecoveryAt !== undefined &&
+    now - lastRecoveryAt < CRYPTO_STORE_RUNTIME_RECOVERY_COOLDOWN_MS
+  ) {
+    Sentry.addBreadcrumb({
+      category: 'crypto-store.runtime-recovery',
+      message: 'Suppressed duplicate crypto store runtime recovery reload',
+      level: 'warning',
+      data: {
+        ...context,
+        lastRecoveryAt,
+        cooldownMs: CRYPTO_STORE_RUNTIME_RECOVERY_COOLDOWN_MS,
+      },
+    });
+    Sentry.metrics.count('sable.crypto_store.runtime_recovery_suppressed', 1, {
+      attributes: { source: context.source },
+    });
+    return false;
+  }
+
+  setCryptoStoreRuntimeRecoveryTimestamp(now);
+  Sentry.metrics.count('sable.crypto_store.runtime_recovery_reload', 1, {
+    attributes: { source: context.source },
+  });
+  reloadWithTelemetry('crypto_store_runtime_recovery', {
+    source: context.source,
+    errorMessage: context.errorMessage,
+    userId: context.userId ?? undefined,
+    syncState: context.syncState,
+  });
+  return true;
+};
+
+const installRuntimeCryptoStoreRecovery = (mx: MatrixClient): void => {
+  runtimeCryptoStoreRecoveryCleanupByClient.get(mx)?.();
+
+  const handleRecoverableError = (
+    error: unknown,
+    source: CryptoStoreRuntimeRecoveryContext['source']
+  ) => {
+    const errorMessage =
+      error instanceof Error
+        ? `${error.name}: ${error.message}`
+        : typeof error === 'string'
+          ? error
+          : JSON.stringify(error);
+    if (!classifyCryptoStoreIndexedDbError(errorMessage)) return;
+
+    requestCryptoStoreRuntimeRecovery({
+      source,
+      errorMessage,
+      userId: mx.getUserId(),
+      syncState: mx.getSyncState() ?? undefined,
+    });
+  };
+
+  const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+    handleRecoverableError(event.reason, 'unhandledrejection');
+  };
+  const handleWindowError = (event: ErrorEvent) => {
+    handleRecoverableError(event.error ?? event.message, 'error');
+  };
+
+  window.addEventListener('unhandledrejection', handleUnhandledRejection);
+  window.addEventListener('error', handleWindowError);
+  runtimeCryptoStoreRecoveryCleanupByClient.set(mx, () => {
+    window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    window.removeEventListener('error', handleWindowError);
+    runtimeCryptoStoreRecoveryCleanupByClient.delete(mx);
+  });
 };
 
 export function setSentryMatrixDeviceContext(
@@ -1091,6 +1209,12 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
                 'Matrix SDK WASM crypto layer issue - client will attempt to reconnect',
             },
           });
+          requestCryptoStoreRuntimeRecovery({
+            source: 'sync_listener',
+            errorMessage: errorMsg,
+            userId: mx.getUserId(),
+            syncState: state,
+          });
         }
       }
       if (
@@ -1373,6 +1497,7 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
   }
 
   activeAppClient = mx;
+  installRuntimeCryptoStoreRecovery(mx);
   const startPromise = startClientInternal(mx, config);
   activeAppClientStartPromise = startPromise;
   try {
@@ -1416,6 +1541,7 @@ export const stopClient = (mx: MatrixClient): Promise<void> => {
   fetchRoomEventStartupCleanupByClient.get(mx)?.();
   classicSyncNetworkCleanupByClient.get(mx)?.();
   classicSyncNetworkCleanupByClient.delete(mx);
+  runtimeCryptoStoreRecoveryCleanupByClient.get(mx)?.();
   disposeSlidingSync(mx);
   const classicSyncListener = classicSyncObserverByClient.get(mx);
   if (classicSyncListener) {

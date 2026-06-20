@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/react';
 import type { MatrixClient } from '$types/matrix-sdk';
-import { MatrixEvent } from '$types/matrix-sdk';
+import { MatrixEvent, SyncState } from '$types/matrix-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearSentryMatrixDeviceContext,
@@ -11,6 +11,10 @@ import {
   startClient,
   stopClient,
 } from './initMatrix';
+
+const { mockReloadWithTelemetry } = vi.hoisted(() => ({
+  mockReloadWithTelemetry: vi.fn<(reason: string, data?: Record<string, unknown>) => void>(),
+}));
 
 vi.mock('@sentry/react', () => ({
   addBreadcrumb: vi.fn<(breadcrumb: unknown) => void>(),
@@ -26,6 +30,10 @@ vi.mock('@sentry/react', () => ({
     end: vi.fn<() => void>(),
   })),
   setTag: vi.fn<(key: string, value: string) => void>(),
+}));
+
+vi.mock('$utils/reloadWithTelemetry', () => ({
+  reloadWithTelemetry: mockReloadWithTelemetry,
 }));
 
 type MockMatrixClient = MatrixClient & {
@@ -111,6 +119,8 @@ describe('normalizeMatrixEventType', () => {
 describe('setSentryMatrixDeviceContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockReloadWithTelemetry.mockReset();
+    window.sessionStorage.clear();
   });
 
   it('sets matrix.device_id from the Matrix client', () => {
@@ -328,5 +338,75 @@ describe('startClient app singleton gate', () => {
         fallbackType: MATRIX_EVENT_FALLBACK_TYPE,
       },
     });
+  });
+
+  it('reloads once for visible crypto store sync failures and throttles repeats', async () => {
+    const mx = makeClient('@alice:example.com');
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
+    Object.defineProperty(document, 'hasFocus', {
+      configurable: true,
+      value: () => true,
+    });
+
+    await startClassicClient(mx);
+
+    const onMock = mx.on as unknown as ReturnType<typeof vi.fn>;
+    const syncListener = onMock.mock.calls.at(-1)?.[1] as
+      | ((state: string, prevState: string | null, data?: { error?: Error }) => void)
+      | undefined;
+
+    expect(syncListener).toBeDefined();
+
+    syncListener?.(SyncState.Error, null, {
+      error: new Error('DomException InvalidStateError (11): The database connection is closing.'),
+    });
+    syncListener?.(SyncState.Error, null, {
+      error: new Error('DomException InvalidStateError (11): The database connection is closing.'),
+    });
+
+    expect(mockReloadWithTelemetry).toHaveBeenCalledTimes(1);
+    expect(mockReloadWithTelemetry).toHaveBeenCalledWith('crypto_store_runtime_recovery', {
+      source: 'sync_listener',
+      errorMessage: 'DomException InvalidStateError (11): The database connection is closing.',
+      userId: '@alice:example.com',
+      syncState: SyncState.Error,
+    });
+  });
+
+  it('suppresses crypto store runtime reloads while the app is hidden', async () => {
+    const mx = makeClient('@alice:example.com');
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    });
+    Object.defineProperty(document, 'hasFocus', {
+      configurable: true,
+      value: () => false,
+    });
+
+    await startClassicClient(mx);
+
+    const onMock = mx.on as unknown as ReturnType<typeof vi.fn>;
+    const syncListener = onMock.mock.calls.at(-1)?.[1] as
+      | ((state: string, prevState: string | null, data?: { error?: Error }) => void)
+      | undefined;
+
+    syncListener?.(SyncState.Error, null, {
+      error: new Error('DomException InvalidStateError (11): The database connection is closing.'),
+    });
+
+    expect(mockReloadWithTelemetry).not.toHaveBeenCalled();
+  });
+
+  it('installs a runtime crypto-store unhandled rejection listener for app clients', async () => {
+    const mx = makeClient('@alice:example.com');
+    const addEventListenerSpy = vi.spyOn(window, 'addEventListener');
+
+    await startClassicClient(mx);
+
+    expect(addEventListenerSpy).toHaveBeenCalledWith('unhandledrejection', expect.any(Function));
   });
 });

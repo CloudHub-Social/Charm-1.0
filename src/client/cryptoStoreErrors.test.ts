@@ -25,6 +25,9 @@ describe('crypto store IndexedDB error classification', () => {
     expect(classifyCryptoStoreIndexedDbError('without an in-progress transaction')).toBe(
       'transaction_error'
     );
+    expect(classifyCryptoStoreIndexedDbError('The database connection is closing')).toBe(
+      'connection_closing'
+    );
     expect(classifyCryptoStoreIndexedDbError('database connection is closed')).toBe(
       'connection_closed'
     );
