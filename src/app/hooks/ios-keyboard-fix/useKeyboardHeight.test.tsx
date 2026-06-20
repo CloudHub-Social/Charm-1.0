@@ -28,18 +28,18 @@ describe('useKeyboardHeight', () => {
         },
         addEventListener: vi.fn<(event: string, listener: ResizeListener) => void>(
           (event: string, listener: ResizeListener) => {
-          if (event === 'resize') resizeListeners.push(listener);
-          if (event === 'scroll') scrollListeners.push(listener);
+            if (event === 'resize') resizeListeners.push(listener);
+            if (event === 'scroll') scrollListeners.push(listener);
           }
         ),
         removeEventListener: vi.fn<(event: string, listener: ResizeListener) => void>(
           (event: string, listener: ResizeListener) => {
-          if (event === 'resize') {
-            resizeListeners = resizeListeners.filter((candidate) => candidate !== listener);
-          }
-          if (event === 'scroll') {
-            scrollListeners = scrollListeners.filter((candidate) => candidate !== listener);
-          }
+            if (event === 'resize') {
+              resizeListeners = resizeListeners.filter((candidate) => candidate !== listener);
+            }
+            if (event === 'scroll') {
+              scrollListeners = scrollListeners.filter((candidate) => candidate !== listener);
+            }
           }
         ),
       },
