@@ -19,7 +19,6 @@ import { callChatAtom } from '$state/callEmbed';
 import { roomIdToOpenThreadAtomFamily } from '$state/room/roomToOpenThread';
 import { roomIdToThreadBrowserAtomFamily } from '$state/room/roomToThreadBrowser';
 import { createDebugLogger } from '$utils/debugLogger';
-import { mobileOrTabletLayout } from '$utils/user-agent';
 import { useMergedAbbreviations, RoomAbbreviationsContext } from '$hooks/useRoomAbbreviations';
 import { RoomViewHeader } from './RoomViewHeader';
 import { MembersDrawer } from './MembersDrawer';
@@ -51,7 +50,7 @@ export function Room() {
   const [isWidgetDrawerOpen] = useSetting(settingsAtom, 'isWidgetDrawer');
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
   const screenSize = useScreenSizeContext();
-  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile;
   const [mobileMembersDrawerOpen, setMobileMembersDrawerOpen] = useState(false);
   const isMembersDrawerOpen = isMobileMembersSurface ? mobileMembersDrawerOpen : isDrawer;
 
