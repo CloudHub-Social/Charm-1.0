@@ -20,7 +20,7 @@ import type { HierarchyItem, HierarchyItemSpace } from '$hooks/useSpaceHierarchy
 import { useSpaceHierarchy } from '$hooks/useSpaceHierarchy';
 import { VirtualTile } from '$components/virtualizer';
 import { spaceRoomsAtom } from '$state/spaceRooms';
-import { useSetting } from '$state/hooks/settings';
+import { useSetSetting, useSetting } from '$state/hooks/settings';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { settingsAtom } from '$state/settings';
 import { ScrollTopContainer } from '$components/scroll-top-container';
@@ -177,7 +177,9 @@ export function Lobby() {
   const [heroSectionHeight, setHeroSectionHeight] = useState<number>();
   const [spaceRooms, setSpaceRooms] = useAtom(spaceRoomsAtom);
   const [isDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
+  const setPeopleDrawer = useSetSetting(settingsAtom, 'isPeopleDrawer');
   const screenSize = useScreenSizeContext();
+  const mobileDrawerBootstrappedRef = useRef(false);
   const [onTop, setOnTop] = useState(true);
   const [closedCategories, setClosedCategories] = useAtom(useClosedLobbyCategoriesAtom());
   const roomToParents = useAtomValue(roomToParentsAtom);
@@ -194,6 +196,15 @@ export function Lobby() {
   }, [sidebarItems]);
 
   const [spacesItems, setSpacesItems] = useState<Map<string, IHierarchyRoom>>(() => new Map());
+
+  useEffect(() => {
+    if (screenSize === ScreenSize.Desktop) return;
+    if (mobileDrawerBootstrappedRef.current) return;
+    mobileDrawerBootstrappedRef.current = true;
+    if (isDrawer) {
+      setPeopleDrawer(false);
+    }
+  }, [isDrawer, screenSize, setPeopleDrawer]);
 
   useElementSizeObserver(
     useCallback(() => heroSectionRef.current, []),

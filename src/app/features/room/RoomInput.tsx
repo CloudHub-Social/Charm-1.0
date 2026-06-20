@@ -1265,6 +1265,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         imagePacksUsedRef.current.clear();
         setReplyDraft(replyDraftBase);
         sendTypingStatus(false);
+        if (mobileOrTablet()) {
+          requestAnimationFrame(() => ReactEditor.focus(editor));
+        }
       };
       if (scheduledTime) {
         try {
