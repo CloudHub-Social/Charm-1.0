@@ -193,10 +193,14 @@ export function useNotificationDeviceScope(
       const nextNow = Date.now();
       setNow(nextNow);
       const currentLease = leaseRef.current;
-      const desiredExpiry = nextNow + leaseDurationMs;
+      const leaseDurationChanged =
+        !!currentLease &&
+        Math.abs(currentLease.expiresAt - currentLease.updatedAt - leaseDurationMs) >
+          LEASE_RENEW_MS / 2;
       if (
         currentLease?.deviceId === deviceId &&
-        Math.abs(currentLease.expiresAt - desiredExpiry) <= LEASE_RENEW_MS / 2
+        currentLease.expiresAt - nextNow > LEASE_RENEW_MS / 2 &&
+        !leaseDurationChanged
       ) {
         return;
       }

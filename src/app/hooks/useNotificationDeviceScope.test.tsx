@@ -364,4 +364,24 @@ describe('useNotificationDeviceScope', () => {
     expect(client.setAccountData).toHaveBeenCalledTimes(1);
     expect((result.current.lease?.expiresAt ?? 0) - initialExpiry).toBeLessThan(0);
   });
+
+  it('does not renew an unchanged lease on every interval tick', async () => {
+    notificationDeviceScope = 'desktop_delay';
+    const { client } = createMockMatrixClient();
+
+    renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledTimes(1);
+  });
 });
