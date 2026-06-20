@@ -29,6 +29,7 @@ import { SearchResultGroup } from './SearchResultGroup';
 import { SearchResultTimelineItem } from './SearchResultTimelineItem';
 import { SearchInput } from './SearchInput';
 import { SearchFilters } from './SearchFilters';
+import { flattenTimelineSearchItems } from './messageSearchTimeline';
 
 const useSearchPathSearchParams = (searchParams: URLSearchParams): SearchPathSearchParams =>
   useMemo(
@@ -157,14 +158,7 @@ export function MessageSearch({
   const isGrouped = searchPathSearchParams.grouped !== 'false';
   const flatItems = useMemo(() => {
     if (isGrouped) return [];
-    return groups
-      .flatMap((group) =>
-        group.items.map((item) => ({
-          ...item,
-          roomId: group.roomId,
-        }))
-      )
-      .toSorted((a, b) => (b.event.origin_server_ts ?? 0) - (a.event.origin_server_ts ?? 0));
+    return flattenTimelineSearchItems(groups);
   }, [groups, isGrouped]);
 
   const virtualizer = useVirtualizer({
