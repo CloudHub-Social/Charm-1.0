@@ -218,7 +218,7 @@ const requestCryptoStoreRuntimeRecovery = (context: CryptoStoreRuntimeRecoveryCo
 
 const installRuntimeCryptoStoreRecovery = (mx: MatrixClient): void => {
   runtimeCryptoStoreRecoveryCleanupByClient.get(mx)?.();
- 
+
   const handleRecoverableError = (
     error: unknown,
     source: CryptoStoreRuntimeRecoveryContext['source']
