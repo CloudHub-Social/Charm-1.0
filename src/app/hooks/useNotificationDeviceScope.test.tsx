@@ -295,6 +295,28 @@ describe('useNotificationDeviceScope', () => {
     expect(result.current.activeReason).toBe('no_fresh_lease');
   });
 
+  it('clears an owned desktop-delay lease when this client cannot publish it', async () => {
+    notificationDeviceScope = 'desktop_delay';
+    mockMobileOrTablet.mockReturnValue(true);
+    const now = Date.now();
+    const { client } = createMockMatrixClient({
+      deviceId: 'DEVICE_A',
+      updatedAt: now,
+      expiresAt: now + 120_000,
+    });
+
+    renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledWith(
+      CustomAccountDataEvent.SableNotificationDeviceLease,
+      {}
+    );
+  });
+
   it('lets mobile clients honor a fresh desktop-held lease without renewing it', async () => {
     notificationDeviceScope = 'desktop_delay';
     mockMobileOrTablet.mockReturnValue(true);

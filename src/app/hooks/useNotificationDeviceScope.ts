@@ -250,12 +250,12 @@ export function useNotificationDeviceScope(
     if (!shouldPublishLease || !mx || !deviceId || typeof mx.setAccountData !== 'function') {
       return;
     }
-    if (desktopDelayEnabled) return;
     if (now < clearLeaseRetryAtRef.current) return;
     const currentLease = lease;
     if (currentLease?.deviceId !== deviceId) return;
+    if (desktopDelayEnabled && canPublishLease) return;
     clearLease(currentLease);
-  }, [clearLease, desktopDelayEnabled, deviceId, lease, mx, now, shouldPublishLease]);
+  }, [canPublishLease, clearLease, desktopDelayEnabled, deviceId, lease, mx, now, shouldPublishLease]);
 
   useEffect(() => {
     const handleLocalLeaseUpdate = (event: Event) => {
