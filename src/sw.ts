@@ -59,6 +59,8 @@ let notificationLeaseState: NotificationLeaseState = {
 const NOTIFICATION_DEVICE_LEASE_EVENT_TYPE = CustomAccountDataEvent.SableNotificationDeviceLease;
 const APP_VISIBLE_HEARTBEAT_MAX_AGE_MS = 20_000;
 const LEASE_REFRESH_MAX_AGE_MS = 15_000;
+const NOTIFICATION_RECHECK_PAGE_LIMIT = 3;
+const NOTIFICATION_RECHECK_PAGE_SIZE = 50;
 const SW_DELAYED_PUSH_QUEUE_CACHE = 'sable-sw-delayed-push-v1';
 const SW_DELAYED_PUSH_QUEUE_URL = '/sw-delayed-push-queue';
 const SW_DELAYED_PUSH_QUEUE_LIMIT = 50;
@@ -293,6 +295,26 @@ function extractPushUserId(pushData: unknown): string | undefined {
   return undefined;
 }
 
+function extractPushRoomId(pushData: unknown): string | undefined {
+  if (!pushData || typeof pushData !== 'object') return undefined;
+  const payload = pushData as {
+    room_id?: unknown;
+    notification?: { room_id?: unknown; data?: { room_id?: unknown } };
+    data?: { room_id?: unknown };
+  };
+  if (typeof payload.room_id === 'string') return payload.room_id;
+  if (typeof payload.notification?.room_id === 'string') {
+    return payload.notification.room_id;
+  }
+  if (typeof payload.notification?.data?.room_id === 'string') {
+    return payload.notification.data.room_id;
+  }
+  if (typeof payload.data?.room_id === 'string') {
+    return payload.data.room_id;
+  }
+  return undefined;
+}
+
 function isCallPushPayload(pushData: unknown): boolean {
   if (!pushData || typeof pushData !== 'object') return false;
   const payload = pushData as {
@@ -427,6 +449,61 @@ async function handleReadStateOnlyPush(pushData: unknown): Promise<boolean> {
   return true;
 }
 
+async function fetchNotificationsPage(
+  session: SessionInfo,
+  from?: string
+): Promise<
+  | {
+      next_token?: unknown;
+      notifications?: Array<{
+        read?: unknown;
+        room_id?: unknown;
+        event?: { event_id?: unknown };
+      }>;
+    }
+  | null
+> {
+  const url = new URL(`${session.baseUrl}/_matrix/client/v3/notifications`);
+  url.searchParams.set('limit', String(NOTIFICATION_RECHECK_PAGE_SIZE));
+  if (from) url.searchParams.set('from', from);
+  const response = await fetch(url.toString(), fetchConfig(session.accessToken));
+  if (!response.ok) return null;
+  return response.json();
+}
+
+async function isDelayedPushStillUnread(entry: DelayedPushQueueEntry): Promise<boolean> {
+  if (!entry.userId || !entry.eventId) return true;
+  const roomId = extractPushRoomId(entry.payload);
+  if (!roomId) return true;
+
+  const session = await loadPersistedSession();
+  if (!session?.userId || session.userId !== entry.userId) return true;
+
+  try {
+    let from: string | undefined;
+    for (let page = 0; page < NOTIFICATION_RECHECK_PAGE_LIMIT; page += 1) {
+      const response = await fetchNotificationsPage(session, from);
+      if (!response) return true;
+      const notifications = Array.isArray(response.notifications) ? response.notifications : [];
+      const match = notifications.find(
+        (notification) =>
+          notification?.room_id === roomId && notification?.event?.event_id === entry.eventId
+      );
+      if (match) {
+        return match.read !== true;
+      }
+      if (typeof response.next_token !== 'string' || response.next_token.length === 0) {
+        break;
+      }
+      from = response.next_token;
+    }
+  } catch {
+    return true;
+  }
+
+  return true;
+}
+
 async function deliverPushPayload(
   pushData: unknown,
   clients: readonly WindowClient[]
@@ -472,6 +549,9 @@ async function flushDelayedPushQueue(): Promise<'idle' | 'paused_visible' | 'del
   await persistDelayedPushQueue(remaining);
   for (const entry of due) {
     await refreshNotificationLeaseStateForUser(entry.userId);
+    if (!(await isDelayedPushStillUnread(entry))) {
+      continue;
+    }
     if (await handleReadStateOnlyPush(entry.payload)) {
       continue;
     }
@@ -2367,9 +2447,10 @@ const onPushNotification = async (event: PushEvent) => {
 
   const shouldDelayForDesktopLease =
     hasFreshDesktopDelayLeaseElsewhere && !isCallPushPayload(pushData);
+  const canQueueDesktopDelay = shouldDelayForDesktopLease && clients.length > 0;
 
-  if (hasVisibleClient || shouldDelayForDesktopLease) {
-    if (shouldDelayForDesktopLease) {
+  if (hasVisibleClient || canQueueDesktopDelay) {
+    if (canQueueDesktopDelay) {
       await queueDelayedPushPayload(
         pushData,
         notificationLeaseState.lease?.expiresAt ?? Date.now()
