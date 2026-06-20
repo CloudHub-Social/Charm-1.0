@@ -51,9 +51,8 @@ export const serializeForSync = (settings: Settings): SettingsSyncContent => {
   NON_SYNCABLE_KEYS.forEach((key) => delete syncable[key]);
   EXPLICIT_NULL_SYNC_KEYS.forEach((key) => {
     if (syncable[key] === undefined) {
-      (
-        syncable as Partial<Record<(typeof EXPLICIT_NULL_SYNC_KEYS)[number], string | null>>
-      )[key] = null;
+      (syncable as Partial<Record<(typeof EXPLICIT_NULL_SYNC_KEYS)[number], string | null>>)[key] =
+        null;
     }
   });
   return { v: SETTINGS_SYNC_VERSION, settings: syncable };
@@ -81,7 +80,10 @@ export const deserializeFromSync = (data: unknown, currentSettings: Settings): S
   });
 
   const merged = { ...currentSettings, ...normalizedRemote };
-  if ((remote as { notificationDeviceScope?: unknown }).notificationDeviceScope === 'active_client_only') {
+  if (
+    (remote as { notificationDeviceScope?: unknown }).notificationDeviceScope ===
+    'active_client_only'
+  ) {
     merged.notificationDeviceScope = 'desktop_delay';
   }
   // Always restore non-syncable keys from local state.
