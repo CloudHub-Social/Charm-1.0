@@ -36,17 +36,20 @@ export const waitForMobileViewportStabilize = (
 ): Promise<void> =>
   new Promise((resolve) => {
     const viewport = window.visualViewport;
+    const hadActiveEditable = isEditableElement(document.activeElement);
+    const waitStartedAt = Date.now();
 
     dismissActiveKeyboard();
 
     if (!viewport) {
-      window.setTimeout(resolve, 120);
+      window.setTimeout(resolve, hadActiveEditable ? timeoutMs : 120);
       return;
     }
 
     let frameId = 0;
     let stableFrames = 0;
     let lastHeight = viewport.height;
+    const initialHeight = viewport.height;
     let resolveOnce: (() => void) | null = resolve;
 
     const finish = () => {
@@ -64,6 +67,8 @@ export const waitForMobileViewportStabilize = (
 
       const currentHeight = viewport.height;
       const activeEditable = isEditableElement(document.activeElement);
+      const keyboardReleaseObserved = currentHeight - initialHeight > 24;
+      const minimumDismissDelayElapsed = Date.now() - waitStartedAt >= 120;
 
       if (Math.abs(currentHeight - lastHeight) <= VIEWPORT_STABLE_DELTA_PX) {
         stableFrames += 1;
@@ -72,7 +77,11 @@ export const waitForMobileViewportStabilize = (
         lastHeight = currentHeight;
       }
 
-      if (!activeEditable && stableFrames >= VIEWPORT_STABLE_FRAMES) {
+      if (
+        !activeEditable &&
+        stableFrames >= VIEWPORT_STABLE_FRAMES &&
+        (!hadActiveEditable || keyboardReleaseObserved || minimumDismissDelayElapsed)
+      ) {
         window.clearTimeout(timeoutId);
         finish();
         return;

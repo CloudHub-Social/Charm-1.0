@@ -75,6 +75,7 @@ import { getSlidingSyncManager } from '$client/initMatrix';
 import { LIST_DMS } from '$client/slidingSync';
 import { getNextSlidingSyncListWindowEnd } from '$client/slidingSyncListPaging';
 import { allRoomsAtom } from '$state/room-list/roomList';
+import { lastVisitedRoomIdAtom } from '$state/room/lastRoom';
 import { markStartupRoomListReady } from '$utils/perfTelemetry';
 import {
   ensureManualRefreshSpinStyle,
@@ -377,10 +378,11 @@ export function Direct() {
 
   usePullToRefresh(scrollRef, mx);
 
+  const lastRoomId = useAtomValue(lastVisitedRoomIdAtom);
   const handleSwipeToRoom = useCallback(() => {
-    if (!mobileOrTabletLayout() || !selectedRoomId) return;
-    navigate(getDirectRoomPath(getCanonicalAliasOrRoomId(mx, selectedRoomId)));
-  }, [mx, navigate, selectedRoomId]);
+    if (!mobileOrTabletLayout() || !lastRoomId) return;
+    navigate(getDirectRoomPath(getCanonicalAliasOrRoomId(mx, lastRoomId)));
+  }, [lastRoomId, mx, navigate]);
 
   return (
     <Box

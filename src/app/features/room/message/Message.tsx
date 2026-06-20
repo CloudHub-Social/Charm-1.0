@@ -362,6 +362,19 @@ function useMobileLongPress(callback: () => void, delay = 500) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
   const restoreSelectionRef = useRef<(() => void) | null>(null);
+  const removeSelectionGuardRef = useRef<(() => void) | null>(null);
+
+  const installSelectionGuard = useCallback(() => {
+    removeSelectionGuardRef.current?.();
+    const handleSelectionChange = () => {
+      clearTextSelection();
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    removeSelectionGuardRef.current = () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      removeSelectionGuardRef.current = null;
+    };
+  }, []);
 
   const cancel = useCallback(() => {
     if (timerRef.current !== null) {
@@ -370,6 +383,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
     }
     restoreSelectionRef.current?.();
     restoreSelectionRef.current = null;
+    removeSelectionGuardRef.current?.();
     startPosRef.current = null;
   }, []);
 
@@ -380,6 +394,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
       if (!touch) return;
       restoreSelectionRef.current?.();
       restoreSelectionRef.current = suppressUserSelect();
+      installSelectionGuard();
       startPosRef.current = { x: touch.clientX, y: touch.clientY };
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
@@ -391,7 +406,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
         });
       }, delay);
     },
-    [callback, delay]
+    [callback, delay, installSelectionGuard]
   );
 
   const onTouchMove = useCallback(
@@ -935,7 +950,15 @@ function MessageInternal(
     if (!mobileOptionsOpen) return undefined;
 
     clearTextSelection();
-    return suppressUserSelect();
+    const restoreSelection = suppressUserSelect();
+    const handleSelectionChange = () => {
+      clearTextSelection();
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      restoreSelection();
+    };
   }, [mobileOptionsOpen]);
 
   const msgContentJSX = (
@@ -1620,7 +1643,15 @@ export const Event = as<'div', EventProps>(
       if (!mobileOptionsOpen) return undefined;
 
       clearTextSelection();
-      return suppressUserSelect();
+      const restoreSelection = suppressUserSelect();
+      const handleSelectionChange = () => {
+        clearTextSelection();
+      };
+      document.addEventListener('selectionchange', handleSelectionChange);
+      return () => {
+        document.removeEventListener('selectionchange', handleSelectionChange);
+        restoreSelection();
+      };
     }, [mobileOptionsOpen]);
 
     const handleContextMenu: MouseEventHandler<HTMLDivElement> = (evt) => {

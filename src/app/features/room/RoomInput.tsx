@@ -579,7 +579,15 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       if (!showSchedulePicker) return undefined;
 
       clearTextSelection();
-      return suppressUserSelect();
+      const restoreSelection = suppressUserSelect();
+      const handleSelectionChange = () => {
+        clearTextSelection();
+      };
+      document.addEventListener('selectionchange', handleSelectionChange);
+      return () => {
+        document.removeEventListener('selectionchange', handleSelectionChange);
+        restoreSelection();
+      };
     }, [showSchedulePicker]);
 
     useEffect(() => resetLongPressState, [resetLongPressState]);
