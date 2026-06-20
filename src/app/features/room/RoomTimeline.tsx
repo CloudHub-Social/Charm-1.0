@@ -86,6 +86,11 @@ import { useTimelineEventRenderer } from '$hooks/timeline/useTimelineEventRender
 import { completeRoomTimelineRender } from '$utils/perfTelemetry';
 import { mobileOrTabletLayout } from '$utils/user-agent';
 import * as css from './RoomTimeline.css';
+import {
+  getTimelineBottomScrollAction,
+  getUnreadBridgeAction,
+  shouldKeepBottomPinnedAfterJump,
+} from './roomTimelineState';
 
 const log = createLogger('RoomTimeline');
 
@@ -780,8 +785,10 @@ export function RoomTimeline({
           },
         });
 
-        const keepBottomPinned =
-          (focusJumpMode ?? jumpMode) === 'notification_live' && timelineSync.liveTimelineLinked;
+        const keepBottomPinned = shouldKeepBottomPinnedAfterJump(
+          focusJumpMode ?? jumpMode,
+          timelineSync.liveTimelineLinked
+        );
         // An event-targeted history jump should no longer be treated as
         // bottom-pinned. Notification-live jumps, however, should keep the
         // bottom chip cleared when the target is already near the live tail.
@@ -1144,9 +1151,15 @@ export function RoomTimeline({
   }, [isKeyboardVisible, keyboardHeight, setAtBottom]);
 
   useEffect(() => {
-    if (!unreadBridgeActiveRef.current) return;
+    const unreadBridgeAction = getUnreadBridgeAction({
+      active: unreadBridgeActiveRef.current,
+      liveTimelineLinked: timelineSync.liveTimelineLinked,
+      forwardStatus: timelineSync.forwardStatus,
+      attempts: unreadBridgeAttemptsRef.current,
+    });
+    if (unreadBridgeAction === 'idle') return;
 
-    if (timelineSync.liveTimelineLinked) {
+    if (unreadBridgeAction === 'complete') {
       unreadBridgeActiveRef.current = false;
       unreadBridgeAttemptsRef.current = 0;
       setUnreadInfo((prev) =>
@@ -1161,8 +1174,7 @@ export function RoomTimeline({
       return;
     }
 
-    if (timelineSync.forwardStatus !== 'idle') return;
-    if (unreadBridgeAttemptsRef.current >= 12) {
+    if (unreadBridgeAction === 'stop') {
       unreadBridgeActiveRef.current = false;
       return;
     }
@@ -1540,11 +1552,17 @@ export function RoomTimeline({
         }, 120);
       }
 
-      if (
-        atBottomRef.current &&
-        !isNowAtBottom &&
-        (contentGrew || viewportChanged || withinSettleWindow)
-      ) {
+      const withinViewportChangeWindow = Date.now() - lastViewportChangeTimeRef.current < 500;
+      const bottomScrollAction = getTimelineBottomScrollAction({
+        atBottom: atBottomRef.current,
+        isNowAtBottom,
+        contentGrew,
+        viewportChanged,
+        withinSettleWindow,
+        withinViewportChangeWindow,
+      });
+
+      if (bottomScrollAction === 'chase_bottom') {
         // Defer the chase to the next animation frame so VList finishes its
         // current layout pass. Synchronous scrollTo causes cascading scroll
         // events that produce visible jumps when images/embeds load.
@@ -1562,8 +1580,7 @@ export function RoomTimeline({
       // events to stabilize before re-evaluating atBottom. 500ms window allows
       // for slower devices and multiple rapid viewport changes (keyboard animations,
       // address bar hiding, etc.) to complete before checking scroll position.
-      const withinViewportChangeWindow = Date.now() - lastViewportChangeTimeRef.current < 500;
-      if (isNowAtBottom !== atBottomRef.current && !withinViewportChangeWindow) {
+      if (bottomScrollAction === 'update_at_bottom') {
         setAtBottom(isNowAtBottom);
       }
 
