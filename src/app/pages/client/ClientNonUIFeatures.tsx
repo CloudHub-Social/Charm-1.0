@@ -473,6 +473,8 @@ function MessageNotifications() {
     >()
   );
   const flushQueuedNotificationsRef = useRef<(() => void) | null>(null);
+  const skipFocusCheckEventsRef = useRef(new Set<string>());
+  const pendingDecryptListenersRef = useRef(new Map<string, () => void>());
   // Record mount time so we can distinguish live events from historical backfill
   // on sliding sync proxies that don't set num_live (which causes liveEvent=false
   // for all events, including actually-new messages).
@@ -515,16 +517,19 @@ function MessageNotifications() {
     clearMediaSessionQuickly();
   }, []);
 
+  useEffect(
+    () => () => {
+      pendingDecryptListenersRef.current.forEach((cleanup) => cleanup());
+      pendingDecryptListenersRef.current.clear();
+      skipFocusCheckEventsRef.current.clear();
+    },
+    []
+  );
+
   useEffect(() => {
     const pushProcessor = new PushProcessor(mx);
-    // Track encrypted events that should skip focus check when decrypted (because we
-    // already checked focus when the encrypted event arrived, and want to use that
-    // original state rather than re-checking after decryption completes).
-    const skipFocusCheckEvents = new Set<string>();
     // Tracks when each event first arrived so we can measure notification delivery latency
     const notifyTimerMap = new Map<string, number>();
-    // Track pending decryption listeners to clean up on unmount
-    const pendingDecryptListeners = new Map<string, () => void>();
 
     const shouldQueueNotificationLocally = () =>
       document.visibilityState === 'visible' ||
@@ -551,6 +556,38 @@ function MessageNotifications() {
       }
     };
 
+    const ensurePendingDecryptListener = (
+      eventId: string,
+      mEvent: MatrixEvent,
+      room: Parameters<RoomEventHandlerMap[RoomEvent.Timeline]>[1],
+      data: TimelineEventData
+    ) => {
+      if (pendingDecryptListenersRef.current.has(eventId)) {
+        return;
+      }
+
+      const handleDecrypted = () => {
+        pendingDecryptListenersRef.current.delete(eventId);
+        if (queuedNotificationEventsRef.current.has(eventId)) {
+          const leaseExpiresAt = leaseExpiresAtRef.current;
+          const leaseStillFresh = typeof leaseExpiresAt === 'number' && leaseExpiresAt > Date.now();
+          if (isActiveNotificationClientRef.current || !leaseStillFresh) {
+            flushQueuedNotificationsRef.current?.();
+          }
+          return;
+        }
+
+        // After decryption, run the notification logic with the decrypted event
+        handleTimelineEventImpl(mEvent, room, undefined, true, data);
+        skipFocusCheckEventsRef.current.delete(eventId);
+      };
+
+      mEvent.once(MatrixEventEvent.Decrypted, handleDecrypted);
+      pendingDecryptListenersRef.current.set(eventId, () =>
+        mEvent.off(MatrixEventEvent.Decrypted, handleDecrypted)
+      );
+    };
+
     const handleTimelineEventImpl = (
       mEvent: Parameters<RoomEventHandlerMap[RoomEvent.Timeline]>[0],
       room: Parameters<RoomEventHandlerMap[RoomEvent.Timeline]>[1],
@@ -565,7 +602,7 @@ function MessageNotifications() {
       if (eventId && !notifyTimerMap.has(eventId)) {
         notifyTimerMap.set(eventId, performance.now());
       }
-      const shouldSkipFocusCheck = eventId && skipFocusCheckEvents.has(eventId);
+      const shouldSkipFocusCheck = eventId && skipFocusCheckEventsRef.current.has(eventId);
       if (!shouldSkipFocusCheck) {
         if (document.hasFocus() && notificationSelected) return;
       }
@@ -598,38 +635,11 @@ function MessageNotifications() {
         if (eventId) {
           // Mark this event to skip focus check when decrypted, so we use the focus
           // state from when the encrypted event originally arrived, not when it decrypts.
-          skipFocusCheckEvents.add(eventId);
+          skipFocusCheckEventsRef.current.add(eventId);
           if (shouldQueueWhileInactive) {
             queueNotificationEvent(eventId, mEvent, room, data);
           }
-        }
-
-        const handleDecrypted = () => {
-          if (eventId) {
-            pendingDecryptListeners.delete(eventId);
-            if (queuedNotificationEventsRef.current.has(eventId)) {
-              const leaseExpiresAt = leaseExpiresAtRef.current;
-              const leaseStillFresh =
-                typeof leaseExpiresAt === 'number' && leaseExpiresAt > Date.now();
-              if (isActiveNotificationClientRef.current || !leaseStillFresh) {
-                flushQueuedNotificationsRef.current?.();
-              }
-              return;
-            }
-          }
-
-          // After decryption, run the notification logic with the decrypted event
-          handleTimelineEventImpl(mEvent, room, undefined, true, data);
-          if (eventId) {
-            skipFocusCheckEvents.delete(eventId);
-          }
-        };
-        mEvent.once(MatrixEventEvent.Decrypted, handleDecrypted);
-        // Track listener for cleanup on unmount
-        if (eventId) {
-          pendingDecryptListeners.set(eventId, () =>
-            mEvent.off(MatrixEventEvent.Decrypted, handleDecrypted)
-          );
+          ensurePendingDecryptListener(eventId, mEvent, room, data);
         }
         return;
       }
@@ -698,7 +708,7 @@ function MessageNotifications() {
       }
 
       if (!forceActiveNotificationClient && !isActiveNotificationClientRef.current) {
-        if (eventId && room && shouldQueueNotificationLocally()) {
+        if (shouldQueueNotificationLocally()) {
           queueNotificationEvent(eventId, mEvent, room, data);
         }
         return;
@@ -849,6 +859,7 @@ function MessageNotifications() {
       const leaseExpiresAt = leaseExpiresAtRef.current;
       const leaseStillFresh = typeof leaseExpiresAt === 'number' && leaseExpiresAt > Date.now();
       if (!isActiveNotificationClientRef.current && leaseStillFresh) return;
+      if (mx.getSyncState() !== SyncState.Syncing) return;
       const queuedEvents = Array.from(queuedNotificationEventsRef.current.values()).toSorted(
         (a, b) => a.mEvent.getTs() - b.mEvent.getTs()
       );
@@ -856,15 +867,16 @@ function MessageNotifications() {
       queuedEvents.forEach(({ mEvent, room, data }) => {
         const queuedEventId = mEvent.getId();
         if (!room || (queuedEventId && room.hasUserReadEvent(mx.getSafeUserId(), queuedEventId))) {
-          if (queuedEventId) skipFocusCheckEvents.delete(queuedEventId);
+          if (queuedEventId) skipFocusCheckEventsRef.current.delete(queuedEventId);
           return;
         }
         if (queuedEventId && mEvent.getType() === 'm.room.encrypted' && mEvent.isEncrypted()) {
           queueNotificationEvent(queuedEventId, mEvent, room, data);
+          ensurePendingDecryptListener(queuedEventId, mEvent, room, data);
           return;
         }
         handleTimelineEventImpl(mEvent, room, undefined, true, data, true);
-        if (queuedEventId) skipFocusCheckEvents.delete(queuedEventId);
+        if (queuedEventId) skipFocusCheckEventsRef.current.delete(queuedEventId);
       });
     };
     const handleTimelineEvent: RoomEventHandlerMap[RoomEvent.Timeline] = (
@@ -883,9 +895,6 @@ function MessageNotifications() {
         flushQueuedNotificationsRef.current = null;
       }
       mx.removeListener(RoomEvent.Timeline, handleTimelineEvent);
-      // Clean up any pending decryption listeners
-      pendingDecryptListeners.forEach((cleanup) => cleanup());
-      pendingDecryptListeners.clear();
     };
   }, [
     mx,

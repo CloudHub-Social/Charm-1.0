@@ -298,14 +298,11 @@ async function reconcileDelayedPushQueueReleaseTimes(): Promise<void> {
       return entry;
     }
 
-    let nextReleaseAt = entry.releaseAt;
-    if (!notificationLeaseState.desktopDelayEnabled) {
-      nextReleaseAt = now;
-    } else if (notificationLeaseState.lease && notificationLeaseState.lease.expiresAt > now) {
-      nextReleaseAt = Math.min(entry.releaseAt, notificationLeaseState.lease.expiresAt);
-    } else {
-      nextReleaseAt = now;
-    }
+    const nextReleaseAt = !notificationLeaseState.desktopDelayEnabled
+      ? now
+      : notificationLeaseState.lease && notificationLeaseState.lease.expiresAt > now
+        ? Math.min(entry.releaseAt, notificationLeaseState.lease.expiresAt)
+        : now;
 
     if (nextReleaseAt === entry.releaseAt) {
       return entry;
