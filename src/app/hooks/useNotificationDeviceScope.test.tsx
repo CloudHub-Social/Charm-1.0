@@ -8,10 +8,23 @@ import {
   useNotificationDeviceScope,
 } from './useNotificationDeviceScope';
 
-let notificationDeviceScope: 'all_clients' | 'active_client_only' = 'all_clients';
+let notificationDeviceScope: 'all_clients' | 'desktop_delay' = 'all_clients';
+let notificationDesktopDelayMinutes: 0 | 1 | 2 | 5 | 10 = 2;
+const { mockMobileOrTablet } = vi.hoisted(() => ({
+  mockMobileOrTablet: vi.fn(() => false),
+}));
 
 vi.mock('$state/hooks/settings', () => ({
-  useSetting: () => [notificationDeviceScope, vi.fn()],
+  useSetting: (_atom: unknown, key: string) => {
+    if (key === 'notificationDesktopDelayMinutes') {
+      return [notificationDesktopDelayMinutes, vi.fn()];
+    }
+    return [notificationDeviceScope, vi.fn()];
+  },
+}));
+
+vi.mock('$utils/user-agent', () => ({
+  mobileOrTablet: mockMobileOrTablet,
 }));
 
 function setVisibilityState(visibilityState: DocumentVisibilityState): void {
@@ -69,6 +82,8 @@ describe('useNotificationDeviceScope', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-18T12:00:00.000Z'));
     notificationDeviceScope = 'all_clients';
+    notificationDesktopDelayMinutes = 2;
+    mockMobileOrTablet.mockReturnValue(false);
     setVisibilityState('visible');
     Object.defineProperty(document, 'hasFocus', {
       configurable: true,
@@ -93,8 +108,8 @@ describe('useNotificationDeviceScope', () => {
     expect(result.current.isWindowFocused).toBe(true);
   });
 
-  it('publishes an active lease for the focused visible client in active-client-only mode', async () => {
-    notificationDeviceScope = 'active_client_only';
+  it('publishes an active lease for the focused visible client in desktop-delay mode', async () => {
+    notificationDeviceScope = 'desktop_delay';
     const { client } = createMockMatrixClient();
 
     const { result } = renderHook(() => useNotificationDeviceScope(client));
@@ -112,7 +127,7 @@ describe('useNotificationDeviceScope', () => {
   });
 
   it('treats a fresh lease held by another client as inactive when this tab is not focused', () => {
-    notificationDeviceScope = 'active_client_only';
+    notificationDeviceScope = 'desktop_delay';
     Object.defineProperty(document, 'hasFocus', {
       configurable: true,
       value: () => false,
@@ -135,7 +150,7 @@ describe('useNotificationDeviceScope', () => {
   });
 
   it('falls back to active when another client lease expires', () => {
-    notificationDeviceScope = 'active_client_only';
+    notificationDeviceScope = 'desktop_delay';
     Object.defineProperty(document, 'hasFocus', {
       configurable: true,
       value: () => false,
@@ -156,7 +171,7 @@ describe('useNotificationDeviceScope', () => {
   });
 
   it('updates the in-memory lease when account data changes arrive', async () => {
-    notificationDeviceScope = 'active_client_only';
+    notificationDeviceScope = 'desktop_delay';
     const { client, setLease, emitAccountData } = createMockMatrixClient();
 
     const { result } = renderHook(() => useNotificationDeviceScope(client));
@@ -180,7 +195,7 @@ describe('useNotificationDeviceScope', () => {
   });
 
   it('can read lease state without publishing duplicate leases', async () => {
-    notificationDeviceScope = 'active_client_only';
+    notificationDeviceScope = 'desktop_delay';
     const { client } = createMockMatrixClient();
 
     const { result } = renderHook(() =>
@@ -199,7 +214,7 @@ describe('useNotificationDeviceScope', () => {
   });
 
   it('shares optimistic lease updates with read-only consumers in the same tab', async () => {
-    notificationDeviceScope = 'active_client_only';
+    notificationDeviceScope = 'desktop_delay';
     const { client } = createMockMatrixClient();
 
     const owner = renderHook(() => useNotificationDeviceScope(client));
@@ -223,5 +238,84 @@ describe('useNotificationDeviceScope', () => {
 
   it('keeps desktop push enabled for all-clients scope while visible', () => {
     expect(shouldEnableNotificationPusher(true, false, 'all_clients', true)).toBe(true);
+  });
+
+  it('treats a zero-minute desktop delay like notify-all semantics', () => {
+    notificationDeviceScope = 'desktop_delay';
+    notificationDesktopDelayMinutes = 0;
+    const { client } = createMockMatrixClient();
+
+    const { result } = renderHook(() => useNotificationDeviceScope(client));
+
+    expect(result.current.isActiveNotificationClient).toBe(true);
+    expect(result.current.shouldKeepWebPushEnabled).toBe(false);
+    expect(result.current.activeReason).toBe('delay_disabled');
+  });
+
+  it('clears an owned lease when desktop delay is disabled', async () => {
+    notificationDeviceScope = 'desktop_delay';
+    notificationDesktopDelayMinutes = 0;
+    const now = Date.now();
+    const { client } = createMockMatrixClient({
+      deviceId: 'DEVICE_A',
+      updatedAt: now,
+      expiresAt: now + 120_000,
+    });
+
+    renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledWith(
+      CustomAccountDataEvent.SableNotificationDeviceLease,
+      {}
+    );
+  });
+
+  it('does not let mobile clients renew desktop-delay leases', async () => {
+    notificationDeviceScope = 'desktop_delay';
+    mockMobileOrTablet.mockReturnValue(true);
+    const { client } = createMockMatrixClient();
+
+    const { result } = renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).not.toHaveBeenCalled();
+    expect(result.current.isActiveNotificationClient).toBe(true);
+    expect(result.current.activeReason).toBe('all_clients');
+  });
+
+  it('publishes a shorter lease immediately when the selected delay is reduced', async () => {
+    notificationDeviceScope = 'desktop_delay';
+    notificationDesktopDelayMinutes = 10;
+    const now = Date.now();
+    const { client } = createMockMatrixClient({
+      deviceId: 'DEVICE_A',
+      updatedAt: now,
+      expiresAt: now + 10 * 60_000,
+    });
+
+    const { result, rerender } = renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const initialExpiry = result.current.lease?.expiresAt ?? 0;
+    notificationDesktopDelayMinutes = 1;
+
+    rerender();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledTimes(1);
+    expect((result.current.lease?.expiresAt ?? 0) - initialExpiry).toBeLessThan(0);
   });
 });

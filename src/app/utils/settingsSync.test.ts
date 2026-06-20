@@ -186,6 +186,18 @@ describe('deserializeFromSync', () => {
     expect(result).not.toBeNull();
     expect(result!.twitterEmoji).toBe(false);
   });
+
+  it('migrates synced active-client notification scope values to desktop delay', () => {
+    const remote = {
+      v: SETTINGS_SYNC_VERSION,
+      settings: { notificationDeviceScope: 'active_client_only' },
+    };
+
+    const result = deserializeFromSync(remote, base);
+
+    expect(result).not.toBeNull();
+    expect(result!.notificationDeviceScope).toBe('desktop_delay');
+  });
 });
 
 // exportSettingsAsJson
