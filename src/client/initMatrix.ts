@@ -225,7 +225,7 @@ const installRuntimeCryptoStoreRecovery = (mx: MatrixClient): void => {
   ) => {
     const errorMessage = stringifyRecoverableError(error);
     if (!errorMessage) return;
-    if (!isCryptoStoreRuntimeRecoveryError(errorMessage, { hasCryptoContext: true })) return;
+    if (!isCryptoStoreRuntimeRecoveryError(errorMessage)) return;
 
     requestCryptoStoreRuntimeRecovery({
       source,
