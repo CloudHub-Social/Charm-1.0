@@ -376,6 +376,31 @@ describe('startClient app singleton gate', () => {
     });
   });
 
+  it('does not reload for non-crypto transaction aborts from the sync listener', async () => {
+    const mx = makeClient('@alice:example.com');
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
+    Object.defineProperty(document, 'hasFocus', {
+      configurable: true,
+      value: () => true,
+    });
+
+    await startClassicClient(mx);
+
+    const onMock = mx.on as unknown as ReturnType<typeof vi.fn>;
+    const syncListener = onMock.mock.calls.at(-1)?.[1] as
+      | ((state: string, prevState: string | null, data?: { error?: Error }) => void)
+      | undefined;
+
+    syncListener?.(SyncState.Error, null, {
+      error: new Error('Transaction aborted'),
+    });
+
+    expect(mockReloadWithTelemetry).not.toHaveBeenCalled();
+  });
+
   it('suppresses crypto store runtime reloads while the app is hidden', async () => {
     const mx = makeClient('@alice:example.com');
     Object.defineProperty(document, 'visibilityState', {

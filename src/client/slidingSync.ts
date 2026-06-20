@@ -25,7 +25,10 @@ import { createDebugLogger } from '$utils/debugLogger';
 import { completeRoomNavigation } from '$utils/perfTelemetry';
 import * as Sentry from '@sentry/react';
 import { CustomStateEvent } from '$types/matrix/room';
-import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
+import {
+  classifyCryptoStoreIndexedDbError,
+  isCryptoStoreRuntimeRecoveryError,
+} from './cryptoStoreErrors';
 
 const log = createLogger('slidingSync');
 const debugLog = createDebugLogger('slidingSync');
@@ -97,6 +100,7 @@ export type SlidingSyncConfig = {
   spaceGraphWarmupRooms?: number;
   includeInviteList?: boolean;
   probeTimeoutMs?: number;
+  onCryptoStoreRuntimeRecovery?: (errorMessage: string, syncState: string) => void;
 };
 
 export type SlidingSyncListDiagnostics = {
@@ -307,6 +311,8 @@ export class SlidingSyncManager {
 
   private readonly initialWarmCache: boolean;
 
+  private readonly onCryptoStoreRuntimeRecovery?: (errorMessage: string, syncState: string) => void;
+
   private readonly loadedRoomIds = new Set<string>();
 
   private readonly loadedListCoverageEnd = new Map<string, number>();
@@ -399,6 +405,7 @@ export class SlidingSyncManager {
     this.roomTimelineLimit = roomTimelineLimit;
     this.initialRoomCount = mx.getRooms().length;
     this.initialWarmCache = initialWarmCache ?? this.initialRoomCount > 0;
+    this.onCryptoStoreRuntimeRecovery = config.onCryptoStoreRuntimeRecovery;
 
     const defaultSubscription = buildEncryptedSubscription(roomTimelineLimit);
     const lists = buildLists(listPageSize, includeInviteList, this.listTimelineLimit);
@@ -486,6 +493,9 @@ export class SlidingSyncManager {
                 'Matrix SDK WASM crypto layer issue - client will attempt to reconnect',
             },
           });
+          if (isCryptoStoreRuntimeRecoveryError(errorMsg, { hasCryptoContext: true })) {
+            this.onCryptoStoreRuntimeRecovery?.(errorMsg, state);
+          }
         }
 
         // Detect M_UNKNOWN_POS error (sliding sync position lost)

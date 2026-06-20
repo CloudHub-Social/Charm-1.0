@@ -25,22 +25,40 @@ export const classifyCryptoStoreIndexedDbError = (
 export const isCryptoStoreIndexedDbError = (errorMessage: string): boolean =>
   classifyCryptoStoreIndexedDbError(errorMessage) !== undefined;
 
-export const isCryptoStoreRuntimeRecoveryError = (errorMessage: string): boolean => {
+const hasExplicitCryptoStoreContext = (errorMessage: string): boolean => {
+  const lower = errorMessage.toLowerCase();
+  return (
+    lower.includes('crypto store') ||
+    lower.includes('matrix-sdk-crypto') ||
+    lower.includes('matrix rust sdk') ||
+    lower.includes('rust crypto') ||
+    lower.includes('olm machine')
+  );
+};
+
+export const isCryptoStoreRuntimeRecoveryError = (
+  errorMessage: string,
+  options?: { hasCryptoContext?: boolean }
+): boolean => {
   const errorType = classifyCryptoStoreIndexedDbError(errorMessage);
   if (!errorType) return false;
+  const hasCryptoContext =
+    options?.hasCryptoContext === true || hasExplicitCryptoStoreContext(errorMessage);
 
-  if (
-    errorType === 'transaction_aborted' ||
-    errorType === 'transaction_error' ||
-    errorType === 'connection_closing' ||
-    errorType === 'connection_closed' ||
-    errorType === 'crypto_store_error'
-  ) {
+  if (errorType === 'transaction_aborted' || errorType === 'transaction_error') {
+    return hasCryptoContext;
+  }
+
+  if (errorType === 'connection_closing' || errorType === 'connection_closed') {
+    return hasCryptoContext || errorMessage.includes('database connection is closing');
+  }
+
+  if (errorType === 'crypto_store_error') {
     return true;
   }
 
   return (
-    errorMessage.includes('crypto store') ||
+    hasCryptoContext ||
     errorMessage.includes('IndexedDB') ||
     errorMessage.includes('IDB') ||
     errorMessage.includes('database connection is closing') ||

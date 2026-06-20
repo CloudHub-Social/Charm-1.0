@@ -1222,12 +1222,14 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
                 'Matrix SDK WASM crypto layer issue - client will attempt to reconnect',
             },
           });
-          requestCryptoStoreRuntimeRecovery({
-            source: 'sync_listener',
-            errorMessage: errorMsg,
-            userId: mx.getUserId(),
-            syncState: state,
-          });
+          if (isCryptoStoreRuntimeRecoveryError(errorMsg, { hasCryptoContext: true })) {
+            requestCryptoStoreRuntimeRecovery({
+              source: 'sync_listener',
+              errorMessage: errorMsg,
+              userId: mx.getUserId(),
+              syncState: state,
+            });
+          }
         }
       }
       if (
@@ -1421,6 +1423,14 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
     {
       ...slidingConfig,
       includeInviteList: true,
+      onCryptoStoreRuntimeRecovery: (errorMessage, syncState) => {
+        requestCryptoStoreRuntimeRecovery({
+          source: 'sync_listener',
+          errorMessage,
+          userId: mx.getUserId(),
+          syncState,
+        });
+      },
       pollTimeoutMs: slidingConfig?.pollTimeoutMs ?? SLIDING_SYNC_POLL_TIMEOUT_MS,
     },
     slidingWarmCacheAtStart

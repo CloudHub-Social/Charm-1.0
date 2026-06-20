@@ -83,7 +83,14 @@ vi.mock('@sentry/react', () => ({
     gauge: vi.fn<() => void>(),
     distribution: vi.fn<() => void>(),
   },
+  logger: {
+    info: vi.fn<() => void>(),
+    warn: vi.fn<() => void>(),
+    error: vi.fn<() => void>(),
+  },
   addBreadcrumb: vi.fn<() => void>(),
+  captureMessage: vi.fn<() => void>(),
+  captureException: vi.fn<() => void>(),
   startInactiveSpan:
     vi.fn<() => { setAttribute: () => void; setAttributes: () => void; end: () => void }>(),
   startSpan: vi.fn<() => Promise<unknown>>(),
@@ -524,6 +531,26 @@ describe('SlidingSyncManager.dispose()', () => {
     const manager = makeManager(makeMockMx());
     manager.dispose();
     expect(mocks.slidingSyncInstance.stop).toHaveBeenCalledOnce();
+  });
+
+  it('requests runtime recovery for sliding-sync crypto-store failures', () => {
+    const mx = makeMockMx();
+    const onCryptoStoreRuntimeRecovery = vi.fn<(errorMessage: string, syncState: string) => void>();
+    const manager = makeManager(mx, { onCryptoStoreRuntimeRecovery });
+    manager.attach();
+
+    fireLifecycle(
+      SlidingSyncState.Complete,
+      {},
+      new Error(
+        'failed to read or write to the crypto store DomException Error (0): Transaction aborted'
+      )
+    );
+
+    expect(onCryptoStoreRuntimeRecovery).toHaveBeenCalledWith(
+      'failed to read or write to the crypto store DomException Error (0): Transaction aborted',
+      SlidingSyncState.Complete
+    );
   });
 });
 

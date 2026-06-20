@@ -67,8 +67,13 @@ describe('crypto store IndexedDB error classification', () => {
   it('treats classified backend transaction aborts as recoverable runtime errors', () => {
     expect(
       isCryptoStoreRuntimeRecoveryError(
-        'Backend(DomException { code: 0, name: "Error", message: "Transaction aborted" })'
+        'Backend(DomException { code: 0, name: "Error", message: "Transaction aborted" })',
+        { hasCryptoContext: true }
       )
     ).toBe(true);
+  });
+
+  it('does not treat bare transaction aborts as recoverable without crypto context', () => {
+    expect(isCryptoStoreRuntimeRecoveryError('Transaction aborted')).toBe(false);
   });
 });
