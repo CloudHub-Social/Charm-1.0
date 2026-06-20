@@ -115,7 +115,10 @@ export function useKeyboardHeight() {
         }
 
         attempts += 1;
-        if (attempts >= 8) return;
+        if (attempts >= 8) {
+          markKeyboardClosed();
+          return;
+        }
 
         closeVerificationTimer = window.setTimeout(check, 50);
       };
