@@ -59,13 +59,15 @@ export const Code = style([
   BaseCode,
   CodeFont,
   {
-    display: 'inline-flex',
-    alignItems: 'center',
+    display: 'inline',
     padding: `0 ${config.space.S100}`,
-    minHeight: toRem(20),
     fontSize: '0.95em',
     lineHeight: 'inherit',
     verticalAlign: 'baseline',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+    boxDecorationBreak: 'clone',
+    WebkitBoxDecorationBreak: 'clone',
   },
 ]);
 
