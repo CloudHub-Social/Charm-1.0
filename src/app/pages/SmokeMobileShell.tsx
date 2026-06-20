@@ -607,6 +607,46 @@ function SmokeProfileModal() {
   );
 }
 
+function SmokeMembersFullPage() {
+  return (
+    <Page>
+      <Box
+        data-testid="smoke-members-full-page"
+        grow="Yes"
+        direction="Column"
+        style={{
+          minHeight: 0,
+          padding: `${config.space.S400} ${config.space.S400} var(--sable-safe-area-bottom, 0px)`,
+          backgroundColor: 'var(--sable-surface-container)',
+        }}
+      >
+        <Header size="600" variant="Background">
+          <Box grow="Yes" alignItems="Center" justifyContent="SpaceBetween">
+            <Text size="H4">3 Members</Text>
+            <IconButton variant="Background">{composerIcon(X)}</IconButton>
+          </Box>
+        </Header>
+        <Box grow="Yes" direction="Column" gap="200" style={{ minHeight: 0 }}>
+          <Box
+            style={{
+              padding: config.space.S300,
+              borderRadius: config.radii.R400,
+              backgroundColor: 'var(--sable-surface)',
+            }}
+          >
+            <Text size="T300">Search</Text>
+          </Box>
+          {['Tor ❤️', 'Discord bridge bot', 'Evie 🏳️‍⚧️'].map((name) => (
+            <MenuItem key={name} variant="Background" radii="400">
+              <Text size="T300">{name}</Text>
+            </MenuItem>
+          ))}
+        </Box>
+      </Box>
+    </Page>
+  );
+}
+
 function SmokeRendererMarkdown() {
   return (
     <Page>

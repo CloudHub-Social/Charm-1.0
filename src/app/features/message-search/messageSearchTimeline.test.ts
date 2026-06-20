@@ -1,4 +1,3 @@
-import { SearchOrderBy } from '$types/matrix-sdk';
 import { describe, expect, it } from 'vitest';
 import { SearchOrderBy } from '$types/matrix-sdk';
 import { flattenTimelineSearchItems } from './messageSearchTimeline';
