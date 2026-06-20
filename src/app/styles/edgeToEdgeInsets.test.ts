@@ -62,12 +62,9 @@ describe('android edge-to-edge inset contract', () => {
       "'--sable-safe-area-bottom': enabled && !needsBottomSystemBar ? safeAreaBottom : '0px'"
     );
     expect(systemBarShell).toContain("const needsBottomSystemBar = tauriOs === 'android'");
-    expect(systemBarShell).toContain(
-      "const background = position === 'top' ? 'var(--sable-surface)' : 'var(--sable-bg-container)'"
-    );
-    expect(systemBarShell).toContain(
-      "position === 'top' ? 'var(--sable-surface-line)' : 'var(--sable-bg-container-line)'"
-    );
+    expect(systemBarShell).toContain("'var(--sable-surface-container)'");
+    expect(systemBarShell).toContain("'var(--sable-bg-container)'");
+    expect(systemBarShell).toContain("'var(--sable-surface-container-line)'");
     expect(systemBarShell).toContain('? { borderBottom: `1px solid ${borderColor}` }');
     expect(systemBarShell).toContain(': { borderTop: `1px solid ${borderColor}` }');
     expect(mobileCapability).toContain('"edge-to-edge:default"');

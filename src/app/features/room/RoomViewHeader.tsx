@@ -151,6 +151,7 @@ const RoomMenu = forwardRef<HTMLDivElement, RoomMenuProps>(
   ({ room, requestClose, onOpenMobileMembersDrawer }, ref) => {
     const mx = useMatrixClient();
     const [hideReads] = useSetting(settingsAtom, 'hideReads');
+    const setPeopleDrawer = useSetSetting(settingsAtom, 'isPeopleDrawer');
     const setWidgetDrawer = useSetSetting(settingsAtom, 'isWidgetDrawer');
     const unread = useRoomUnread(room.roomId, roomToUnreadAtom);
     const powerLevels = usePowerLevelsContext();
@@ -226,6 +227,8 @@ const RoomMenu = forwardRef<HTMLDivElement, RoomMenuProps>(
     const handleOpenMembers = () => {
       if (isMobileMembersSurface && onOpenMobileMembersDrawer) {
         onOpenMobileMembersDrawer();
+      } else if (screenSize === ScreenSize.Tablet) {
+        setPeopleDrawer(true);
       } else {
         openSettings(room.roomId, parentSpace?.roomId, RoomSettingsPage.MembersPage);
       }
