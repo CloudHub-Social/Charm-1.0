@@ -126,7 +126,12 @@ export function Room() {
         <Box grow="Yes" style={{ position: 'relative' }}>
           {callView && (screenSize === ScreenSize.Desktop || !chat) && (
             <Box grow="Yes" direction="Column">
-              <RoomViewHeader callView />
+              <RoomViewHeader
+                callView
+                onOpenMobileMembersDrawer={
+                  isMobileMembersSurface ? () => setMobileMembersDrawerOpen(true) : undefined
+                }
+              />
               <Box grow="Yes">
                 <CallView />
               </Box>
