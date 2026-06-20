@@ -53,6 +53,15 @@ vi.mock('./app/utils/debug', () => ({
 describe('registerAppServiceWorker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('VITE_SENTRY_ENVIRONMENT', '');
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'visible',
+    });
+    Object.defineProperty(document, 'hasFocus', {
+      configurable: true,
+      value: vi.fn(() => true),
+    });
     mockHasServiceWorker.mockReturnValue(false);
     mockGetRegistration.mockResolvedValue(undefined);
     mockRegister.mockResolvedValue({
@@ -274,6 +283,118 @@ describe('registerAppServiceWorker', () => {
     await vi.waitFor(() => {
       expect(window.location.reload).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('skips the blocking update prompt in preview builds', async () => {
+    vi.stubEnv('VITE_SENTRY_ENVIRONMENT', 'preview');
+    mockHasServiceWorker.mockReturnValue(true);
+    const confirmSpy = vi.fn(() => true);
+    const installingListeners = new Map<string, EventListener>();
+    const registrationListeners = new Map<string, EventListener>();
+    const waitingWorker = { postMessage: vi.fn() };
+    const installingWorker = {
+      state: 'installing',
+      addEventListener: vi.fn((event: string, listener: EventListener) => {
+        installingListeners.set(event, listener);
+      }),
+    };
+
+    Object.defineProperty(window, 'confirm', {
+      configurable: true,
+      value: confirmSpy,
+    });
+
+    mockRegister.mockResolvedValueOnce({
+      addEventListener: vi.fn((event: string, listener: EventListener) => {
+        registrationListeners.set(event, listener);
+      }),
+      installing: installingWorker,
+      waiting: waitingWorker,
+    });
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        onLine: true,
+        serviceWorker: {
+          register: mockRegister,
+          getRegistration: mockGetRegistration,
+          ready: mockReady,
+          controller: { postMessage: vi.fn() },
+          addEventListener: mockAddEventListener,
+        },
+      },
+    });
+
+    registerAppServiceWorker();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    registrationListeners.get('updatefound')?.(new Event('updatefound'));
+    installingWorker.state = 'installed';
+    installingListeners.get('statechange')?.(new Event('statechange'));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(waitingWorker.postMessage).not.toHaveBeenCalled();
+    expect(window.location.reload).not.toHaveBeenCalled();
+  });
+
+  it('skips the blocking update prompt while the app is hidden', async () => {
+    mockHasServiceWorker.mockReturnValue(true);
+    const confirmSpy = vi.fn(() => true);
+    const installingListeners = new Map<string, EventListener>();
+    const registrationListeners = new Map<string, EventListener>();
+    const waitingWorker = { postMessage: vi.fn() };
+    const installingWorker = {
+      state: 'installing',
+      addEventListener: vi.fn((event: string, listener: EventListener) => {
+        installingListeners.set(event, listener);
+      }),
+    };
+    let visibilityState: DocumentVisibilityState = 'hidden';
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibilityState,
+    });
+    Object.defineProperty(window, 'confirm', {
+      configurable: true,
+      value: confirmSpy,
+    });
+
+    mockRegister.mockResolvedValueOnce({
+      addEventListener: vi.fn((event: string, listener: EventListener) => {
+        registrationListeners.set(event, listener);
+      }),
+      installing: installingWorker,
+      waiting: waitingWorker,
+    });
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        onLine: true,
+        serviceWorker: {
+          register: mockRegister,
+          getRegistration: mockGetRegistration,
+          ready: mockReady,
+          controller: { postMessage: vi.fn() },
+          addEventListener: mockAddEventListener,
+        },
+      },
+    });
+
+    registerAppServiceWorker();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    registrationListeners.get('updatefound')?.(new Event('updatefound'));
+    installingWorker.state = 'installed';
+    installingListeners.get('statechange')?.(new Event('statechange'));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(waitingWorker.postMessage).not.toHaveBeenCalled();
+    expect(window.location.reload).not.toHaveBeenCalled();
   });
 
   it('coalesces focus and pageshow watchdog pings into one in-flight check', async () => {

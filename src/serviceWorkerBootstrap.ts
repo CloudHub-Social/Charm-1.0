@@ -66,10 +66,34 @@ const activateWaitingServiceWorkerAndReload = (waitingWorker: ServiceWorker) => 
   waitingWorker.postMessage({ type: 'SKIP_WAITING_AND_CLAIM' });
 };
 
+const getSentryEnvironment = (): string =>
+  import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE;
+
+const canShowBlockingUpdatePrompt = (): boolean => {
+  if (getSentryEnvironment() === 'preview') return false;
+  if (document.visibilityState !== 'visible') return false;
+  return typeof document.hasFocus !== 'function' || document.hasFocus();
+};
+
 const showUpdateAvailablePrompt = (registration: ServiceWorkerRegistration) => {
   const userPreference = localStorage.getItem(DONT_SHOW_PROMPT_KEY);
 
   if (userPreference === 'true') {
+    return;
+  }
+
+  if (!canShowBlockingUpdatePrompt()) {
+    Sentry.addBreadcrumb({
+      category: 'service_worker',
+      message: 'Deferred blocking service worker update prompt',
+      level: 'info',
+      data: {
+        environment: getSentryEnvironment(),
+        visibilityState: document.visibilityState,
+        focused: typeof document.hasFocus === 'function' ? document.hasFocus() : undefined,
+        waiting: !!registration.waiting,
+      },
+    });
     return;
   }
 
