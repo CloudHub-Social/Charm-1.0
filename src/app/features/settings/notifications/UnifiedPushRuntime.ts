@@ -53,6 +53,21 @@ type RoomNotifCache = {
 
 const roomNotifCaches = new Map<string, RoomNotifCache>();
 const minimalPushQueues = new Map<string, Promise<void>>();
+const minimalPushGenerations = new Map<string, number>();
+
+function invalidateMinimalPush(roomId: string): number {
+  const nextGeneration = (minimalPushGenerations.get(roomId) ?? 0) + 1;
+  minimalPushGenerations.set(roomId, nextGeneration);
+  return nextGeneration;
+}
+
+function currentMinimalPushGeneration(roomId: string): number {
+  return minimalPushGenerations.get(roomId) ?? 0;
+}
+
+function shouldSuppressUnifiedPushNow(settings: NotificationSettings): boolean {
+  return document.visibilityState === 'visible' && settings.useInAppNotifications;
+}
 
 function resolveAvatarUrl(mx: MatrixClient, roomId: string, userId: string): string | undefined {
   const room = mx.getRoom(roomId);
@@ -157,6 +172,7 @@ async function waitForNotificationEvent(
 }
 
 export async function clearRoomNotification(roomId: string) {
+  invalidateMinimalPush(roomId);
   roomNotifCaches.delete(roomId);
   try {
     const notificationsApi = await getTauriNotificationsApi();
@@ -176,7 +192,13 @@ export async function clearRoomNotification(roomId: string) {
 
 function queueMinimalPush(roomId: string, task: () => Promise<void>): Promise<void> {
   const previous = minimalPushQueues.get(roomId) ?? Promise.resolve();
-  const next = previous.catch(() => undefined).then(task);
+  const generation = currentMinimalPushGeneration(roomId);
+  const next = previous
+    .catch(() => undefined)
+    .then(async () => {
+      if (currentMinimalPushGeneration(roomId) !== generation) return;
+      await task();
+    });
   minimalPushQueues.set(roomId, next);
   return next.finally(() => {
     if (minimalPushQueues.get(roomId) === next) {
@@ -453,6 +475,10 @@ async function handleMinimalPushPayload(
     cache.isGroupConversation = (room.getJoinedMemberCount() ?? 0) > 2;
   }
 
+  if (shouldSuppressUnifiedPushNow(settings)) {
+    return;
+  }
+
   await postRoomNotification(
     roomId,
     cache,
@@ -472,7 +498,7 @@ async function handleUnifiedPushPayload(
 ) {
   const settings = getSettings();
 
-  if (document.visibilityState === 'visible' && settings.useInAppNotifications) {
+  if (shouldSuppressUnifiedPushNow(settings)) {
     return;
   }
 
@@ -484,11 +510,11 @@ async function handleUnifiedPushPayload(
   } else {
     const roomId = optionalString(pushData?.room_id);
     if (!roomId) {
-      await handleMinimalPushPayload(pushData, settings);
+      await handleMinimalPushPayload(pushData, getSettings());
       return;
     }
 
-    await queueMinimalPush(roomId, () => handleMinimalPushPayload(pushData, settings));
+    await queueMinimalPush(roomId, () => handleMinimalPushPayload(pushData, getSettings()));
   }
 }
 
