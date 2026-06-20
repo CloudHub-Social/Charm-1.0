@@ -108,18 +108,16 @@ export function useNotificationDeviceScope(
     mx && typeof mx.getDeviceId === 'function' ? (mx.getDeviceId() ?? undefined) : undefined;
   const leaseDurationMs = resolveLeaseDurationMs(notificationDesktopDelayMinutes);
   const isMobileClient = mobileOrTablet();
-  const scopeEnabled =
-    notificationDeviceScope === 'desktop_delay' &&
-    !!deviceId &&
-    leaseDurationMs > 0 &&
-    !isMobileClient;
+  const desktopDelayEnabled =
+    notificationDeviceScope === 'desktop_delay' && !!deviceId && leaseDurationMs > 0;
+  const canPublishLease = desktopDelayEnabled && !isMobileClient;
   const isVisible = typeof document !== 'undefined' && document.visibilityState === 'visible';
-  const shouldHoldLease = scopeEnabled && isVisible && isWindowFocused;
+  const shouldHoldLease = canPublishLease && isVisible && isWindowFocused;
   const freshLease = isLeaseFresh(lease, now);
   const isThisClientLeaseHolder = !!deviceId && freshLease && lease?.deviceId === deviceId;
-  const isActiveNotificationClient = !scopeEnabled || !freshLease || isThisClientLeaseHolder;
-  const shouldKeepWebPushEnabled = scopeEnabled && isActiveNotificationClient;
-  const activeReason: NotificationDeviceScopeState['activeReason'] = !scopeEnabled
+  const isActiveNotificationClient = !desktopDelayEnabled || !freshLease || isThisClientLeaseHolder;
+  const shouldKeepWebPushEnabled = desktopDelayEnabled && isActiveNotificationClient;
+  const activeReason: NotificationDeviceScopeState['activeReason'] = !desktopDelayEnabled
     ? deviceId
       ? notificationDeviceScope === 'desktop_delay' && leaseDurationMs === 0
         ? 'delay_disabled'
@@ -181,7 +179,7 @@ export function useNotificationDeviceScope(
     if (
       !shouldPublishLease ||
       !mx ||
-      !scopeEnabled ||
+      !canPublishLease ||
       !deviceId ||
       typeof mx.setAccountData !== 'function'
     ) {
@@ -224,17 +222,17 @@ export function useNotificationDeviceScope(
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [mx, deviceId, leaseDurationMs, shouldPublishLease, scopeEnabled, shouldHoldLease]);
+  }, [canPublishLease, deviceId, leaseDurationMs, mx, shouldPublishLease, shouldHoldLease]);
 
   useEffect(() => {
     if (!shouldPublishLease || !mx || !deviceId || typeof mx.setAccountData !== 'function') {
       return;
     }
-    if (scopeEnabled && shouldHoldLease) return;
+    if (desktopDelayEnabled) return;
     const currentLease = leaseRef.current;
     if (currentLease?.deviceId !== deviceId) return;
     clearLease(currentLease);
-  }, [clearLease, deviceId, mx, scopeEnabled, shouldHoldLease, shouldPublishLease]);
+  }, [clearLease, desktopDelayEnabled, deviceId, mx, shouldPublishLease]);
 
   useEffect(() => {
     const handleLocalLeaseUpdate = (event: Event) => {

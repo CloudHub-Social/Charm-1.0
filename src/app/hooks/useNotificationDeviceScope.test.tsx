@@ -287,7 +287,53 @@ describe('useNotificationDeviceScope', () => {
 
     expect(client.setAccountData).not.toHaveBeenCalled();
     expect(result.current.isActiveNotificationClient).toBe(true);
-    expect(result.current.activeReason).toBe('all_clients');
+    expect(result.current.activeReason).toBe('no_fresh_lease');
+  });
+
+  it('lets mobile clients honor a fresh desktop-held lease without renewing it', async () => {
+    notificationDeviceScope = 'desktop_delay';
+    mockMobileOrTablet.mockReturnValue(true);
+    const now = Date.now();
+    const { client } = createMockMatrixClient({
+      deviceId: 'DEVICE_B',
+      updatedAt: now,
+      expiresAt: now + 120_000,
+    });
+
+    const { result } = renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).not.toHaveBeenCalled();
+    expect(result.current.isActiveNotificationClient).toBe(false);
+    expect(result.current.shouldKeepWebPushEnabled).toBe(false);
+    expect(result.current.activeReason).toBe('lease_held_elsewhere');
+  });
+
+  it('does not clear an owned desktop-delay lease just because the tab is unfocused', async () => {
+    notificationDeviceScope = 'desktop_delay';
+    Object.defineProperty(document, 'hasFocus', {
+      configurable: true,
+      value: () => false,
+    });
+    const now = Date.now();
+    const { client } = createMockMatrixClient({
+      deviceId: 'DEVICE_A',
+      updatedAt: now,
+      expiresAt: now + 120_000,
+    });
+
+    const { result } = renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).not.toHaveBeenCalled();
+    expect(result.current.isThisClientLeaseHolder).toBe(true);
+    expect(result.current.isActiveNotificationClient).toBe(true);
   });
 
   it('publishes a shorter lease immediately when the selected delay is reduced', async () => {
