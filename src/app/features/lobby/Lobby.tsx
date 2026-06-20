@@ -179,7 +179,7 @@ export function Lobby() {
   const [spaceRooms, setSpaceRooms] = useAtom(spaceRoomsAtom);
   const [isDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
   const screenSize = useScreenSizeContext();
-  const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
   const [mobileMembersDrawerOpen, setMobileMembersDrawerOpen] = useState(false);
   const isMembersDrawerOpen = isMobileMembersSurface ? mobileMembersDrawerOpen : isDrawer;
   const [onTop, setOnTop] = useState(true);

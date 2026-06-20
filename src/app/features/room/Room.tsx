@@ -51,7 +51,7 @@ export function Room() {
   const [isWidgetDrawerOpen] = useSetting(settingsAtom, 'isWidgetDrawer');
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
   const screenSize = useScreenSizeContext();
-  const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
   const [mobileMembersDrawerOpen, setMobileMembersDrawerOpen] = useState(false);
   const isMembersDrawerOpen = isMobileMembersSurface ? mobileMembersDrawerOpen : isDrawer;
 

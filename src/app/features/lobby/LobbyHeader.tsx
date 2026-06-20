@@ -64,7 +64,7 @@ const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
     const canInvite = permissions.action('invite', mx.getSafeUserId());
     const openSpaceSettings = useOpenSpaceSettings();
     const screenSize = useScreenSizeContext();
-    const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();
+    const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
 
     const [invitePrompt, setInvitePrompt] = useState(false);
 
@@ -177,7 +177,7 @@ export function LobbyHeader({
   const [peopleDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
   const screenSize = useScreenSizeContext();
-  const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
 
   const name = useRoomName(space);
   const avatarMxc = useRoomAvatar(space);

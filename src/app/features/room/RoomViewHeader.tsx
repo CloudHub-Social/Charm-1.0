@@ -218,7 +218,7 @@ const RoomMenu = forwardRef<HTMLDivElement, RoomMenuProps>(
 
     const openSettings = useOpenRoomSettings();
     const parentSpace = useSpaceOptionally();
-    const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();
+    const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
     const handleOpenSettings = () => {
       openSettings(room.roomId, parentSpace?.roomId);
       requestClose();
@@ -235,7 +235,7 @@ const RoomMenu = forwardRef<HTMLDivElement, RoomMenuProps>(
       setWidgetDrawer(true);
       requestClose();
     };
-    const showMobileMembersAction = isMobileMembersSurface;
+    const showMobileMembersAction = screenSize !== ScreenSize.Desktop;
     const showMobileWidgetsAction =
       screenSize !== ScreenSize.Desktop && (widgets.length > 0 || canManageWidgets);
 
@@ -456,7 +456,7 @@ export function RoomViewHeader({
   const [peopleDrawer, setPeopleDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
   const [widgetDrawer, setWidgetDrawer] = useSetting(settingsAtom, 'isWidgetDrawer');
   const widgets = useRoomWidgets(room);
-  const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
 
   const pinnedIds = useRoomPinnedEvents(room);
   const pinMarker = room

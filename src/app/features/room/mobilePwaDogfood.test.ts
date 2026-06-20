@@ -21,9 +21,11 @@ describe('mobile PWA dogfood contract', () => {
     const roomHeader = readWorkspaceFile('src/app/features/room/RoomViewHeader.tsx');
 
     expect(roomHeader).toContain(
-      'const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();'
+      'const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();'
     );
-    expect(roomHeader).toContain('const showMobileMembersAction = isMobileMembersSurface;');
+    expect(roomHeader).toContain(
+      'const showMobileMembersAction = screenSize !== ScreenSize.Desktop;'
+    );
     expect(roomHeader).toContain('const showMobileWidgetsAction =');
     expect(roomHeader).toContain(
       'openSettings(room.roomId, parentSpace?.roomId, RoomSettingsPage.MembersPage);'
