@@ -103,7 +103,7 @@ export function useKeyboardHeight() {
       isVisibleRef.current = false;
     };
 
-    const verifyKeyboardClosed = () => {
+    const verifyKeyboardClosed = (forceCloseOnTimeout = false) => {
       let attempts = 0;
 
       const check = () => {
@@ -116,7 +116,9 @@ export function useKeyboardHeight() {
 
         attempts += 1;
         if (attempts >= 8) {
-          markKeyboardClosed();
+          if (forceCloseOnTimeout) {
+            markKeyboardClosed();
+          }
           return;
         }
 
@@ -130,7 +132,7 @@ export function useKeyboardHeight() {
     };
 
     if (mountCount === 1 && !isEditableElement(document.activeElement) && cssVarsApplied) {
-      verifyKeyboardClosed();
+      verifyKeyboardClosed(true);
     }
 
     const handleResize = () => {
@@ -201,17 +203,19 @@ export function useKeyboardHeight() {
     };
 
     viewport.addEventListener('resize', handleResize);
-    viewport.addEventListener('scroll', verifyKeyboardClosed);
+    const handleViewportScroll = () => verifyKeyboardClosed(false);
+    const handleFocusOut = () => verifyKeyboardClosed(false);
+    viewport.addEventListener('scroll', handleViewportScroll);
     window.addEventListener('orientationchange', handleOrientationChange);
-    window.addEventListener('focusout', verifyKeyboardClosed);
+    window.addEventListener('focusout', handleFocusOut);
     return () => {
       mountCount -= 1;
       if (stabilityTimer) clearTimeout(stabilityTimer);
       if (closeVerificationTimer) clearTimeout(closeVerificationTimer);
       viewport.removeEventListener('resize', handleResize);
-      viewport.removeEventListener('scroll', verifyKeyboardClosed);
+      viewport.removeEventListener('scroll', handleViewportScroll);
       window.removeEventListener('orientationchange', handleOrientationChange);
-      window.removeEventListener('focusout', verifyKeyboardClosed);
+      window.removeEventListener('focusout', handleFocusOut);
       // Only clear CSS vars when the last instance unmounts — prevents the thread
       // drawer unmounting mid-keyboard-open from wiping the variable while the
       // main room's RoomInput still has the keyboard open.
