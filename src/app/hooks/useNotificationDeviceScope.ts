@@ -111,6 +111,8 @@ export function useNotificationDeviceScope(
   const clearLeaseInFlightRef = useRef(false);
   const clearLeaseRetryAtRef = useRef(0);
   const previousShouldHoldLeaseRef = useRef(false);
+  const leaseMutationVersionRef = useRef(0);
+  const isMountedRef = useRef(true);
 
   const deviceId =
     mx && typeof mx.getDeviceId === 'function' ? (mx.getDeviceId() ?? undefined) : undefined;
@@ -143,21 +145,40 @@ export function useNotificationDeviceScope(
       if (clearLeaseInFlightRef.current) return;
 
       clearLeaseInFlightRef.current = true;
+      const mutationVersion = leaseMutationVersionRef.current + 1;
+      leaseMutationVersionRef.current = mutationVersion;
       setLease(null);
       broadcastLocalLeaseUpdate(null);
       const clearedLease = {} as never;
       mx.setAccountData(NOTIFICATION_DEVICE_LEASE_EVENT_TYPE, clearedLease)
         .then(() => {
+          if (
+            !isMountedRef.current ||
+            leaseMutationVersionRef.current !== mutationVersion
+          ) {
+            return;
+          }
           clearLeaseRetryAtRef.current = 0;
         })
         .catch(() => {
+          if (
+            !isMountedRef.current ||
+            leaseMutationVersionRef.current !== mutationVersion
+          ) {
+            return;
+          }
           clearLeaseRetryAtRef.current = Date.now() + CLEAR_LEASE_RETRY_DELAY_MS;
           setLease(currentLease ?? null);
           broadcastLocalLeaseUpdate(currentLease ?? null);
           setNow(Date.now());
         })
         .finally(() => {
-          clearLeaseInFlightRef.current = false;
+          if (
+            isMountedRef.current &&
+            leaseMutationVersionRef.current === mutationVersion
+          ) {
+            clearLeaseInFlightRef.current = false;
+          }
         });
     },
     [deviceId, mx]
@@ -188,14 +209,27 @@ export function useNotificationDeviceScope(
         updatedAt: nextNow,
         expiresAt: nextNow + leaseDurationMs,
       };
+      const mutationVersion = leaseMutationVersionRef.current + 1;
+      leaseMutationVersionRef.current = mutationVersion;
       setLease(nextLease);
       broadcastLocalLeaseUpdate(nextLease);
       mx.setAccountData(NOTIFICATION_DEVICE_LEASE_EVENT_TYPE, nextLease as never).catch(() => {
+        if (!isMountedRef.current || leaseMutationVersionRef.current !== mutationVersion) {
+          return;
+        }
         setLease(currentLease ?? null);
         broadcastLocalLeaseUpdate(currentLease ?? null);
       });
     },
     [canPublishLease, deviceId, leaseDurationMs, mx]
+  );
+
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+      leaseMutationVersionRef.current += 1;
+    },
+    []
   );
 
   useEffect(() => {
