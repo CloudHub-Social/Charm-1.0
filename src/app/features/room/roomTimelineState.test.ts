@@ -17,6 +17,7 @@ describe('roomTimelineState', () => {
       getUnreadBridgeAction({
         active: true,
         liveTimelineLinked: false,
+        reachedTarget: false,
         forwardStatus: 'idle',
         attempts: 4,
       })
@@ -26,6 +27,7 @@ describe('roomTimelineState', () => {
       getUnreadBridgeAction({
         active: true,
         liveTimelineLinked: true,
+        reachedTarget: true,
         forwardStatus: 'idle',
         attempts: 4,
       })
@@ -35,8 +37,21 @@ describe('roomTimelineState', () => {
       getUnreadBridgeAction({
         active: true,
         liveTimelineLinked: false,
+        reachedTarget: false,
         forwardStatus: 'idle',
         attempts: 12,
+      })
+    ).toBe('stop');
+  });
+
+  it('does not complete unread bridging when the live timeline was restored without reaching the unread marker', () => {
+    expect(
+      getUnreadBridgeAction({
+        active: true,
+        liveTimelineLinked: true,
+        reachedTarget: false,
+        forwardStatus: 'idle',
+        attempts: 1,
       })
     ).toBe('stop');
   });

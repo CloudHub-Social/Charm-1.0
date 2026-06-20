@@ -14,6 +14,7 @@ export type UnreadBridgeAction = 'idle' | 'complete' | 'paginate' | 'stop';
 type UnreadBridgeActionInput = {
   active: boolean;
   liveTimelineLinked: boolean;
+  reachedTarget: boolean;
   forwardStatus: 'idle' | 'loading' | 'error';
   attempts: number;
   maxAttempts?: number;
@@ -22,12 +23,13 @@ type UnreadBridgeActionInput = {
 export const getUnreadBridgeAction = ({
   active,
   liveTimelineLinked,
+  reachedTarget,
   forwardStatus,
   attempts,
   maxAttempts = 12,
 }: UnreadBridgeActionInput): UnreadBridgeAction => {
   if (!active) return 'idle';
-  if (liveTimelineLinked) return 'complete';
+  if (liveTimelineLinked) return reachedTarget ? 'complete' : 'stop';
   if (forwardStatus !== 'idle') return 'idle';
   if (attempts >= maxAttempts) return 'stop';
   return 'paginate';

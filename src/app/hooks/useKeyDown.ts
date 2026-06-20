@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 
 export const useKeyDown = (target: Window, callback: (evt: KeyboardEvent) => void) => {
   useEffect(() => {
-    target.addEventListener('keydown', callback, { capture: true });
+    target.addEventListener('keydown', callback);
     return () => {
-      target.removeEventListener('keydown', callback, true);
+      target.removeEventListener('keydown', callback);
     };
   }, [target, callback]);
 };

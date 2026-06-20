@@ -448,7 +448,14 @@ export function RoomTimeline({
       );
       if (targetIndex < 0) return false;
 
-      setAtBottom(false);
+      const keepBottomPinned = shouldKeepBottomPinnedAfterJump(
+        timelineSyncRef.current.focusItem?.jumpMode ?? jumpMode,
+        timelineSyncRef.current.liveTimelineLinked
+      );
+      setAtBottom(keepBottomPinned);
+      if (keepBottomPinned) {
+        lastProgrammaticBottomPinAtRef.current = Date.now();
+      }
       jumpReanchorScrollUntilRef.current = Date.now() + 150;
       startJumpScrollBlock();
       vListRef.current.scrollToIndex(targetIndex, { align: options?.align ?? 'center' });
@@ -1154,6 +1161,11 @@ export function RoomTimeline({
     const unreadBridgeAction = getUnreadBridgeAction({
       active: unreadBridgeActiveRef.current,
       liveTimelineLinked: timelineSync.liveTimelineLinked,
+      reachedTarget:
+        !!unreadInfo?.readUptoEventId &&
+        processedEventsRef.current.some(
+          (event) => event.mEvent.getId() === unreadInfo.readUptoEventId
+        ),
       forwardStatus: timelineSync.forwardStatus,
       attempts: unreadBridgeAttemptsRef.current,
     });
@@ -1182,6 +1194,7 @@ export function RoomTimeline({
     unreadBridgeAttemptsRef.current += 1;
     void timelineSync.handleTimelinePagination(false);
   }, [
+    unreadInfo?.readUptoEventId,
     setUnreadInfo,
     timelineSync,
     timelineSync.eventsLength,
