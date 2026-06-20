@@ -31,6 +31,14 @@ export const NON_SYNCABLE_KEYS = new Set<keyof Settings>([
 
 export const SETTINGS_SYNC_VERSION = 2;
 const LEGACY_SETTINGS_SYNC_VERSION = 1;
+const EXPLICIT_NULL_SYNC_KEYS = [
+  'themeRemoteManualFullUrl',
+  'themeRemoteLightFullUrl',
+  'themeRemoteDarkFullUrl',
+  'themeRemoteManualKind',
+  'themeRemoteLightKind',
+  'themeRemoteDarkKind',
+] as const satisfies readonly (keyof Settings)[];
 
 export type SettingsSyncContent = {
   v: number;
@@ -41,6 +49,13 @@ export type SettingsSyncContent = {
 export const serializeForSync = (settings: Settings): SettingsSyncContent => {
   const syncable = { ...settings } as Partial<Settings>;
   NON_SYNCABLE_KEYS.forEach((key) => delete syncable[key]);
+  EXPLICIT_NULL_SYNC_KEYS.forEach((key) => {
+    if (syncable[key] === undefined) {
+      (
+        syncable as Partial<Record<(typeof EXPLICIT_NULL_SYNC_KEYS)[number], string | null>>
+      )[key] = null;
+    }
+  });
   return { v: SETTINGS_SYNC_VERSION, settings: syncable };
 };
 
@@ -58,11 +73,15 @@ export const deserializeFromSync = (data: unknown, currentSettings: Settings): S
   const remote = content.settings;
   if (!remote || typeof remote !== 'object' || Array.isArray(remote)) return null;
 
-  const merged = { ...currentSettings, ...(remote as Partial<Settings>) };
-  if (
-    (remote as { notificationDeviceScope?: unknown }).notificationDeviceScope ===
-    'active_client_only'
-  ) {
+  const normalizedRemote = { ...(remote as Partial<Settings>) };
+  EXPLICIT_NULL_SYNC_KEYS.forEach((key) => {
+    if (normalizedRemote[key] === null) {
+      normalizedRemote[key] = undefined;
+    }
+  });
+
+  const merged = { ...currentSettings, ...normalizedRemote };
+  if ((remote as { notificationDeviceScope?: unknown }).notificationDeviceScope === 'active_client_only') {
     merged.notificationDeviceScope = 'desktop_delay';
   }
   // Always restore non-syncable keys from local state.

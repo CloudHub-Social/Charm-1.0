@@ -87,6 +87,25 @@ describe('serializeForSync', () => {
     serializeForSync(original);
     expect(original.pageZoom).toBe(150);
   });
+
+  it('preserves cleared remote theme assignments as explicit nulls', () => {
+    const { settings: s } = serializeForSync({
+      ...base,
+      themeRemoteManualFullUrl: undefined,
+      themeRemoteLightFullUrl: undefined,
+      themeRemoteDarkFullUrl: undefined,
+      themeRemoteManualKind: undefined,
+      themeRemoteLightKind: undefined,
+      themeRemoteDarkKind: undefined,
+    });
+
+    expect(s.themeRemoteManualFullUrl).toBeNull();
+    expect(s.themeRemoteLightFullUrl).toBeNull();
+    expect(s.themeRemoteDarkFullUrl).toBeNull();
+    expect(s.themeRemoteManualKind).toBeNull();
+    expect(s.themeRemoteLightKind).toBeNull();
+    expect(s.themeRemoteDarkKind).toBeNull();
+  });
 });
 
 // deserializeFromSync
@@ -181,6 +200,40 @@ describe('deserializeFromSync', () => {
     expect(result!.hour24Clock).toBe(true);
     // non-syncable comes from base, not tweaked (pageZoom etc. same anyway)
     expect(result!.settingsSyncEnabled).toBe(base.settingsSyncEnabled);
+  });
+
+  it('treats explicit null theme assignment values as cleared remote slots', () => {
+    const remote = {
+      v: SETTINGS_SYNC_VERSION,
+      settings: {
+        themeRemoteManualFullUrl: null,
+        themeRemoteLightFullUrl: null,
+        themeRemoteDarkFullUrl: null,
+        themeRemoteManualKind: null,
+        themeRemoteLightKind: null,
+        themeRemoteDarkKind: null,
+      },
+    };
+
+    const local = {
+      ...base,
+      themeRemoteManualFullUrl: 'https://example.com/manual.css',
+      themeRemoteLightFullUrl: 'https://example.com/light.css',
+      themeRemoteDarkFullUrl: 'https://example.com/dark.css',
+      themeRemoteManualKind: 'dark' as const,
+      themeRemoteLightKind: 'light' as const,
+      themeRemoteDarkKind: 'dark' as const,
+    };
+
+    const result = deserializeFromSync(remote, local);
+
+    expect(result).not.toBeNull();
+    expect(result!.themeRemoteManualFullUrl).toBeUndefined();
+    expect(result!.themeRemoteLightFullUrl).toBeUndefined();
+    expect(result!.themeRemoteDarkFullUrl).toBeUndefined();
+    expect(result!.themeRemoteManualKind).toBeUndefined();
+    expect(result!.themeRemoteLightKind).toBeUndefined();
+    expect(result!.themeRemoteDarkKind).toBeUndefined();
   });
 
   it('ignores extra unknown keys in the remote payload', () => {
