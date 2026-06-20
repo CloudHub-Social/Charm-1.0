@@ -6,8 +6,7 @@ import { toRem, color, config, DefaultReset, FocusOutline } from 'folds';
  */
 
 export const Base = style({
-  maxWidth: toRem(432),
-  width: `calc(100vw - 2 * ${config.space.S400})`,
+  width: `min(${toRem(432)}, calc(100vw - 2 * ${config.space.S300}))`,
   height: toRem(450),
   backgroundColor: color.Surface.Container,
   color: color.Surface.OnContainer,
@@ -27,7 +26,7 @@ export const Header = style({
  */
 
 export const Sidebar = style({
-  width: toRem(54),
+  width: toRem(50),
   backgroundColor: color.Surface.Container,
   color: color.Surface.OnContainer,
   position: 'relative',

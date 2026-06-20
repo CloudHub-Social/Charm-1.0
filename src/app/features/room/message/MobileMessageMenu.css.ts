@@ -146,7 +146,7 @@ export const EmojiPickerTitle = style({
 export const EmojiPickerWrap = style({
   display: 'flex',
   justifyContent: 'center',
-  padding: config.space.S200,
+  padding: `${config.space.S200} ${config.space.S300} ${config.space.S300}`,
 });
 
 export const NickEditSection = style({

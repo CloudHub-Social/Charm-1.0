@@ -755,6 +755,218 @@ function SmokeRendererTransitions() {
   );
 }
 
+function SmokeComposerPolish() {
+  return (
+    <Page>
+      <Box
+        grow="Yes"
+        direction="Column"
+        justifyContent="End"
+        style={{ minHeight: 0, backgroundColor: 'var(--sable-surface)' }}
+      >
+        <Box
+          grow="Yes"
+          direction="Column"
+          justifyContent="End"
+          gap="200"
+          style={{ padding: config.space.S400 }}
+        >
+          <Box
+            direction="Column"
+            gap="200"
+            style={{
+              padding: config.space.S300,
+              borderRadius: config.radii.R400,
+              backgroundColor: 'var(--sable-surface-container)',
+            }}
+          >
+            <Text size="T300">Timeline content placeholder</Text>
+            <Text size="T300">Keyboard dismissal should not move us away from the live edge.</Text>
+          </Box>
+        </Box>
+        <Box
+          shrink="No"
+          direction="Column"
+          style={{
+            backgroundColor: 'var(--sable-surface-container)',
+            paddingBottom: 'var(--sable-safe-area-bottom, 0px)',
+          }}
+        >
+          <div style={{ padding: `0 ${config.space.S400}` }}>
+            <Box
+              data-testid="smoke-mobile-composer"
+              direction="Column"
+              gap="200"
+              style={{
+                padding: `${config.space.S300} 0 ${config.space.S200}`,
+              }}
+            >
+              <Box
+                alignItems="Center"
+                gap="200"
+                style={{
+                  padding: config.space.S200,
+                  borderRadius: config.radii.R400,
+                  backgroundColor: 'var(--sable-surface-variant)',
+                }}
+              >
+                <IconButton variant="SurfaceVariant" size="300" radii="300">
+                  {composerIcon(PlusCircle)}
+                </IconButton>
+                <Box
+                  grow="Yes"
+                  alignItems="Center"
+                  style={{
+                    minHeight: '44px',
+                    borderRadius: config.radii.R300,
+                    padding: `0 ${config.space.S300}`,
+                    backgroundColor: 'var(--sable-surface)',
+                  }}
+                >
+                  <Text size="T300">Send a message...</Text>
+                </Box>
+                <IconButton
+                  variant="SurfaceVariant"
+                  size="300"
+                  radii="300"
+                  data-testid="smoke-mobile-send-button"
+                >
+                  {composerIcon(PaperPlaneTilt)}
+                </IconButton>
+              </Box>
+              <Box
+                data-testid="smoke-following-bar"
+                alignItems="Center"
+                justifyContent="End"
+                gap="200"
+                style={{
+                  minHeight: '32px',
+                  padding: `2px ${config.space.S400} 4px`,
+                }}
+              >
+                <Text size="T300" truncate>
+                  nemesio, SpiritCroc, crypt and 6 others are following the conversation.
+                </Text>
+              </Box>
+            </Box>
+          </div>
+        </Box>
+      </Box>
+    </Page>
+  );
+}
+
+function SmokeLongPressMenu() {
+  return (
+    <Page>
+      <Box
+        grow="Yes"
+        direction="Column"
+        justifyContent="End"
+        style={{ minHeight: 0, backgroundColor: 'var(--sable-surface)' }}
+      >
+        <div className={mobileMessageMenuCss.Backdrop} />
+        <div className={mobileMessageMenuCss.Sheet} data-testid="smoke-long-press-sheet">
+          <div className={mobileMessageMenuCss.Handle} />
+          <div className={mobileMessageMenuCss.ReactionsRow}>
+            {['❤️', '👍', '😂', '❓', '🫩'].map((emoji) => (
+              <button key={emoji} type="button" className={mobileMessageMenuCss.ReactionBtn}>
+                {emoji}
+              </button>
+            ))}
+          </div>
+          <div className={mobileMessageMenuCss.ActionGroup}>
+            {['Reply', 'Reply in Thread', 'Edit Message', 'Forward'].map((label) => (
+              <button key={label} type="button" className={mobileMessageMenuCss.ActionItem}>
+                <span className={mobileMessageMenuCss.ActionIcon}>•</span>
+                <Text size="T300" as="span">
+                  {label}
+                </Text>
+              </button>
+            ))}
+          </div>
+        </div>
+      </Box>
+    </Page>
+  );
+}
+
+function SmokeReactionSheet() {
+  return (
+    <Page>
+      <Box
+        grow="Yes"
+        direction="Column"
+        justifyContent="End"
+        style={{ minHeight: 0, backgroundColor: 'var(--sable-surface)' }}
+      >
+        <div className={mobileMessageMenuCss.Backdrop} />
+        <div className={mobileMessageMenuCss.Sheet} data-testid="smoke-reaction-sheet">
+          <div className={mobileMessageMenuCss.Handle} />
+          <div className={mobileMessageMenuCss.EmojiPickerHeader}>
+            <button type="button" className={mobileMessageMenuCss.EmojiPickerBackBtn}>
+              ←
+            </button>
+            <Text size="T400" as="span" className={mobileMessageMenuCss.EmojiPickerTitle}>
+              Add Reaction
+            </Text>
+          </div>
+          <div className={mobileMessageMenuCss.EmojiPickerWrap}>
+            <div data-testid="smoke-mobile-reaction-picker">
+              <EmojiBoardLayout
+                header={
+                  <Box direction="Column" gap="200">
+                    <Box
+                      style={{
+                        padding: config.space.S300,
+                        borderRadius: config.radii.R400,
+                        backgroundColor: 'var(--sable-surface)',
+                      }}
+                    >
+                      <Text size="T300">Search</Text>
+                    </Box>
+                  </Box>
+                }
+                sidebar={
+                  <Sidebar>
+                    <SidebarStack>
+                      <GroupIcon
+                        active
+                        id="recent-mobile"
+                        label="Recent"
+                        icon={ClockCounterClockwise}
+                        onClick={() => undefined}
+                      />
+                    </SidebarStack>
+                    <SidebarStack>
+                      <SidebarDivider />
+                      <GroupIcon
+                        active={false}
+                        id={EmojiGroupId.People}
+                        label="Smileys & People"
+                        icon={Smiley}
+                        onClick={() => undefined}
+                      />
+                    </SidebarStack>
+                  </Sidebar>
+                }
+              >
+                <Box grow="Yes" direction="Column" style={{ minHeight: 0 }}>
+                  <EmojiGroup id="recent-mobile" label="Recent">
+                    {emojis.slice(0, 8).map((emoji) => (
+                      <EmojiItem key={`mobile-${emoji.hexcode}`} emoji={emoji} />
+                    ))}
+                  </EmojiGroup>
+                </Box>
+              </EmojiBoardLayout>
+            </div>
+          </div>
+        </div>
+      </Box>
+    </Page>
+  );
+}
+
 const smokeNotificationOptions: SettingMenuOption<'default' | 'all' | 'mute'>[] = [
   {
     value: 'default',
@@ -1022,8 +1234,11 @@ function SmokeSearchShortcuts() {
 export function SmokeMobileShell() {
   const { mode = 'home' } = useParams();
 
+  if (mode === 'composer-polish') return <SmokeComposerPolish />;
   if (mode === 'emoji-polish') return <SmokeEmojiPolish />;
+  if (mode === 'message-sheet') return <SmokeLongPressMenu />;
   if (mode === 'menu-polish') return <SmokeMenuPolish />;
+  if (mode === 'reaction-sheet') return <SmokeReactionSheet />;
   if (mode === 'renderer-markdown') return <SmokeRendererMarkdown />;
   if (mode === 'renderer-transitions') return <SmokeRendererTransitions />;
   if (mode === 'search-shortcuts') return <SmokeSearchShortcuts />;

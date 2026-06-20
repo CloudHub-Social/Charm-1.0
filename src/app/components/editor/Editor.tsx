@@ -487,10 +487,6 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
                     triggerAutoCapitalize();
                   }
                 }}
-                // keeps focus after pressing send.
-                onBlur={() => {
-                  if (mobileOrTablet()) ReactEditor.focus(editor);
-                }}
               />
             </Scroll>
             {(hasAfter || showResponsiveAfterInline) && (

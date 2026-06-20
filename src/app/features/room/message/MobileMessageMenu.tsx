@@ -247,10 +247,28 @@ export function MobileMessageMenu({
 
   // Prevent body scroll while open
   useEffect(() => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && activeElement !== document.body) {
+      const tagName = activeElement.tagName.toLowerCase();
+      if (
+        activeElement.isContentEditable ||
+        tagName === 'textarea' ||
+        (tagName === 'input' &&
+          !['button', 'checkbox', 'file', 'hidden', 'radio', 'range', 'reset', 'submit'].includes(
+            (activeElement as HTMLInputElement).type
+          ))
+      ) {
+        activeElement.blur();
+      }
+    }
+
     const prev = document.body.style.overflow;
+    const prevUserSelect = document.body.style.userSelect;
     document.body.style.overflow = 'hidden';
+    document.body.style.userSelect = 'none';
     return () => {
       document.body.style.overflow = prev;
+      document.body.style.userSelect = prevUserSelect;
     };
   }, []);
 

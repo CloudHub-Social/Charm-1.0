@@ -2144,14 +2144,18 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       zIndex: 999,
                       // Position above the emoji button (mirrors PopOut position="Top" offset=16).
                       bottom: window.innerHeight - emojiBoardAnchorRect.top + 16,
-                      // Right-align with the emoji button, but clamp so the picker
-                      // never extends past the left edge of the screen.
-                      // The EmojiBoard is min(432px, 100vw-32px) wide; ensure
-                      // viewportWidth − right − boardWidth ≥ 0.
-                      right: (() => {
-                        const rawRight = window.innerWidth - emojiBoardAnchorRect.right;
-                        const boardWidth = Math.min(432, window.innerWidth - 32);
-                        return Math.max(0, Math.min(rawRight, window.innerWidth - boardWidth));
+                      // Center the picker over the trigger, then clamp it within the viewport
+                      // so left/right gutters stay balanced instead of appearing flush to one side.
+                      left: (() => {
+                        const viewportPadding = 16;
+                        const boardWidth = Math.min(432, window.innerWidth - viewportPadding * 2);
+                        const triggerCenter =
+                          emojiBoardAnchorRect.left + emojiBoardAnchorRect.width / 2;
+                        const idealLeft = triggerCenter - boardWidth / 2;
+                        return Math.max(
+                          viewportPadding,
+                          Math.min(idealLeft, window.innerWidth - boardWidth - viewportPadding)
+                        );
                       })(),
                       display: emojiBoardTab !== undefined ? undefined : 'none',
                     }}
