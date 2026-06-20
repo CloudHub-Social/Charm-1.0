@@ -50,6 +50,7 @@ type RoomNotifCache = {
 };
 
 const roomNotifCaches = new Map<string, RoomNotifCache>();
+const minimalPushQueues = new Map<string, Promise<void>>();
 
 function resolveAvatarUrl(mx: MatrixClient, roomId: string, userId: string): string | undefined {
   const room = mx.getRoom(roomId);
@@ -85,6 +86,17 @@ export async function clearRoomNotification(roomId: string) {
       // ignore
     }
   }
+}
+
+function queueMinimalPush(roomId: string, task: () => Promise<void>): Promise<void> {
+  const previous = minimalPushQueues.get(roomId) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(task);
+  minimalPushQueues.set(roomId, next);
+  return next.finally(() => {
+    if (minimalPushQueues.get(roomId) === next) {
+      minimalPushQueues.delete(roomId);
+    }
+  });
 }
 
 async function postRoomNotification(
@@ -385,7 +397,13 @@ async function handleUnifiedPushPayload(
   if (eventType) {
     await handleRichPushPayload(pushData, settings);
   } else {
-    await handleMinimalPushPayload(pushData, settings);
+    const roomId = optionalString(pushData?.room_id);
+    if (!roomId) {
+      await handleMinimalPushPayload(pushData, settings);
+      return;
+    }
+
+    await queueMinimalPush(roomId, () => handleMinimalPushPayload(pushData, settings));
   }
 }
 
