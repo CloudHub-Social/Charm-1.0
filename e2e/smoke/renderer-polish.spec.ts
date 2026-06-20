@@ -1,11 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 import { installSmokeApp } from './smokeApp';
 
 const snapshotOutputDir = process.env.PLAYWRIGHT_SNAPSHOT_OUTPUT_DIR;
 
-const captureSnapshot = async (page: import('@playwright/test').Page, name: string) => {
+const captureSnapshot = async (page: Page, name: string) => {
   if (!snapshotOutputDir) return;
 
   const outputPath = path.join(snapshotOutputDir, `${name}.png`);
