@@ -26,7 +26,18 @@ export const isCryptoStoreIndexedDbError = (errorMessage: string): boolean =>
   classifyCryptoStoreIndexedDbError(errorMessage) !== undefined;
 
 export const isCryptoStoreRuntimeRecoveryError = (errorMessage: string): boolean => {
-  if (!classifyCryptoStoreIndexedDbError(errorMessage)) return false;
+  const errorType = classifyCryptoStoreIndexedDbError(errorMessage);
+  if (!errorType) return false;
+
+  if (
+    errorType === 'transaction_aborted' ||
+    errorType === 'transaction_error' ||
+    errorType === 'connection_closing' ||
+    errorType === 'connection_closed' ||
+    errorType === 'crypto_store_error'
+  ) {
+    return true;
+  }
 
   return (
     errorMessage.includes('crypto store') ||

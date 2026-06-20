@@ -218,17 +218,13 @@ const requestCryptoStoreRuntimeRecovery = (context: CryptoStoreRuntimeRecoveryCo
 
 const installRuntimeCryptoStoreRecovery = (mx: MatrixClient): void => {
   runtimeCryptoStoreRecoveryCleanupByClient.get(mx)?.();
-
+ 
   const handleRecoverableError = (
     error: unknown,
     source: CryptoStoreRuntimeRecoveryContext['source']
   ) => {
-    const errorMessage =
-      error instanceof Error
-        ? `${error.name}: ${error.message}`
-        : typeof error === 'string'
-          ? error
-          : JSON.stringify(error);
+    const errorMessage = stringifyRecoverableError(error);
+    if (!errorMessage) return;
     if (!isCryptoStoreRuntimeRecoveryError(errorMessage)) return;
 
     requestCryptoStoreRuntimeRecovery({
@@ -253,6 +249,20 @@ const installRuntimeCryptoStoreRecovery = (mx: MatrixClient): void => {
     window.removeEventListener('error', handleWindowError);
     runtimeCryptoStoreRecoveryCleanupByClient.delete(mx);
   });
+};
+
+const stringifyRecoverableError = (error: unknown): string | undefined => {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+  if (typeof error === 'string') return error;
+  if (error === undefined || error === null) return undefined;
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return Object.prototype.toString.call(error);
+  }
 };
 
 export function setSentryMatrixDeviceContext(
@@ -1505,6 +1515,9 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
   activeAppClientStartPromise = startPromise;
   try {
     await startPromise;
+  } catch (error) {
+    runtimeCryptoStoreRecoveryCleanupByClient.get(mx)?.();
+    throw error;
   } finally {
     if (activeAppClientStartPromise === startPromise) {
       activeAppClientStartPromise = undefined;

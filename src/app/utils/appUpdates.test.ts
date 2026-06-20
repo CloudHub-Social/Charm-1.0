@@ -95,7 +95,7 @@ describe('appUpdates', () => {
     expect(mockRegistration.update).not.toHaveBeenCalled();
   });
 
-  it('does not treat a stale active/controller mismatch as an update by itself', async () => {
+  it('treats an active/controller mismatch as an applyable update', async () => {
     const activeWorker = { postMessage: vi.fn() };
     const controllerWorker = { postMessage: vi.fn() };
     mockRegistration.waiting = null;
@@ -118,13 +118,10 @@ describe('appUpdates', () => {
       },
     });
 
-    const resultPromise = checkForAppUpdates();
-    await vi.runAllTimersAsync();
-
-    await expect(resultPromise).resolves.toEqual({
-      kind: 'up-to-date',
-      message: 'You are already on the latest available web app version.',
-      canApply: false,
+    await expect(checkForAppUpdates()).resolves.toEqual({
+      kind: 'update-available',
+      message: 'An update is ready to apply.',
+      canApply: true,
     });
   });
 

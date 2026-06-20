@@ -409,4 +409,26 @@ describe('startClient app singleton gate', () => {
 
     expect(addEventListenerSpy).toHaveBeenCalledWith('unhandledrejection', expect.any(Function));
   });
+
+  it('ignores unrelated non-serializable unhandled rejections in the runtime recovery listener', async () => {
+    const mx = makeClient('@alice:example.com');
+    const addEventListenerSpy = vi.spyOn(window, 'addEventListener');
+
+    await startClassicClient(mx);
+
+    const unhandledRejectionListener = addEventListenerSpy.mock.calls.find(
+      ([eventName]) => eventName === 'unhandledrejection'
+    )?.[1] as ((event: PromiseRejectionEvent) => void) | undefined;
+
+    expect(unhandledRejectionListener).toBeDefined();
+
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    unhandledRejectionListener?.({
+      reason: circular,
+    } as PromiseRejectionEvent);
+
+    expect(mockReloadWithTelemetry).not.toHaveBeenCalled();
+  });
 });

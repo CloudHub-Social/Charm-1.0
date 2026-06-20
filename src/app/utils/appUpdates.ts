@@ -137,11 +137,18 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
     };
   }
 
-  const hadPendingActiveUpdate = !!(
+  const hasPendingActiveUpdate = !!(
     navigator.serviceWorker.controller &&
     registration.active &&
     registration.active !== navigator.serviceWorker.controller
   );
+  if (hasPendingActiveUpdate) {
+    return {
+      kind: 'update-available',
+      message: 'An update is ready to apply.',
+      canApply: true,
+    };
+  }
 
   try {
     await registration.update();
@@ -156,7 +163,7 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
     registration.active &&
     registration.active !== navigator.serviceWorker.controller
   );
-  if (!hadPendingActiveUpdate && hasPendingActiveUpdateAfterCheck) {
+  if (hasPendingActiveUpdateAfterCheck) {
     return {
       kind: 'update-available',
       message: 'An update is ready to apply.',
