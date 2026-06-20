@@ -57,14 +57,10 @@ const waitForWaitingServiceWorker = async (
       return;
     }
 
-    if (hasPendingActiveUpdate()) {
-      resolve(true);
-      return;
-    }
-
     let settled = false;
     let timeoutId = 0;
     let observedInstallingWorker: ServiceWorker | null = registration.installing;
+    let observedCurrentCheckUpdate = !!observedInstallingWorker;
 
     const cleanup = () => {
       window.clearTimeout(timeoutId);
@@ -85,12 +81,13 @@ const waitForWaitingServiceWorker = async (
         return;
       }
 
-      if (hasPendingActiveUpdate()) {
+      if (observedCurrentCheckUpdate && hasPendingActiveUpdate()) {
         finish(true);
       }
     };
 
     const handleUpdateFound = () => {
+      observedCurrentCheckUpdate = true;
       observedInstallingWorker = registration.installing;
       observedInstallingWorker?.addEventListener('statechange', handleInstallingState);
     };
@@ -133,18 +130,6 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
   }
 
   if (registration.waiting && navigator.serviceWorker.controller) {
-    return {
-      kind: 'update-available',
-      message: 'An update is ready to apply.',
-      canApply: true,
-    };
-  }
-
-  if (
-    navigator.serviceWorker.controller &&
-    registration.active &&
-    registration.active !== navigator.serviceWorker.controller
-  ) {
     return {
       kind: 'update-available',
       message: 'An update is ready to apply.',

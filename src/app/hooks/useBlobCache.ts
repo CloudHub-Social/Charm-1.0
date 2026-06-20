@@ -10,17 +10,52 @@ const CACHE_NAME = 'sable-media-v1';
 const LEGACY_AVATAR_CACHE_NAME = 'sable-avatars-v1';
 const MAX_CACHE_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_CACHE_SIZE_MB = 500; // Configurable limit
+const AUTH_FAILURE_RETRY_MS = 15_000;
+const BAD_REQUEST_RETRY_MS = 5 * 60_000;
 
 const imageBlobCache = new Map<string, string>();
 const inflightRequests = new Map<string, Promise<string>>();
-const authFailedUrls = new Set<string>(); // Track URLs that failed with 401
+const failedMediaUrls = new Map<string, { reason: 'auth' | 'bad_request'; failedAt: number }>();
 
-// Listeners notified when the SW controller changes and authFailedUrls is cleared.
+// Listeners notified when the SW controller changes or the app session is refreshed so
+// transient media failures can be retried.
 const onSwRestored = new Set<() => void>();
 
 // Session for direct authenticated fetches when the SW has no session yet
 // (e.g. right after an iOS background kill, before CLAIM_CLIENTS is sent).
 let blobCacheSession: { accessToken: string; baseUrl: string } | undefined;
+
+const notifyBlobCacheRecovery = (): void => {
+  onSwRestored.forEach((listener) => listener());
+};
+
+const getFailureRetryMs = (reason: 'auth' | 'bad_request'): number =>
+  reason === 'auth' ? AUTH_FAILURE_RETRY_MS : BAD_REQUEST_RETRY_MS;
+
+export function clearBlobCacheFailures(): void {
+  failedMediaUrls.clear();
+}
+
+export function recordBlobCacheFailure(
+  cacheKey: string,
+  reason: 'auth' | 'bad_request',
+  failedAt = Date.now()
+): void {
+  failedMediaUrls.set(cacheKey, { reason, failedAt });
+}
+
+export function getBlobCacheBlockedReason(
+  cacheKey: string,
+  now = Date.now()
+): 'auth' | 'bad_request' | undefined {
+  const failure = failedMediaUrls.get(cacheKey);
+  if (!failure) return undefined;
+  if (now - failure.failedAt >= getFailureRetryMs(failure.reason)) {
+    failedMediaUrls.delete(cacheKey);
+    return undefined;
+  }
+  return failure.reason;
+}
 
 /**
  * Provide the active session so media can be fetched directly with an
@@ -31,15 +66,23 @@ export function setBlobCacheSession(
   accessToken: string | undefined,
   baseUrl: string | undefined
 ): void {
-  blobCacheSession = accessToken && baseUrl ? { accessToken, baseUrl } : undefined;
+  const nextSession = accessToken && baseUrl ? { accessToken, baseUrl } : undefined;
+  const didSessionChange =
+    blobCacheSession?.accessToken !== nextSession?.accessToken ||
+    blobCacheSession?.baseUrl !== nextSession?.baseUrl;
+  blobCacheSession = nextSession;
+  if (didSessionChange) {
+    clearBlobCacheFailures();
+    notifyBlobCacheRecovery();
+  }
 }
 
 // When the SW is reclaimed after an iOS kill-and-restart, clear the auth-failed
 // URL set so that media items blocked during the gap can be retried.
 if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    authFailedUrls.clear();
-    onSwRestored.forEach((listener) => listener());
+    clearBlobCacheFailures();
+    notifyBlobCacheRecovery();
   });
 }
 
@@ -216,7 +259,7 @@ async function evictIfNeeded(): Promise<void> {
 export function clearInMemoryBlobCache(): void {
   imageBlobCache.clear();
   inflightRequests.clear();
-  authFailedUrls.clear();
+  clearBlobCacheFailures();
 }
 
 /**
@@ -327,7 +370,7 @@ export function useBlobCache(url?: string): string | undefined {
     if (!url || !cacheKey) return undefined;
 
     // SABLE-4Y fix: Skip URLs that previously failed auth
-    if (authFailedUrls.has(cacheKey)) {
+    if (getBlobCacheBlockedReason(cacheKey)) {
       return undefined;
     }
 
@@ -413,7 +456,7 @@ export function useBlobCache(url?: string): string | undefined {
               data: { url: url.substring(0, 100) },
             });
             // Mark URL as auth-failed to prevent retries
-            authFailedUrls.add(cacheKey);
+            recordBlobCacheFailure(cacheKey, 'auth');
             inflightRequests.delete(cacheKey);
             // Throw a specific error to bypass Sentry exception capture
             throw new Error('AUTH_FAILED_401');
@@ -431,7 +474,7 @@ export function useBlobCache(url?: string): string | undefined {
               data: { url: url.substring(0, 100) },
             });
             // Mark URL as auth-failed to prevent retries (reusing same set for any non-retryable error)
-            authFailedUrls.add(cacheKey);
+            recordBlobCacheFailure(cacheKey, 'bad_request');
             inflightRequests.delete(cacheKey);
             // Throw a specific error to bypass Sentry exception capture
             throw new Error('BAD_REQUEST_400');
@@ -497,7 +540,7 @@ export function useBlobCache(url?: string): string | undefined {
 
   // SABLE-4Y fix: Don't return original URL as fallback for auth-failed URLs
   // (would cause browser to attempt direct fetch, which also fails with 401)
-  if (cacheKey && authFailedUrls.has(cacheKey)) {
+  if (cacheKey && getBlobCacheBlockedReason(cacheKey)) {
     return undefined;
   }
 
