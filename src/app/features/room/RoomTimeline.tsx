@@ -477,7 +477,7 @@ export function RoomTimeline({
       });
       return true;
     },
-    [room.roomId, setAtBottom, startJumpScrollBlock]
+    [jumpMode, room.roomId, setAtBottom, startJumpScrollBlock]
   );
 
   const releaseJumpLock = useCallback(
