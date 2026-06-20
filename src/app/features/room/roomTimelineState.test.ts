@@ -7,15 +7,17 @@ import {
 
 describe('roomTimelineState', () => {
   it('keeps notification-live jumps pinned only when already linked to the live timeline', () => {
-    expect(shouldKeepBottomPinnedAfterJump('notification_live', true)).toBe(true);
-    expect(shouldKeepBottomPinnedAfterJump('notification_live', false)).toBe(false);
-    expect(shouldKeepBottomPinnedAfterJump('history_context', true)).toBe(false);
+    expect(shouldKeepBottomPinnedAfterJump('notification_live', true, 'end')).toBe(true);
+    expect(shouldKeepBottomPinnedAfterJump('notification_live', true, 'center')).toBe(false);
+    expect(shouldKeepBottomPinnedAfterJump('notification_live', false, 'end')).toBe(false);
+    expect(shouldKeepBottomPinnedAfterJump('history_context', true, 'end')).toBe(false);
   });
 
   it('continues unread-bridge pagination until live timeline is reached or retries are exhausted', () => {
     expect(
       getUnreadBridgeAction({
         active: true,
+        awaitingContextLoad: false,
         liveTimelineLinked: false,
         reachedTarget: false,
         forwardStatus: 'idle',
@@ -26,6 +28,7 @@ describe('roomTimelineState', () => {
     expect(
       getUnreadBridgeAction({
         active: true,
+        awaitingContextLoad: false,
         liveTimelineLinked: true,
         reachedTarget: true,
         forwardStatus: 'idle',
@@ -36,6 +39,7 @@ describe('roomTimelineState', () => {
     expect(
       getUnreadBridgeAction({
         active: true,
+        awaitingContextLoad: false,
         liveTimelineLinked: false,
         reachedTarget: false,
         forwardStatus: 'idle',
@@ -48,12 +52,37 @@ describe('roomTimelineState', () => {
     expect(
       getUnreadBridgeAction({
         active: true,
+        awaitingContextLoad: false,
         liveTimelineLinked: true,
         reachedTarget: false,
         forwardStatus: 'idle',
         attempts: 1,
       })
     ).toBe('stop');
+  });
+
+  it('waits for unread context loading to finish before deciding whether to stop or paginate', () => {
+    expect(
+      getUnreadBridgeAction({
+        active: true,
+        awaitingContextLoad: true,
+        liveTimelineLinked: true,
+        reachedTarget: false,
+        forwardStatus: 'idle',
+        attempts: 0,
+      })
+    ).toBe('idle');
+
+    expect(
+      getUnreadBridgeAction({
+        active: true,
+        awaitingContextLoad: false,
+        liveTimelineLinked: false,
+        reachedTarget: false,
+        forwardStatus: 'loading',
+        attempts: 0,
+      })
+    ).toBe('idle');
   });
 
   it('keeps the user pinned when media growth or viewport churn would otherwise surface Jump to Latest', () => {

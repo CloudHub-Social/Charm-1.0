@@ -358,6 +358,7 @@ export function RoomTimeline({
   const jumpSucceededRef = useRef(false);
   const unreadBridgeActiveRef = useRef(false);
   const unreadBridgeAttemptsRef = useRef(0);
+  const unreadBridgeAwaitingContextLoadRef = useRef(false);
 
   const lastProgrammaticBottomPinAtRef = useRef(0);
 
@@ -369,6 +370,7 @@ export function RoomTimeline({
     jumpSucceededRef.current = false;
     unreadBridgeActiveRef.current = false;
     unreadBridgeAttemptsRef.current = 0;
+    unreadBridgeAwaitingContextLoadRef.current = false;
     if (initialScrollTimerRef.current !== undefined) {
       clearTimeout(initialScrollTimerRef.current);
       initialScrollTimerRef.current = undefined;
@@ -415,20 +417,27 @@ export function RoomTimeline({
   // Start a short scroll-settle block after a programmatic jump scrollToIndex.
   // After 350 ms the block lifts and atBottom is recomputed from the actual
   // VList position so "Jump to Latest" appears correctly.
-  const startJumpScrollBlock = useCallback(() => {
-    jumpScrollBlockRef.current = true;
-    if (jumpScrollBlockTimerRef.current !== undefined)
-      clearTimeout(jumpScrollBlockTimerRef.current);
-    jumpScrollBlockTimerRef.current = setTimeout(() => {
-      jumpScrollBlockRef.current = false;
-      jumpScrollBlockTimerRef.current = undefined;
-      const v = vListRef.current;
-      if (v) {
-        const dist = v.scrollSize - v.scrollOffset - v.viewportSize;
-        setAtBottom(dist < 100);
-      }
-    }, 350);
-  }, [setAtBottom]);
+  const startJumpScrollBlock = useCallback(
+    (keepBottomPinned = false) => {
+      jumpScrollBlockRef.current = true;
+      if (jumpScrollBlockTimerRef.current !== undefined)
+        clearTimeout(jumpScrollBlockTimerRef.current);
+      jumpScrollBlockTimerRef.current = setTimeout(() => {
+        jumpScrollBlockRef.current = false;
+        jumpScrollBlockTimerRef.current = undefined;
+        if (keepBottomPinned) {
+          setAtBottom(true);
+          return;
+        }
+        const v = vListRef.current;
+        if (v) {
+          const dist = v.scrollSize - v.scrollOffset - v.viewportSize;
+          setAtBottom(dist < 100);
+        }
+      }, 350);
+    },
+    [setAtBottom]
+  );
 
   const reanchorJumpTarget = useCallback(
     (
@@ -450,14 +459,15 @@ export function RoomTimeline({
 
       const keepBottomPinned = shouldKeepBottomPinnedAfterJump(
         timelineSyncRef.current.focusItem?.jumpMode ?? jumpMode,
-        timelineSyncRef.current.liveTimelineLinked
+        timelineSyncRef.current.liveTimelineLinked,
+        options?.align ?? timelineSyncRef.current.focusItem?.align
       );
       setAtBottom(keepBottomPinned);
       if (keepBottomPinned) {
         lastProgrammaticBottomPinAtRef.current = Date.now();
       }
       jumpReanchorScrollUntilRef.current = Date.now() + 150;
-      startJumpScrollBlock();
+      startJumpScrollBlock(keepBottomPinned);
       vListRef.current.scrollToIndex(targetIndex, { align: options?.align ?? 'center' });
       log.log(
         `[PermalinkJump] Re-anchored target after ${reason}: eventId=${targetEventId}, processedIndex=${targetIndex}, scrollDelta=${options?.scrollDelta ?? 0}, delay=${options?.delayMs ?? 0}`
@@ -794,13 +804,14 @@ export function RoomTimeline({
 
         const keepBottomPinned = shouldKeepBottomPinnedAfterJump(
           focusJumpMode ?? jumpMode,
-          timelineSync.liveTimelineLinked
+          timelineSync.liveTimelineLinked,
+          timelineSync.focusItem.align
         );
         // An event-targeted history jump should no longer be treated as
         // bottom-pinned. Notification-live jumps, however, should keep the
         // bottom chip cleared when the target is already near the live tail.
         setAtBottom(keepBottomPinned);
-        startJumpScrollBlock();
+        startJumpScrollBlock(keepBottomPinned);
 
         // Reveal timeline and scroll in the same frame to avoid flash
         setIsReady(true);
@@ -1158,14 +1169,28 @@ export function RoomTimeline({
   }, [isKeyboardVisible, keyboardHeight, setAtBottom]);
 
   useEffect(() => {
+    const unreadEventId = unreadInfo?.readUptoEventId;
+    const reachedUnreadTarget =
+      !!unreadEventId &&
+      (() => {
+        if (processedEventsRef.current.some((event) => event.mEvent.getId() === unreadEventId)) {
+          return true;
+        }
+        const evtTimeline = getEventTimeline(room, unreadEventId);
+        if (!evtTimeline) return false;
+        const absoluteIndex = getEventIdAbsoluteIndex(
+          timelineSync.timeline.linkedTimelines,
+          evtTimeline,
+          unreadEventId
+        );
+        return absoluteIndex !== undefined;
+      })();
+
     const unreadBridgeAction = getUnreadBridgeAction({
       active: unreadBridgeActiveRef.current,
+      awaitingContextLoad: unreadBridgeAwaitingContextLoadRef.current,
       liveTimelineLinked: timelineSync.liveTimelineLinked,
-      reachedTarget:
-        !!unreadInfo?.readUptoEventId &&
-        processedEventsRef.current.some(
-          (event) => event.mEvent.getId() === unreadInfo.readUptoEventId
-        ),
+      reachedTarget: reachedUnreadTarget,
       forwardStatus: timelineSync.forwardStatus,
       attempts: unreadBridgeAttemptsRef.current,
     });
@@ -1174,6 +1199,7 @@ export function RoomTimeline({
     if (unreadBridgeAction === 'complete') {
       unreadBridgeActiveRef.current = false;
       unreadBridgeAttemptsRef.current = 0;
+      unreadBridgeAwaitingContextLoadRef.current = false;
       setUnreadInfo((prev) =>
         prev
           ? {
@@ -1188,18 +1214,20 @@ export function RoomTimeline({
 
     if (unreadBridgeAction === 'stop') {
       unreadBridgeActiveRef.current = false;
+      unreadBridgeAwaitingContextLoadRef.current = false;
       return;
     }
 
     unreadBridgeAttemptsRef.current += 1;
-    void timelineSync.handleTimelinePagination(false);
+    void timelineSyncRef.current.handleTimelinePagination(false);
   }, [
+    room,
     unreadInfo?.readUptoEventId,
     setUnreadInfo,
-    timelineSync,
     timelineSync.eventsLength,
     timelineSync.forwardStatus,
     timelineSync.liveTimelineLinked,
+    timelineSync.timeline.linkedTimelines,
   ]);
 
   // When the thread drawer opens/closes on desktop, the main timeline column
@@ -1960,9 +1988,14 @@ export function RoomTimeline({
             onClick={() => {
               unreadBridgeActiveRef.current = true;
               unreadBridgeAttemptsRef.current = 0;
-              void timelineSync.loadEventTimeline(unreadInfo.readUptoEventId, undefined, {
-                jumpMode: 'history_context',
-              });
+              unreadBridgeAwaitingContextLoadRef.current = true;
+              void timelineSync
+                .loadEventTimeline(unreadInfo.readUptoEventId, undefined, {
+                  jumpMode: 'history_context',
+                })
+                .finally(() => {
+                  unreadBridgeAwaitingContextLoadRef.current = false;
+                });
             }}
           >
             <Text size="L400">Jump to Unread</Text>

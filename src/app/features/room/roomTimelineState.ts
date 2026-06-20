@@ -6,13 +6,15 @@ export type RoomTimelineJumpMode =
 
 export const shouldKeepBottomPinnedAfterJump = (
   jumpMode: RoomTimelineJumpMode,
-  liveTimelineLinked: boolean
-): boolean => jumpMode === 'notification_live' && liveTimelineLinked;
+  liveTimelineLinked: boolean,
+  align?: 'center' | 'end'
+): boolean => jumpMode === 'notification_live' && liveTimelineLinked && align === 'end';
 
 export type UnreadBridgeAction = 'idle' | 'complete' | 'paginate' | 'stop';
 
 type UnreadBridgeActionInput = {
   active: boolean;
+  awaitingContextLoad: boolean;
   liveTimelineLinked: boolean;
   reachedTarget: boolean;
   forwardStatus: 'idle' | 'loading' | 'error';
@@ -22,6 +24,7 @@ type UnreadBridgeActionInput = {
 
 export const getUnreadBridgeAction = ({
   active,
+  awaitingContextLoad,
   liveTimelineLinked,
   reachedTarget,
   forwardStatus,
@@ -29,6 +32,7 @@ export const getUnreadBridgeAction = ({
   maxAttempts = 12,
 }: UnreadBridgeActionInput): UnreadBridgeAction => {
   if (!active) return 'idle';
+  if (awaitingContextLoad || forwardStatus === 'loading') return 'idle';
   if (liveTimelineLinked) return reachedTarget ? 'complete' : 'stop';
   if (forwardStatus !== 'idle') return 'idle';
   if (attempts >= maxAttempts) return 'stop';
