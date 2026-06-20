@@ -219,7 +219,7 @@ const RoomMenu = forwardRef<HTMLDivElement, RoomMenuProps>(
 
     const openSettings = useOpenRoomSettings();
     const parentSpace = useSpaceOptionally();
-    const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
+    const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();
     const handleOpenSettings = () => {
       openSettings(room.roomId, parentSpace?.roomId);
       requestClose();
