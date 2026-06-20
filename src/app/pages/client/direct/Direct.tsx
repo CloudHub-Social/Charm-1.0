@@ -46,7 +46,7 @@ import {
   NavLink,
 } from '$components/nav';
 import { getDirectCreatePath, getDirectRoomPath, getDirectSearchPath } from '$pages/pathUtils';
-import { getCanonicalAliasOrRoomId } from '$utils/matrix';
+import { getCanonicalAliasOrRoomId, getCanonicalAliasRoomId, isRoomAlias } from '$utils/matrix';
 import { useSelectedRoom } from '$hooks/router/useSelectedRoom';
 import { VirtualTile } from '$components/virtualizer';
 import { RoomNavCategoryButton, RoomNavItem } from '$features/room-nav';
@@ -382,11 +382,15 @@ export function Direct() {
   const handleSwipeToRoom = useCallback(() => {
     if (!mobileOrTablet()) return;
 
+    const resolvedLastRoomId =
+      lastRoomId && isRoomAlias(lastRoomId)
+        ? getCanonicalAliasRoomId(mx, lastRoomId) ?? lastRoomId
+        : lastRoomId;
     const fallbackRoomId =
       selectedRoomId && directs.includes(selectedRoomId)
         ? selectedRoomId
-        : lastRoomId && directs.includes(lastRoomId)
-          ? lastRoomId
+        : resolvedLastRoomId && directs.includes(resolvedLastRoomId)
+          ? resolvedLastRoomId
           : undefined;
     if (!fallbackRoomId) return;
 
