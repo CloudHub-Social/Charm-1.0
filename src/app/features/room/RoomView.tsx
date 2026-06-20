@@ -161,7 +161,10 @@ export function RoomView({
     <BackRouteHandler>
       {(onBack) => (
         <Page ref={roomViewRef}>
-          <SwipeableChatWrapper onOpenSidebar={onBack} onOpenMembers={handleOpenMembers}>
+          <SwipeableChatWrapper
+            onOpenSidebar={onBack}
+            onOpenMembers={isMobileMembersSurface ? handleOpenMembers : undefined}
+          >
             <Box grow="Yes" direction="Column">
               {showCallView && (
                 <Box shrink="No" style={{ width: '100%', position: 'relative' }}>
