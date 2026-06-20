@@ -526,6 +526,31 @@ function MessageNotifications() {
     // Track pending decryption listeners to clean up on unmount
     const pendingDecryptListeners = new Map<string, () => void>();
 
+    const shouldQueueNotificationLocally = () =>
+      document.visibilityState === 'visible' ||
+      !('serviceWorker' in navigator) ||
+      !navigator.serviceWorker.controller;
+
+    const queueNotificationEvent = (
+      eventId: string,
+      mEvent: MatrixEvent,
+      room: Parameters<RoomEventHandlerMap[RoomEvent.Timeline]>[1],
+      data: TimelineEventData
+    ) => {
+      if (!room) return;
+      queuedNotificationEventsRef.current.set(eventId, {
+        mEvent,
+        room,
+        data,
+      });
+      if (queuedNotificationEventsRef.current.size > 50) {
+        const firstQueuedEventId = queuedNotificationEventsRef.current.keys().next().value;
+        if (firstQueuedEventId) {
+          queuedNotificationEventsRef.current.delete(firstQueuedEventId);
+        }
+      }
+    };
+
     const handleTimelineEventImpl = (
       mEvent: Parameters<RoomEventHandlerMap[RoomEvent.Timeline]>[0],
       room: Parameters<RoomEventHandlerMap[RoomEvent.Timeline]>[1],
@@ -563,19 +588,40 @@ function MessageNotifications() {
       // before processing the notification. The SDK's Timeline re-emission after
       // decryption comes with data.liveEvent=false which would wrongly block it.
       if (mEvent.getType() === 'm.room.encrypted' && mEvent.isEncrypted()) {
+        const shouldQueueWhileInactive =
+          !!eventId &&
+          !!room &&
+          !forceActiveNotificationClient &&
+          !isActiveNotificationClientRef.current &&
+          shouldQueueNotificationLocally();
+
         if (eventId) {
           // Mark this event to skip focus check when decrypted, so we use the focus
           // state from when the encrypted event originally arrived, not when it decrypts.
           skipFocusCheckEvents.add(eventId);
+          if (shouldQueueWhileInactive) {
+            queueNotificationEvent(eventId, mEvent, room, data);
+          }
         }
 
         const handleDecrypted = () => {
+          if (eventId) {
+            pendingDecryptListeners.delete(eventId);
+            if (queuedNotificationEventsRef.current.has(eventId)) {
+              const leaseExpiresAt = leaseExpiresAtRef.current;
+              const leaseStillFresh =
+                typeof leaseExpiresAt === 'number' && leaseExpiresAt > Date.now();
+              if (isActiveNotificationClientRef.current || !leaseStillFresh) {
+                flushQueuedNotificationsRef.current?.();
+              }
+              return;
+            }
+          }
+
           // After decryption, run the notification logic with the decrypted event
           handleTimelineEventImpl(mEvent, room, undefined, true, data);
-          // Clean up the skip-focus marker and listener tracker
           if (eventId) {
             skipFocusCheckEvents.delete(eventId);
-            pendingDecryptListeners.delete(eventId);
           }
         };
         mEvent.once(MatrixEventEvent.Decrypted, handleDecrypted);
@@ -652,18 +698,8 @@ function MessageNotifications() {
       }
 
       if (!forceActiveNotificationClient && !isActiveNotificationClientRef.current) {
-        if (eventId && room) {
-          queuedNotificationEventsRef.current.set(eventId, {
-            mEvent,
-            room,
-            data,
-          });
-          if (queuedNotificationEventsRef.current.size > 50) {
-            const firstQueuedEventId = queuedNotificationEventsRef.current.keys().next().value;
-            if (firstQueuedEventId) {
-              queuedNotificationEventsRef.current.delete(firstQueuedEventId);
-            }
-          }
+        if (eventId && room && shouldQueueNotificationLocally()) {
+          queueNotificationEvent(eventId, mEvent, room, data);
         }
         return;
       }
@@ -820,9 +856,15 @@ function MessageNotifications() {
       queuedEvents.forEach(({ mEvent, room, data }) => {
         const queuedEventId = mEvent.getId();
         if (!room || (queuedEventId && room.hasUserReadEvent(mx.getSafeUserId(), queuedEventId))) {
+          if (queuedEventId) skipFocusCheckEvents.delete(queuedEventId);
+          return;
+        }
+        if (queuedEventId && mEvent.getType() === 'm.room.encrypted' && mEvent.isEncrypted()) {
+          queueNotificationEvent(queuedEventId, mEvent, room, data);
           return;
         }
         handleTimelineEventImpl(mEvent, room, undefined, true, data, true);
+        if (queuedEventId) skipFocusCheckEvents.delete(queuedEventId);
       });
     };
     const handleTimelineEvent: RoomEventHandlerMap[RoomEvent.Timeline] = (
@@ -860,7 +902,6 @@ function MessageNotifications() {
     navigate,
     appBaseUrl,
     useAuthentication,
-    isActiveNotificationClient,
   ]);
 
   useEffect(() => {
@@ -1219,6 +1260,9 @@ function SyncNotificationSettingsWithServiceWorker() {
   const { deviceId, lease, notificationDeviceScope } = useNotificationDeviceScope(mx, {
     publishLease: false,
   });
+  const leaseDeviceId = lease?.deviceId;
+  const leaseUpdatedAt = lease?.updatedAt;
+  const leaseExpiresAt = lease?.expiresAt;
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return undefined;
@@ -1234,7 +1278,14 @@ function SyncNotificationSettingsWithServiceWorker() {
         userId: mx.getUserId() ?? undefined,
         desktopDelayEnabled:
           notificationDeviceScope === 'desktop_delay' && notificationDesktopDelayMinutes > 0,
-        lease,
+        lease:
+          leaseDeviceId && typeof leaseUpdatedAt === 'number' && typeof leaseExpiresAt === 'number'
+            ? {
+                deviceId: leaseDeviceId,
+                updatedAt: leaseUpdatedAt,
+                expiresAt: leaseExpiresAt,
+              }
+            : null,
       };
 
       navigator.serviceWorker.controller?.postMessage(payload);
@@ -1281,7 +1332,15 @@ function SyncNotificationSettingsWithServiceWorker() {
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('pageshow', handlePageShow);
     };
-  }, [deviceId, lease, mx, notificationDesktopDelayMinutes, notificationDeviceScope]);
+  }, [
+    deviceId,
+    leaseDeviceId,
+    leaseUpdatedAt,
+    leaseExpiresAt,
+    mx,
+    notificationDesktopDelayMinutes,
+    notificationDeviceScope,
+  ]);
 
   useEffect(() => {
     if (!('serviceWorker' in navigator) || isTauri()) return;
