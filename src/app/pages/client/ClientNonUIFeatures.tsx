@@ -652,7 +652,7 @@ function MessageNotifications() {
       }
 
       if (!forceActiveNotificationClient && !isActiveNotificationClientRef.current) {
-        if (eventId && room && document.visibilityState === 'visible') {
+        if (eventId && room) {
           queuedNotificationEventsRef.current.set(eventId, {
             mEvent,
             room,
