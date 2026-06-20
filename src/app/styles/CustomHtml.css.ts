@@ -59,7 +59,13 @@ export const Code = style([
   BaseCode,
   CodeFont,
   {
+    display: 'inline-flex',
+    alignItems: 'center',
     padding: `0 ${config.space.S100}`,
+    minHeight: toRem(20),
+    fontSize: '0.95em',
+    lineHeight: 'inherit',
+    verticalAlign: 'baseline',
   },
 ]);
 
@@ -234,10 +240,14 @@ export const Command = recipe({
 export const EmoticonBase = style([
   DefaultReset,
   {
-    display: 'inline-block',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: toRem(0.8),
     height: '1em',
-    verticalAlign: 'middle',
+    minWidth: '1em',
+    lineHeight: 1,
+    verticalAlign: 'text-bottom',
   },
 ]);
 

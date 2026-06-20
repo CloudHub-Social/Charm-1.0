@@ -179,6 +179,17 @@
         var color = theme === 'dark' ? '#1b1a21' : '#ffffff';
         document.documentElement.dataset.sableBootTheme = theme;
         document.documentElement.style.backgroundColor = color;
+        if (document.body) {
+          document.body.style.backgroundColor = color;
+        } else {
+          document.addEventListener(
+            'DOMContentLoaded',
+            function () {
+              document.body.style.backgroundColor = color;
+            },
+            { once: true }
+          );
+        }
 
         document.querySelectorAll('meta[name="theme-color"]').forEach(function (meta) {
           meta.setAttribute('content', color);

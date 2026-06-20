@@ -157,12 +157,14 @@ export function MessageSearch({
   const isGrouped = searchPathSearchParams.grouped !== 'false';
   const flatItems = useMemo(() => {
     if (isGrouped) return [];
-    return groups.flatMap((group) =>
-      group.items.map((item) => ({
-        ...item,
-        roomId: group.roomId,
-      }))
-    );
+    return groups
+      .flatMap((group) =>
+        group.items.map((item) => ({
+          ...item,
+          roomId: group.roomId,
+        }))
+      )
+      .toSorted((a, b) => (b.event.origin_server_ts ?? 0) - (a.event.origin_server_ts ?? 0));
   }, [groups, isGrouped]);
 
   const virtualizer = useVirtualizer({
