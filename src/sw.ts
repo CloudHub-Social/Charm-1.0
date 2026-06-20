@@ -408,7 +408,7 @@ async function queueDelayedPushPayload(pushData: unknown, releaseAt: number): Pr
     eventId,
   });
   deduped.sort((a, b) => a.releaseAt - b.releaseAt);
-  await persistDelayedPushQueue(deduped.slice(-SW_DELAYED_PUSH_QUEUE_LIMIT));
+  await persistDelayedPushQueue(deduped.slice(0, SW_DELAYED_PUSH_QUEUE_LIMIT));
 }
 
 async function handleReadStateOnlyPush(pushData: unknown): Promise<boolean> {
@@ -1714,7 +1714,12 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
           : notificationLeaseState.leaseFetchedAt,
       lease: (() => {
         const lease = (data as { lease?: unknown }).lease;
-        if (!lease || typeof lease !== 'object') return null;
+        if (lease === undefined) {
+          return notificationLeaseState.lease;
+        }
+        if (lease === null || typeof lease !== 'object') {
+          return notificationLeaseState.lease;
+        }
         const nextLease = lease as {
           deviceId?: unknown;
           updatedAt?: unknown;
@@ -1728,7 +1733,7 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
               updatedAt: nextLease.updatedAt,
               expiresAt: nextLease.expiresAt,
             }
-          : null;
+          : notificationLeaseState.lease;
       })(),
     };
     event.waitUntil(persistSettings());
