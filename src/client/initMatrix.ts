@@ -225,7 +225,7 @@ const installRuntimeCryptoStoreRecovery = (mx: MatrixClient): void => {
   ) => {
     const errorMessage = stringifyRecoverableError(error);
     if (!errorMessage) return;
-    if (!isCryptoStoreRuntimeRecoveryError(errorMessage)) return;
+    if (!isCryptoStoreRuntimeRecoveryError(errorMessage, { hasCryptoContext: true })) return;
 
     requestCryptoStoreRuntimeRecovery({
       source,
@@ -1222,7 +1222,7 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
                 'Matrix SDK WASM crypto layer issue - client will attempt to reconnect',
             },
           });
-          if (isCryptoStoreRuntimeRecoveryError(errorMsg, { hasCryptoContext: true })) {
+          if (isCryptoStoreRuntimeRecoveryError(errorMsg)) {
             requestCryptoStoreRuntimeRecovery({
               source: 'sync_listener',
               errorMessage: errorMsg,

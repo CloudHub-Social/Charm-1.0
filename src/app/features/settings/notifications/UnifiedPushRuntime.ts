@@ -54,6 +54,7 @@ type RoomNotifCache = {
 const roomNotifCaches = new Map<string, RoomNotifCache>();
 const minimalPushQueues = new Map<string, Promise<void>>();
 const minimalPushGenerations = new Map<string, number>();
+let unifiedPushListenerGeneration = 0;
 
 function invalidateMinimalPush(roomId: string): number {
   const nextGeneration = (minimalPushGenerations.get(roomId) ?? 0) + 1;
@@ -90,6 +91,37 @@ function getOrCreateRoomCache(roomId: string, roomName: string): RoomNotifCache 
   }
   cache.roomName = roomName;
   return cache;
+}
+
+async function sendGenericUnifiedPushNotification(
+  pushData: Record<string, unknown>,
+  settings: NotificationSettings
+) {
+  const notificationsApi = await getTauriNotificationsApi();
+  const content = isRecord(pushData?.content) ? pushData.content : undefined;
+  const title =
+    optionalString(pushData?.room_name) ??
+    optionalString(pushData?.sender_display_name) ??
+    'New Message';
+  const body =
+    optionalString(pushData?.body) ??
+    optionalString(content?.body) ??
+    optionalString(pushData?.message) ??
+    'Open Charm to view it.';
+
+  await notificationsApi.sendNotification({
+    title,
+    body,
+    channelId: 'messages',
+    icon: 'notification_icon',
+    silent: !settings.notificationSoundEnabled,
+    autoCancel: true,
+    extra: {
+      room_id: pushData?.room_id,
+      event_id: pushData?.event_id,
+      user_id: pushData?.user_id,
+    },
+  });
 }
 
 async function waitForNotificationEvent(
@@ -190,12 +222,17 @@ export async function clearRoomNotification(roomId: string) {
   }
 }
 
-function queueMinimalPush(roomId: string, task: () => Promise<void>): Promise<void> {
+function queueMinimalPush(
+  roomId: string,
+  listenerGeneration: number,
+  task: () => Promise<void>
+): Promise<void> {
   const previous = minimalPushQueues.get(roomId) ?? Promise.resolve();
   const generation = currentMinimalPushGeneration(roomId);
   const next = previous
     .catch(() => undefined)
     .then(async () => {
+      if (listenerGeneration !== unifiedPushListenerGeneration) return;
       if (currentMinimalPushGeneration(roomId) !== generation) return;
       await task();
     });
@@ -402,11 +439,17 @@ async function handleMinimalPushPayload(
   const unread: number | undefined = typeof counts?.unread === 'number' ? counts.unread : undefined;
 
   if (!roomId) return;
+  if (shouldSuppressUnifiedPushNow(settings)) {
+    return;
+  }
 
   if (unread === 0) {
     await clearRoomNotification(roomId);
     return;
   }
+
+  const existingCache = roomNotifCaches.get(roomId);
+  if (eventId && existingCache?.seenEventIds.has(eventId)) return;
 
   const room = settings.mx.getRoom(roomId);
   const roomName = room?.name ?? 'Unknown Room';
@@ -462,12 +505,6 @@ async function handleMinimalPushPayload(
 
   const cache = getOrCreateRoomCache(roomId, roomName);
 
-  if (eventId && cache.seenEventIds.has(eventId)) return;
-
-  if (shouldSuppressUnifiedPushNow(settings)) {
-    return;
-  }
-
   if (eventId) cache.seenEventIds.add(eventId);
 
   cache.messages.push(message);
@@ -495,8 +532,10 @@ async function handleMinimalPushPayload(
 
 async function handleUnifiedPushPayload(
   raw: Record<string, unknown>,
-  getSettings: () => NotificationSettings
+  getSettings: () => NotificationSettings,
+  listenerGeneration: number
 ) {
+  if (listenerGeneration !== unifiedPushListenerGeneration) return;
   const settings = getSettings();
 
   if (shouldSuppressUnifiedPushNow(settings)) {
@@ -505,33 +544,60 @@ async function handleUnifiedPushPayload(
 
   const pushData = isRecord(raw.notification) ? raw.notification : raw;
   const eventType = pushData?.type as EventType | undefined;
+  const roomId = optionalString(pushData?.room_id);
 
   if (eventType) {
+    const isRoomMessageLike =
+      eventType === EventType.RoomMessage ||
+      eventType === EventType.Sticker ||
+      eventType === EventType.RoomMessageEncrypted;
+    if (roomId && isRoomMessageLike) {
+      await queueMinimalPush(roomId, listenerGeneration, () =>
+        handleRichPushPayload(pushData, getSettings())
+      );
+      return;
+    }
     await handleRichPushPayload(pushData, settings);
   } else {
-    const roomId = optionalString(pushData?.room_id);
     if (!roomId) {
-      await handleMinimalPushPayload(pushData, getSettings());
+      await sendGenericUnifiedPushNotification(pushData, settings);
       return;
     }
 
-    await queueMinimalPush(roomId, () => handleMinimalPushPayload(pushData, getSettings()));
+    const counts = isRecord(pushData?.counts) ? pushData.counts : undefined;
+    if (typeof counts?.unread === 'number' && counts.unread === 0) {
+      invalidateMinimalPush(roomId);
+    }
+
+    await queueMinimalPush(roomId, listenerGeneration, () =>
+      handleMinimalPushPayload(pushData, getSettings())
+    );
   }
 }
 
 export function listenForUnifiedPushMessages(getSettings: () => NotificationSettings) {
-  return getTauriNotificationsApi().then((notificationsApi) =>
-    notificationsApi.onUnifiedPushMessage(
-      createUnifiedPushMessageListener(
-        (data) => handleUnifiedPushPayload(data, getSettings),
-        (error) => {
-          unifiedPushLog.error(
-            'notification',
-            'UnifiedPush payload handling failed',
-            error instanceof Error ? error : new Error(String(error))
-          );
-        }
+  const listenerGeneration = ++unifiedPushListenerGeneration;
+  return getTauriNotificationsApi()
+    .then((notificationsApi) =>
+      notificationsApi.onUnifiedPushMessage(
+        createUnifiedPushMessageListener(
+          (data) => handleUnifiedPushPayload(data, getSettings, listenerGeneration),
+          (error) => {
+            unifiedPushLog.error(
+              'notification',
+              'UnifiedPush payload handling failed',
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
+        )
       )
     )
-  );
+    .then((listener) => ({
+      unregister: async () => {
+        if (listenerGeneration === unifiedPushListenerGeneration) {
+          unifiedPushListenerGeneration += 1;
+        }
+        await Promise.resolve(listener.unregister()).catch(() => undefined);
+      },
+    }));
 }

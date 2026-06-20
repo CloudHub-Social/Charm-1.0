@@ -101,6 +101,7 @@ describe('registerAppServiceWorker', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('skips service worker startup when the platform should not use one', () => {
