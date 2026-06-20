@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getTimelineBottomScrollAction,
   getUnreadBridgeAction,
+  shouldReleaseJumpLockAtLiveBottom,
   shouldKeepBottomPinnedAfterJump,
 } from './roomTimelineState';
 
@@ -16,6 +17,48 @@ describe('roomTimelineState', () => {
     );
     expect(shouldKeepBottomPinnedAfterJump(undefined, 'history_context', true, 'end')).toBe(false);
     expect(shouldKeepBottomPinnedAfterJump(true, 'history_context', false, 'center')).toBe(true);
+  });
+
+  it('releases the jump lock once a notification-live jump is back at the live bottom', () => {
+    expect(
+      shouldReleaseJumpLockAtLiveBottom({
+        jumpMode: 'notification_live',
+        liveTimelineLinked: true,
+        atBottom: true,
+        keepBottomPinned: true,
+        align: 'end',
+      })
+    ).toBe(true);
+
+    expect(
+      shouldReleaseJumpLockAtLiveBottom({
+        jumpMode: 'notification_live',
+        liveTimelineLinked: true,
+        atBottom: false,
+        keepBottomPinned: true,
+        align: 'end',
+      })
+    ).toBe(false);
+
+    expect(
+      shouldReleaseJumpLockAtLiveBottom({
+        jumpMode: 'notification_live',
+        liveTimelineLinked: false,
+        atBottom: true,
+        keepBottomPinned: true,
+        align: 'end',
+      })
+    ).toBe(false);
+
+    expect(
+      shouldReleaseJumpLockAtLiveBottom({
+        jumpMode: 'history_context',
+        liveTimelineLinked: true,
+        atBottom: true,
+        keepBottomPinned: false,
+        align: 'center',
+      })
+    ).toBe(false);
   });
 
   it('continues unread-bridge pagination until live timeline is reached or retries are exhausted', () => {
