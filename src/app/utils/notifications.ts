@@ -21,11 +21,7 @@ export async function markAsRead(mx: MatrixClient, roomId: string, privateReceip
       const latestEvent = timeline[i];
       if (!latestEvent) continue;
       const latestEventId = latestEvent.getId();
-      if (
-        latestEventId &&
-        latestEventId === receiptEventId &&
-        latestEventId === fullyReadEventId
-      ) {
+      if (latestEventId && latestEventId === receiptEventId && latestEventId === fullyReadEventId) {
         return null;
       }
       if (!latestEvent.isSending()) return latestEvent;
