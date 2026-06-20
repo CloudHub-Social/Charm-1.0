@@ -89,6 +89,7 @@ import * as css from './RoomTimeline.css';
 import {
   getTimelineBottomScrollAction,
   getUnreadBridgeAction,
+  shouldReleaseJumpLockAtLiveBottom,
   shouldKeepBottomPinnedAfterJump,
 } from './roomTimelineState';
 
@@ -515,7 +516,14 @@ export function RoomTimeline({
   );
 
   const releaseJumpLock = useCallback(
-    (reason: 'missing_target' | 'user_scroll' | 'route_change' | 'jump_to_latest') => {
+    (
+      reason:
+        | 'missing_target'
+        | 'user_scroll'
+        | 'route_change'
+        | 'jump_to_latest'
+        | 'notification_settled'
+    ) => {
       if (!jumpLockActiveRef.current && !jumpLockEventIdRef.current) return;
       jumpLockActiveRef.current = false;
       jumpLockEventIdRef.current = undefined;
@@ -1822,6 +1830,31 @@ export function RoomTimeline({
     pendingJumpToLatestToken,
     processedEvents.length,
     runJumpToLatest,
+    timelineSync.liveTimelineLinked,
+  ]);
+
+  useEffect(() => {
+    if (!jumpLockActiveRef.current) return;
+
+    const focusItem = timelineSync.focusItem;
+    if (
+      !shouldReleaseJumpLockAtLiveBottom({
+        jumpMode: focusItem?.jumpMode ?? jumpMode,
+        liveTimelineLinked: timelineSync.liveTimelineLinked,
+        atBottom: atBottomState,
+        keepBottomPinned: focusItem?.keepBottomPinned,
+        align: focusItem?.align,
+      })
+    ) {
+      return;
+    }
+
+    releaseJumpLock('notification_settled');
+  }, [
+    atBottomState,
+    jumpMode,
+    releaseJumpLock,
+    timelineSync.focusItem,
     timelineSync.liveTimelineLinked,
   ]);
 
