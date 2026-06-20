@@ -46,6 +46,7 @@ import { useOpenSpaceSettings } from '$state/hooks/spaceSettings';
 import { useRoomCreators } from '$hooks/useRoomCreators';
 import { useRoomPermissions } from '$hooks/useRoomPermissions';
 import { InviteUserPrompt } from '$components/invite-user-prompt';
+import { mobileOrTabletLayout } from '$utils/user-agent';
 import * as css from './LobbyHeader.css';
 
 type LobbyMenuProps = {
@@ -61,6 +62,9 @@ const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
     const permissions = useRoomPermissions(creators, powerLevels);
     const canInvite = permissions.action('invite', mx.getSafeUserId());
     const openSpaceSettings = useOpenSpaceSettings();
+    const setPeopleDrawer = useSetSetting(settingsAtom, 'isPeopleDrawer');
+    const screenSize = useScreenSizeContext();
+    const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
 
     const [invitePrompt, setInvitePrompt] = useState(false);
 
@@ -70,6 +74,11 @@ const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
 
     const handleRoomSettings = () => {
       openSpaceSettings(space.roomId);
+      requestClose();
+    };
+
+    const handleOpenMembers = () => {
+      setPeopleDrawer(true);
       requestClose();
     };
 
@@ -104,6 +113,18 @@ const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
               Space Settings
             </Text>
           </MenuItem>
+          {isMobileMembersSurface && (
+            <MenuItem
+              onClick={handleOpenMembers}
+              size="300"
+              after={menuIcon(UserCircle)}
+              radii="300"
+            >
+              <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+                Members
+              </Text>
+            </MenuItem>
+          )}
         </Box>
         <Line variant="Surface" size="300" />
         <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>

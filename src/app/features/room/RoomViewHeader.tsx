@@ -71,6 +71,7 @@ import {
   withSearchParam,
 } from '$pages/pathUtils';
 import { createLogger } from '$utils/debug';
+import { mobileOrTabletLayout } from '$utils/user-agent';
 import {
   getCanonicalAliasOrRoomId,
   isRoomAlias,
@@ -148,6 +149,7 @@ type RoomMenuProps = {
 const RoomMenu = forwardRef<HTMLDivElement, RoomMenuProps>(({ room, requestClose }, ref) => {
   const mx = useMatrixClient();
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
+  const setPeopleDrawer = useSetSetting(settingsAtom, 'isPeopleDrawer');
   const setWidgetDrawer = useSetSetting(settingsAtom, 'isWidgetDrawer');
   const unread = useRoomUnread(room.roomId, roomToUnreadAtom);
   const powerLevels = usePowerLevelsContext();
@@ -212,19 +214,24 @@ const RoomMenu = forwardRef<HTMLDivElement, RoomMenuProps>(({ room, requestClose
 
   const openSettings = useOpenRoomSettings();
   const parentSpace = useSpaceOptionally();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
   const handleOpenSettings = () => {
     openSettings(room.roomId, parentSpace?.roomId);
     requestClose();
   };
   const handleOpenMembers = () => {
-    openSettings(room.roomId, parentSpace?.roomId, RoomSettingsPage.MembersPage);
+    if (isMobileMembersSurface) {
+      setPeopleDrawer(true);
+    } else {
+      openSettings(room.roomId, parentSpace?.roomId, RoomSettingsPage.MembersPage);
+    }
     requestClose();
   };
   const handleOpenWidgets = () => {
     setWidgetDrawer(true);
     requestClose();
   };
-  const showMobileMembersAction = screenSize !== ScreenSize.Desktop;
+  const showMobileMembersAction = isMobileMembersSurface;
   const showMobileWidgetsAction =
     screenSize !== ScreenSize.Desktop && (widgets.length > 0 || canManageWidgets);
 

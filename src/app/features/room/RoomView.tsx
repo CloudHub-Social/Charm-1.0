@@ -14,7 +14,7 @@ import { Page } from '$components/page';
 import { useKeyDown } from '$hooks/useKeyDown';
 import { editableActiveElement } from '$utils/dom';
 import { settingsAtom } from '$state/settings';
-import { useSetting } from '$state/hooks/settings';
+import { useSetSetting, useSetting } from '$state/hooks/settings';
 import { useRoomPermissions } from '$hooks/useRoomPermissions';
 import { useRoomCreators } from '$hooks/useRoomCreators';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
@@ -33,6 +33,7 @@ import { useCallJoined } from '$hooks/useCallEmbed';
 import { useRoomTypingMember } from '$hooks/useRoomTypingMembers';
 import { CallView } from '$features/call/CallView';
 import { useRoom } from '$hooks/useRoom';
+import { mobileOrTabletLayout } from '$utils/user-agent';
 import { RoomViewFollowing, RoomViewFollowingPlaceholder } from './RoomViewFollowing';
 import { RoomInput } from './RoomInput';
 import { RoomTombstone } from './RoomTombstone';
@@ -137,12 +138,16 @@ export function RoomView({
 
   const openSettings = useOpenRoomSettings();
   const space = useSpaceOptionally();
+  const setPeopleDrawer = useSetSetting(settingsAtom, 'isPeopleDrawer');
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
 
   const handleOpenMembers = useCallback(() => {
-    if (screenSize === ScreenSize.Mobile) {
+    if (isMobileMembersSurface) {
+      setPeopleDrawer(true);
+    } else {
       openSettings(room.roomId, space?.roomId, RoomSettingsPage.MembersPage);
     }
-  }, [screenSize, openSettings, room.roomId, space?.roomId]);
+  }, [isMobileMembersSurface, openSettings, room.roomId, setPeopleDrawer, space?.roomId]);
 
   const callSession = useCallSession(room);
   const callMembers = useCallMembers(room, callSession);

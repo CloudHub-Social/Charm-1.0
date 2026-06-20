@@ -19,6 +19,7 @@ import { callChatAtom } from '$state/callEmbed';
 import { roomIdToOpenThreadAtomFamily } from '$state/room/roomToOpenThread';
 import { roomIdToThreadBrowserAtomFamily } from '$state/room/roomToThreadBrowser';
 import { createDebugLogger } from '$utils/debugLogger';
+import { mobileOrTabletLayout } from '$utils/user-agent';
 import { useMergedAbbreviations, RoomAbbreviationsContext } from '$hooks/useRoomAbbreviations';
 import { RoomViewHeader } from './RoomViewHeader';
 import { MembersDrawer } from './MembersDrawer';
@@ -51,6 +52,7 @@ export function Room() {
   const [isWidgetDrawerOpen] = useSetting(settingsAtom, 'isWidgetDrawer');
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
   const screenSize = useScreenSizeContext();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
   const mobileDrawerBootstrappedRef = useRef(false);
 
   // Log drawer state changes
@@ -62,13 +64,13 @@ export function Room() {
   }, [isDrawer, room.roomId]);
 
   useEffect(() => {
-    if (screenSize === ScreenSize.Desktop) return;
+    if (!isMobileMembersSurface) return;
     if (mobileDrawerBootstrappedRef.current) return;
     mobileDrawerBootstrappedRef.current = true;
     if (isDrawer) {
       setPeopleDrawer(false);
     }
-  }, [isDrawer, screenSize, setPeopleDrawer]);
+  }, [isDrawer, isMobileMembersSurface, setPeopleDrawer]);
 
   useEffect(() => {
     debugLog.debug('ui', 'Widgets drawer state changed', {
@@ -163,7 +165,7 @@ export function Room() {
           )}
           {!callView &&
             isDrawer &&
-            (screenSize === ScreenSize.Desktop ? (
+            (!isMobileMembersSurface ? (
               <>
                 <Line variant="Background" direction="Vertical" size="300" />
                 <MembersDrawer key={room.roomId} room={room} members={members} />

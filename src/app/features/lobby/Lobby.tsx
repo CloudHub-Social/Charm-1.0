@@ -38,6 +38,7 @@ import { useMatrixClient } from '$hooks/useMatrixClient';
 import { allRoomsAtom } from '$state/room-list/roomList';
 import { getCanonicalAliasOrRoomId, rateLimitedActions } from '$utils/matrix';
 import { getSpaceRoomPath } from '$pages/pathUtils';
+import { mobileOrTabletLayout } from '$utils/user-agent';
 
 import { ASCIILexicalTable, orderKeys } from '$utils/ASCIILexicalTable';
 import { getStateEvent } from '$utils/room';
@@ -179,6 +180,7 @@ export function Lobby() {
   const [isDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
   const setPeopleDrawer = useSetSetting(settingsAtom, 'isPeopleDrawer');
   const screenSize = useScreenSizeContext();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
   const mobileDrawerBootstrappedRef = useRef(false);
   const [onTop, setOnTop] = useState(true);
   const [closedCategories, setClosedCategories] = useAtom(useClosedLobbyCategoriesAtom());
@@ -198,13 +200,13 @@ export function Lobby() {
   const [spacesItems, setSpacesItems] = useState<Map<string, IHierarchyRoom>>(() => new Map());
 
   useEffect(() => {
-    if (screenSize === ScreenSize.Desktop) return;
+    if (!isMobileMembersSurface) return;
     if (mobileDrawerBootstrappedRef.current) return;
     mobileDrawerBootstrappedRef.current = true;
     if (isDrawer) {
       setPeopleDrawer(false);
     }
-  }, [isDrawer, screenSize, setPeopleDrawer]);
+  }, [isDrawer, isMobileMembersSurface, setPeopleDrawer]);
 
   useElementSizeObserver(
     useCallback(() => heroSectionRef.current, []),
@@ -760,7 +762,7 @@ export function Lobby() {
           </Box>
         </Page>
         {isDrawer &&
-          (screenSize === ScreenSize.Desktop ? (
+          (!isMobileMembersSurface ? (
             <>
               <Line variant="Background" direction="Vertical" size="300" />
               <MembersDrawer room={space} members={members} />
