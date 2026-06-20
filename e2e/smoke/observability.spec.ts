@@ -21,7 +21,18 @@ const stubToolbar = async (page: Page) => {
   if (!toolbarEnabled) return;
   await page.addInitScript(() => {
     window.SentryToolbar = {
-      init() {
+      init(props) {
+        const existing = document.getElementById('sentry-toolbar');
+        existing?.remove();
+        const mountPoint =
+          (props as { mountPoint?: HTMLElement }).mountPoint ??
+          document.body ??
+          document.documentElement;
+        const toolbar = document.createElement('div');
+        toolbar.id = 'sentry-toolbar';
+        toolbar.setAttribute('data-testid', 'sentry-toolbar');
+        toolbar.textContent = 'Sentry Toolbar';
+        mountPoint.appendChild(toolbar);
         return undefined;
       },
     };
@@ -97,6 +108,11 @@ test.describe('observability smoke', () => {
         page.evaluate(() => document.documentElement.getAttribute('data-sentry-toolbar-state'))
       )
       .toBe(toolbarEnabled ? 'enabled' : 'disabled');
+    if (toolbarEnabled) {
+      await expect(page.locator('#sentry-toolbar')).toBeVisible();
+    } else {
+      await expect(page.locator('#sentry-toolbar')).toHaveCount(0);
+    }
 
     await captureSnapshot(page, 'settings/developer-tools-sentry');
   });

@@ -40,6 +40,7 @@ function syncDocumentThemeMetadata(kind: ThemeKind): void {
   const themeColor = kind === ThemeKind.Dark ? DARK_THEME_COLOR : LIGHT_THEME_COLOR;
   document.documentElement.dataset.sableBootTheme = bootTheme;
   document.documentElement.style.backgroundColor = themeColor;
+  document.body.style.backgroundColor = 'var(--sable-bg-container)';
 
   document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((meta) => {
     meta.content = themeColor;

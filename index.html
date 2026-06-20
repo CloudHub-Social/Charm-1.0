@@ -177,8 +177,20 @@
         var settings = readSettings();
         var theme = resolveBootTheme(settings, systemIsDark);
         var color = theme === 'dark' ? '#1b1a21' : '#ffffff';
+        var bodyBackground = 'var(--sable-bg-container)';
         document.documentElement.dataset.sableBootTheme = theme;
         document.documentElement.style.backgroundColor = color;
+        if (document.body) {
+          document.body.style.backgroundColor = bodyBackground;
+        } else {
+          document.addEventListener(
+            'DOMContentLoaded',
+            function () {
+              document.body.style.backgroundColor = bodyBackground;
+            },
+            { once: true }
+          );
+        }
 
         document.querySelectorAll('meta[name="theme-color"]').forEach(function (meta) {
           meta.setAttribute('content', color);

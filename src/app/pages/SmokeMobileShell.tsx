@@ -607,6 +607,114 @@ function SmokeProfileModal() {
   );
 }
 
+function SmokeRendererMarkdown() {
+  return (
+    <Page>
+      <Box
+        grow="Yes"
+        direction="Column"
+        gap="400"
+        style={{
+          minHeight: 0,
+          padding: config.space.S400,
+          backgroundColor: 'var(--sable-surface)',
+        }}
+      >
+        <Box
+          direction="Column"
+          gap="200"
+          style={{
+            padding: config.space.S400,
+            borderRadius: config.radii.R400,
+            backgroundColor: 'var(--sable-surface-container)',
+          }}
+        >
+          <Text size="H4">Inline markdown rendering</Text>
+          <MessageTextBody data-testid="smoke-inline-markdown">
+            Just make it route at{' '}
+            <code
+              style={{
+                padding: '2px 6px',
+                borderRadius: config.radii.R300,
+                backgroundColor: 'var(--sable-surface)',
+              }}
+            >
+              /search
+            </code>{' '}
+            without squishing emoji like 🙂 in the same line.
+          </MessageTextBody>
+        </Box>
+
+        <Box
+          direction="Column"
+          gap="200"
+          style={{
+            padding: config.space.S400,
+            borderRadius: config.radii.R400,
+            backgroundColor: 'var(--sable-surface-container)',
+          }}
+        >
+          <Text size="H4">Code block rhythm</Text>
+          <pre
+            data-testid="smoke-code-block"
+            style={{
+              margin: 0,
+              padding: config.space.S400,
+              borderRadius: config.radii.R400,
+              backgroundColor: 'var(--sable-surface)',
+              overflowX: 'auto',
+            }}
+          >
+            <code>{`yaml\nroom: smoke\ninline_code: /search\nemoji: 🙂\n`}</code>
+          </pre>
+        </Box>
+      </Box>
+    </Page>
+  );
+}
+
+function SmokeRendererTransitions() {
+  return (
+    <Page>
+      <Box
+        grow="Yes"
+        direction="Column"
+        gap="400"
+        style={{
+          minHeight: 0,
+          padding: config.space.S400,
+          backgroundColor: 'var(--sable-surface)',
+        }}
+      >
+        <Header size="600" variant="Background">
+          <Text size="H4">Route transition shell</Text>
+        </Header>
+        <Box
+          direction="Column"
+          gap="200"
+          data-testid="smoke-transition-surface"
+          style={{
+            padding: config.space.S400,
+            borderRadius: config.radii.R500,
+            backgroundColor: 'var(--sable-surface-container)',
+          }}
+        >
+          <Text size="L400" data-testid="smoke-transition-title">
+            Spaces
+          </Text>
+          <Text size="T300">
+            Space and menu transitions should preserve the shell background instead of flashing a
+            light page between views.
+          </Text>
+          <MenuItem variant="Background" radii="400">
+            <Text size="T300">Stable shell background</Text>
+          </MenuItem>
+        </Box>
+      </Box>
+    </Page>
+  );
+}
+
 const smokeNotificationOptions: SettingMenuOption<'default' | 'all' | 'mute'>[] = [
   {
     value: 'default',
@@ -876,6 +984,8 @@ export function SmokeMobileShell() {
 
   if (mode === 'emoji-polish') return <SmokeEmojiPolish />;
   if (mode === 'menu-polish') return <SmokeMenuPolish />;
+  if (mode === 'renderer-markdown') return <SmokeRendererMarkdown />;
+  if (mode === 'renderer-transitions') return <SmokeRendererTransitions />;
   if (mode === 'search-shortcuts') return <SmokeSearchShortcuts />;
   if (mode === 'settings') return <SmokeSettingsModal />;
   if (mode === 'profile') return <SmokeProfileModal />;
