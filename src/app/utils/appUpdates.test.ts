@@ -194,6 +194,39 @@ describe('appUpdates', () => {
     });
   });
 
+  it('reports an available update when update() swaps in a new active worker without waiting', async () => {
+    const controllerWorker = { postMessage: vi.fn() };
+    const initialActive = controllerWorker;
+    const nextActive = { postMessage: vi.fn() };
+
+    mockRegistration = {
+      ...createRegistration(),
+      active: initialActive,
+      update: vi.fn().mockImplementation(async () => {
+        Object.assign(mockRegistration, { active: nextActive });
+      }),
+    } as MockRegistration & { active: typeof initialActive };
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        serviceWorker: {
+          controller: controllerWorker,
+          getRegistration: vi.fn().mockResolvedValue(mockRegistration),
+          ready: Promise.resolve(mockRegistration),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        },
+      },
+    });
+
+    await expect(checkForAppUpdates()).resolves.toEqual({
+      kind: 'update-available',
+      message: 'An update is ready to apply.',
+      canApply: true,
+    });
+  });
+
   it('waits for controllerchange before reloading a waiting update', async () => {
     const waitingWorker = { postMessage: vi.fn() };
     let controllerChangeListener: EventListener | undefined;

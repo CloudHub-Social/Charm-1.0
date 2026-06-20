@@ -22,7 +22,10 @@ import { cryptoCallbacks } from './secretStorageKeys';
 import type { SlidingSyncConfig, SlidingSyncDiagnostics } from './slidingSync';
 import { SlidingSyncManager } from './slidingSync';
 import { installThreadEventInstrumentation } from './threadEventPatch';
-import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
+import {
+  classifyCryptoStoreIndexedDbError,
+  isCryptoStoreRuntimeRecoveryError,
+} from './cryptoStoreErrors';
 import { clearClientCachesAndServiceWorkers } from '$utils/appCacheReset';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 
@@ -226,7 +229,7 @@ const installRuntimeCryptoStoreRecovery = (mx: MatrixClient): void => {
         : typeof error === 'string'
           ? error
           : JSON.stringify(error);
-    if (!classifyCryptoStoreIndexedDbError(errorMessage)) return;
+    if (!isCryptoStoreRuntimeRecoveryError(errorMessage)) return;
 
     requestCryptoStoreRuntimeRecovery({
       source,

@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearBlobCacheFailures,
   getBlobCacheBlockedReason,
-  recordBlobCacheFailure,
   setBlobCacheSession,
+  recordBlobCacheFailure,
 } from './useBlobCache';
 
 describe('useBlobCache failure recovery', () => {
@@ -43,5 +43,13 @@ describe('useBlobCache failure recovery', () => {
 
     vi.advanceTimersByTime(5 * 60_000);
     expect(getBlobCacheBlockedReason('bad:key')).toBeUndefined();
+  });
+
+  it('exposes zero remaining delay once a blocked URL should be retried again', () => {
+    recordBlobCacheFailure('auth:key', 'auth');
+
+    vi.advanceTimersByTime(15_001);
+
+    expect(getBlobCacheBlockedReason('auth:key')).toBeUndefined();
   });
 });

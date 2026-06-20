@@ -137,12 +137,33 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
     };
   }
 
+  const hadPendingActiveUpdate =
+    !!(
+      navigator.serviceWorker.controller &&
+      registration.active &&
+      registration.active !== navigator.serviceWorker.controller
+    );
+
   try {
     await registration.update();
   } catch (error) {
     throw error instanceof Error
       ? new Error(UPDATE_CHECK_FAILURE_MESSAGE, { cause: error })
       : new Error(UPDATE_CHECK_FAILURE_MESSAGE);
+  }
+
+  const hasPendingActiveUpdateAfterCheck =
+    !!(
+      navigator.serviceWorker.controller &&
+      registration.active &&
+      registration.active !== navigator.serviceWorker.controller
+    );
+  if (!hadPendingActiveUpdate && hasPendingActiveUpdateAfterCheck) {
+    return {
+      kind: 'update-available',
+      message: 'An update is ready to apply.',
+      canApply: true,
+    };
   }
 
   const waiting = await waitForWaitingServiceWorker(registration);

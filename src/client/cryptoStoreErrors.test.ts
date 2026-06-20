@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyCryptoStoreIndexedDbError,
   isCryptoStoreIndexedDbError,
+  isCryptoStoreRuntimeRecoveryError,
 } from './cryptoStoreErrors';
 
 describe('crypto store IndexedDB error classification', () => {
@@ -48,5 +49,18 @@ describe('crypto store IndexedDB error classification', () => {
   it('ignores unrelated sync errors', () => {
     expect(classifyCryptoStoreIndexedDbError('Fetch is aborted')).toBeUndefined();
     expect(isCryptoStoreIndexedDbError('Fetch is aborted')).toBe(false);
+  });
+
+  it('requires crypto-store or connection-closing context for runtime recovery reloads', () => {
+    expect(
+      isCryptoStoreRuntimeRecoveryError(
+        'InvalidStateError: Failed to read or write to the crypto store'
+      )
+    ).toBe(true);
+    expect(
+      isCryptoStoreRuntimeRecoveryError(
+        'InvalidStateError: Failed to execute operation on HTMLMediaElement'
+      )
+    ).toBe(false);
   });
 });

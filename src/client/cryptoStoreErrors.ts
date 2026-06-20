@@ -24,3 +24,15 @@ export const classifyCryptoStoreIndexedDbError = (
 
 export const isCryptoStoreIndexedDbError = (errorMessage: string): boolean =>
   classifyCryptoStoreIndexedDbError(errorMessage) !== undefined;
+
+export const isCryptoStoreRuntimeRecoveryError = (errorMessage: string): boolean => {
+  if (!classifyCryptoStoreIndexedDbError(errorMessage)) return false;
+
+  return (
+    errorMessage.includes('crypto store') ||
+    errorMessage.includes('IndexedDB') ||
+    errorMessage.includes('IDB') ||
+    errorMessage.includes('database connection is closing') ||
+    errorMessage.includes('database connection is closed')
+  );
+};

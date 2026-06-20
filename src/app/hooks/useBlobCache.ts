@@ -32,6 +32,13 @@ const notifyBlobCacheRecovery = (): void => {
 const getFailureRetryMs = (reason: 'auth' | 'bad_request'): number =>
   reason === 'auth' ? AUTH_FAILURE_RETRY_MS : BAD_REQUEST_RETRY_MS;
 
+const getBlobCacheRetryDelay = (cacheKey: string, now = Date.now()): number | undefined => {
+  const failure = failedMediaUrls.get(cacheKey);
+  if (!failure) return undefined;
+  const retryAt = failure.failedAt + getFailureRetryMs(failure.reason);
+  return retryAt > now ? retryAt - now : 0;
+};
+
 export function clearBlobCacheFailures(): void {
   failedMediaUrls.clear();
 }
@@ -370,7 +377,17 @@ export function useBlobCache(url?: string): string | undefined {
     if (!url || !cacheKey) return undefined;
 
     // SABLE-4Y fix: Skip URLs that previously failed auth
-    if (getBlobCacheBlockedReason(cacheKey)) {
+    const blockedReason = getBlobCacheBlockedReason(cacheKey);
+    if (blockedReason) {
+      const retryDelay = getBlobCacheRetryDelay(cacheKey);
+      if (retryDelay !== undefined) {
+        const retryTimerId = window.setTimeout(() => {
+          setRetryToken((n) => n + 1);
+        }, retryDelay + 1);
+        return () => {
+          window.clearTimeout(retryTimerId);
+        };
+      }
       return undefined;
     }
 
