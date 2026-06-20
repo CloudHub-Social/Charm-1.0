@@ -682,6 +682,7 @@ export function useTimelineSync({
           highlight: evtId !== readUptoEventIdRef.current,
           align: nextFocusItem?.align,
           jumpMode: nextFocusItem?.jumpMode,
+          keepBottomPinned: nextFocusItem?.keepBottomPinned,
         });
       },
       [alive, readUptoEventIdRef]
