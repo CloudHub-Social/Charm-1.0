@@ -397,6 +397,86 @@ describe('registerAppServiceWorker', () => {
     expect(window.location.reload).not.toHaveBeenCalled();
   });
 
+  it('re-arms a deferred update prompt when the app becomes visible again', async () => {
+    mockHasServiceWorker.mockReturnValue(true);
+    const confirmSpy = vi.fn(() => false);
+    const installingListeners = new Map<string, EventListener>();
+    const registrationListeners = new Map<string, EventListener>();
+    const windowListeners = new Map<string, EventListener>();
+    const documentListeners = new Map<string, EventListener>();
+    const waitingWorker = { postMessage: vi.fn() };
+    const installingWorker = {
+      state: 'installing',
+      addEventListener: vi.fn((event: string, listener: EventListener) => {
+        installingListeners.set(event, listener);
+      }),
+    };
+    let visibilityState: DocumentVisibilityState = 'hidden';
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibilityState,
+    });
+    Object.defineProperty(window, 'confirm', {
+      configurable: true,
+      value: confirmSpy,
+    });
+
+    vi.spyOn(window, 'addEventListener').mockImplementation((type, listener) => {
+      if (typeof listener === 'function') {
+        windowListeners.set(type, listener as EventListener);
+      }
+    });
+    vi.spyOn(document, 'addEventListener').mockImplementation((type, listener) => {
+      if (typeof listener === 'function') {
+        documentListeners.set(type, listener as EventListener);
+      }
+    });
+
+    mockRegister.mockResolvedValueOnce({
+      addEventListener: vi.fn((event: string, listener: EventListener) => {
+        registrationListeners.set(event, listener);
+      }),
+      installing: installingWorker,
+      waiting: waitingWorker,
+    });
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        onLine: true,
+        serviceWorker: {
+          register: mockRegister,
+          getRegistration: mockGetRegistration,
+          ready: mockReady,
+          controller: { postMessage: vi.fn() },
+          addEventListener: mockAddEventListener,
+        },
+      },
+    });
+
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+    registerAppServiceWorker();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    registrationListeners.get('updatefound')?.(new Event('updatefound'));
+    installingWorker.state = 'installed';
+    installingListeners.get('statechange')?.(new Event('statechange'));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    visibilityState = 'visible';
+    documentListeners.get('visibilitychange')?.(new Event('visibilitychange'));
+
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'sable:sw-update' }));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+
+    windowListeners.get('focus')?.(new Event('focus'));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('coalesces focus and pageshow watchdog pings into one in-flight check', async () => {
     mockHasServiceWorker.mockReturnValue(true);
     const windowListeners = new Map<string, EventListener>();

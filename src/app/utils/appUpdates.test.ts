@@ -126,9 +126,9 @@ describe('appUpdates', () => {
     });
   });
 
-  it('reports up to date when the active worker matches the current controller script', async () => {
-    const activeWorker = { postMessage: vi.fn(), scriptURL: '/sw.js' };
+  it('reports up to date when the active worker matches the current controller instance', async () => {
     const controllerWorker = { postMessage: vi.fn(), scriptURL: '/sw.js' };
+    const activeWorker = controllerWorker;
     mockRegistration.waiting = null;
 
     Object.defineProperty(window, 'navigator', {

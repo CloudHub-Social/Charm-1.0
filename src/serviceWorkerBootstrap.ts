@@ -75,6 +75,16 @@ const canShowBlockingUpdatePrompt = (): boolean => {
   return typeof document.hasFocus !== 'function' || document.hasFocus();
 };
 
+let deferredUpdatePromptRegistration: ServiceWorkerRegistration | undefined;
+
+const maybeShowDeferredUpdatePrompt = () => {
+  if (!deferredUpdatePromptRegistration || !canShowBlockingUpdatePrompt()) return;
+  const registration = deferredUpdatePromptRegistration;
+  deferredUpdatePromptRegistration = undefined;
+  window.dispatchEvent(new Event('sable:sw-update'));
+  showUpdateAvailablePrompt(registration);
+};
+
 const showUpdateAvailablePrompt = (registration: ServiceWorkerRegistration) => {
   const userPreference = localStorage.getItem(DONT_SHOW_PROMPT_KEY);
 
@@ -83,6 +93,7 @@ const showUpdateAvailablePrompt = (registration: ServiceWorkerRegistration) => {
   }
 
   if (!canShowBlockingUpdatePrompt()) {
+    deferredUpdatePromptRegistration = registration;
     Sentry.addBreadcrumb({
       category: 'service_worker',
       message: 'Deferred blocking service worker update prompt',
@@ -507,6 +518,7 @@ export function registerAppServiceWorker() {
 
   const handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
+      maybeShowDeferredUpdatePrompt();
       swWatchdog.restart();
       void swWatchdog.pingServiceWorker('visibilitychange_visible');
       return;
@@ -516,6 +528,7 @@ export function registerAppServiceWorker() {
   };
   const handleWindowFocus = () => {
     if (document.visibilityState !== 'visible') return;
+    maybeShowDeferredUpdatePrompt();
     swWatchdog.restart();
     void swWatchdog.pingServiceWorker('foreground_focus');
   };

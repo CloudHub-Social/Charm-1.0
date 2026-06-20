@@ -2293,6 +2293,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   }}
                   onMouseDown={(e: MouseEvent) => e.preventDefault()}
                   onPointerDown={(evt) => {
+                    if (evt.pointerType !== 'mouse') {
+                      evt.preventDefault();
+                    }
                     clearLongPressTimer();
                     if (!isMobileLayout || !delayedEventsSupported || evt.pointerType === 'mouse') {
                       return;

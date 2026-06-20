@@ -9,7 +9,7 @@ const hasPendingActiveUpdate = (registration: ServiceWorkerRegistration): boolea
   const controller = navigator.serviceWorker.controller;
   const active = registration.active;
   if (!controller || !active) return false;
-  return active.scriptURL !== controller.scriptURL;
+  return active !== controller;
 };
 
 export type AppUpdateCheckResult =

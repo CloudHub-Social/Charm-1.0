@@ -102,12 +102,16 @@ async function waitForNotificationEvent(
     let resolved = false;
     let timeoutId: number | undefined;
     let removeDecryptedListener: (() => void) | undefined;
+    let trackedEncryptedCandidate: MatrixEvent | undefined;
+    let handleTimeline: ((candidate: MatrixEvent) => void) | undefined;
 
     const finish = (event?: MatrixEvent) => {
       if (resolved) return;
       resolved = true;
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-      room.off(RoomEvent.Timeline, handleTimeline);
+      if (handleTimeline) {
+        room.off(RoomEvent.Timeline, handleTimeline);
+      }
       removeDecryptedListener?.();
       resolve(event);
     };
@@ -119,6 +123,11 @@ async function waitForNotificationEvent(
         candidate.isEncrypted() &&
         candidate.getType() === 'm.room.encrypted'
       ) {
+        if (trackedEncryptedCandidate === candidate) {
+          return true;
+        }
+        trackedEncryptedCandidate = candidate;
+        removeDecryptedListener?.();
         const handleDecrypted = () => finish(candidate);
         candidate.once(MatrixEventEvent.Decrypted, handleDecrypted);
         removeDecryptedListener = () => candidate.off(MatrixEventEvent.Decrypted, handleDecrypted);
@@ -137,7 +146,7 @@ async function waitForNotificationEvent(
       return;
     }
 
-    const handleTimeline = (candidate: MatrixEvent) => {
+    handleTimeline = (candidate: MatrixEvent) => {
       if (tryResolveEvent(candidate)) return;
       tryResolveEvent(resolveExistingEvent());
     };
