@@ -321,12 +321,27 @@ function isCallPushPayload(pushData: unknown): boolean {
     type?: unknown;
     content?: { notification_type?: unknown };
     data?: { isCall?: unknown };
+    notification?: {
+      data?: {
+        type?: unknown;
+        content?: { notification_type?: unknown };
+        data?: { isCall?: unknown };
+      };
+    };
   };
+  const notificationData =
+    payload.notification?.data && typeof payload.notification.data === 'object'
+      ? payload.notification.data
+      : undefined;
   return (
     payload.type === 'org.matrix.msc4075.call.notify' ||
     payload.type === 'org.matrix.msc4075.rtc.notification' ||
     payload.content?.notification_type === 'ring' ||
-    payload.data?.isCall === true
+    payload.data?.isCall === true ||
+    notificationData?.type === 'org.matrix.msc4075.call.notify' ||
+    notificationData?.type === 'org.matrix.msc4075.rtc.notification' ||
+    notificationData?.content?.notification_type === 'ring' ||
+    notificationData?.data?.isCall === true
   );
 }
 
@@ -358,6 +373,12 @@ function resolvePushUnreadCount(pushData: unknown): number | undefined {
     return payload.notification.app_badge;
   }
   return undefined;
+}
+
+function isCountOnlyReadStatePush(pushData: unknown): boolean {
+  if (!pushData || typeof pushData !== 'object') return false;
+  if (isDeclarativeWebPushPayload(pushData) || isMinimalPushPayload(pushData)) return false;
+  return extractPushEventId(pushData) === undefined && !isCallPushPayload(pushData);
 }
 
 async function fetchNotificationLeaseForSession(
@@ -435,7 +456,9 @@ async function queueDelayedPushPayload(pushData: unknown, releaseAt: number): Pr
 
 async function handleReadStateOnlyPush(pushData: unknown): Promise<boolean> {
   const unreadCount = resolvePushUnreadCount(pushData);
-  if (unreadCount === undefined || unreadCount > 0) return false;
+  if (!isCountOnlyReadStatePush(pushData) || unreadCount === undefined || unreadCount > 0) {
+    return false;
+  }
 
   try {
     await (self.navigator as unknown as { clearAppBadge?: () => Promise<void> }).clearAppBadge?.();
@@ -449,20 +472,60 @@ async function handleReadStateOnlyPush(pushData: unknown): Promise<boolean> {
   return true;
 }
 
+async function applyPushBadgeState(pushData: unknown): Promise<void> {
+  try {
+    const declarativeBadge =
+      isDeclarativeWebPushPayload(pushData) && pushData.notification.app_badge !== undefined
+        ? Number(pushData.notification.app_badge)
+        : undefined;
+    if (typeof declarativeBadge === 'number' && Number.isFinite(declarativeBadge)) {
+      if (declarativeBadge <= 0) {
+        await (
+          self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
+        ).clearAppBadge?.();
+      } else {
+        await (
+          self.navigator as unknown as {
+            setAppBadge?: (count: number) => Promise<void>;
+          }
+        ).setAppBadge?.(declarativeBadge);
+      }
+      return;
+    }
+
+    const unreadCount = resolvePushUnreadCount(pushData);
+    if (typeof unreadCount === 'number' && Number.isFinite(unreadCount)) {
+      if (unreadCount <= 0) {
+        await (
+          self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
+        ).clearAppBadge?.();
+      } else {
+        await (
+          self.navigator as unknown as {
+            setAppBadge?: (count: number) => Promise<void>;
+          }
+        ).setAppBadge?.(unreadCount);
+      }
+      return;
+    }
+
+    await (self.navigator as unknown as { clearAppBadge?: () => Promise<void> }).clearAppBadge?.();
+  } catch {
+    // Badging API absent (Firefox/Gecko) — continue to show the notification.
+  }
+}
+
 async function fetchNotificationsPage(
   session: SessionInfo,
   from?: string
-): Promise<
-  | {
-      next_token?: unknown;
-      notifications?: Array<{
-        read?: unknown;
-        room_id?: unknown;
-        event?: { event_id?: unknown };
-      }>;
-    }
-  | null
-> {
+): Promise<{
+  next_token?: unknown;
+  notifications?: Array<{
+    read?: unknown;
+    room_id?: unknown;
+    event?: { event_id?: unknown };
+  }>;
+} | null> {
   const url = new URL(`${session.baseUrl}/_matrix/client/v3/notifications`);
   url.searchParams.set('limit', String(NOTIFICATION_RECHECK_PAGE_SIZE));
   if (from) url.searchParams.set('from', from);
@@ -546,18 +609,27 @@ async function flushDelayedPushQueue(): Promise<'idle' | 'paused_visible' | 'del
     await persistDelayedPushQueue([...due, ...remaining]);
     return 'paused_visible';
   }
-  await persistDelayedPushQueue(remaining);
+  const nextQueue = [...remaining];
+  let deliveredAny = false;
   for (const entry of due) {
-    await refreshNotificationLeaseStateForUser(entry.userId);
-    if (!(await isDelayedPushStillUnread(entry))) {
-      continue;
+    try {
+      await refreshNotificationLeaseStateForUser(entry.userId);
+      if (!(await isDelayedPushStillUnread(entry))) {
+        continue;
+      }
+      if (await handleReadStateOnlyPush(entry.payload)) {
+        continue;
+      }
+      await applyPushBadgeState(entry.payload);
+      await deliverPushPayload(entry.payload, clients);
+      deliveredAny = true;
+    } catch {
+      nextQueue.push(entry);
     }
-    if (await handleReadStateOnlyPush(entry.payload)) {
-      continue;
-    }
-    await deliverPushPayload(entry.payload, clients);
   }
-  return 'delivered';
+  nextQueue.sort((a, b) => a.releaseAt - b.releaseAt);
+  await persistDelayedPushQueue(nextQueue);
+  return deliveredAny ? 'delivered' : 'idle';
 }
 
 function scheduleDelayedPushQueueFlush(): void {
@@ -1797,7 +1869,10 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
         if (lease === undefined) {
           return notificationLeaseState.lease;
         }
-        if (lease === null || typeof lease !== 'object') {
+        if (lease === null) {
+          return null;
+        }
+        if (typeof lease !== 'object') {
           return notificationLeaseState.lease;
         }
         const nextLease = lease as {
@@ -2485,51 +2560,7 @@ const onPushNotification = async (event: PushEvent) => {
     payloadType,
   }).catch(() => undefined);
 
-  try {
-    const declarativeBadge =
-      isDeclarativeWebPushPayload(pushData) && pushData.notification.app_badge !== undefined
-        ? Number(pushData.notification.app_badge)
-        : undefined;
-    if (typeof declarativeBadge === 'number' && Number.isFinite(declarativeBadge)) {
-      if (declarativeBadge <= 0) {
-        await (
-          self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
-        ).clearAppBadge?.();
-      } else {
-        await (
-          self.navigator as unknown as {
-            setAppBadge?: (count: number) => Promise<void>;
-          }
-        ).setAppBadge?.(declarativeBadge);
-      }
-    } else if (typeof pushData?.unread === 'number') {
-      if (pushData.unread === 0) {
-        // All messages read elsewhere — clear the home-screen badge and,
-        // if the user opted in, dismiss outstanding lock-screen notifications.
-        await (
-          self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
-        ).clearAppBadge?.();
-        if (clearNotificationsOnRead) {
-          const notifs = await self.registration.getNotifications();
-          notifs.forEach((n) => n.close());
-        }
-        return;
-      }
-      // unread > 0: update the PWA badge with the current count.
-      await (
-        self.navigator as unknown as {
-          setAppBadge?: (count: number) => Promise<void>;
-        }
-      ).setAppBadge?.(pushData.unread);
-    } else {
-      // No unread field in payload — clear badge to avoid a stale count.
-      await (
-        self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
-      ).clearAppBadge?.();
-    }
-  } catch {
-    // Badging API absent (Firefox/Gecko) — continue to show the notification.
-  }
+  await applyPushBadgeState(pushData);
 
   if (isDeclarativeWebPushPayload(pushData)) {
     const { title, options } = buildDeclarativeNotificationOptions(pushData);
