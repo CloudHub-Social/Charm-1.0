@@ -5,6 +5,8 @@ let userSelectSuppressionCount = 0;
 let previousUserSelect = '';
 let previousWebkitUserSelect = '';
 let previousWebkitTouchCallout = '';
+let userSelectSuppressionEpoch = 0;
+const activeUserSelectSuppressions = new Set<number>();
 
 const isEditableElement = (element: Element | null): element is HTMLElement => {
   if (!(element instanceof HTMLElement)) return false;
@@ -98,6 +100,9 @@ export const suppressUserSelect = () => {
   const touchCalloutStyle = style as CSSStyleDeclaration & {
     webkitTouchCallout?: string;
   };
+  const suppressionEpoch = ++userSelectSuppressionEpoch;
+  let released = false;
+  activeUserSelectSuppressions.add(suppressionEpoch);
   if (userSelectSuppressionCount === 0) {
     previousUserSelect = style.userSelect;
     previousWebkitUserSelect = style.webkitUserSelect;
@@ -109,9 +114,13 @@ export const suppressUserSelect = () => {
   userSelectSuppressionCount += 1;
 
   return () => {
+    if (released) return;
+    released = true;
     if (userSelectSuppressionCount === 0) return;
+    activeUserSelectSuppressions.delete(suppressionEpoch);
     userSelectSuppressionCount -= 1;
     if (userSelectSuppressionCount > 0) return;
+    if (activeUserSelectSuppressions.size > 0) return;
 
     style.userSelect = previousUserSelect;
     style.webkitUserSelect = previousWebkitUserSelect;

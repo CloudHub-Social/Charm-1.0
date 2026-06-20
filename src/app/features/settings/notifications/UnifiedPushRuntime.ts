@@ -463,6 +463,11 @@ async function handleMinimalPushPayload(
   const cache = getOrCreateRoomCache(roomId, roomName);
 
   if (eventId && cache.seenEventIds.has(eventId)) return;
+
+  if (shouldSuppressUnifiedPushNow(settings)) {
+    return;
+  }
+
   if (eventId) cache.seenEventIds.add(eventId);
 
   cache.messages.push(message);
@@ -473,10 +478,6 @@ async function handleMinimalPushPayload(
 
   if (room) {
     cache.isGroupConversation = (room.getJoinedMemberCount() ?? 0) > 2;
-  }
-
-  if (shouldSuppressUnifiedPushNow(settings)) {
-    return;
   }
 
   await postRoomNotification(

@@ -263,10 +263,7 @@ async function persistDelayedPushQueue(queue: DelayedPushQueueEntry[]): Promise<
 }
 
 async function removeDelayedPushQueueEntriesForUser(userId: string | undefined): Promise<void> {
-  if (!userId) {
-    await persistDelayedPushQueue([]);
-    return;
-  }
+  if (!userId) return;
   const queue = await loadDelayedPushQueue();
   await persistDelayedPushQueue(queue.filter((entry) => entry.userId !== userId));
 }
@@ -454,10 +451,14 @@ async function refreshNotificationLeaseStateForUser(pushUserId: string | undefin
   }
 }
 
-async function queueDelayedPushPayload(pushData: unknown, releaseAt: number): Promise<void> {
+async function queueDelayedPushPayload(
+  pushData: unknown,
+  releaseAt: number,
+  fallbackUserId?: string
+): Promise<void> {
   const queue = await loadDelayedPushQueue();
   const eventId = extractPushEventId(pushData);
-  const userId = extractPushUserId(pushData);
+  const userId = extractPushUserId(pushData) ?? fallbackUserId;
   const deduped = queue.filter(
     (entry) =>
       !(eventId && entry.eventId === eventId) &&
@@ -634,6 +635,22 @@ async function flushDelayedPushQueue(): Promise<'idle' | 'paused_visible' | 'del
   for (const entry of due) {
     try {
       await refreshNotificationLeaseStateForUser(entry.userId);
+      const leaseStillHeldElsewhere =
+        notificationLeaseState.desktopDelayEnabled &&
+        !!entry.userId &&
+        notificationLeaseState.userId === entry.userId &&
+        !!notificationLeaseState.lease &&
+        notificationLeaseState.lease.expiresAt > Date.now() &&
+        (!notificationLeaseState.deviceId ||
+          notificationLeaseState.lease.deviceId !== notificationLeaseState.deviceId);
+      if (leaseStillHeldElsewhere) {
+        const leaseExpiresAt = notificationLeaseState.lease?.expiresAt ?? entry.releaseAt;
+        nextQueue.push({
+          ...entry,
+          releaseAt: Math.max(entry.releaseAt, leaseExpiresAt),
+        });
+        continue;
+      }
       if (!(await isDelayedPushStillUnread(entry))) {
         continue;
       }
@@ -2542,13 +2559,14 @@ const onPushNotification = async (event: PushEvent) => {
 
   const shouldDelayForDesktopLease =
     hasFreshDesktopDelayLeaseElsewhere && !isCallPushPayload(pushData);
-  const canQueueDesktopDelay = shouldDelayForDesktopLease && clients.length > 0;
+  const canQueueDesktopDelay = shouldDelayForDesktopLease;
 
   if (hasVisibleClient || canQueueDesktopDelay) {
     if (canQueueDesktopDelay) {
       await queueDelayedPushPayload(
         pushData,
-        notificationLeaseState.lease?.expiresAt ?? Date.now()
+        notificationLeaseState.lease?.expiresAt ?? Date.now(),
+        pushUserId
       );
       scheduleDelayedPushQueueFlush();
     }
