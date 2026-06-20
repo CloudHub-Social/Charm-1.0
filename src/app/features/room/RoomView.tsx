@@ -31,6 +31,7 @@ import { useCallMembers, useCallSession } from '$hooks/useCall';
 import { callEmbedAtom } from '$state/callEmbed';
 import { useCallJoined } from '$hooks/useCallEmbed';
 import { useRoomTypingMember } from '$hooks/useRoomTypingMembers';
+import { mobileOrTabletLayout } from '$utils/user-agent';
 import { CallView } from '$features/call/CallView';
 import { useRoom } from '$hooks/useRoom';
 import { RoomViewFollowing, RoomViewFollowingPlaceholder } from './RoomViewFollowing';
@@ -139,7 +140,7 @@ export function RoomView({
 
   const openSettings = useOpenRoomSettings();
   const space = useSpaceOptionally();
-  const isMobileMembersSurface = screenSize === ScreenSize.Mobile;
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
 
   const handleOpenMembers = useCallback(() => {
     if (isMobileMembersSurface && onOpenMobileMembersDrawer) {
