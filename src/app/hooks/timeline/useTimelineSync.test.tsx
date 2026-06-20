@@ -139,6 +139,7 @@ describe('useTimelineSync', () => {
       highlight: true,
       align: 'center',
       jumpMode: 'history_context',
+      keepBottomPinned: false,
     });
     expect(scrollToBottom).not.toHaveBeenCalled();
   });
@@ -500,6 +501,7 @@ describe('useTimelineSync', () => {
       highlight: true,
       align: 'center',
       jumpMode: 'history_context',
+      keepBottomPinned: false,
     });
     expect(result.current.timeline.linkedTimelines).toBe(timelineBeforeRefresh);
     expect(result.current.timeline.linkedTimelines.at(-1)).toBe(liveTimelineOne);
@@ -548,6 +550,7 @@ describe('useTimelineSync', () => {
       highlight: true,
       align: 'end',
       jumpMode: 'notification_live',
+      keepBottomPinned: true,
     });
     expect(mx.getEventTimeline).not.toHaveBeenCalled();
     expect(scrollToBottom).not.toHaveBeenCalled();

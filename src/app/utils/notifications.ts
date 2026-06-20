@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/react';
 import { isTauri } from '@tauri-apps/api/core';
 import type { MatrixClient, MatrixEvent } from '$types/matrix-sdk';
-import { ReceiptType } from '$types/matrix-sdk';
+import { EventType, ReceiptType } from '$types/matrix-sdk';
 import { createDebugLogger } from './debugLogger';
 
 const debugLog = createDebugLogger('notifications');
@@ -11,13 +11,19 @@ export async function markAsRead(mx: MatrixClient, roomId: string, privateReceip
   if (!room) return;
 
   const timeline = room.getLiveTimeline().getEvents();
-  const readEventId = room.getEventReadUpTo(mx.getUserId()!);
+  const receiptEventId = room.getEventReadUpTo(mx.getUserId()!);
+  const fullyReadEventId = room
+    .getAccountData(EventType.FullyRead)
+    ?.getContent<{ event_id?: string }>()?.event_id;
 
   const getLatestValidEvent = (): MatrixEvent | null => {
     for (let i = timeline.length - 1; i >= 0; i -= 1) {
       const latestEvent = timeline[i];
       if (!latestEvent) continue;
-      if (latestEvent.getId() === readEventId) return null;
+      const latestEventId = latestEvent.getId();
+      if (latestEventId && latestEventId === receiptEventId && latestEventId === fullyReadEventId) {
+        return null;
+      }
       if (!latestEvent.isSending()) return latestEvent;
     }
     return null;

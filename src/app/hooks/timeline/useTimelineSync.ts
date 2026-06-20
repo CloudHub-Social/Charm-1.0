@@ -41,6 +41,7 @@ export type TimelineFocusItem = {
   highlight: boolean;
   align?: 'center' | 'end';
   jumpMode?: TimelineJumpMode;
+  keepBottomPinned?: boolean;
 };
 
 export type PaginationStatus = 'idle' | 'loading' | 'error';
@@ -135,6 +136,7 @@ const useEventTimelineLoader = (
               onLoad(eventId, liveLinkedTimelines, liveAbsIndex, {
                 align: 'end',
                 jumpMode,
+                keepBottomPinned: true,
               });
               return;
             }
@@ -237,6 +239,7 @@ const useEventTimelineLoader = (
         onLoad(eventId, linkedTimelines, absIndex, {
           align: 'center',
           jumpMode,
+          keepBottomPinned: false,
         });
 
         // Proactively load context above and below the jumped-to event so the user
@@ -679,6 +682,7 @@ export function useTimelineSync({
           highlight: evtId !== readUptoEventIdRef.current,
           align: nextFocusItem?.align,
           jumpMode: nextFocusItem?.jumpMode,
+          keepBottomPinned: nextFocusItem?.keepBottomPinned,
         });
       },
       [alive, readUptoEventIdRef]
