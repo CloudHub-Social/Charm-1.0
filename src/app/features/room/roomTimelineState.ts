@@ -12,6 +12,25 @@ export const shouldKeepBottomPinnedAfterJump = (
 ): boolean =>
   keepBottomPinned ?? (jumpMode === 'notification_live' && liveTimelineLinked && align === 'end');
 
+type JumpLockReleaseInput = {
+  jumpMode: RoomTimelineJumpMode;
+  liveTimelineLinked: boolean;
+  atBottom: boolean;
+  keepBottomPinned?: boolean;
+  align?: 'center' | 'end';
+};
+
+export const shouldReleaseJumpLockAtLiveBottom = ({
+  jumpMode,
+  liveTimelineLinked,
+  atBottom,
+  keepBottomPinned,
+  align,
+}: JumpLockReleaseInput): boolean => {
+  if (!atBottom || !liveTimelineLinked) return false;
+  return shouldKeepBottomPinnedAfterJump(keepBottomPinned, jumpMode, liveTimelineLinked, align);
+};
+
 export type UnreadBridgeAction = 'idle' | 'complete' | 'paginate' | 'stop';
 
 type UnreadBridgeActionInput = {
