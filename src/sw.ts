@@ -45,6 +45,7 @@ type NotificationLeaseState = {
   deviceId?: string;
   userId?: string;
   desktopDelayEnabled: boolean;
+  leaseFetchedAt?: number;
   lease: {
     deviceId: string;
     updatedAt: number;
@@ -57,6 +58,7 @@ let notificationLeaseState: NotificationLeaseState = {
 };
 const NOTIFICATION_DEVICE_LEASE_EVENT_TYPE = CustomAccountDataEvent.SableNotificationDeviceLease;
 const APP_VISIBLE_HEARTBEAT_MAX_AGE_MS = 20_000;
+const LEASE_REFRESH_MAX_AGE_MS = 15_000;
 const SW_DELAYED_PUSH_QUEUE_CACHE = 'sable-sw-delayed-push-v1';
 const SW_DELAYED_PUSH_QUEUE_URL = '/sw-delayed-push-queue';
 const SW_DELAYED_PUSH_QUEUE_LIMIT = 50;
@@ -168,6 +170,7 @@ async function loadPersistedSettings() {
         deviceId?: unknown;
         userId?: unknown;
         desktopDelayEnabled?: unknown;
+        leaseFetchedAt?: unknown;
         lease?: {
           deviceId?: unknown;
           updatedAt?: unknown;
@@ -182,6 +185,10 @@ async function loadPersistedSettings() {
         userId:
           typeof persistedLeaseState.userId === 'string' ? persistedLeaseState.userId : undefined,
         desktopDelayEnabled: persistedLeaseState.desktopDelayEnabled === true,
+        leaseFetchedAt:
+          typeof persistedLeaseState.leaseFetchedAt === 'number'
+            ? persistedLeaseState.leaseFetchedAt
+            : undefined,
         lease:
           persistedLeaseState.lease &&
           typeof persistedLeaseState.lease.deviceId === 'string' &&
@@ -270,11 +277,63 @@ function extractPushUserId(pushData: unknown): string | undefined {
   if (!pushData || typeof pushData !== 'object') return undefined;
   const payload = pushData as {
     user_id?: unknown;
-    notification?: { user_id?: unknown };
+    notification?: { user_id?: unknown; data?: { user_id?: unknown } };
+    data?: { user_id?: unknown };
   };
   if (typeof payload.user_id === 'string') return payload.user_id;
   if (typeof payload.notification?.user_id === 'string') {
     return payload.notification.user_id;
+  }
+  if (typeof payload.notification?.data?.user_id === 'string') {
+    return payload.notification.data.user_id;
+  }
+  if (typeof payload.data?.user_id === 'string') {
+    return payload.data.user_id;
+  }
+  return undefined;
+}
+
+function isCallPushPayload(pushData: unknown): boolean {
+  if (!pushData || typeof pushData !== 'object') return false;
+  const payload = pushData as {
+    type?: unknown;
+    content?: { notification_type?: unknown };
+    data?: { isCall?: unknown };
+  };
+  return (
+    payload.type === 'org.matrix.msc4075.call.notify' ||
+    payload.type === 'org.matrix.msc4075.rtc.notification' ||
+    payload.content?.notification_type === 'ring' ||
+    payload.data?.isCall === true
+  );
+}
+
+function resolvePushUnreadCount(pushData: unknown): number | undefined {
+  if (!pushData || typeof pushData !== 'object') return undefined;
+  const payload = pushData as {
+    unread?: unknown;
+    counts?: { unread?: unknown };
+    notification?: { app_badge?: unknown; data?: { unread?: unknown } };
+    data?: { unread?: unknown };
+  };
+  if (typeof payload.unread === 'number' && Number.isFinite(payload.unread)) return payload.unread;
+  if (typeof payload.counts?.unread === 'number' && Number.isFinite(payload.counts.unread)) {
+    return payload.counts.unread;
+  }
+  if (
+    typeof payload.notification?.data?.unread === 'number' &&
+    Number.isFinite(payload.notification.data.unread)
+  ) {
+    return payload.notification.data.unread;
+  }
+  if (typeof payload.data?.unread === 'number' && Number.isFinite(payload.data.unread)) {
+    return payload.data.unread;
+  }
+  if (
+    typeof payload.notification?.app_badge === 'number' &&
+    Number.isFinite(payload.notification.app_badge)
+  ) {
+    return payload.notification.app_badge;
   }
   return undefined;
 }
@@ -306,10 +365,13 @@ async function fetchNotificationLeaseForSession(
 
 async function refreshNotificationLeaseStateForUser(pushUserId: string | undefined): Promise<void> {
   if (!pushUserId || !notificationLeaseState.desktopDelayEnabled) return;
+  const now = Date.now();
   if (
     notificationLeaseState.userId === pushUserId &&
     notificationLeaseState.lease &&
-    notificationLeaseState.lease.expiresAt > Date.now()
+    notificationLeaseState.lease.expiresAt > now &&
+    notificationLeaseState.leaseFetchedAt !== undefined &&
+    now - notificationLeaseState.leaseFetchedAt < LEASE_REFRESH_MAX_AGE_MS
   ) {
     return;
   }
@@ -320,6 +382,7 @@ async function refreshNotificationLeaseStateForUser(pushUserId: string | undefin
     notificationLeaseState = {
       ...notificationLeaseState,
       userId: pushUserId,
+      leaseFetchedAt: now,
       lease,
     };
     await persistSettings();
@@ -348,6 +411,22 @@ async function queueDelayedPushPayload(pushData: unknown, releaseAt: number): Pr
   await persistDelayedPushQueue(deduped.slice(-SW_DELAYED_PUSH_QUEUE_LIMIT));
 }
 
+async function handleReadStateOnlyPush(pushData: unknown): Promise<boolean> {
+  const unreadCount = resolvePushUnreadCount(pushData);
+  if (unreadCount === undefined || unreadCount > 0) return false;
+
+  try {
+    await (self.navigator as unknown as { clearAppBadge?: () => Promise<void> }).clearAppBadge?.();
+    if (clearNotificationsOnRead) {
+      const notifs = await self.registration.getNotifications();
+      notifs.forEach((n) => n.close());
+    }
+  } catch {
+    // Badging API absent — clearing notifications is best effort only.
+  }
+  return true;
+}
+
 async function deliverPushPayload(
   pushData: unknown,
   clients: readonly WindowClient[]
@@ -368,9 +447,9 @@ async function deliverPushPayload(
   await recordPushTelemetry('shown_os', { payload_type: 'full' });
 }
 
-async function flushDelayedPushQueue(): Promise<void> {
+async function flushDelayedPushQueue(): Promise<'idle' | 'paused_visible' | 'delivered'> {
   const queue = await loadDelayedPushQueue();
-  if (queue.length === 0) return;
+  if (queue.length === 0) return 'idle';
   const now = Date.now();
   const remaining: DelayedPushQueueEntry[] = [];
   const due: DelayedPushQueueEntry[] = [];
@@ -378,7 +457,7 @@ async function flushDelayedPushQueue(): Promise<void> {
     if (entry.releaseAt <= now) due.push(entry);
     else remaining.push(entry);
   });
-  if (due.length === 0) return;
+  if (due.length === 0) return 'idle';
   const clients = (await self.clients.matchAll({
     type: 'window',
     includeUncontrolled: true,
@@ -388,12 +467,17 @@ async function flushDelayedPushQueue(): Promise<void> {
     visibleWindowClientCount(clients) > 0;
   if (hasVisibleClient) {
     await persistDelayedPushQueue([...due, ...remaining]);
-    return;
+    return 'paused_visible';
   }
   await persistDelayedPushQueue(remaining);
   for (const entry of due) {
+    await refreshNotificationLeaseStateForUser(entry.userId);
+    if (await handleReadStateOnlyPush(entry.payload)) {
+      continue;
+    }
     await deliverPushPayload(entry.payload, clients);
   }
+  return 'delivered';
 }
 
 function scheduleDelayedPushQueueFlush(): void {
@@ -410,8 +494,10 @@ function scheduleDelayedPushQueueFlush(): void {
     delayedPushFlushTimeoutId = setTimeout(
       () => {
         delayedPushFlushTimeoutId = undefined;
-        void flushDelayedPushQueue().then(() => {
-          scheduleDelayedPushQueueFlush();
+        void flushDelayedPushQueue().then((result) => {
+          if (result !== 'paused_visible') {
+            scheduleDelayedPushQueueFlush();
+          }
         });
       },
       Math.max(nextReleaseAt - Date.now(), 0) + 50
@@ -561,6 +647,7 @@ async function setSession(
     preloadedSession = undefined;
     console.debug('[SW] setSession: removed', clientId);
     syncPersistedSessionFromLiveSessions().catch(() => undefined);
+    persistDelayedPushQueue([]).catch(() => undefined);
     if (shouldClearMediaCacheAfterSessionRemoval(removedSession?.accessToken, sessions.values())) {
       self.caches.delete(SW_MEDIA_CACHE).catch(() => undefined);
     }
@@ -1621,6 +1708,10 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
         typeof (data as { desktopDelayEnabled?: unknown }).desktopDelayEnabled === 'boolean'
           ? (data as { desktopDelayEnabled: boolean }).desktopDelayEnabled
           : notificationLeaseState.desktopDelayEnabled,
+      leaseFetchedAt:
+        typeof (data as { leaseFetchedAt?: unknown }).leaseFetchedAt === 'number'
+          ? (data as { leaseFetchedAt: number }).leaseFetchedAt
+          : notificationLeaseState.leaseFetchedAt,
       lease: (() => {
         const lease = (data as { lease?: unknown }).lease;
         if (!lease || typeof lease !== 'object') return null;
@@ -2229,6 +2320,9 @@ const onPushNotification = async (event: PushEvent) => {
   const pushData = event.data.json();
   const pushUserId = extractPushUserId(pushData);
   await refreshNotificationLeaseStateForUser(pushUserId);
+  if (await handleReadStateOnlyPush(pushData)) {
+    return;
+  }
 
   const focusedClientCount = focusedWindowClientCount(clients);
   const browserVisibleClientCount = visibleWindowClientCount(clients);
@@ -2239,10 +2333,10 @@ const onPushNotification = async (event: PushEvent) => {
     notificationLeaseState.desktopDelayEnabled &&
     !!pushUserId &&
     notificationLeaseState.userId === pushUserId &&
-    !!notificationLeaseState.deviceId &&
     !!notificationLeaseState.lease &&
     notificationLeaseState.lease.expiresAt > Date.now() &&
-    notificationLeaseState.lease.deviceId !== notificationLeaseState.deviceId;
+    (!notificationLeaseState.deviceId ||
+      notificationLeaseState.lease.deviceId !== notificationLeaseState.deviceId);
 
   console.debug(
     '[SW push] appIsVisible:',
@@ -2266,8 +2360,11 @@ const onPushNotification = async (event: PushEvent) => {
     hasFreshDesktopDelayLeaseElsewhere
   );
 
-  if (hasVisibleClient || hasFreshDesktopDelayLeaseElsewhere) {
-    if (hasFreshDesktopDelayLeaseElsewhere) {
+  const shouldDelayForDesktopLease =
+    hasFreshDesktopDelayLeaseElsewhere && !isCallPushPayload(pushData);
+
+  if (hasVisibleClient || shouldDelayForDesktopLease) {
+    if (shouldDelayForDesktopLease) {
       await queueDelayedPushPayload(
         pushData,
         notificationLeaseState.lease?.expiresAt ?? Date.now()
