@@ -5,6 +5,13 @@ const UPDATE_CHECK_TIMEOUT_MS = 2500;
 const APPLY_UPDATE_TIMEOUT_MS = 4000;
 const UPDATE_CHECK_FAILURE_MESSAGE = 'Failed to check for updates. Reload the app and try again.';
 
+const hasPendingActiveUpdate = (registration: ServiceWorkerRegistration): boolean => {
+  const controller = navigator.serviceWorker.controller;
+  const active = registration.active;
+  if (!controller || !active) return false;
+  return active.scriptURL !== controller.scriptURL;
+};
+
 export type AppUpdateCheckResult =
   | {
       kind: 'update-available';
@@ -45,13 +52,6 @@ const waitForWaitingServiceWorker = async (
   registration: ServiceWorkerRegistration
 ): Promise<boolean> =>
   new Promise((resolve) => {
-    const hasPendingActiveUpdate = () =>
-      !!(
-        navigator.serviceWorker.controller &&
-        registration.active &&
-        registration.active !== navigator.serviceWorker.controller
-      );
-
     if (registration.waiting && navigator.serviceWorker.controller) {
       resolve(true);
       return;
@@ -81,7 +81,7 @@ const waitForWaitingServiceWorker = async (
         return;
       }
 
-      if (observedCurrentCheckUpdate && hasPendingActiveUpdate()) {
+      if (observedCurrentCheckUpdate && hasPendingActiveUpdate(registration)) {
         finish(true);
       }
     };
@@ -137,12 +137,7 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
     };
   }
 
-  const hasPendingActiveUpdate = !!(
-    navigator.serviceWorker.controller &&
-    registration.active &&
-    registration.active !== navigator.serviceWorker.controller
-  );
-  if (hasPendingActiveUpdate) {
+  if (hasPendingActiveUpdate(registration)) {
     return {
       kind: 'update-available',
       message: 'An update is ready to apply.',
@@ -158,12 +153,7 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
       : new Error(UPDATE_CHECK_FAILURE_MESSAGE);
   }
 
-  const hasPendingActiveUpdateAfterCheck = !!(
-    navigator.serviceWorker.controller &&
-    registration.active &&
-    registration.active !== navigator.serviceWorker.controller
-  );
-  if (hasPendingActiveUpdateAfterCheck) {
+  if (hasPendingActiveUpdate(registration)) {
     return {
       kind: 'update-available',
       message: 'An update is ready to apply.',

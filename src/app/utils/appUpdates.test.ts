@@ -20,6 +20,7 @@ vi.mock('$utils/reloadWithTelemetry', () => ({
 
 type MockServiceWorker = {
   postMessage: ReturnType<typeof vi.fn>;
+  scriptURL?: string;
   addEventListener?: ReturnType<typeof vi.fn>;
   removeEventListener?: ReturnType<typeof vi.fn>;
 };
@@ -95,9 +96,9 @@ describe('appUpdates', () => {
     expect(mockRegistration.update).not.toHaveBeenCalled();
   });
 
-  it('treats an active/controller mismatch as an applyable update', async () => {
-    const activeWorker = { postMessage: vi.fn() };
-    const controllerWorker = { postMessage: vi.fn() };
+  it('treats an active/controller script mismatch as an applyable update', async () => {
+    const activeWorker = { postMessage: vi.fn(), scriptURL: '/sw-next.js' };
+    const controllerWorker = { postMessage: vi.fn(), scriptURL: '/sw.js' };
     mockRegistration.waiting = null;
 
     Object.defineProperty(window, 'navigator', {
@@ -122,6 +123,39 @@ describe('appUpdates', () => {
       kind: 'update-available',
       message: 'An update is ready to apply.',
       canApply: true,
+    });
+  });
+
+  it('reports up to date when the active worker matches the current controller script', async () => {
+    const activeWorker = { postMessage: vi.fn(), scriptURL: '/sw.js' };
+    const controllerWorker = { postMessage: vi.fn(), scriptURL: '/sw.js' };
+    mockRegistration.waiting = null;
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        serviceWorker: {
+          controller: controllerWorker,
+          getRegistration: vi.fn().mockResolvedValue({
+            ...mockRegistration,
+            active: activeWorker,
+          }),
+          ready: Promise.resolve({
+            ...mockRegistration,
+            active: activeWorker,
+          }),
+          addEventListener: vi.fn(),
+        },
+      },
+    });
+
+    const resultPromise = checkForAppUpdates();
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual({
+      kind: 'up-to-date',
+      message: 'You are already on the latest available web app version.',
+      canApply: false,
     });
   });
 
@@ -192,9 +226,9 @@ describe('appUpdates', () => {
   });
 
   it('reports an available update when update() swaps in a new active worker without waiting', async () => {
-    const controllerWorker = { postMessage: vi.fn() };
+    const controllerWorker = { postMessage: vi.fn(), scriptURL: '/sw.js' };
     const initialActive = controllerWorker;
-    const nextActive = { postMessage: vi.fn() };
+    const nextActive = { postMessage: vi.fn(), scriptURL: '/sw-next.js' };
 
     mockRegistration = {
       ...createRegistration(),
