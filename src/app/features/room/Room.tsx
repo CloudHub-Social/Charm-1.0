@@ -158,7 +158,11 @@ export function Room() {
               {screenSize === ScreenSize.Desktop && (
                 <Line variant="Background" direction="Vertical" size="300" />
               )}
-              <CallChatView />
+              <CallChatView
+                onOpenMobileMembersDrawer={
+                  isMobileMembersSurface ? () => setMobileMembersDrawerOpen(true) : undefined
+                }
+              />
             </>
           )}
           {!callView &&

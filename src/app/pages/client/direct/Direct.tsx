@@ -380,9 +380,18 @@ export function Direct() {
 
   const lastRoomId = useAtomValue(lastVisitedRoomIdAtom);
   const handleSwipeToRoom = useCallback(() => {
-    if (!mobileOrTabletLayout() || !lastRoomId) return;
-    navigate(getDirectRoomPath(getCanonicalAliasOrRoomId(mx, lastRoomId)));
-  }, [lastRoomId, mx, navigate]);
+    if (!mobileOrTabletLayout()) return;
+
+    const fallbackRoomId =
+      selectedRoomId && directs.includes(selectedRoomId)
+        ? selectedRoomId
+        : lastRoomId && directs.includes(lastRoomId)
+          ? lastRoomId
+          : undefined;
+    if (!fallbackRoomId) return;
+
+    navigate(getDirectRoomPath(getCanonicalAliasOrRoomId(mx, fallbackRoomId)));
+  }, [directs, lastRoomId, mx, navigate, selectedRoomId]);
 
   return (
     <Box

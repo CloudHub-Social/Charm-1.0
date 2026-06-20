@@ -12,7 +12,11 @@ import { settingsAtom } from '$state/settings';
 import { mobileOrTablet } from '$utils/user-agent';
 import { useState, useEffect } from 'react';
 
-export function CallChatView() {
+type CallChatViewProps = {
+  onOpenMobileMembersDrawer?: () => void;
+};
+
+export function CallChatView({ onOpenMobileMembersDrawer }: CallChatViewProps) {
   const { eventId } = useParams();
   const setChat = useSetAtom(callChatAtom);
   const screenSize = useScreenSizeContext();
@@ -79,7 +83,7 @@ export function CallChatView() {
           </Box>
         </PageHeader>
         <Box grow="Yes" direction="Column">
-          <RoomView eventId={eventId} />
+          <RoomView eventId={eventId} onOpenMobileMembersDrawer={onOpenMobileMembersDrawer} />
         </Box>
       </Page>
     </Box>
