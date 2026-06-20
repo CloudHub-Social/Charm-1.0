@@ -373,6 +373,13 @@ export function RoomTimeline({
   const unreadBridgeContextReadyRef = useRef(false);
   const [unreadBridgeTick, setUnreadBridgeTick] = useState(0);
 
+  const resetUnreadBridge = useCallback(() => {
+    unreadBridgeActiveRef.current = false;
+    unreadBridgeAttemptsRef.current = 0;
+    unreadBridgeAwaitingContextLoadRef.current = false;
+    unreadBridgeContextReadyRef.current = false;
+  }, []);
+
   const lastProgrammaticBottomPinAtRef = useRef(0);
 
   if (currentRoomIdRef.current !== room.roomId) {
@@ -381,10 +388,7 @@ export function RoomTimeline({
     currentRoomIdRef.current = room.roomId;
     pendingReadyRef.current = false;
     jumpSucceededRef.current = false;
-    unreadBridgeActiveRef.current = false;
-    unreadBridgeAttemptsRef.current = 0;
-    unreadBridgeAwaitingContextLoadRef.current = false;
-    unreadBridgeContextReadyRef.current = false;
+    resetUnreadBridge();
     if (initialScrollTimerRef.current !== undefined) {
       clearTimeout(initialScrollTimerRef.current);
       initialScrollTimerRef.current = undefined;
@@ -975,6 +979,7 @@ export function RoomTimeline({
     autopagAttemptsRef.current = 0;
     // Reset jump success tracking for this new eventId.
     jumpSucceededRef.current = false;
+    resetUnreadBridge();
     // Reset "was at bottom" flag so pagination after the jump doesn't scroll to bottom.
     wasAtBottomBeforePaginationRef.current = false;
     // Cancel any pending error-recovery scroll timer from a previous eventId load
@@ -1029,7 +1034,7 @@ export function RoomTimeline({
         eventIdLoadInProgressRef.current = false;
         loadingEventIdRef.current = null;
       });
-  }, [eventId, jumpMode, room.roomId]);
+  }, [eventId, jumpMode, resetUnreadBridge, room.roomId]);
 
   // Recovery: loadEventTimeline's onError callback restores the live timeline but
   // scrollToBottom fires before the VList has rendered the new events (the list is
@@ -1224,10 +1229,7 @@ export function RoomTimeline({
     if (unreadBridgeAction === 'idle') return;
 
     if (unreadBridgeAction === 'complete') {
-      unreadBridgeActiveRef.current = false;
-      unreadBridgeAttemptsRef.current = 0;
-      unreadBridgeAwaitingContextLoadRef.current = false;
-      unreadBridgeContextReadyRef.current = false;
+      resetUnreadBridge();
       setUnreadInfo((prev) =>
         prev
           ? {
@@ -1241,10 +1243,7 @@ export function RoomTimeline({
     }
 
     if (unreadBridgeAction === 'stop') {
-      unreadBridgeActiveRef.current = false;
-      unreadBridgeAttemptsRef.current = 0;
-      unreadBridgeAwaitingContextLoadRef.current = false;
-      unreadBridgeContextReadyRef.current = false;
+      resetUnreadBridge();
       return;
     }
 
@@ -1252,6 +1251,7 @@ export function RoomTimeline({
     void timelineSyncRef.current.handleTimelinePagination(false);
   }, [
     room,
+    resetUnreadBridge,
     unreadInfo?.readUptoEventId,
     unreadBridgeTick,
     setUnreadInfo,
@@ -2030,9 +2030,7 @@ export function RoomTimeline({
                   unreadBridgeContextReadyRef.current = true;
                 })
                 .catch(() => {
-                  unreadBridgeActiveRef.current = false;
-                  unreadBridgeAttemptsRef.current = 0;
-                  unreadBridgeContextReadyRef.current = false;
+                  resetUnreadBridge();
                 })
                 .finally(() => {
                   unreadBridgeAwaitingContextLoadRef.current = false;
@@ -2211,10 +2209,7 @@ export function RoomTimeline({
               onClick={() => {
                 if (eventId) navigateRoom(room.roomId, undefined, { replace: true });
                 releaseJumpLock('jump_to_latest');
-                unreadBridgeActiveRef.current = false;
-                unreadBridgeAttemptsRef.current = 0;
-                unreadBridgeAwaitingContextLoadRef.current = false;
-                unreadBridgeContextReadyRef.current = false;
+                resetUnreadBridge();
                 lastProgrammaticBottomPinAtRef.current = Date.now();
                 setAtBottom(true);
                 startJumpScrollBlock(true);
