@@ -69,6 +69,8 @@ export function useKeyboardHeight() {
     let baselineHeight = window.innerHeight;
     let stabilityTimer: ReturnType<typeof setTimeout> | null = null;
     let closeVerificationTimer: number | null = null;
+    let closeVerificationAttempts = 0;
+    let closeVerificationForceCloseOnTimeout = false;
     let pendingValue = 0;
 
     const setCSSVars = (viewportHeight: number) => {
@@ -95,6 +97,8 @@ export function useKeyboardHeight() {
         clearTimeout(closeVerificationTimer);
         closeVerificationTimer = null;
       }
+      closeVerificationAttempts = 0;
+      closeVerificationForceCloseOnTimeout = false;
       pendingValue = 0;
       baselineHeight = window.innerHeight;
       clearCSSVars();
@@ -104,7 +108,16 @@ export function useKeyboardHeight() {
     };
 
     const verifyKeyboardClosed = (forceCloseOnTimeout = false) => {
-      let attempts = 0;
+      if (closeVerificationTimer) {
+        if (closeVerificationForceCloseOnTimeout && !forceCloseOnTimeout) {
+          return;
+        }
+
+        clearTimeout(closeVerificationTimer);
+      }
+
+      closeVerificationAttempts = 0;
+      closeVerificationForceCloseOnTimeout ||= forceCloseOnTimeout;
 
       const check = () => {
         closeVerificationTimer = null;
@@ -114,9 +127,9 @@ export function useKeyboardHeight() {
           return;
         }
 
-        attempts += 1;
-        if (attempts >= 8) {
-          if (forceCloseOnTimeout) {
+        closeVerificationAttempts += 1;
+        if (closeVerificationAttempts >= 8) {
+          if (closeVerificationForceCloseOnTimeout) {
             markKeyboardClosed();
           }
           return;
@@ -125,9 +138,6 @@ export function useKeyboardHeight() {
         closeVerificationTimer = window.setTimeout(check, 50);
       };
 
-      if (closeVerificationTimer) {
-        clearTimeout(closeVerificationTimer);
-      }
       closeVerificationTimer = window.setTimeout(check, 50);
     };
 
