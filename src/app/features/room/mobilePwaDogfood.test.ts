@@ -80,8 +80,9 @@ describe('mobile PWA dogfood contract', () => {
     expect(membersDrawer).toContain(
       "top: isMobile ? 'var(--sable-safe-area-top, 0px)' : undefined"
     );
+    expect(membersDrawer).toContain('bottom: isMobile');
     expect(membersDrawer).toContain(
-      "bottom: isMobile ? 'var(--sable-safe-area-bottom, 0px)' : undefined"
+      "? 'var(--sable-safe-area-bottom-raw, var(--sable-safe-area-bottom, 0px))'"
     );
   });
 

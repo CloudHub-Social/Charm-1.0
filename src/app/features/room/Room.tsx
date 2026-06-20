@@ -165,8 +165,7 @@ export function Room() {
               />
             </>
           )}
-          {!callView &&
-            isMembersDrawerOpen &&
+          {isMembersDrawerOpen &&
             (!isMobileMembersSurface ? (
               <>
                 <Line variant="Background" direction="Vertical" size="300" />

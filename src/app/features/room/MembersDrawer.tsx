@@ -363,7 +363,9 @@ export function MembersDrawer({ room, members, onClose }: MembersDrawerProps) {
         position: isMobile ? 'fixed' : 'relative',
         top: isMobile ? 'var(--sable-safe-area-top, 0px)' : undefined,
         right: isMobile ? 'var(--sable-safe-area-right, 0px)' : undefined,
-        bottom: isMobile ? 'var(--sable-safe-area-bottom, 0px)' : undefined,
+        bottom: isMobile
+          ? 'var(--sable-safe-area-bottom-raw, var(--sable-safe-area-bottom, 0px))'
+          : undefined,
         left: isMobile ? 'var(--sable-safe-area-left, 0px)' : undefined,
         zIndex: isMobile ? 20 : undefined,
         width: isMobile ? 'auto' : toRem(curWidth),

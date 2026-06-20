@@ -68,7 +68,7 @@ import {
 import { useDirectCreateSelected, useDirectSearchSelected } from '$hooks/router/useDirectSelected';
 import { useDirectRooms } from './useDirectRooms';
 import { SidebarResizer } from '$pages/client/sidebar/SidebarResizer';
-import { mobileOrTabletLayout } from '$utils/user-agent';
+import { mobileOrTablet, mobileOrTabletLayout } from '$utils/user-agent';
 import { useScreenSizeContext, ScreenSize } from '$hooks/useScreenSize';
 import { usePullToRefresh } from '$hooks/usePullToRefresh';
 import { getSlidingSyncManager } from '$client/initMatrix';
@@ -380,7 +380,7 @@ export function Direct() {
 
   const lastRoomId = useAtomValue(lastVisitedRoomIdAtom);
   const handleSwipeToRoom = useCallback(() => {
-    if (!mobileOrTabletLayout()) return;
+    if (!mobileOrTablet()) return;
 
     const fallbackRoomId =
       selectedRoomId && directs.includes(selectedRoomId)

@@ -392,15 +392,15 @@ function useMobileLongPress(callback: () => void, delay = 500) {
       if (!mobileOrTablet()) return;
       const touch = e.touches[0];
       if (!touch) return;
-      restoreSelectionRef.current?.();
-      restoreSelectionRef.current = suppressUserSelect();
-      installSelectionGuard();
       startPosRef.current = { x: touch.clientX, y: touch.clientY };
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
         requestAnimationFrame(() => {
           const selection = window.getSelection();
           if (selection && !selection.isCollapsed) return;
+          restoreSelectionRef.current?.();
+          restoreSelectionRef.current = suppressUserSelect();
+          installSelectionGuard();
           clearTextSelection();
           callback();
         });
