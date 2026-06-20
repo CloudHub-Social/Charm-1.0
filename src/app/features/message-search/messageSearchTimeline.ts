@@ -20,5 +20,7 @@ export const flattenTimelineSearchItems = (
     return items;
   }
 
-  return items.toSorted((a, b) => (b.event.origin_server_ts ?? 0) - (a.event.origin_server_ts ?? 0));
+  return items.toSorted(
+    (a, b) => (b.event.origin_server_ts ?? 0) - (a.event.origin_server_ts ?? 0)
+  );
 };
