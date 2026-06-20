@@ -65,6 +65,7 @@ const SW_DELAYED_PUSH_QUEUE_CACHE = 'sable-sw-delayed-push-v1';
 const SW_DELAYED_PUSH_QUEUE_URL = '/sw-delayed-push-queue';
 const SW_DELAYED_PUSH_QUEUE_LIMIT = 50;
 let delayedPushFlushTimeoutId: ReturnType<typeof setTimeout> | undefined;
+let delayedPushFlushScheduleToken = 0;
 const { handlePushNotificationPushData } = createPushNotifications(
   self,
   () => ({
@@ -411,6 +412,24 @@ function isCallPushPayload(pushData: unknown): boolean {
   );
 }
 
+async function isMinimalCallPushPayload(
+  pushData: unknown,
+  session: SessionInfo | undefined
+): Promise<boolean> {
+  if (!session || !isMinimalPushPayload(pushData)) return false;
+  const rawEvent = await fetchRawEvent(
+    session.baseUrl,
+    session.accessToken,
+    pushData.room_id,
+    pushData.event_id
+  );
+  if (!rawEvent) return false;
+  return isCallPushPayload({
+    type: rawEvent.type,
+    content: rawEvent.content,
+  });
+}
+
 function resolvePushUnreadCount(pushData: unknown): number | undefined {
   if (!pushData || typeof pushData !== 'object') return undefined;
   const payload = pushData as {
@@ -723,11 +742,13 @@ async function flushDelayedPushQueue(): Promise<'idle' | 'paused_visible' | 'del
 }
 
 function scheduleDelayedPushQueueFlush(minimumDelayMs = 0): void {
+  const scheduleToken = ++delayedPushFlushScheduleToken;
   if (delayedPushFlushTimeoutId) {
     clearTimeout(delayedPushFlushTimeoutId);
     delayedPushFlushTimeoutId = undefined;
   }
   void loadDelayedPushQueue().then((queue) => {
+    if (scheduleToken !== delayedPushFlushScheduleToken) return;
     const nextReleaseAt = queue.reduce<number | null>((earliest, entry) => {
       if (earliest === null || entry.releaseAt < earliest) return entry.releaseAt;
       return earliest;
@@ -735,6 +756,7 @@ function scheduleDelayedPushQueueFlush(minimumDelayMs = 0): void {
     if (nextReleaseAt === null) return;
     delayedPushFlushTimeoutId = setTimeout(
       () => {
+        if (scheduleToken !== delayedPushFlushScheduleToken) return;
         delayedPushFlushTimeoutId = undefined;
         void flushDelayedPushQueue().then((result) => {
           if (result === 'paused_visible') {
@@ -2564,6 +2586,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 
 const onPushNotification = async (event: PushEvent) => {
   if (!event?.data) return;
+  const pushData = event.data.json();
 
   // The SW may have been restarted by the OS (iOS is aggressive about this),
   // so in-memory settings would be at their defaults.  Reload from cache and
@@ -2574,107 +2597,111 @@ const onPushNotification = async (event: PushEvent) => {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }),
   ]);
 
-  await flushDelayedPushQueue();
-  scheduleDelayedPushQueueFlush();
-  const pushData = event.data.json();
   const pushUserId = extractPushUserId(pushData) ?? session?.userId;
   await refreshNotificationLeaseStateForUser(pushUserId);
-  if (await handleReadStateOnlyPush(pushData)) {
-    return;
-  }
-
-  const focusedClientCount = focusedWindowClientCount(clients);
-  const browserVisibleClientCount = visibleWindowClientCount(clients);
-  const hasRecentAppVisibilityHeartbeat =
-    appIsVisible && Date.now() - appVisibleHeartbeatAt <= APP_VISIBLE_HEARTBEAT_MAX_AGE_MS;
-  const hasVisibleClient = hasRecentAppVisibilityHeartbeat || browserVisibleClientCount > 0;
-  const hasFreshDesktopDelayLeaseElsewhere = isLeaseHeldByDifferentKnownDevice(
-    notificationLeaseState,
-    pushUserId
-  );
-
-  console.debug(
-    '[SW push] appIsVisible:',
-    appIsVisible,
-    '| hasRecentAppVisibilityHeartbeat:',
-    hasRecentAppVisibilityHeartbeat,
-    '| focusedClientCount:',
-    focusedClientCount,
-    '| browserVisibleClientCount:',
-    browserVisibleClientCount,
-    '| clients:',
-    clients.map((c) => ({
-      url: c.url,
-      visibility: c.visibilityState,
-      focused: c.focused,
-    }))
-  );
-  console.debug('[SW push] hasVisibleClient:', hasVisibleClient);
-  console.debug(
-    '[SW push] hasFreshDesktopDelayLeaseElsewhere:',
-    hasFreshDesktopDelayLeaseElsewhere
-  );
-
-  const shouldDelayForDesktopLease =
-    hasFreshDesktopDelayLeaseElsewhere && !isCallPushPayload(pushData);
-  const canQueueDesktopDelay = shouldDelayForDesktopLease;
-
-  if (hasVisibleClient || canQueueDesktopDelay) {
-    if (canQueueDesktopDelay) {
-      await queueDelayedPushPayload(
-        pushData,
-        notificationLeaseState.lease?.expiresAt ?? Date.now(),
-        pushUserId
-      );
-      scheduleDelayedPushQueueFlush();
+  try {
+    if (await handleReadStateOnlyPush(pushData)) {
+      return;
     }
-    console.debug(
-      '[SW push] suppressing OS notification — app is visible or another client holds desktop-delay lease'
+
+    const focusedClientCount = focusedWindowClientCount(clients);
+    const browserVisibleClientCount = visibleWindowClientCount(clients);
+    const hasRecentAppVisibilityHeartbeat =
+      appIsVisible && Date.now() - appVisibleHeartbeatAt <= APP_VISIBLE_HEARTBEAT_MAX_AGE_MS;
+    const hasVisibleClient = hasRecentAppVisibilityHeartbeat || browserVisibleClientCount > 0;
+    const hasFreshDesktopDelayLeaseElsewhere = isLeaseHeldByDifferentKnownDevice(
+      notificationLeaseState,
+      pushUserId
     );
-    return;
+    const isCallPush =
+      isCallPushPayload(pushData) || (await isMinimalCallPushPayload(pushData, session));
+
+    console.debug(
+      '[SW push] appIsVisible:',
+      appIsVisible,
+      '| hasRecentAppVisibilityHeartbeat:',
+      hasRecentAppVisibilityHeartbeat,
+      '| focusedClientCount:',
+      focusedClientCount,
+      '| browserVisibleClientCount:',
+      browserVisibleClientCount,
+      '| clients:',
+      clients.map((c) => ({
+        url: c.url,
+        visibility: c.visibilityState,
+        focused: c.focused,
+      }))
+    );
+    console.debug('[SW push] hasVisibleClient:', hasVisibleClient);
+    console.debug(
+      '[SW push] hasFreshDesktopDelayLeaseElsewhere:',
+      hasFreshDesktopDelayLeaseElsewhere
+    );
+
+    const shouldDelayForDesktopLease = hasFreshDesktopDelayLeaseElsewhere && !isCallPush;
+    const canQueueDesktopDelay = shouldDelayForDesktopLease;
+
+    if (hasVisibleClient || canQueueDesktopDelay) {
+      if (canQueueDesktopDelay) {
+        await queueDelayedPushPayload(
+          pushData,
+          notificationLeaseState.lease?.expiresAt ?? Date.now(),
+          pushUserId
+        );
+      }
+      console.debug(
+        '[SW push] suppressing OS notification — app is visible or another client holds desktop-delay lease'
+      );
+      return;
+    }
+    const payloadType = pushTelemetryPayloadType(pushData);
+    console.debug('[SW push] raw payload:', JSON.stringify(pushData, null, 2));
+
+    // Track push notification arrival
+    await recordPushTelemetry('received', {
+      has_clients: clients.length > 0,
+      focused_client_count: focusedClientCount,
+      browser_visible_client_count: browserVisibleClientCount,
+      payload_type: payloadType,
+    });
+    postSentryMetric('sable.push.received', 1, {
+      has_clients: clients.length > 0,
+      focused_client_count: focusedClientCount,
+      browser_visible_client_count: browserVisibleClientCount,
+      payload_type: payloadType,
+    }).catch(() => undefined);
+    postSentryBreadcrumb('notification.push', 'Push received by service worker', 'info', {
+      clientCount: clients.length,
+      focusedClientCount,
+      browserVisibleClientCount,
+      payloadType,
+    }).catch(() => undefined);
+
+    await applyPushBadgeState(pushData);
+
+    if (isDeclarativeWebPushPayload(pushData)) {
+      const { title, options } = buildDeclarativeNotificationOptions(pushData);
+      await self.registration.showNotification(title, options);
+      await recordPushTelemetry('shown_os', { payload_type: 'declarative' });
+      return;
+    }
+
+    // event_id_only format: fetch the event ourselves and (for E2EE rooms) try
+    // to relay decryption to an open app tab.
+    if (isMinimalPushPayload(pushData)) {
+      console.debug('[SW push] minimal payload detected — fetching event', pushData.event_id);
+      await handleMinimalPushPayload(pushData.room_id, pushData.event_id, clients);
+      return;
+    }
+
+    await handlePushNotificationPushData(pushData);
+    await recordPushTelemetry('shown_os', { payload_type: 'full' });
+  } finally {
+    const delayedQueueFlushResult = await flushDelayedPushQueue().catch(() => 'idle' as const);
+    scheduleDelayedPushQueueFlush(
+      delayedQueueFlushResult === 'paused_visible' ? APP_VISIBLE_HEARTBEAT_MAX_AGE_MS : 0
+    );
   }
-  const payloadType = pushTelemetryPayloadType(pushData);
-  console.debug('[SW push] raw payload:', JSON.stringify(pushData, null, 2));
-
-  // Track push notification arrival
-  await recordPushTelemetry('received', {
-    has_clients: clients.length > 0,
-    focused_client_count: focusedClientCount,
-    browser_visible_client_count: browserVisibleClientCount,
-    payload_type: payloadType,
-  });
-  postSentryMetric('sable.push.received', 1, {
-    has_clients: clients.length > 0,
-    focused_client_count: focusedClientCount,
-    browser_visible_client_count: browserVisibleClientCount,
-    payload_type: payloadType,
-  }).catch(() => undefined);
-  postSentryBreadcrumb('notification.push', 'Push received by service worker', 'info', {
-    clientCount: clients.length,
-    focusedClientCount,
-    browserVisibleClientCount,
-    payloadType,
-  }).catch(() => undefined);
-
-  await applyPushBadgeState(pushData);
-
-  if (isDeclarativeWebPushPayload(pushData)) {
-    const { title, options } = buildDeclarativeNotificationOptions(pushData);
-    await self.registration.showNotification(title, options);
-    await recordPushTelemetry('shown_os', { payload_type: 'declarative' });
-    return;
-  }
-
-  // event_id_only format: fetch the event ourselves and (for E2EE rooms) try
-  // to relay decryption to an open app tab.
-  if (isMinimalPushPayload(pushData)) {
-    console.debug('[SW push] minimal payload detected — fetching event', pushData.event_id);
-    await handleMinimalPushPayload(pushData.room_id, pushData.event_id, clients);
-    return;
-  }
-
-  await handlePushNotificationPushData(pushData);
-  await recordPushTelemetry('shown_os', { payload_type: 'full' });
 };
 
 // ---------------------------------------------------------------------------

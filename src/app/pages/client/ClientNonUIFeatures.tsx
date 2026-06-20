@@ -484,6 +484,7 @@ function MessageNotifications() {
   const appBaseUrl = useSettingsLinkBaseUrl();
   const [showNotifications] = useSetting(settingsAtom, 'useInAppNotifications');
   const [showSystemNotifications] = useSetting(settingsAtom, 'useSystemNotifications');
+  const [usePushNotifications] = useSetting(settingsAtom, 'usePushNotifications');
   const [notificationSound] = useSetting(settingsAtom, 'isNotificationSounds');
   const [backgroundNotificationSounds] = useSetting(settingsAtom, 'backgroundNotificationSounds');
   const [showMessageContent] = useSetting(settingsAtom, 'showMessageContentInNotifications');
@@ -519,11 +520,13 @@ function MessageNotifications() {
 
   useEffect(() => {
     const pushProcessor = new PushProcessor(mx);
+    const pendingDecryptListeners = pendingDecryptListenersRef.current;
     // Tracks when each event first arrived so we can measure notification delivery latency
     const notifyTimerMap = new Map<string, number>();
 
     const shouldQueueNotificationLocally = () =>
       document.visibilityState === 'visible' ||
+      !usePushNotifications ||
       !('serviceWorker' in navigator) ||
       !navigator.serviceWorker.controller;
 
@@ -553,12 +556,12 @@ function MessageNotifications() {
       room: Parameters<RoomEventHandlerMap[RoomEvent.Timeline]>[1],
       data: TimelineEventData
     ) => {
-      if (pendingDecryptListenersRef.current.has(eventId)) {
+      if (pendingDecryptListeners.has(eventId)) {
         return;
       }
 
       const handleDecrypted = () => {
-        pendingDecryptListenersRef.current.delete(eventId);
+        pendingDecryptListeners.delete(eventId);
         if (queuedNotificationEventsRef.current.has(eventId)) {
           const leaseExpiresAt = leaseExpiresAtRef.current;
           const leaseStillFresh = typeof leaseExpiresAt === 'number' && leaseExpiresAt > Date.now();
@@ -574,9 +577,7 @@ function MessageNotifications() {
       };
 
       mEvent.once(MatrixEventEvent.Decrypted, handleDecrypted);
-      pendingDecryptListenersRef.current.set(eventId, () =>
-        mEvent.off(MatrixEventEvent.Decrypted, handleDecrypted)
-      );
+      pendingDecryptListeners.set(eventId, () => mEvent.off(MatrixEventEvent.Decrypted, handleDecrypted));
     };
 
     queuedNotificationEventsRef.current.forEach(({ mEvent, room, data }, queuedEventId) => {
@@ -892,8 +893,8 @@ function MessageNotifications() {
         flushQueuedNotificationsRef.current = null;
       }
       mx.removeListener(RoomEvent.Timeline, handleTimelineEvent);
-      pendingDecryptListenersRef.current.forEach((cleanup) => cleanup());
-      pendingDecryptListenersRef.current.clear();
+      pendingDecryptListeners.forEach((cleanup) => cleanup());
+      pendingDecryptListeners.clear();
     };
   }, [
     mx,
@@ -910,6 +911,7 @@ function MessageNotifications() {
     navigate,
     appBaseUrl,
     useAuthentication,
+    usePushNotifications,
   ]);
 
   useEffect(() => {
