@@ -1,17 +1,8 @@
-import { useEffect, useState } from "react";
-import {
-  Box,
-  Button,
-  Header,
-  IconButton,
-  Menu,
-  MenuItem,
-  Text,
-  config,
-} from "folds";
-import { useParams } from "react-router-dom";
-import { Modal500 } from "$components/Modal500";
-import { Page, PageNav, PageNavContent, PageRoot } from "$components/page";
+import { useEffect, useState } from 'react';
+import { Box, Button, Header, IconButton, Menu, MenuItem, Text, config } from 'folds';
+import { useParams } from 'react-router-dom';
+import { Modal500 } from '$components/Modal500';
+import { Page, PageNav, PageNavContent, PageRoot } from '$components/page';
 import {
   ClockCounterClockwise,
   PaperPlaneTilt,
@@ -21,14 +12,11 @@ import {
   GearSix,
   User,
   X,
-} from "$components/icons/phosphor";
-import {
-  SettingMenuSelector,
-  type SettingMenuOption,
-} from "$components/setting-menu-selector";
-import { EmojiGroupId, emojis } from "$plugins/emoji";
-import { scaleSystemEmoji } from "$plugins/react-custom-html-parser";
-import { MessageTextBody } from "$components/message/layout/Base";
+} from '$components/icons/phosphor';
+import { SettingMenuSelector, type SettingMenuOption } from '$components/setting-menu-selector';
+import { EmojiGroupId, emojis } from '$plugins/emoji';
+import { scaleSystemEmoji } from '$plugins/react-custom-html-parser';
+import { MessageTextBody } from '$components/message/layout/Base';
 import {
   EmojiBoardLayout,
   EmojiGroup,
@@ -37,18 +25,13 @@ import {
   Sidebar,
   SidebarDivider,
   SidebarStack,
-} from "$components/emoji-board/components";
-import * as emojiBoardCss from "$components/emoji-board/components/styles.css";
-import {
-  APP_FEATURES_URL,
-  APP_SOURCE_URL,
-  APP_SUPPORT_URL,
-} from "$app/config/brand";
-import { getMessageSearchShortcutPath } from "$features/search/searchShortcut";
-import * as mobileMessageMenuCss from "$features/room/message/MobileMessageMenu.css";
+} from '$components/emoji-board/components';
+import * as emojiBoardCss from '$components/emoji-board/components/styles.css';
+import { APP_FEATURES_URL, APP_SOURCE_URL, APP_SUPPORT_URL } from '$app/config/brand';
+import { getMessageSearchShortcutPath } from '$features/search/searchShortcut';
+import * as mobileMessageMenuCss from '$features/room/message/MobileMessageMenu.css';
 
-const svgDataUri = (svg: string): string =>
-  `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+const svgDataUri = (svg: string): string => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 
 const smokeCustomEmojiA = svgDataUri(`
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
@@ -166,8 +149,8 @@ function SmokeRoomFooter() {
           shrink="No"
           direction="Column"
           style={{
-            backgroundColor: "var(--sable-surface-container)",
-            paddingBottom: "var(--sable-safe-area-bottom, 0px)",
+            backgroundColor: 'var(--sable-surface-container)',
+            paddingBottom: 'var(--sable-safe-area-bottom, 0px)',
           }}
         >
           <div style={{ padding: `0 ${config.space.S400}` }}>
@@ -183,7 +166,7 @@ function SmokeRoomFooter() {
                 style={{
                   padding: config.space.S300,
                   borderRadius: config.radii.R400,
-                  backgroundColor: "var(--sable-surface)",
+                  backgroundColor: 'var(--sable-surface)',
                 }}
               >
                 <Text size="T300">Following the conversation</Text>
@@ -211,28 +194,28 @@ function SmokeRoomSpacing() {
               paddingLeft: config.space.S200,
               paddingRight: config.space.S400,
               paddingBottom: config.space.S700,
-              backgroundColor: "var(--sable-surface)",
+              backgroundColor: 'var(--sable-surface)',
             }}
           >
             {Array.from({ length: 5 }, (_, index) => (
               <Box
                 key={index}
-                data-testid={index === 4 ? "smoke-last-event" : undefined}
+                data-testid={index === 4 ? 'smoke-last-event' : undefined}
                 style={{
-                  alignSelf: index % 2 === 0 ? "stretch" : "flex-start",
-                  width: index % 2 === 0 ? "100%" : "max-content",
-                  maxWidth: "100%",
+                  alignSelf: index % 2 === 0 ? 'stretch' : 'flex-start',
+                  width: index % 2 === 0 ? '100%' : 'max-content',
+                  maxWidth: '100%',
                   padding: config.space.S300,
                   borderRadius: config.radii.R400,
                   backgroundColor:
                     index === 4
-                      ? "var(--sable-surface-container-high)"
-                      : "var(--sable-surface-container)",
+                      ? 'var(--sable-surface-container-high)'
+                      : 'var(--sable-surface-container)',
                 }}
               >
                 <Text size="T300">
                   {index === 4
-                    ? "Last visible timeline event should keep breathing room above typing and composer."
+                    ? 'Last visible timeline event should keep breathing room above typing and composer.'
                     : `Timeline event ${index + 1}`}
                 </Text>
               </Box>
@@ -242,10 +225,10 @@ function SmokeRoomSpacing() {
             data-testid="smoke-typing-indicator"
             alignItems="Center"
             style={{
-              minHeight: "28px",
+              minHeight: '28px',
               padding: `0 ${config.space.S500}`,
-              backgroundColor: "var(--sable-surface-container)",
-              borderTop: "1px solid var(--sable-border-subtle)",
+              backgroundColor: 'var(--sable-surface-container)',
+              borderTop: '1px solid var(--sable-border-subtle)',
             }}
           >
             <Text size="T300">Someone is typing...</Text>
@@ -254,8 +237,8 @@ function SmokeRoomSpacing() {
             shrink="No"
             direction="Column"
             style={{
-              backgroundColor: "var(--sable-surface-container)",
-              paddingBottom: "var(--sable-safe-area-bottom, 0px)",
+              backgroundColor: 'var(--sable-surface-container)',
+              paddingBottom: 'var(--sable-safe-area-bottom, 0px)',
             }}
           >
             <div style={{ padding: `0 ${config.space.S400}` }}>
@@ -271,7 +254,7 @@ function SmokeRoomSpacing() {
                   style={{
                     padding: config.space.S300,
                     borderRadius: config.radii.R400,
-                    backgroundColor: "var(--sable-surface)",
+                    backgroundColor: 'var(--sable-surface)',
                   }}
                 >
                   <Text size="T300">Composer</Text>
@@ -283,8 +266,8 @@ function SmokeRoomSpacing() {
         <Box
           data-testid="smoke-drawer-divider"
           style={{
-            width: "1px",
-            backgroundColor: "var(--sable-border-subtle)",
+            width: '1px',
+            backgroundColor: 'var(--sable-border-subtle)',
           }}
         />
         <Box
@@ -293,9 +276,9 @@ function SmokeRoomSpacing() {
           direction="Column"
           gap="200"
           style={{
-            width: "320px",
+            width: '320px',
             padding: config.space.S400,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="H4">Members</Text>
@@ -309,9 +292,7 @@ function SmokeRoomSpacing() {
 }
 
 function SmokeEmojiPolish() {
-  const peopleEmoji = emojis
-    .filter((emoji) => emoji.group === 0 || emoji.group === 1)
-    .slice(0, 12);
+  const peopleEmoji = emojis.filter((emoji) => emoji.group === 0 || emoji.group === 1).slice(0, 12);
   const natureEmoji = emojis.filter((emoji) => emoji.group === 3).slice(0, 12);
 
   return (
@@ -323,7 +304,7 @@ function SmokeEmojiPolish() {
         style={{
           minHeight: 0,
           padding: config.space.S400,
-          backgroundColor: "var(--sable-surface)",
+          backgroundColor: 'var(--sable-surface)',
         }}
       >
         <Box
@@ -332,41 +313,34 @@ function SmokeEmojiPolish() {
           style={{
             padding: config.space.S400,
             borderRadius: config.radii.R400,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="H4">Timeline emoji scaling</Text>
-          <MessageTextBody
-            jumboEmoji="normal"
-            data-testid="smoke-jumbo-emoji-line"
-          >
-            {scaleSystemEmoji("❤️")}
+          <MessageTextBody jumboEmoji="normal" data-testid="smoke-jumbo-emoji-line">
+            {scaleSystemEmoji('❤️')}
           </MessageTextBody>
           <Box
             data-testid="smoke-emoji-inline-line"
             alignItems="Center"
             gap="200"
-            style={{ flexWrap: "wrap", lineHeight: 1.35 }}
+            style={{ flexWrap: 'wrap', lineHeight: 1.35 }}
           >
             <Text size="T300">Inline:</Text>
-            <Text size="T300">
-              {scaleSystemEmoji("Status checks ✅ 😮 🫩 👍🏽")}
-            </Text>
+            <Text size="T300">{scaleSystemEmoji('Status checks ✅ 😮 🫩 👍🏽')}</Text>
           </Box>
           <Text size="T300" data-testid="smoke-emoji-baseline-line">
-            <span data-testid="smoke-emoji-baseline-text">Baseline check</span>{" "}
-            {scaleSystemEmoji("🫩 ✅ 😮")}
+            <span data-testid="smoke-emoji-baseline-text">Baseline check</span>{' '}
+            {scaleSystemEmoji('🫩 ✅ 😮')}
           </Text>
           <Box
             data-testid="smoke-emoji-fixed-cell-line"
             alignItems="Center"
             gap="200"
-            style={{ flexWrap: "wrap", lineHeight: 1.35 }}
+            style={{ flexWrap: 'wrap', lineHeight: 1.35 }}
           >
             <Text size="T300">Fixed-cell:</Text>
-            <Text size="T300">
-              {scaleSystemEmoji("Wordle ⬛🟨🟩 should stay evenly spaced")}
-            </Text>
+            <Text size="T300">{scaleSystemEmoji('Wordle ⬛🟨🟩 should stay evenly spaced')}</Text>
           </Box>
           <Box
             data-testid="smoke-emoji-stacked-lines"
@@ -374,13 +348,9 @@ function SmokeEmojiPolish() {
             gap="100"
             style={{ lineHeight: 1.35 }}
           >
+            <Text size="T300">{scaleSystemEmoji('Reaction row 😀 😃 😄 😁 😆')}</Text>
             <Text size="T300">
-              {scaleSystemEmoji("Reaction row 😀 😃 😄 😁 😆")}
-            </Text>
-            <Text size="T300">
-              {scaleSystemEmoji(
-                "The next line should not collide with the emoji baseline.",
-              )}
+              {scaleSystemEmoji('The next line should not collide with the emoji baseline.')}
             </Text>
           </Box>
         </Box>
@@ -392,25 +362,18 @@ function SmokeEmojiPolish() {
             minHeight: 0,
             padding: config.space.S400,
             borderRadius: config.radii.R400,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="H4">Emoji picker chrome</Text>
-          <Box
-            data-testid="smoke-picker-scale-reference"
-            gap="100"
-            alignItems="Center"
-          >
+          <Box data-testid="smoke-picker-scale-reference" gap="100" alignItems="Center">
             <button
               type="button"
               className={emojiBoardCss.EmojiItem}
               aria-label="Smoke standard emoji"
               data-testid="smoke-standard-emoji-button"
             >
-              <span
-                className={emojiBoardCss.EmojiGlyph}
-                data-testid="smoke-standard-emoji-glyph"
-              >
+              <span className={emojiBoardCss.EmojiGlyph} data-testid="smoke-standard-emoji-glyph">
                 🫩
               </span>
             </button>
@@ -428,7 +391,7 @@ function SmokeEmojiPolish() {
                     style={{
                       padding: config.space.S300,
                       borderRadius: config.radii.R400,
-                      backgroundColor: "var(--sable-surface)",
+                      backgroundColor: 'var(--sable-surface)',
                     }}
                   >
                     <Text size="T300">Search emoji</Text>
@@ -525,7 +488,7 @@ function SmokeEmojiPolish() {
             minHeight: 0,
             padding: config.space.S400,
             borderRadius: config.radii.R400,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="H4">Sticker tile fit</Text>
@@ -545,18 +508,9 @@ function SmokeEmojiPolish() {
               label="Smoke sticker square"
               testId="smoke-sticker-c"
             />
-            <SmokeStickerButton
-              src={smokeStickerWide}
-              label="Smoke sticker wide duplicate"
-            />
-            <SmokeStickerButton
-              src={smokeStickerTall}
-              label="Smoke sticker tall duplicate"
-            />
-            <SmokeStickerButton
-              src={smokeStickerSquare}
-              label="Smoke sticker square duplicate"
-            />
+            <SmokeStickerButton src={smokeStickerWide} label="Smoke sticker wide duplicate" />
+            <SmokeStickerButton src={smokeStickerTall} label="Smoke sticker tall duplicate" />
+            <SmokeStickerButton src={smokeStickerSquare} label="Smoke sticker square duplicate" />
           </Box>
         </Box>
       </Box>
@@ -567,7 +521,7 @@ function SmokeEmojiPolish() {
 function SmokeSettingsModal() {
   return (
     <Modal500 requestClose={() => undefined} fullScreenOnMobile>
-      <Box direction="Column" style={{ height: "100%", minHeight: 0 }}>
+      <Box direction="Column" style={{ height: '100%', minHeight: 0 }}>
         <Header size="600" variant="Background">
           <Box grow="Yes" alignItems="Center" justifyContent="SpaceBetween">
             <Text size="H4">Room Settings</Text>
@@ -577,33 +531,16 @@ function SmokeSettingsModal() {
         <Box grow="Yes" direction="Column" style={{ minHeight: 0 }}>
           <PageNavContent>
             <Box direction="Column" gap="100">
-              <MenuItem
-                before={composerIcon(GearSix)}
-                variant="Background"
-                radii="400"
-              >
+              <MenuItem before={composerIcon(GearSix)} variant="Background" radii="400">
                 <Text size="T300">General</Text>
               </MenuItem>
-              <MenuItem
-                before={composerIcon(User)}
-                variant="Background"
-                radii="400"
-                aria-pressed
-              >
+              <MenuItem before={composerIcon(User)} variant="Background" radii="400" aria-pressed>
                 <Text size="T300">Members</Text>
               </MenuItem>
-              <MenuItem
-                before={composerIcon(GearSix)}
-                variant="Background"
-                radii="400"
-              >
+              <MenuItem before={composerIcon(GearSix)} variant="Background" radii="400">
                 <Text size="T300">Permissions</Text>
               </MenuItem>
-              <MenuItem
-                before={composerIcon(GearSix)}
-                variant="Background"
-                radii="400"
-              >
+              <MenuItem before={composerIcon(GearSix)} variant="Background" radii="400">
                 <Text size="T300">Developer Tools</Text>
               </MenuItem>
             </Box>
@@ -617,12 +554,12 @@ function SmokeSettingsModal() {
 function SmokeProfileModal() {
   return (
     <Modal500 requestClose={() => undefined} fullScreenOnMobile>
-      <Box direction="Column" style={{ height: "100%", minHeight: 0 }}>
+      <Box direction="Column" style={{ height: '100%', minHeight: 0 }}>
         <Box
           shrink="No"
           alignItems="Center"
           justifyContent="SpaceBetween"
-          style={{ padding: "12px 12px 8px" }}
+          style={{ padding: '12px 12px 8px' }}
         >
           <Text size="H4">Member Profile</Text>
           <IconButton variant="Background">{composerIcon(X)}</IconButton>
@@ -632,30 +569,26 @@ function SmokeProfileModal() {
           direction="Column"
           style={{
             minHeight: 0,
-            overflowY: "auto",
-            WebkitOverflowScrolling: "touch",
-            overscrollBehaviorY: "contain",
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehaviorY: 'contain',
           }}
         >
-          <Box
-            direction="Column"
-            gap="300"
-            style={{ padding: config.space.S300 }}
-          >
+          <Box direction="Column" gap="300" style={{ padding: config.space.S300 }}>
             <Box
               direction="Column"
               gap="200"
               style={{
                 padding: config.space.S300,
                 borderRadius: config.radii.R400,
-                backgroundColor: "var(--sable-surface-container)",
+                backgroundColor: 'var(--sable-surface-container)',
               }}
             >
               <Text size="H3">Smoketest User</Text>
               <Text size="T300">@smoke:smoke.test</Text>
               <Text size="T300">
-                This profile body is intentionally tall enough to exercise the
-                mobile scroll container inside the full-screen presentation.
+                This profile body is intentionally tall enough to exercise the mobile scroll
+                container inside the full-screen presentation.
               </Text>
             </Box>
             {Array.from({ length: 6 }, (_, index) => (
@@ -664,7 +597,7 @@ function SmokeProfileModal() {
                 style={{
                   padding: config.space.S300,
                   borderRadius: config.radii.R400,
-                  backgroundColor: "var(--sable-surface-container)",
+                  backgroundColor: 'var(--sable-surface-container)',
                 }}
               >
                 <Text size="T300">Profile detail block {index + 1}</Text>
@@ -687,7 +620,7 @@ function SmokeMembersFullPage() {
         style={{
           minHeight: 0,
           padding: `${config.space.S400} ${config.space.S400} var(--sable-safe-area-bottom, 0px)`,
-          backgroundColor: "var(--sable-surface-container)",
+          backgroundColor: 'var(--sable-surface-container)',
         }}
       >
         <Header size="600" variant="Background">
@@ -701,12 +634,12 @@ function SmokeMembersFullPage() {
             style={{
               padding: config.space.S300,
               borderRadius: config.radii.R400,
-              backgroundColor: "var(--sable-surface)",
+              backgroundColor: 'var(--sable-surface)',
             }}
           >
             <Text size="T300">Search</Text>
           </Box>
-          {["Tor ❤️", "Discord bridge bot", "Evie 🏳️‍⚧️"].map((name) => (
+          {['Tor ❤️', 'Discord bridge bot', 'Evie 🏳️‍⚧️'].map((name) => (
             <MenuItem key={name} variant="Background" radii="400">
               <Text size="T300">{name}</Text>
             </MenuItem>
@@ -727,7 +660,7 @@ function SmokeRendererMarkdown() {
         style={{
           minHeight: 0,
           padding: config.space.S400,
-          backgroundColor: "var(--sable-surface)",
+          backgroundColor: 'var(--sable-surface)',
         }}
       >
         <Box
@@ -736,21 +669,21 @@ function SmokeRendererMarkdown() {
           style={{
             padding: config.space.S400,
             borderRadius: config.radii.R400,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="H4">Inline markdown rendering</Text>
           <MessageTextBody data-testid="smoke-inline-markdown">
-            Just make it route at{" "}
+            Just make it route at{' '}
             <code
               style={{
-                padding: "2px 6px",
+                padding: '2px 6px',
                 borderRadius: config.radii.R300,
-                backgroundColor: "var(--sable-surface)",
+                backgroundColor: 'var(--sable-surface)',
               }}
             >
               /search
-            </code>{" "}
+            </code>{' '}
             without squishing emoji like 🙂 in the same line.
           </MessageTextBody>
         </Box>
@@ -761,7 +694,7 @@ function SmokeRendererMarkdown() {
           style={{
             padding: config.space.S400,
             borderRadius: config.radii.R400,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="H4">Code block rhythm</Text>
@@ -771,8 +704,8 @@ function SmokeRendererMarkdown() {
               margin: 0,
               padding: config.space.S400,
               borderRadius: config.radii.R400,
-              backgroundColor: "var(--sable-surface)",
-              overflowX: "auto",
+              backgroundColor: 'var(--sable-surface)',
+              overflowX: 'auto',
             }}
           >
             <code>{`yaml\nroom: smoke\ninline_code: /search\nemoji: 🙂\n`}</code>
@@ -793,7 +726,7 @@ function SmokeRendererTransitions() {
         style={{
           minHeight: 0,
           padding: config.space.S400,
-          backgroundColor: "var(--sable-surface)",
+          backgroundColor: 'var(--sable-surface)',
         }}
       >
         <Header size="600" variant="Background">
@@ -806,15 +739,15 @@ function SmokeRendererTransitions() {
           style={{
             padding: config.space.S400,
             borderRadius: config.radii.R500,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="L400" data-testid="smoke-transition-title">
             Spaces
           </Text>
           <Text size="T300">
-            Space and menu transitions should preserve the shell background
-            instead of flashing a light page between views.
+            Space and menu transitions should preserve the shell background instead of flashing a
+            light page between views.
           </Text>
           <MenuItem variant="Background" radii="400">
             <Text size="T300">Stable shell background</Text>
@@ -832,7 +765,7 @@ function SmokeComposerPolish() {
         grow="Yes"
         direction="Column"
         justifyContent="End"
-        style={{ minHeight: 0, backgroundColor: "var(--sable-surface)" }}
+        style={{ minHeight: 0, backgroundColor: 'var(--sable-surface)' }}
       >
         <Box
           grow="Yes"
@@ -847,21 +780,19 @@ function SmokeComposerPolish() {
             style={{
               padding: config.space.S300,
               borderRadius: config.radii.R400,
-              backgroundColor: "var(--sable-surface-container)",
+              backgroundColor: 'var(--sable-surface-container)',
             }}
           >
             <Text size="T300">Timeline content placeholder</Text>
-            <Text size="T300">
-              Keyboard dismissal should not move us away from the live edge.
-            </Text>
+            <Text size="T300">Keyboard dismissal should not move us away from the live edge.</Text>
           </Box>
         </Box>
         <Box
           shrink="No"
           direction="Column"
           style={{
-            backgroundColor: "var(--sable-surface-container)",
-            paddingBottom: "var(--sable-safe-area-bottom, 0px)",
+            backgroundColor: 'var(--sable-surface-container)',
+            paddingBottom: 'var(--sable-safe-area-bottom, 0px)',
           }}
         >
           <div style={{ padding: `0 ${config.space.S400}` }}>
@@ -879,7 +810,7 @@ function SmokeComposerPolish() {
                 style={{
                   padding: config.space.S200,
                   borderRadius: config.radii.R400,
-                  backgroundColor: "var(--sable-surface-variant)",
+                  backgroundColor: 'var(--sable-surface-variant)',
                 }}
               >
                 <IconButton variant="SurfaceVariant" size="300" radii="300">
@@ -889,10 +820,10 @@ function SmokeComposerPolish() {
                   grow="Yes"
                   alignItems="Center"
                   style={{
-                    minHeight: "44px",
+                    minHeight: '44px',
                     borderRadius: config.radii.R300,
                     padding: `0 ${config.space.S300}`,
-                    backgroundColor: "var(--sable-surface)",
+                    backgroundColor: 'var(--sable-surface)',
                   }}
                 >
                   <Text size="T300">Send a message...</Text>
@@ -912,13 +843,12 @@ function SmokeComposerPolish() {
                 justifyContent="End"
                 gap="200"
                 style={{
-                  minHeight: "32px",
+                  minHeight: '32px',
                   padding: `2px ${config.space.S400} 4px`,
                 }}
               >
                 <Text size="T300" truncate>
-                  nemesio, SpiritCroc, crypt and 6 others are following the
-                  conversation.
+                  nemesio, SpiritCroc, crypt and 6 others are following the conversation.
                 </Text>
               </Box>
             </Box>
@@ -936,40 +866,27 @@ function SmokeLongPressMenu() {
         grow="Yes"
         direction="Column"
         justifyContent="End"
-        style={{ minHeight: 0, backgroundColor: "var(--sable-surface)" }}
+        style={{ minHeight: 0, backgroundColor: 'var(--sable-surface)' }}
       >
         <div className={mobileMessageMenuCss.Backdrop} />
-        <div
-          className={mobileMessageMenuCss.Sheet}
-          data-testid="smoke-long-press-sheet"
-        >
+        <div className={mobileMessageMenuCss.Sheet} data-testid="smoke-long-press-sheet">
           <div className={mobileMessageMenuCss.Handle} />
           <div className={mobileMessageMenuCss.ReactionsRow}>
-            {["❤️", "👍", "😂", "❓", "🫩"].map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                className={mobileMessageMenuCss.ReactionBtn}
-              >
+            {['❤️', '👍', '😂', '❓', '🫩'].map((emoji) => (
+              <button key={emoji} type="button" className={mobileMessageMenuCss.ReactionBtn}>
                 {emoji}
               </button>
             ))}
           </div>
           <div className={mobileMessageMenuCss.ActionGroup}>
-            {["Reply", "Reply in Thread", "Edit Message", "Forward"].map(
-              (label) => (
-                <button
-                  key={label}
-                  type="button"
-                  className={mobileMessageMenuCss.ActionItem}
-                >
-                  <span className={mobileMessageMenuCss.ActionIcon}>•</span>
-                  <Text size="T300" as="span">
-                    {label}
-                  </Text>
-                </button>
-              ),
-            )}
+            {['Reply', 'Reply in Thread', 'Edit Message', 'Forward'].map((label) => (
+              <button key={label} type="button" className={mobileMessageMenuCss.ActionItem}>
+                <span className={mobileMessageMenuCss.ActionIcon}>•</span>
+                <Text size="T300" as="span">
+                  {label}
+                </Text>
+              </button>
+            ))}
           </div>
         </div>
       </Box>
@@ -984,26 +901,16 @@ function SmokeReactionSheet() {
         grow="Yes"
         direction="Column"
         justifyContent="End"
-        style={{ minHeight: 0, backgroundColor: "var(--sable-surface)" }}
+        style={{ minHeight: 0, backgroundColor: 'var(--sable-surface)' }}
       >
         <div className={mobileMessageMenuCss.Backdrop} />
-        <div
-          className={mobileMessageMenuCss.Sheet}
-          data-testid="smoke-reaction-sheet"
-        >
+        <div className={mobileMessageMenuCss.Sheet} data-testid="smoke-reaction-sheet">
           <div className={mobileMessageMenuCss.Handle} />
           <div className={mobileMessageMenuCss.EmojiPickerHeader}>
-            <button
-              type="button"
-              className={mobileMessageMenuCss.EmojiPickerBackBtn}
-            >
+            <button type="button" className={mobileMessageMenuCss.EmojiPickerBackBtn}>
               ←
             </button>
-            <Text
-              size="T400"
-              as="span"
-              className={mobileMessageMenuCss.EmojiPickerTitle}
-            >
+            <Text size="T400" as="span" className={mobileMessageMenuCss.EmojiPickerTitle}>
               Add Reaction
             </Text>
           </div>
@@ -1016,7 +923,7 @@ function SmokeReactionSheet() {
                       style={{
                         padding: config.space.S300,
                         borderRadius: config.radii.R400,
-                        backgroundColor: "var(--sable-surface)",
+                        backgroundColor: 'var(--sable-surface)',
                       }}
                     >
                       <Text size="T300">Search</Text>
@@ -1050,10 +957,7 @@ function SmokeReactionSheet() {
                 <Box grow="Yes" direction="Column" style={{ minHeight: 0 }}>
                   <EmojiGroup id="recent-mobile" label="Recent">
                     {emojis.slice(0, 8).map((emoji) => (
-                      <EmojiItem
-                        key={`mobile-${emoji.hexcode}`}
-                        emoji={emoji}
-                      />
+                      <EmojiItem key={`mobile-${emoji.hexcode}`} emoji={emoji} />
                     ))}
                   </EmojiGroup>
                 </Box>
@@ -1066,23 +970,21 @@ function SmokeReactionSheet() {
   );
 }
 
-const smokeNotificationOptions: SettingMenuOption<
-  "default" | "all" | "mute"
->[] = [
+const smokeNotificationOptions: SettingMenuOption<'default' | 'all' | 'mute'>[] = [
   {
-    value: "default",
-    label: "Default",
-    description: "Follows your global notification rules",
+    value: 'default',
+    label: 'Default',
+    description: 'Follows your global notification rules',
   },
   {
-    value: "all",
-    label: "All Messages",
-    description: "Alert for every new message in the room",
+    value: 'all',
+    label: 'All Messages',
+    description: 'Alert for every new message in the room',
   },
   {
-    value: "mute",
-    label: "Mute",
-    description: "Hide unread noise until you open the room",
+    value: 'mute',
+    label: 'Mute',
+    description: 'Hide unread noise until you open the room',
   },
 ];
 
@@ -1096,7 +998,7 @@ function SmokeMenuPolish() {
         style={{
           minHeight: 0,
           padding: config.space.S400,
-          backgroundColor: "var(--sable-surface)",
+          backgroundColor: 'var(--sable-surface)',
         }}
       >
         <Box
@@ -1105,7 +1007,7 @@ function SmokeMenuPolish() {
           style={{
             padding: config.space.S400,
             borderRadius: config.radii.R400,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="H4">Notification selector chrome</Text>
@@ -1124,7 +1026,7 @@ function SmokeMenuPolish() {
           style={{
             padding: config.space.S400,
             borderRadius: config.radii.R400,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="H4">Account switcher grouping</Text>
@@ -1133,7 +1035,7 @@ function SmokeMenuPolish() {
             style={{ minWidth: 256, padding: config.space.S100 }}
           >
             <Box direction="Column" gap="100">
-              <Text size="L400" priority="300" style={{ padding: "2px 8px" }}>
+              <Text size="L400" priority="300" style={{ padding: '2px 8px' }}>
                 Accounts
               </Text>
               <Box
@@ -1142,7 +1044,7 @@ function SmokeMenuPolish() {
                 style={{
                   padding: config.space.S100,
                   borderRadius: config.radii.R400,
-                  backgroundColor: "var(--sable-surface-container)",
+                  backgroundColor: 'var(--sable-surface-container)',
                 }}
               >
                 <MenuItem size="300" radii="300">
@@ -1152,7 +1054,7 @@ function SmokeMenuPolish() {
                   <Text size="T300">smoke@smoke.test</Text>
                 </MenuItem>
               </Box>
-              <Text size="L400" priority="300" style={{ padding: "2px 8px" }}>
+              <Text size="L400" priority="300" style={{ padding: '2px 8px' }}>
                 Status
               </Text>
               <Box
@@ -1161,7 +1063,7 @@ function SmokeMenuPolish() {
                 style={{
                   padding: config.space.S100,
                   borderRadius: config.radii.R400,
-                  backgroundColor: "var(--sable-surface-container)",
+                  backgroundColor: 'var(--sable-surface-container)',
                 }}
               >
                 <MenuItem size="300" radii="300" aria-selected>
@@ -1181,7 +1083,7 @@ function SmokeMenuPolish() {
           style={{
             padding: config.space.S400,
             borderRadius: config.radii.R400,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="H4">Welcome links</Text>
@@ -1192,11 +1094,7 @@ function SmokeMenuPolish() {
             <Button as="a" href={APP_SUPPORT_URL}>
               <Text size="B300">Support</Text>
             </Button>
-            <Button
-              as="a"
-              href={APP_FEATURES_URL}
-              data-testid="smoke-features-link"
-            >
+            <Button as="a" href={APP_FEATURES_URL} data-testid="smoke-features-link">
               <Text size="B300">Features</Text>
             </Button>
           </Box>
@@ -1213,49 +1111,45 @@ type SmokeSearchContext = {
   currentRoomId?: string;
 };
 
-type SmokeSearchContextKey = "room" | "direct" | "space";
+type SmokeSearchContextKey = 'room' | 'direct' | 'space';
 
 const smokeSearchContexts: Record<SmokeSearchContextKey, SmokeSearchContext> = {
   room: {
-    label: "Home room",
-    pathname: "/home/%21room%3Asmoke.test/",
-    currentRoomId: "!room:smoke.test",
+    label: 'Home room',
+    pathname: '/home/%21room%3Asmoke.test/',
+    currentRoomId: '!room:smoke.test',
   },
   direct: {
-    label: "Direct room",
-    pathname: "/direct/%21dm%3Asmoke.test/",
-    currentRoomId: "!dm:smoke.test",
+    label: 'Direct room',
+    pathname: '/direct/%21dm%3Asmoke.test/',
+    currentRoomId: '!dm:smoke.test',
   },
   space: {
-    label: "Space lobby",
-    pathname: "/%21space%3Asmoke.test/lobby/",
-    selectedSpaceId: "!space:smoke.test",
+    label: 'Space lobby',
+    pathname: '/%21space%3Asmoke.test/lobby/',
+    selectedSpaceId: '!space:smoke.test',
   },
 };
-const smokeSearchContextKeys: SmokeSearchContextKey[] = [
-  "room",
-  "direct",
-  "space",
-];
+const smokeSearchContextKeys: SmokeSearchContextKey[] = ['room', 'direct', 'space'];
 
 function SmokeSearchShortcuts() {
-  const [contextKey, setContextKey] = useState<SmokeSearchContextKey>("room");
+  const [contextKey, setContextKey] = useState<SmokeSearchContextKey>('room');
   const [roomPickerOpen, setRoomPickerOpen] = useState(false);
-  const [result, setResult] = useState("Idle");
+  const [result, setResult] = useState('Idle');
   const context = smokeSearchContexts[contextKey];
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return;
 
-      if (event.key.toLowerCase() === "k") {
+      if (event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setRoomPickerOpen(true);
-        setResult("Opened room picker");
+        setResult('Opened room picker');
         return;
       }
 
-      if (event.key.toLowerCase() !== "f") return;
+      if (event.key.toLowerCase() !== 'f') return;
 
       const nextPath = getMessageSearchShortcutPath(context);
       if (!nextPath) return;
@@ -1265,8 +1159,8 @@ function SmokeSearchShortcuts() {
       setResult(nextPath);
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [context]);
 
   return (
@@ -1278,7 +1172,7 @@ function SmokeSearchShortcuts() {
         style={{
           minHeight: 0,
           padding: config.space.S400,
-          backgroundColor: "var(--sable-surface)",
+          backgroundColor: 'var(--sable-surface)',
         }}
       >
         <Box
@@ -1287,23 +1181,23 @@ function SmokeSearchShortcuts() {
           style={{
             padding: config.space.S400,
             borderRadius: config.radii.R400,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="H4">Search shortcut remap</Text>
           <Text size="T300">
-            Press Ctrl/Cmd+F to route into context message search, or Ctrl/Cmd+K
-            to open the room picker.
+            Press Ctrl/Cmd+F to route into context message search, or Ctrl/Cmd+K to open the room
+            picker.
           </Text>
           <Box gap="200" wrap="Wrap">
             {smokeSearchContextKeys.map((key) => (
               <Button
                 key={key}
-                variant={contextKey === key ? "Primary" : "Secondary"}
+                variant={contextKey === key ? 'Primary' : 'Secondary'}
                 onClick={() => {
                   setContextKey(key);
                   setRoomPickerOpen(false);
-                  setResult("Idle");
+                  setResult('Idle');
                 }}
               >
                 <Text size="B300">{smokeSearchContexts[key].label}</Text>
@@ -1318,7 +1212,7 @@ function SmokeSearchShortcuts() {
           style={{
             padding: config.space.S400,
             borderRadius: config.radii.R400,
-            backgroundColor: "var(--sable-surface-container)",
+            backgroundColor: 'var(--sable-surface-container)',
           }}
         >
           <Text size="L400">Active context</Text>
@@ -1332,7 +1226,7 @@ function SmokeSearchShortcuts() {
             {result}
           </Text>
           <Text size="T300" data-testid="smoke-room-picker-state">
-            {roomPickerOpen ? "Room picker open" : "Room picker closed"}
+            {roomPickerOpen ? 'Room picker open' : 'Room picker closed'}
           </Text>
         </Box>
       </Box>
@@ -1341,21 +1235,21 @@ function SmokeSearchShortcuts() {
 }
 
 export function SmokeMobileShell() {
-  const { mode = "home" } = useParams();
+  const { mode = 'home' } = useParams();
 
-  if (mode === "composer-polish") return <SmokeComposerPolish />;
-  if (mode === "emoji-polish") return <SmokeEmojiPolish />;
-  if (mode === "message-sheet") return <SmokeLongPressMenu />;
-  if (mode === "menu-polish") return <SmokeMenuPolish />;
-  if (mode === "reaction-sheet") return <SmokeReactionSheet />;
-  if (mode === "renderer-markdown") return <SmokeRendererMarkdown />;
-  if (mode === "renderer-transitions") return <SmokeRendererTransitions />;
-  if (mode === "search-shortcuts") return <SmokeSearchShortcuts />;
-  if (mode === "members") return <SmokeMembersFullPage />;
-  if (mode === "settings") return <SmokeSettingsModal />;
-  if (mode === "profile") return <SmokeProfileModal />;
-  if (mode === "room") return <SmokeRoomFooter />;
-  if (mode === "room-spacing") return <SmokeRoomSpacing />;
+  if (mode === 'composer-polish') return <SmokeComposerPolish />;
+  if (mode === 'emoji-polish') return <SmokeEmojiPolish />;
+  if (mode === 'message-sheet') return <SmokeLongPressMenu />;
+  if (mode === 'menu-polish') return <SmokeMenuPolish />;
+  if (mode === 'reaction-sheet') return <SmokeReactionSheet />;
+  if (mode === 'renderer-markdown') return <SmokeRendererMarkdown />;
+  if (mode === 'renderer-transitions') return <SmokeRendererTransitions />;
+  if (mode === 'search-shortcuts') return <SmokeSearchShortcuts />;
+  if (mode === 'members') return <SmokeMembersFullPage />;
+  if (mode === 'settings') return <SmokeSettingsModal />;
+  if (mode === 'profile') return <SmokeProfileModal />;
+  if (mode === 'room') return <SmokeRoomFooter />;
+  if (mode === 'room-spacing') return <SmokeRoomSpacing />;
 
   return (
     <PageRoot nav={<SmokeHomeNav />}>

@@ -2,10 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
 import { EventType } from 'matrix-js-sdk/lib/@types/event';
-import {
-  clearRoomNotification,
-  listenForUnifiedPushMessages,
-} from './UnifiedPushRuntime';
+import { clearRoomNotification, listenForUnifiedPushMessages } from './UnifiedPushRuntime';
 
 const notificationsApi = vi.hoisted(() => ({
   onUnifiedPushMessage: vi.fn(),
