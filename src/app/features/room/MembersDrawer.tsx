@@ -72,9 +72,11 @@ import { useScreenSizeContext, ScreenSize } from '$hooks/useScreenSize';
 type MemberDrawerHeaderProps = {
   room: Room;
   hideText?: boolean;
+  onClose?: () => void;
 };
-function MemberDrawerHeader({ room, hideText }: MemberDrawerHeaderProps) {
+function MemberDrawerHeader({ room, hideText, onClose }: MemberDrawerHeaderProps) {
   const setPeopleDrawer = useSetSetting(settingsAtom, 'isPeopleDrawer');
+  const handleClose = onClose ?? (() => setPeopleDrawer(false));
 
   return (
     <Header className={css.MembersDrawerHeader} variant="Background" size="600">
@@ -98,11 +100,7 @@ function MemberDrawerHeader({ room, hideText }: MemberDrawerHeaderProps) {
             }
           >
             {(triggerRef) => (
-              <IconButton
-                ref={triggerRef}
-                variant="Background"
-                onClick={() => setPeopleDrawer(false)}
-              >
+              <IconButton ref={triggerRef} variant="Background" onClick={handleClose}>
                 {composerIcon(X)}
               </IconButton>
             )}
@@ -267,8 +265,9 @@ const getRoomMemberStr: SearchItemStrGetter<RoomMember> = (m, query) =>
 type MembersDrawerProps = {
   room: Room;
   members: RoomMember[];
+  onClose?: () => void;
 };
-export function MembersDrawer({ room, members }: MembersDrawerProps) {
+export function MembersDrawer({ room, members, onClose }: MembersDrawerProps) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -370,7 +369,7 @@ export function MembersDrawer({ room, members }: MembersDrawerProps) {
         paddingBottom: isMobile ? 'var(--sable-safe-area-bottom, 0px)' : undefined,
       }}
     >
-      <MemberDrawerHeader room={room} hideText={hideText} />
+      <MemberDrawerHeader room={room} hideText={hideText} onClose={onClose} />
       <Box className={css.MemberDrawerContentBase} grow="Yes" style={{ minHeight: 0 }}>
         {!isMobile && (
           <SidebarResizer

@@ -52,9 +52,10 @@ import * as css from './LobbyHeader.css';
 type LobbyMenuProps = {
   powerLevels: IPowerLevels;
   requestClose: () => void;
+  onOpenMobileMembersDrawer?: () => void;
 };
 const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
-  ({ powerLevels, requestClose }, ref) => {
+  ({ powerLevels, requestClose, onOpenMobileMembersDrawer }, ref) => {
     const mx = useMatrixClient();
     const space = useSpace();
     const creators = useRoomCreators(space);
@@ -62,7 +63,6 @@ const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
     const permissions = useRoomPermissions(creators, powerLevels);
     const canInvite = permissions.action('invite', mx.getSafeUserId());
     const openSpaceSettings = useOpenSpaceSettings();
-    const setPeopleDrawer = useSetSetting(settingsAtom, 'isPeopleDrawer');
     const screenSize = useScreenSizeContext();
     const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
 
@@ -78,7 +78,7 @@ const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
     };
 
     const handleOpenMembers = () => {
-      setPeopleDrawer(true);
+      onOpenMobileMembersDrawer?.();
       requestClose();
     };
 
@@ -163,8 +163,13 @@ const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
 type LobbyHeaderProps = {
   showProfile?: boolean;
   powerLevels: IPowerLevels;
+  onOpenMobileMembersDrawer?: () => void;
 };
-export function LobbyHeader({ showProfile, powerLevels }: LobbyHeaderProps) {
+export function LobbyHeader({
+  showProfile,
+  powerLevels,
+  onOpenMobileMembersDrawer,
+}: LobbyHeaderProps) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
   const space = useSpace();
@@ -296,6 +301,7 @@ export function LobbyHeader({ showProfile, powerLevels }: LobbyHeaderProps) {
                 <LobbyMenu
                   powerLevels={powerLevels}
                   requestClose={() => setMenuAnchor(undefined)}
+                  onOpenMobileMembersDrawer={onOpenMobileMembersDrawer}
                 />
               </FocusTrap>
             }

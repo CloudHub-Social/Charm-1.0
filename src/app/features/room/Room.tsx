@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Box, Line } from 'folds';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { isKeyHotkey } from 'is-hotkey';
 import { useAtom, useAtomValue } from 'jotai';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
-import { useSetSetting, useSetting } from '$state/hooks/settings';
+import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { PowerLevelsContextProvider, usePowerLevels } from '$hooks/usePowerLevels';
 import { useRoom } from '$hooks/useRoom';
@@ -48,12 +48,12 @@ export function Room() {
   }, [room.roomId, eventId, jumpMode]);
 
   const [isDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
-  const setPeopleDrawer = useSetSetting(settingsAtom, 'isPeopleDrawer');
   const [isWidgetDrawerOpen] = useSetting(settingsAtom, 'isWidgetDrawer');
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
   const screenSize = useScreenSizeContext();
   const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
-  const mobileDrawerBootstrappedRef = useRef(false);
+  const [mobileMembersDrawerOpen, setMobileMembersDrawerOpen] = useState(false);
+  const isMembersDrawerOpen = isMobileMembersSurface ? mobileMembersDrawerOpen : isDrawer;
 
   // Log drawer state changes
   useEffect(() => {
@@ -62,15 +62,6 @@ export function Room() {
       isOpen: isDrawer,
     });
   }, [isDrawer, room.roomId]);
-
-  useEffect(() => {
-    if (!isMobileMembersSurface) return;
-    if (mobileDrawerBootstrappedRef.current) return;
-    mobileDrawerBootstrappedRef.current = true;
-    if (isDrawer) {
-      setPeopleDrawer(false);
-    }
-  }, [isDrawer, isMobileMembersSurface, setPeopleDrawer]);
 
   useEffect(() => {
     debugLog.debug('ui', 'Widgets drawer state changed', {
@@ -144,12 +135,19 @@ export function Room() {
           )}
           {!callView && (
             <Box grow="Yes" direction="Column">
-              <RoomViewHeader />
+              <RoomViewHeader
+                onOpenMobileMembersDrawer={
+                  isMobileMembersSurface ? () => setMobileMembersDrawerOpen(true) : undefined
+                }
+              />
               <Box grow="Yes">
                 <RoomView
                   eventId={eventId}
                   jumpMode={jumpMode}
                   hasDesktopRightDrawer={hasDesktopRightDrawer}
+                  onOpenMobileMembersDrawer={
+                    isMobileMembersSurface ? () => setMobileMembersDrawerOpen(true) : undefined
+                  }
                 />
               </Box>
             </Box>
@@ -164,14 +162,19 @@ export function Room() {
             </>
           )}
           {!callView &&
-            isDrawer &&
+            isMembersDrawerOpen &&
             (!isMobileMembersSurface ? (
               <>
                 <Line variant="Background" direction="Vertical" size="300" />
                 <MembersDrawer key={room.roomId} room={room} members={members} />
               </>
             ) : (
-              <MembersDrawer key={room.roomId} room={room} members={members} />
+              <MembersDrawer
+                key={room.roomId}
+                room={room}
+                members={members}
+                onClose={() => setMobileMembersDrawerOpen(false)}
+              />
             ))}
           {screenSize === ScreenSize.Desktop && isWidgetDrawerOpen && (
             <>

@@ -20,7 +20,7 @@ import type { HierarchyItem, HierarchyItemSpace } from '$hooks/useSpaceHierarchy
 import { useSpaceHierarchy } from '$hooks/useSpaceHierarchy';
 import { VirtualTile } from '$components/virtualizer';
 import { spaceRoomsAtom } from '$state/spaceRooms';
-import { useSetSetting, useSetting } from '$state/hooks/settings';
+import { useSetting } from '$state/hooks/settings';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { settingsAtom } from '$state/settings';
 import { ScrollTopContainer } from '$components/scroll-top-container';
@@ -178,10 +178,10 @@ export function Lobby() {
   const [heroSectionHeight, setHeroSectionHeight] = useState<number>();
   const [spaceRooms, setSpaceRooms] = useAtom(spaceRoomsAtom);
   const [isDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
-  const setPeopleDrawer = useSetSetting(settingsAtom, 'isPeopleDrawer');
   const screenSize = useScreenSizeContext();
   const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
-  const mobileDrawerBootstrappedRef = useRef(false);
+  const [mobileMembersDrawerOpen, setMobileMembersDrawerOpen] = useState(false);
+  const isMembersDrawerOpen = isMobileMembersSurface ? mobileMembersDrawerOpen : isDrawer;
   const [onTop, setOnTop] = useState(true);
   const [closedCategories, setClosedCategories] = useAtom(useClosedLobbyCategoriesAtom());
   const roomToParents = useAtomValue(roomToParentsAtom);
@@ -198,15 +198,6 @@ export function Lobby() {
   }, [sidebarItems]);
 
   const [spacesItems, setSpacesItems] = useState<Map<string, IHierarchyRoom>>(() => new Map());
-
-  useEffect(() => {
-    if (!isMobileMembersSurface) return;
-    if (mobileDrawerBootstrappedRef.current) return;
-    mobileDrawerBootstrappedRef.current = true;
-    if (isDrawer) {
-      setPeopleDrawer(false);
-    }
-  }, [isDrawer, isMobileMembersSurface, setPeopleDrawer]);
 
   useElementSizeObserver(
     useCallback(() => heroSectionRef.current, []),
@@ -636,6 +627,9 @@ export function Lobby() {
           <LobbyHeader
             showProfile={!onTop}
             powerLevels={roomsPowerLevels.get(space.roomId) ?? {}}
+            onOpenMobileMembersDrawer={
+              isMobileMembersSurface ? () => setMobileMembersDrawerOpen(true) : undefined
+            }
           />
           <Box style={{ position: 'relative' }} grow="Yes">
             <Scroll ref={scrollRef} hideTrack visibility="Hover">
@@ -761,14 +755,18 @@ export function Lobby() {
             </Scroll>
           </Box>
         </Page>
-        {isDrawer &&
+        {isMembersDrawerOpen &&
           (!isMobileMembersSurface ? (
             <>
               <Line variant="Background" direction="Vertical" size="300" />
               <MembersDrawer room={space} members={members} />
             </>
           ) : (
-            <MembersDrawer room={space} members={members} />
+            <MembersDrawer
+              room={space}
+              members={members}
+              onClose={() => setMobileMembersDrawerOpen(false)}
+            />
           ))}
       </Box>
     </PowerLevelsContextProvider>
