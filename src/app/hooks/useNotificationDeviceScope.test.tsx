@@ -251,6 +251,7 @@ describe('useNotificationDeviceScope', () => {
     expect(result.current.shouldKeepWebPushEnabled).toBe(false);
     expect(result.current.activeReason).toBe('delay_disabled');
   });
+<<<<<<< HEAD
 
   it('clears an owned lease when desktop delay is disabled', async () => {
     notificationDeviceScope = 'desktop_delay';
@@ -384,4 +385,7 @@ describe('useNotificationDeviceScope', () => {
 
     expect(client.setAccountData).toHaveBeenCalledTimes(1);
   });
+||||||| parent of 84654642d (fix: implement desktop notification delay semantics)
+=======
+>>>>>>> 84654642d (fix: implement desktop notification delay semantics)
 });

@@ -69,7 +69,8 @@ export type RenderUserCardsMode = 'both' | 'light' | 'dark' | 'none';
 
 /** Where to use crisp nearest-neighbor (pixelated) image scaling. */
 export type PixelatedImageRenderingMode = 'always' | 'smart' | 'never';
-export type NotificationDeviceScope = 'all_clients' | 'active_client_only';
+export type NotificationDeviceScope = 'all_clients' | 'desktop_delay';
+export type NotificationDesktopDelayMinutes = 0 | 1 | 2 | 5 | 10;
 
 export function isPixelatedRendering(
   mode: PixelatedImageRenderingMode,
@@ -151,6 +152,7 @@ export interface Settings {
   pushTransportMode: NotificationTransportMode;
   pushTransportOverride: PushTransportOverrides;
   notificationDeviceScope: NotificationDeviceScope;
+  notificationDesktopDelayMinutes: NotificationDesktopDelayMinutes;
 
   hour24Clock: boolean;
   dateFormatString: string;
@@ -333,6 +335,7 @@ export const defaultSettings: Settings = {
   pushTransportMode: 'auto',
   pushTransportOverride: {},
   notificationDeviceScope: 'all_clients',
+  notificationDesktopDelayMinutes: 2,
 
   hour24Clock: false,
   dateFormatString: 'D MMM YYYY',
@@ -482,6 +485,10 @@ function migrateParsedLocalStorage(parsed: Record<string, unknown>): void {
   }
   delete parsed.themeChatPreviewAnyUrl;
   delete parsed.themeChatPreviewApprovedCatalogOnly;
+
+  if (parsed.notificationDeviceScope === 'active_client_only') {
+    parsed.notificationDeviceScope = 'desktop_delay';
+  }
 }
 
 export function mergePersistedSettings(
@@ -598,7 +605,10 @@ function sanitizeSettingsKey(key: keyof Settings, val: unknown): unknown {
     case 'rightSwipeAction':
       return val === RightSwipeAction.Members || val === RightSwipeAction.Reply ? val : undefined;
     case 'notificationDeviceScope':
-      return val === 'all_clients' || val === 'active_client_only' ? val : undefined;
+      if (val === 'active_client_only') return 'desktop_delay';
+      return val === 'all_clients' || val === 'desktop_delay' ? val : undefined;
+    case 'notificationDesktopDelayMinutes':
+      return val === 0 || val === 1 || val === 2 || val === 5 || val === 10 ? val : undefined;
     case 'renderUserCards':
       return val === 'both' || val === 'light' || val === 'dark' || val === 'none'
         ? val

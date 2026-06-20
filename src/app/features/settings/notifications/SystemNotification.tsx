@@ -75,8 +75,8 @@ type BackgroundPushPlatform = NotificationTransportPlatform;
 
 function labelNotificationDeviceScope(scope: NotificationDeviceScope): string {
   switch (scope) {
-    case 'active_client_only':
-      return 'Active client only';
+    case 'desktop_delay':
+      return 'Desktop delay';
     case 'all_clients':
     default:
       return 'All clients';
@@ -1055,9 +1055,20 @@ export function SystemNotification() {
     settingsAtom,
     'notificationDeviceScope'
   );
+  const [notificationDesktopDelayMinutes, setNotificationDesktopDelayMinutes] = useSetting(
+    settingsAtom,
+    'notificationDesktopDelayMinutes'
+  );
   const notificationDeviceScopeOptions: SettingMenuOption<NotificationDeviceScope>[] = [
     { value: 'all_clients', label: 'All clients' },
-    { value: 'active_client_only', label: 'Active client only' },
+    { value: 'desktop_delay', label: 'Desktop delay' },
+  ];
+  const notificationDesktopDelayOptions: SettingMenuOption<'0' | '1' | '2' | '5' | '10'>[] = [
+    { value: '0', label: '0 min' },
+    { value: '1', label: '1 min' },
+    { value: '2', label: '2 min' },
+    { value: '5', label: '5 min' },
+    { value: '10', label: '10 min' },
   ];
 
   // Describe what the current badge combo actually does so users aren't left guessing.
@@ -1142,7 +1153,7 @@ export function SystemNotification() {
             focusId="notification-device-scope"
             description={`Current behavior: ${labelNotificationDeviceScope(
               notificationDeviceScope
-            )}. "Active client only" keeps notifications on the focused open client and suppresses them on other open clients for about two minutes after activity. Closed clients may still notify until reopened.`}
+            )}. "Desktop delay" keeps phone notifications quiet only while a visible, focused desktop client has renewed the delay lease. Set the delay to 0 minutes to notify every device immediately.`}
             after={
               <SettingMenuSelector
                 value={notificationDeviceScope}
@@ -1151,6 +1162,22 @@ export function SystemNotification() {
               />
             }
           />
+          {notificationDeviceScope === 'desktop_delay' && (
+            <SettingTile
+              title="Desktop Notification Delay"
+              focusId="notification-desktop-delay"
+              description="How long other devices should stay quiet after desktop activity."
+              after={
+                <SettingMenuSelector
+                  value={String(notificationDesktopDelayMinutes) as '0' | '1' | '2' | '5' | '10'}
+                  options={notificationDesktopDelayOptions}
+                  onSelect={(value) =>
+                    setNotificationDesktopDelayMinutes(Number(value) as 0 | 1 | 2 | 5 | 10)
+                  }
+                />
+              }
+            />
+          )}
         </SequenceCard>
       )}
       <SequenceCard

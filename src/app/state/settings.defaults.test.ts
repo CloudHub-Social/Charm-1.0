@@ -94,16 +94,21 @@ describe('sanitizeSettingsDefaults', () => {
   it('accepts the new notification and composer settings', () => {
     expect(
       sanitizeSettingsDefaults({
-        notificationDeviceScope: 'active_client_only',
+        notificationDeviceScope: 'desktop_delay',
+        notificationDesktopDelayMinutes: 5,
         emojiAutoExpand: true,
         structuredMarkdownAssist: false,
       })
     ).toEqual({
-      notificationDeviceScope: 'active_client_only',
+      notificationDeviceScope: 'desktop_delay',
+      notificationDesktopDelayMinutes: 5,
       emojiAutoExpand: true,
       structuredMarkdownAssist: false,
     });
     expect(sanitizeSettingsDefaults({ notificationDeviceScope: 'invalid-scope' })).toEqual({});
+    expect(sanitizeSettingsDefaults({ notificationDeviceScope: 'active_client_only' })).toEqual({
+      notificationDeviceScope: 'desktop_delay',
+    });
   });
 });
 

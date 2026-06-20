@@ -39,7 +39,7 @@ vi.mock('./useNotificationDeviceScope', () => ({
   ) =>
     isVisible
       ? isMobile || isActiveNotificationClient
-      : notificationDeviceScope !== 'active_client_only' || isActiveNotificationClient,
+      : notificationDeviceScope !== 'desktop_delay' || isActiveNotificationClient,
   useNotificationDeviceScope: () => ({
     lease: null,
     notificationDeviceScope: 'all_clients',
