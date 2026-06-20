@@ -240,6 +240,10 @@ describe('useNotificationDeviceScope', () => {
     expect(shouldEnableNotificationPusher(true, false, 'all_clients', true)).toBe(true);
   });
 
+  it('does not re-enable a visible mobile pusher while another desktop holds the lease', () => {
+    expect(shouldEnableNotificationPusher(true, true, 'desktop_delay', false)).toBe(false);
+  });
+
   it('treats a zero-minute desktop delay like notify-all semantics', () => {
     notificationDeviceScope = 'desktop_delay';
     notificationDesktopDelayMinutes = 0;
@@ -334,6 +338,33 @@ describe('useNotificationDeviceScope', () => {
     expect(client.setAccountData).not.toHaveBeenCalled();
     expect(result.current.isThisClientLeaseHolder).toBe(true);
     expect(result.current.isActiveNotificationClient).toBe(true);
+  });
+
+  it('clears an owned lease when desktop delay is disabled after account data arrives', async () => {
+    notificationDeviceScope = 'desktop_delay';
+    notificationDesktopDelayMinutes = 0;
+    const now = Date.now();
+    const { client, setLease, emitAccountData } = createMockMatrixClient();
+
+    renderHook(() => useNotificationDeviceScope(client));
+
+    act(() => {
+      setLease({
+        deviceId: 'DEVICE_A',
+        updatedAt: now,
+        expiresAt: now + 120_000,
+      });
+      emitAccountData();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledWith(
+      CustomAccountDataEvent.SableNotificationDeviceLease,
+      {}
+    );
   });
 
   it('publishes a shorter lease immediately when the selected delay is reduced', async () => {

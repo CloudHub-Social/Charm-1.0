@@ -41,14 +41,12 @@ export type NotificationDeviceScopeState = {
 };
 
 export function shouldEnableNotificationPusher(
-  isVisible: boolean,
-  isMobile: boolean,
+  _isVisible: boolean,
+  _isMobile: boolean,
   notificationDeviceScope: NotificationDeviceScopeSetting,
   isActiveNotificationClient: boolean
 ): boolean {
-  return isVisible
-    ? isMobile || isActiveNotificationClient
-    : notificationDeviceScope !== 'desktop_delay' || isActiveNotificationClient;
+  return notificationDeviceScope !== 'desktop_delay' || isActiveNotificationClient;
 }
 
 type UseNotificationDeviceScopeOptions = {
@@ -233,10 +231,10 @@ export function useNotificationDeviceScope(
       return;
     }
     if (desktopDelayEnabled) return;
-    const currentLease = leaseRef.current;
+    const currentLease = lease;
     if (currentLease?.deviceId !== deviceId) return;
     clearLease(currentLease);
-  }, [clearLease, desktopDelayEnabled, deviceId, mx, shouldPublishLease]);
+  }, [clearLease, desktopDelayEnabled, deviceId, lease, mx, shouldPublishLease]);
 
   useEffect(() => {
     const handleLocalLeaseUpdate = (event: Event) => {
