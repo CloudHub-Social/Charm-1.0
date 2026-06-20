@@ -1,10 +1,17 @@
-import { useAtom, useAtomValue, useSetAtom } from 'jotai';
-import * as Sentry from '@sentry/react';
-import type { ReactNode } from 'react';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { SearchIndexProvider } from '$hooks/useSearchIndex';
-import type { RoomEventHandlerMap } from '$types/matrix-sdk';
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import * as Sentry from "@sentry/react";
+import type { ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { useNavigate } from "react-router-dom";
+import { SearchIndexProvider } from "$hooks/useSearchIndex";
+import type { RoomEventHandlerMap } from "$types/matrix-sdk";
 import {
   MatrixEvent,
   MatrixEventEvent,
@@ -12,63 +19,71 @@ import {
   RoomEvent,
   SyncState,
   EventType,
-} from '$types/matrix-sdk';
-import parse from 'html-react-parser';
-import { getReactCustomHtmlParser, LINKIFY_OPTS } from '$plugins/react-custom-html-parser';
-import { sanitizeCustomHtml } from '$utils/sanitize';
-import { roomToUnreadAtom } from '$state/room/roomToUnread';
-import LogoSVG from '$public/res/svg/logo.svg';
-import LogoUnreadSVG from '$public/res/svg/unread.svg';
-import LogoHighlightSVG from '$public/res/svg/highlight.svg';
-import NotificationSound from '$public/sound/notification.ogg';
-import InviteSound from '$public/sound/invite.ogg';
-import { notificationPermission, setFavicon } from '$utils/dom';
-import { useSetting } from '$state/hooks/settings';
-import { settingsAtom } from '$state/settings';
-import { IconSizesProvider } from '$components/icons/phosphor';
-import { nicknamesAtom } from '$state/nicknames';
-import { mDirectAtom } from '$state/mDirectList';
-import { allInvitesAtom } from '$state/room-list/inviteList';
-import { usePreviousValue } from '$hooks/usePreviousValue';
-import { useMatrixClient } from '$hooks/useMatrixClient';
-import { useClientConfig } from '$hooks/useClientConfig';
+} from "$types/matrix-sdk";
+import parse from "html-react-parser";
+import {
+  getReactCustomHtmlParser,
+  LINKIFY_OPTS,
+} from "$plugins/react-custom-html-parser";
+import { sanitizeCustomHtml } from "$utils/sanitize";
+import { roomToUnreadAtom } from "$state/room/roomToUnread";
+import LogoSVG from "$public/res/svg/logo.svg";
+import LogoUnreadSVG from "$public/res/svg/unread.svg";
+import LogoHighlightSVG from "$public/res/svg/highlight.svg";
+import NotificationSound from "$public/sound/notification.ogg";
+import InviteSound from "$public/sound/invite.ogg";
+import { notificationPermission, setFavicon } from "$utils/dom";
+import { useSetting } from "$state/hooks/settings";
+import { settingsAtom } from "$state/settings";
+import { IconSizesProvider } from "$components/icons/phosphor";
+import { nicknamesAtom } from "$state/nicknames";
+import { mDirectAtom } from "$state/mDirectList";
+import { allInvitesAtom } from "$state/room-list/inviteList";
+import { usePreviousValue } from "$hooks/usePreviousValue";
+import { useMatrixClient } from "$hooks/useMatrixClient";
+import { useClientConfig } from "$hooks/useClientConfig";
 import {
   getMemberDisplayName,
   getNotificationType,
   getStateEvent,
   isDMRoom,
   isNotificationEvent,
-} from '$utils/room';
-import { NotificationType } from '$types/matrix/room';
-import { getMxIdLocalPart, mxcUrlToHttp } from '$utils/matrix';
-import { useInboxNotificationsSelected } from '$hooks/router/useInbox';
-import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
-import { useSettingsLinkBaseUrl } from '$features/settings/useSettingsLinkBaseUrl';
-import { registrationAtom } from '$state/serviceWorkerRegistration';
-import { inAppBannerAtom, activeSessionIdAtom } from '$state/sessions';
-import { pushSubscriptionAtom } from '$state/pushSubscription';
+} from "$utils/room";
+import { NotificationType } from "$types/matrix/room";
+import { getMxIdLocalPart, mxcUrlToHttp } from "$utils/matrix";
+import { useInboxNotificationsSelected } from "$hooks/router/useInbox";
+import { useMediaAuthentication } from "$hooks/useMediaAuthentication";
+import { useSettingsLinkBaseUrl } from "$features/settings/useSettingsLinkBaseUrl";
+import { registrationAtom } from "$state/serviceWorkerRegistration";
+import { inAppBannerAtom, activeSessionIdAtom } from "$state/sessions";
+import { pushSubscriptionAtom } from "$state/pushSubscription";
 import {
   buildRoomMessageNotification,
   resolveNotificationPreviewText,
-} from '$utils/notificationStyle';
-import { mobileOrTablet } from '$utils/user-agent';
-import { createDebugLogger } from '$utils/debugLogger';
-import { shouldShowNotificationInFocusMode } from '$utils/focusMode';
-import { useSlidingSyncActiveRoom } from '$hooks/useSlidingSyncActiveRoom';
-import { NotificationBanner } from '$components/notification-banner';
-import { useCallSignaling } from '$hooks/useCallSignaling';
-import { getRenderableMediaUrlStats } from '$hooks/useRenderableMediaUrl';
-import { isStartupShellReady, subscribeStartupShellReady } from '$utils/perfTelemetry';
-import { isTauri } from '@tauri-apps/api/core';
-import { type as osType } from '@tauri-apps/plugin-os';
+} from "$utils/notificationStyle";
+import { mobileOrTablet } from "$utils/user-agent";
+import { createDebugLogger } from "$utils/debugLogger";
+import { shouldShowNotificationInFocusMode } from "$utils/focusMode";
+import { useSlidingSyncActiveRoom } from "$hooks/useSlidingSyncActiveRoom";
+import { NotificationBanner } from "$components/notification-banner";
+import { useCallSignaling } from "$hooks/useCallSignaling";
+import { getRenderableMediaUrlStats } from "$hooks/useRenderableMediaUrl";
+import {
+  isStartupShellReady,
+  subscribeStartupShellReady,
+} from "$utils/perfTelemetry";
+import { isTauri } from "@tauri-apps/api/core";
+import { type as osType } from "@tauri-apps/plugin-os";
+
+type TimelineEventData = Parameters<RoomEventHandlerMap[RoomEvent.Timeline]>[4];
 
 // Lazy-load banners to reduce initial bundle size - these are rarely shown on first load
 const ThemeMigrationBanner = lazy(() => {
   const start = performance.now();
-  return import('$components/theme/ThemeMigrationBanner').then((m) => {
+  return import("$components/theme/ThemeMigrationBanner").then((m) => {
     const duration = performance.now() - start;
-    Sentry.metrics.distribution('sable.startup.lazy_load_ms', duration, {
-      attributes: { component: 'theme_migration_banner' },
+    Sentry.metrics.distribution("sable.startup.lazy_load_ms", duration, {
+      attributes: { component: "theme_migration_banner" },
     });
     return { default: m.ThemeMigrationBanner };
   });
@@ -76,59 +91,63 @@ const ThemeMigrationBanner = lazy(() => {
 
 const TelemetryConsentBanner = lazy(() => {
   const start = performance.now();
-  return import('$components/telemetry-consent').then((m) => {
+  return import("$components/telemetry-consent").then((m) => {
     const duration = performance.now() - start;
-    Sentry.metrics.distribution('sable.startup.lazy_load_ms', duration, {
-      attributes: { component: 'telemetry_consent_banner' },
+    Sentry.metrics.distribution("sable.startup.lazy_load_ms", duration, {
+      attributes: { component: "telemetry_consent_banner" },
     });
     return { default: m.TelemetryConsentBanner };
   });
 });
-import { lastVisitedRoomIdAtom } from '$state/room/lastRoom';
-import { useSettingsSyncEffect } from '$hooks/useSettingsSync';
-import { usePresenceSyncEffect } from '$hooks/usePresenceSync';
-import { usePresenceAutoIdle } from '$hooks/usePresenceAutoIdle';
+import { lastVisitedRoomIdAtom } from "$state/room/lastRoom";
+import { useSettingsSyncEffect } from "$hooks/useSettingsSync";
+import { usePresenceSyncEffect } from "$hooks/usePresenceSync";
+import { usePresenceAutoIdle } from "$hooks/usePresenceAutoIdle";
 import {
   shouldEnableNotificationPusher,
   useNotificationDeviceScope,
-} from '$hooks/useNotificationDeviceScope';
-import { useInitBookmarks } from '$features/bookmarks/useInitBookmarks';
-import { useReminderSync } from '$features/bookmarks/useReminderSync';
-import { clearLaunchContext } from '../../../launch-context-persistence';
-import { getInboxBookmarksPath, getInboxInvitesPath, getToRoomEventPath } from '$pages/pathUtils';
+} from "$hooks/useNotificationDeviceScope";
+import { useInitBookmarks } from "$features/bookmarks/useInitBookmarks";
+import { useReminderSync } from "$features/bookmarks/useReminderSync";
+import { clearLaunchContext } from "../../../launch-context-persistence";
+import {
+  getInboxBookmarksPath,
+  getInboxInvitesPath,
+  getToRoomEventPath,
+} from "$pages/pathUtils";
 import {
   buildNotificationBreadcrumb,
   buildNotificationMetricAttributes,
-} from '$utils/notificationTelemetry';
-import { BackgroundNotifications } from './BackgroundNotifications';
+} from "$utils/notificationTelemetry";
+import { BackgroundNotifications } from "./BackgroundNotifications";
 import {
   NotificationTransportRuntime,
   type NotificationTransportRuntimeContext,
-} from '$features/settings/notifications/NotificationTransportRuntime';
+} from "$features/settings/notifications/NotificationTransportRuntime";
 import {
   isWebPushSupported,
   reconcilePushNotifications,
-} from '$features/settings/notifications/PushNotifications';
+} from "$features/settings/notifications/PushNotifications";
 import {
   normalizeNotificationTransportMode,
   resolvePreferredNotificationTransportProvider,
   type NotificationTransportPlatform,
-} from '$features/settings/notifications/NotificationTransport';
-const pushRelayLog = createDebugLogger('push-relay');
-const transportLog = createDebugLogger('push-transport');
+} from "$features/settings/notifications/NotificationTransport";
+const pushRelayLog = createDebugLogger("push-relay");
+const transportLog = createDebugLogger("push-transport");
 function clearMediaSessionQuickly(): void {
-  if (!('mediaSession' in navigator)) return;
+  if (!("mediaSession" in navigator)) return;
   // iOS can register the lock-screen media player as a side effect of
   // playing short notification sounds. Clear that transient session unless
   // real media has since claimed it.
   setTimeout(() => {
     if (navigator.mediaSession.metadata !== null) return;
-    navigator.mediaSession.playbackState = 'none';
+    navigator.mediaSession.playbackState = "none";
   }, 500);
 }
 
 function postToServiceWorker(data: unknown): void {
-  if (!('serviceWorker' in navigator)) return;
+  if (!("serviceWorker" in navigator)) return;
 
   const posted = new Set<ServiceWorker>();
   const postToWorker = (worker: ServiceWorker | null | undefined) => {
@@ -148,7 +167,10 @@ function postToServiceWorker(data: unknown): void {
     .catch(() => undefined);
 }
 
-function postToServiceWorkerSource(source: MessageEventSource | null, data: unknown): boolean {
+function postToServiceWorkerSource(
+  source: MessageEventSource | null,
+  data: unknown,
+): boolean {
   if (!(source instanceof ServiceWorker)) return false;
 
   // oxlint-disable-next-line unicorn/require-post-message-target-origin
@@ -156,7 +178,10 @@ function postToServiceWorkerSource(source: MessageEventSource | null, data: unkn
   return true;
 }
 
-function navigateToServiceWorkerUrl(navigate: ReturnType<typeof useNavigate>, url: string): void {
+function navigateToServiceWorkerUrl(
+  navigate: ReturnType<typeof useNavigate>,
+  url: string,
+): void {
   try {
     const target = new URL(url, window.location.origin);
     if (target.origin === window.location.origin) {
@@ -174,7 +199,10 @@ function navigateToRoomNotificationTarget(
   userId: string | undefined,
   roomId: string,
   eventId?: string,
-  options?: { swClickId?: string; jumpMode?: 'notification_live' | 'history_context' }
+  options?: {
+    swClickId?: string;
+    jumpMode?: "notification_live" | "history_context";
+  },
 ): void {
   if (!userId) return;
   navigate(getToRoomEventPath(userId, roomId, eventId, options));
@@ -183,32 +211,36 @@ function navigateToRoomNotificationTarget(
 function WebPushStartupReconciler() {
   const mx = useMatrixClient();
   const clientConfig = useClientConfig();
-  const [usePushNotifications] = useSetting(settingsAtom, 'usePushNotifications');
-  const pushSubscription = useAtom(pushSubscriptionAtom);
-  const [visibilityState, setVisibilityState] = useState<DocumentVisibilityState>(
-    document.visibilityState
+  const [usePushNotifications] = useSetting(
+    settingsAtom,
+    "usePushNotifications",
   );
-  const { isActiveNotificationClient, notificationDeviceScope } = useNotificationDeviceScope(mx, {
-    publishLease: false,
-  });
+  const pushSubscription = useAtom(pushSubscriptionAtom);
+  const [visibilityState, setVisibilityState] =
+    useState<DocumentVisibilityState>(document.visibilityState);
+  const { isActiveNotificationClient, notificationDeviceScope } =
+    useNotificationDeviceScope(mx, {
+      publishLease: false,
+    });
   const reconciledKeyRef = useRef<string | null>(null);
   const shouldEnablePusher = shouldEnableNotificationPusher(
-    visibilityState === 'visible',
+    visibilityState === "visible",
     mobileOrTablet(),
     notificationDeviceScope,
-    isActiveNotificationClient
+    isActiveNotificationClient,
   );
 
   useEffect(() => {
-    const syncVisibilityState = () => setVisibilityState(document.visibilityState);
+    const syncVisibilityState = () =>
+      setVisibilityState(document.visibilityState);
     const handlePageShow = () => syncVisibilityState();
 
-    document.addEventListener('visibilitychange', syncVisibilityState);
-    window.addEventListener('pageshow', handlePageShow);
+    document.addEventListener("visibilitychange", syncVisibilityState);
+    window.addEventListener("pageshow", handlePageShow);
 
     return () => {
-      document.removeEventListener('visibilitychange', syncVisibilityState);
-      window.removeEventListener('pageshow', handlePageShow);
+      document.removeEventListener("visibilitychange", syncVisibilityState);
+      window.removeEventListener("pageshow", handlePageShow);
     };
   }, []);
 
@@ -221,8 +253,8 @@ function WebPushStartupReconciler() {
     const reconcileKey = [
       userId,
       visibilityState,
-      shouldEnablePusher ? 'enabled' : 'disabled',
-    ].join(':');
+      shouldEnablePusher ? "enabled" : "disabled",
+    ].join(":");
     if (reconciledKeyRef.current === reconcileKey) return;
 
     reconciledKeyRef.current = reconcileKey;
@@ -231,13 +263,17 @@ function WebPushStartupReconciler() {
       clientConfig,
       shouldEnablePusher,
       usePushNotifications,
-      pushSubscription
+      pushSubscription,
     ).catch((error) => {
       reconciledKeyRef.current = null;
-      transportLog.warn('notification', 'Web push startup reconciliation failed', {
-        userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      transportLog.warn(
+        "notification",
+        "Web push startup reconciliation failed",
+        {
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
     });
   }, [
     mx,
@@ -252,44 +288,49 @@ function WebPushStartupReconciler() {
 }
 
 function SystemEmojiFeature() {
-  const [twitterEmoji] = useSetting(settingsAtom, 'twitterEmoji');
+  const [twitterEmoji] = useSetting(settingsAtom, "twitterEmoji");
 
   useEffect(() => {
     const root = document.documentElement;
     const updateMobileDataset = () => {
-      root.dataset.sableMobile = mobileOrTablet() ? 'true' : 'false';
+      root.dataset.sableMobile = mobileOrTablet() ? "true" : "false";
     };
 
     updateMobileDataset();
-    root.dataset.sableEmojiStyle = twitterEmoji ? 'twemoji' : 'system';
-    root.dataset.sableEmojiEffectiveStyle = twitterEmoji ? 'twemoji' : 'system';
-    root.style.setProperty('--font-emoji', twitterEmoji ? 'Twemoji' : 'Twemoji_DISABLED');
-    window.addEventListener('resize', updateMobileDataset);
+    root.dataset.sableEmojiStyle = twitterEmoji ? "twemoji" : "system";
+    root.dataset.sableEmojiEffectiveStyle = twitterEmoji ? "twemoji" : "system";
+    root.style.setProperty(
+      "--font-emoji",
+      twitterEmoji ? "Twemoji" : "Twemoji_DISABLED",
+    );
+    window.addEventListener("resize", updateMobileDataset);
 
     let cancelled = false;
 
     const updateEffectiveEmojiStyle = async () => {
       try {
-        const sampleEmoji = '🫩';
+        const sampleEmoji = "🫩";
         await document.fonts.load('16px "Twemoji"', sampleEmoji);
         await document.fonts.ready;
         if (cancelled) return;
 
         const hasTwemoji = document.fonts.check('16px "Twemoji"', sampleEmoji);
-        root.dataset.sableEmojiEffectiveStyle = hasTwemoji ? 'twemoji' : 'system';
+        root.dataset.sableEmojiEffectiveStyle = hasTwemoji
+          ? "twemoji"
+          : "system";
       } catch {
         if (cancelled) return;
-        root.dataset.sableEmojiEffectiveStyle = 'system';
+        root.dataset.sableEmojiEffectiveStyle = "system";
       }
     };
 
-    if (twitterEmoji && 'fonts' in document) {
+    if (twitterEmoji && "fonts" in document) {
       void updateEffectiveEmojiStyle();
     }
 
     return () => {
       cancelled = true;
-      window.removeEventListener('resize', updateMobileDataset);
+      window.removeEventListener("resize", updateMobileDataset);
     };
   }, [twitterEmoji]);
 
@@ -297,15 +338,18 @@ function SystemEmojiFeature() {
 }
 
 function PageZoomFeature() {
-  const [pageZoom] = useSetting(settingsAtom, 'pageZoom');
+  const [pageZoom] = useSetting(settingsAtom, "pageZoom");
 
   useEffect(() => {
     if (pageZoom === 100) {
-      document.documentElement.style.removeProperty('font-size');
+      document.documentElement.style.removeProperty("font-size");
       return;
     }
 
-    document.documentElement.style.setProperty('font-size', `calc(1em * ${pageZoom / 100})`);
+    document.documentElement.style.setProperty(
+      "font-size",
+      `calc(1em * ${pageZoom / 100})`,
+    );
   }, [pageZoom]);
 
   return null;
@@ -313,8 +357,14 @@ function PageZoomFeature() {
 
 function FaviconUpdater() {
   const roomToUnread = useAtomValue(roomToUnreadAtom);
-  const [usePushNotifications] = useSetting(settingsAtom, 'usePushNotifications');
-  const [faviconForMentionsOnly] = useSetting(settingsAtom, 'faviconForMentionsOnly');
+  const [usePushNotifications] = useSetting(
+    settingsAtom,
+    "usePushNotifications",
+  );
+  const [faviconForMentionsOnly] = useSetting(
+    settingsAtom,
+    "faviconForMentionsOnly",
+  );
   const registration = useAtomValue(registrationAtom);
 
   useEffect(() => {
@@ -353,7 +403,9 @@ function FaviconUpdater() {
       if (usePushNotifications && registration) {
         if (total === 0) {
           // All rooms read — clear every notification.
-          registration.getNotifications().then((notifs) => notifs.forEach((n) => n.close()));
+          registration
+            .getNotifications()
+            .then((notifs) => notifs.forEach((n) => n.close()));
         } else {
           // Dismiss notifications for individual rooms that are now fully read.
           registration.getNotifications().then((notifs) => {
@@ -361,7 +413,10 @@ function FaviconUpdater() {
               const notifRoomId = n.data?.room_id;
               if (!notifRoomId) return;
               const roomUnread = roomToUnread.get(notifRoomId);
-              if (!roomUnread || (roomUnread.total === 0 && roomUnread.highlight === 0)) {
+              if (
+                !roomUnread ||
+                (roomUnread.total === 0 && roomUnread.highlight === 0)
+              ) {
                 n.close();
               }
             });
@@ -371,7 +426,12 @@ function FaviconUpdater() {
     } catch {
       // Likely Firefox/Gecko-based and doesn't support badging API
     }
-  }, [roomToUnread, usePushNotifications, registration, faviconForMentionsOnly]);
+  }, [
+    roomToUnread,
+    usePushNotifications,
+    registration,
+    faviconForMentionsOnly,
+  ]);
 
   return null;
 }
@@ -383,29 +443,38 @@ function InviteNotifications() {
   const mx = useMatrixClient();
 
   const navigate = useNavigate();
-  const [showSystemNotifications] = useSetting(settingsAtom, 'useSystemNotifications');
-  const [usePushNotifications] = useSetting(settingsAtom, 'usePushNotifications');
-  const [notificationSound] = useSetting(settingsAtom, 'isNotificationSounds');
-  const [backgroundNotificationSounds] = useSetting(settingsAtom, 'backgroundNotificationSounds');
+  const [showSystemNotifications] = useSetting(
+    settingsAtom,
+    "useSystemNotifications",
+  );
+  const [usePushNotifications] = useSetting(
+    settingsAtom,
+    "usePushNotifications",
+  );
+  const [notificationSound] = useSetting(settingsAtom, "isNotificationSounds");
+  const [backgroundNotificationSounds] = useSetting(
+    settingsAtom,
+    "backgroundNotificationSounds",
+  );
   const { isActiveNotificationClient } = useNotificationDeviceScope(mx, {
     publishLease: false,
   });
 
   const notify = useCallback(
     (count: number) => {
-      const noti = new window.Notification('Invitation', {
+      const noti = new window.Notification("Invitation", {
         icon: LogoSVG,
         badge: LogoSVG,
         body: `You have ${count} new invitation request.`,
         silent: true,
       });
 
-      noti.addEventListener('click', () => {
+      noti.addEventListener("click", () => {
         if (!window.closed) navigate(getInboxInvitesPath());
         noti.close();
       });
     },
-    [navigate]
+    [navigate],
   );
 
   const playSound = useCallback(() => {
@@ -415,21 +484,29 @@ function InviteNotifications() {
   }, []);
 
   useEffect(() => {
-    if (invites.length <= perviousInviteLen || mx.getSyncState() !== SyncState.Syncing) return;
+    if (
+      invites.length <= perviousInviteLen ||
+      mx.getSyncState() !== SyncState.Syncing
+    )
+      return;
     if (!isActiveNotificationClient) return;
 
     // SW push (via Sygnal) handles invite notifications when the app is backgrounded.
-    if (document.visibilityState !== 'visible' && usePushNotifications) return;
+    if (document.visibilityState !== "visible" && usePushNotifications) return;
 
     // OS notification for invites — desktop only.
-    if (!mobileOrTablet() && showSystemNotifications && notificationPermission('granted')) {
+    if (
+      !mobileOrTablet() &&
+      showSystemNotifications &&
+      notificationPermission("granted")
+    ) {
       try {
         notify(invites.length - perviousInviteLen);
       } catch {
         // window.Notification may be unavailable in sandboxed environments.
       }
     }
-    const tabVisible = document.visibilityState === 'visible';
+    const tabVisible = document.visibilityState === "visible";
     if (notificationSound && (tabVisible || backgroundNotificationSounds)) {
       playSound();
     }
@@ -448,7 +525,7 @@ function InviteNotifications() {
 
   return (
     // oxlint-disable-next-line jsx-a11y/media-has-caption
-    <audio ref={audioRef} style={{ display: 'none' }}>
+    <audio ref={audioRef} style={{ display: "none" }}>
       <source src={InviteSound} type="audio/ogg" />
     </audio>
   );
@@ -457,6 +534,17 @@ function InviteNotifications() {
 function MessageNotifications() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const notifiedEventsRef = useRef(new Set());
+  const queuedNotificationEventsRef = useRef(
+    new Map<
+      string,
+      {
+        mEvent: MatrixEvent;
+        room: Parameters<RoomEventHandlerMap[RoomEvent.Timeline]>[1];
+        data: TimelineEventData;
+      }
+    >(),
+  );
+  const flushQueuedNotificationsRef = useRef<(() => void) | null>(null);
   // Record mount time so we can distinguish live events from historical backfill
   // on sliding sync proxies that don't set num_live (which causes liveEvent=false
   // for all events, including actually-new messages).
@@ -464,17 +552,26 @@ function MessageNotifications() {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
   const appBaseUrl = useSettingsLinkBaseUrl();
-  const [showNotifications] = useSetting(settingsAtom, 'useInAppNotifications');
-  const [showSystemNotifications] = useSetting(settingsAtom, 'useSystemNotifications');
-  const [notificationSound] = useSetting(settingsAtom, 'isNotificationSounds');
-  const [backgroundNotificationSounds] = useSetting(settingsAtom, 'backgroundNotificationSounds');
-  const [showMessageContent] = useSetting(settingsAtom, 'showMessageContentInNotifications');
+  const [showNotifications] = useSetting(settingsAtom, "useInAppNotifications");
+  const [showSystemNotifications] = useSetting(
+    settingsAtom,
+    "useSystemNotifications",
+  );
+  const [notificationSound] = useSetting(settingsAtom, "isNotificationSounds");
+  const [backgroundNotificationSounds] = useSetting(
+    settingsAtom,
+    "backgroundNotificationSounds",
+  );
+  const [showMessageContent] = useSetting(
+    settingsAtom,
+    "showMessageContentInNotifications",
+  );
   const [showEncryptedMessageContent] = useSetting(
     settingsAtom,
-    'showMessageContentInEncryptedNotifications'
+    "showMessageContentInEncryptedNotifications",
   );
-  const [focusMode] = useSetting(settingsAtom, 'focusMode');
-  const { isActiveNotificationClient } = useNotificationDeviceScope(mx, {
+  const [focusMode] = useSetting(settingsAtom, "focusMode");
+  const { isActiveNotificationClient, lease } = useNotificationDeviceScope(mx, {
     publishLease: false,
   });
 
@@ -511,15 +608,31 @@ function MessageNotifications() {
       room,
       _toStartOfTimeline,
       _removed,
-      data
+      data,
     ) => {
-      if (mx.getSyncState() !== SyncState.Syncing) return;
-      if (!isActiveNotificationClient) return;
-
       const eventId = mEvent.getId();
+      if (mx.getSyncState() !== SyncState.Syncing) return;
       // Record event arrival time once per eventId (re-entry via handleDecrypted must not reset it)
       if (eventId && !notifyTimerMap.has(eventId)) {
         notifyTimerMap.set(eventId, performance.now());
+      }
+      if (!isActiveNotificationClient) {
+        if (eventId && room && document.visibilityState === "visible") {
+          queuedNotificationEventsRef.current.set(eventId, {
+            mEvent,
+            room,
+            data,
+          });
+          if (queuedNotificationEventsRef.current.size > 50) {
+            const firstQueuedEventId = queuedNotificationEventsRef.current
+              .keys()
+              .next().value;
+            if (firstQueuedEventId) {
+              queuedNotificationEventsRef.current.delete(firstQueuedEventId);
+            }
+          }
+        }
+        return;
       }
       const shouldSkipFocusCheck = eventId && skipFocusCheckEvents.has(eventId);
       if (!shouldSkipFocusCheck) {
@@ -538,12 +651,13 @@ function MessageNotifications() {
       const isHistoricalEvent =
         !data.liveEvent &&
         (mEvent.getTs() < clientStartTimeRef.current - 60 * 1000 ||
-          (!!room && room.hasUserReadEvent(mx.getSafeUserId(), mEvent.getId()!)));
+          (!!room &&
+            room.hasUserReadEvent(mx.getSafeUserId(), mEvent.getId()!)));
 
       // For encrypted events that haven't been decrypted yet, wait for decryption
       // before processing the notification. The SDK's Timeline re-emission after
       // decryption comes with data.liveEvent=false which would wrongly block it.
-      if (mEvent.getType() === 'm.room.encrypted' && mEvent.isEncrypted()) {
+      if (mEvent.getType() === "m.room.encrypted" && mEvent.isEncrypted()) {
         if (eventId) {
           // Mark this event to skip focus check when decrypted, so we use the focus
           // state from when the encrypted event originally arrived, not when it decrypts.
@@ -563,13 +677,18 @@ function MessageNotifications() {
         // Track listener for cleanup on unmount
         if (eventId) {
           pendingDecryptListeners.set(eventId, () =>
-            mEvent.off(MatrixEventEvent.Decrypted, handleDecrypted)
+            mEvent.off(MatrixEventEvent.Decrypted, handleDecrypted),
           );
         }
         return;
       }
 
-      if (!room || isHistoricalEvent || room.isSpaceRoom() || !isNotificationEvent(mEvent)) {
+      if (
+        !room ||
+        isHistoricalEvent ||
+        room.isSpaceRoom() ||
+        !isNotificationEvent(mEvent)
+      ) {
         return;
       }
 
@@ -592,14 +711,14 @@ function MessageNotifications() {
       const arrivalMs = notifyTimerMap.get(eventId);
       if (arrivalMs !== undefined) {
         Sentry.metrics.distribution(
-          'sable.notification.delivery_ms',
+          "sable.notification.delivery_ms",
           performance.now() - arrivalMs,
           {
             attributes: {
               encrypted: String(mEvent.isEncrypted()),
               dm: String(isDM),
             },
-          }
+          },
         );
         notifyTimerMap.delete(eventId);
       }
@@ -628,7 +747,9 @@ function MessageNotifications() {
 
       // Apply focus mode filter: check if this notification should be shown
       // based on the current focus mode setting.
-      if (!shouldShowNotificationInFocusMode(focusMode, isDM, isHighlightByRule)) {
+      if (
+        !shouldShowNotificationInFocusMode(focusMode, isDM, isHighlightByRule)
+      ) {
         return;
       }
 
@@ -647,15 +768,30 @@ function MessageNotifications() {
       // in sandboxed environments, browsers with DnD active, or Electron — and
       // an uncaught exception here would abort the handler before setInAppBanner
       // is reached, causing in-app notifications to silently vanish too.
-      if (!mobileOrTablet() && showSystemNotifications && notificationPermission('granted')) {
+      if (
+        !mobileOrTablet() &&
+        showSystemNotifications &&
+        notificationPermission("granted")
+      ) {
         try {
-          const isEncryptedRoom = !!getStateEvent(room, EventType.RoomEncryption);
+          const isEncryptedRoom = !!getStateEvent(
+            room,
+            EventType.RoomEncryption,
+          );
           const avatarMxc =
-            room.getAvatarFallbackMember()?.getMxcAvatarUrl() ?? room.getMxcAvatarUrl();
+            room.getAvatarFallbackMember()?.getMxcAvatarUrl() ??
+            room.getMxcAvatarUrl();
           const osPayload = buildRoomMessageNotification({
-            roomName: room.name ?? 'Unknown',
+            roomName: room.name ?? "Unknown",
             roomAvatar: avatarMxc
-              ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96, 'crop') ?? undefined)
+              ? (mxcUrlToHttp(
+                  mx,
+                  avatarMxc,
+                  useAuthentication,
+                  96,
+                  96,
+                  "crop",
+                ) ?? undefined)
               : undefined,
             username:
               getMemberDisplayName(room, sender, nicknamesRef.current) ??
@@ -664,7 +800,9 @@ function MessageNotifications() {
             previewText: resolveNotificationPreviewText({
               content: mEvent.getContent(),
               eventType: mEvent.getType(),
-              effectiveType: mEvent.getEffectiveEvent()?.type as string | undefined,
+              effectiveType: mEvent.getEffectiveEvent()?.type as
+                | string
+                | undefined,
               isEncryptedRoom,
               showMessageContent,
               showEncryptedMessageContent,
@@ -672,16 +810,19 @@ function MessageNotifications() {
             silent: !notificationSound || !isLoud,
             eventId,
           });
-          const noti = new window.Notification(osPayload.title, osPayload.options);
+          const noti = new window.Notification(
+            osPayload.title,
+            osPayload.options,
+          );
           const { roomId } = room;
-          noti.addEventListener('click', () => {
+          noti.addEventListener("click", () => {
             window.focus();
             navigateToRoomNotificationTarget(
               navigate,
               mx.getUserId() ?? undefined,
               roomId,
               eventId,
-              { jumpMode: 'notification_live' }
+              { jumpMode: "notification_live" },
             );
             noti.close();
           });
@@ -690,8 +831,12 @@ function MessageNotifications() {
         }
       }
 
-      const tabVisible = document.visibilityState === 'visible';
-      if (notificationSound && isLoud && (tabVisible || backgroundNotificationSounds)) {
+      const tabVisible = document.visibilityState === "visible";
+      if (
+        notificationSound &&
+        isLoud &&
+        (tabVisible || backgroundNotificationSounds)
+      ) {
         playSound();
       }
 
@@ -703,9 +848,11 @@ function MessageNotifications() {
       // Loud notifications include any room set to "All Messages" with sound enabled.
       if (showNotifications && (isHighlightByRule || isDM || isLoud)) {
         const avatarMxc =
-          room.getAvatarFallbackMember()?.getMxcAvatarUrl() ?? room.getMxcAvatarUrl();
+          room.getAvatarFallbackMember()?.getMxcAvatarUrl() ??
+          room.getMxcAvatarUrl();
         const roomAvatar = avatarMxc
-          ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96, 'crop') ?? undefined)
+          ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96, "crop") ??
+            undefined)
           : undefined;
         const resolvedSenderName =
           getMemberDisplayName(room, sender, nicknamesRef.current) ??
@@ -729,7 +876,7 @@ function MessageNotifications() {
         let bodyNode: ReactNode;
         if (
           showMessageContent &&
-          content.format === 'org.matrix.custom.html' &&
+          content.format === "org.matrix.custom.html" &&
           content.formatted_body
         ) {
           const htmlParserOpts = getReactCustomHtmlParser(mx, room.roomId, {
@@ -738,11 +885,14 @@ function MessageNotifications() {
             useAuthentication,
             nicknames: nicknamesRef.current,
           });
-          bodyNode = parse(sanitizeCustomHtml(content.formatted_body), htmlParserOpts) as ReactNode;
+          bodyNode = parse(
+            sanitizeCustomHtml(content.formatted_body),
+            htmlParserOpts,
+          ) as ReactNode;
         }
 
         const payload = buildRoomMessageNotification({
-          roomName: room.name ?? 'Unknown',
+          roomName: room.name ?? "Unknown",
           roomAvatar,
           username: resolvedSenderName,
           previewText,
@@ -753,7 +903,10 @@ function MessageNotifications() {
         const capturedEventId = eventId;
         const capturedUserId = mx.getUserId() ?? undefined;
         const canonicalAlias = room.getCanonicalAlias();
-        const serverName = canonicalAlias?.split(':')[1] ?? room.roomId.split(':')[1] ?? undefined;
+        const serverName =
+          canonicalAlias?.split(":")[1] ??
+          room.roomId.split(":")[1] ??
+          undefined;
         setInAppBanner({
           id: eventId,
           title: payload.title,
@@ -765,15 +918,38 @@ function MessageNotifications() {
           icon: roomAvatar,
           onClick: () => {
             window.focus();
-            navigateToRoomNotificationTarget(navigate, capturedUserId, roomId, capturedEventId, {
-              jumpMode: 'notification_live',
-            });
+            navigateToRoomNotificationTarget(
+              navigate,
+              capturedUserId,
+              roomId,
+              capturedEventId,
+              {
+                jumpMode: "notification_live",
+              },
+            );
           },
         });
       }
     };
+
+    const flushQueuedNotifications = () => {
+      if (!isActiveNotificationClient) return;
+      const queuedEvents = Array.from(
+        queuedNotificationEventsRef.current.values(),
+      ).toSorted((a, b) => a.mEvent.getTs() - b.mEvent.getTs());
+      queuedNotificationEventsRef.current.clear();
+      queuedEvents.forEach(({ mEvent, room, data }) => {
+        handleTimelineEvent(mEvent, room, undefined, true, data);
+      });
+    };
+    flushQueuedNotificationsRef.current = flushQueuedNotifications;
+    flushQueuedNotifications();
+
     mx.on(RoomEvent.Timeline, handleTimelineEvent);
     return () => {
+      if (flushQueuedNotificationsRef.current === flushQueuedNotifications) {
+        flushQueuedNotificationsRef.current = null;
+      }
       mx.removeListener(RoomEvent.Timeline, handleTimelineEvent);
       // Clean up any pending decryption listeners
       pendingDecryptListeners.forEach((cleanup) => cleanup());
@@ -797,23 +973,40 @@ function MessageNotifications() {
     isActiveNotificationClient,
   ]);
 
+  useEffect(() => {
+    if (isActiveNotificationClient) {
+      flushQueuedNotificationsRef.current?.();
+      return undefined;
+    }
+    if (!lease?.expiresAt) return undefined;
+
+    const delayMs = Math.max(lease.expiresAt - Date.now(), 0) + 50;
+    const timeoutId = window.setTimeout(() => {
+      flushQueuedNotificationsRef.current?.();
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isActiveNotificationClient, lease?.expiresAt]);
+
   return (
     // oxlint-disable-next-line jsx-a11y/media-has-caption
-    <audio ref={audioRef} style={{ display: 'none' }}>
+    <audio ref={audioRef} style={{ display: "none" }}>
       <source src={NotificationSound} type="audio/ogg" />
     </audio>
   );
 }
 
 function PrivacyBlurFeature() {
-  const [blurMedia] = useSetting(settingsAtom, 'privacyBlur');
-  const [blurAvatars] = useSetting(settingsAtom, 'privacyBlurAvatars');
-  const [blurEmotes] = useSetting(settingsAtom, 'privacyBlurEmotes');
+  const [blurMedia] = useSetting(settingsAtom, "privacyBlur");
+  const [blurAvatars] = useSetting(settingsAtom, "privacyBlurAvatars");
+  const [blurEmotes] = useSetting(settingsAtom, "privacyBlurEmotes");
 
   useEffect(() => {
-    document.body.classList.toggle('sable-blur-media', blurMedia);
-    document.body.classList.toggle('sable-blur-avatars', blurAvatars);
-    document.body.classList.toggle('sable-blur-emotes', blurEmotes);
+    document.body.classList.toggle("sable-blur-media", blurMedia);
+    document.body.classList.toggle("sable-blur-avatars", blurAvatars);
+    document.body.classList.toggle("sable-blur-emotes", blurEmotes);
   }, [blurMedia, blurAvatars, blurEmotes]);
 
   return null;
@@ -825,14 +1018,14 @@ function HealthMonitor() {
   useEffect(() => {
     const id = window.setInterval(() => {
       const { cacheSize, inflightCount } = getRenderableMediaUrlStats();
-      Sentry.metrics.gauge('sable.media.blob_cache_size', cacheSize);
+      Sentry.metrics.gauge("sable.media.blob_cache_size", cacheSize);
       if (inflightCount > 0) {
-        Sentry.metrics.gauge('sable.media.inflight_requests', inflightCount);
+        Sentry.metrics.gauge("sable.media.inflight_requests", inflightCount);
         if (inflightCount >= 10) {
           Sentry.addBreadcrumb({
-            category: 'media',
+            category: "media",
             message: `High inflight request count: ${inflightCount}`,
-            level: 'warning',
+            level: "warning",
             data: { inflight_count: inflightCount },
           });
         }
@@ -843,15 +1036,19 @@ function HealthMonitor() {
   return null;
 }
 
-type ServiceWorkerLogLevel = 'debug' | 'info' | 'warning' | 'error';
+type ServiceWorkerLogLevel = "debug" | "info" | "warning" | "error";
 type ServiceWorkerLogAttributes = Record<string, string | number | boolean>;
 
 const flattenServiceWorkerLogAttributes = (
-  data?: Record<string, string | number | boolean | undefined>
+  data?: Record<string, string | number | boolean | undefined>,
 ): ServiceWorkerLogAttributes => {
   const attributes: ServiceWorkerLogAttributes = {};
   Object.entries(data ?? {}).forEach(([key, value]) => {
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
       attributes[key] = value;
     }
   });
@@ -861,8 +1058,8 @@ const flattenServiceWorkerLogAttributes = (
 const logServiceWorkerMessage = (
   category: string,
   message: string,
-  level: ServiceWorkerLogLevel = 'info',
-  data?: Record<string, string | number | boolean | undefined>
+  level: ServiceWorkerLogLevel = "info",
+  data?: Record<string, string | number | boolean | undefined>,
 ): void => {
   const attributes = {
     category,
@@ -870,16 +1067,17 @@ const logServiceWorkerMessage = (
   };
   const logMessage = `[${category}] ${message}`;
 
-  if (level === 'error') Sentry.logger.error(logMessage, attributes);
-  else if (level === 'warning') Sentry.logger.warn(logMessage, attributes);
-  else if (level === 'debug') Sentry.logger.debug(logMessage, attributes);
+  if (level === "error") Sentry.logger.error(logMessage, attributes);
+  else if (level === "warning") Sentry.logger.warn(logMessage, attributes);
+  else if (level === "debug") Sentry.logger.debug(logMessage, attributes);
   else Sentry.logger.info(logMessage, attributes);
 };
 
 const getPushTelemetryLogLevel = (event: string): ServiceWorkerLogLevel => {
-  if (event === 'handler_error') return 'error';
-  if (event === 'decrypt_timeout' || event === 'fetch_fallback') return 'warning';
-  return 'info';
+  if (event === "handler_error") return "error";
+  if (event === "decrypt_timeout" || event === "fetch_fallback")
+    return "warning";
+  return "info";
 };
 
 /**
@@ -888,18 +1086,18 @@ const getPushTelemetryLogLevel = (event: string): ServiceWorkerLogLevel => {
  */
 function ServiceWorkerMetricsHandler() {
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) return undefined;
+    if (!("serviceWorker" in navigator)) return undefined;
 
     const requestTelemetryDrain = () => {
-      if (document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== "visible") return;
       postToServiceWorker({
-        type: 'drainPushTelemetry',
+        type: "drainPushTelemetry",
         requestId: `push-telemetry-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       });
     };
 
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'sentryMetric') {
+      if (event.data?.type === "sentryMetric") {
         const { metricName, value, attributes } = event.data as {
           metricName: string;
           value: number;
@@ -912,20 +1110,22 @@ function ServiceWorkerMetricsHandler() {
         return;
       }
 
-      if (event.data?.type === 'sentryBreadcrumb') {
+      if (event.data?.type === "sentryBreadcrumb") {
         const { category, message, level, data } = event.data as {
           category: string;
           message: string;
-          level?: 'debug' | 'info' | 'warning' | 'error';
+          level?: "debug" | "info" | "warning" | "error";
           data?: Record<string, string | number | boolean | undefined>;
         };
         Sentry.addBreadcrumb({ category, message, level, data });
-        logServiceWorkerMessage(category, message, level ?? 'info', data);
+        logServiceWorkerMessage(category, message, level ?? "info", data);
         return;
       }
 
-      if (event.data?.type === 'pushTelemetryRecords') {
-        const records: unknown[] = Array.isArray(event.data.records) ? event.data.records : [];
+      if (event.data?.type === "pushTelemetryRecords") {
+        const records: unknown[] = Array.isArray(event.data.records)
+          ? event.data.records
+          : [];
         records.forEach((record) => {
           const pushRecord = record as {
             id?: string;
@@ -942,18 +1142,18 @@ function ServiceWorkerMetricsHandler() {
             ...pushRecord.data,
           };
           Sentry.addBreadcrumb({
-            category: 'service_worker.push',
+            category: "service_worker.push",
             message: `SW push ${pushRecord.event}`,
             level,
             data: logData,
           });
           logServiceWorkerMessage(
-            'service_worker.push',
+            "service_worker.push",
             `SW push ${pushRecord.event}`,
             level,
-            logData
+            logData,
           );
-          Sentry.metrics.count('sable.sw.push_telemetry', 1, {
+          Sentry.metrics.count("sable.sw.push_telemetry", 1, {
             attributes: { event: pushRecord.event },
           });
         });
@@ -964,15 +1164,17 @@ function ServiceWorkerMetricsHandler() {
     const handlePageShow = () => requestTelemetryDrain();
 
     requestTelemetryDrain();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('pageshow', handlePageShow);
-    navigator.serviceWorker.ready.then(requestTelemetryDrain).catch(() => undefined);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pageshow", handlePageShow);
+    navigator.serviceWorker.ready
+      .then(requestTelemetryDrain)
+      .catch(() => undefined);
 
-    navigator.serviceWorker.addEventListener('message', handleMessage);
+    navigator.serviceWorker.addEventListener("message", handleMessage);
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('pageshow', handlePageShow);
-      navigator.serviceWorker.removeEventListener('message', handleMessage);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pageshow", handlePageShow);
+      navigator.serviceWorker.removeEventListener("message", handleMessage);
     };
   }, []);
 
@@ -988,11 +1190,11 @@ export function HandleNotificationClick() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!('serviceWorker' in navigator) || isTauri()) return undefined;
+    if (!("serviceWorker" in navigator) || isTauri()) return undefined;
 
     const handleMessage = (ev: MessageEvent) => {
       const { data } = ev;
-      if (!data || data.type !== 'notificationClick') return;
+      if (!data || data.type !== "notificationClick") return;
 
       const {
         userId,
@@ -1015,15 +1217,15 @@ export function HandleNotificationClick() {
       };
 
       const acknowledgeHandledClick = () => {
-        if (typeof clickId === 'string') {
+        if (typeof clickId === "string") {
           if (
             !postToServiceWorkerSource(ev.source, {
-              type: 'notificationClickHandled',
+              type: "notificationClickHandled",
               clickId,
             })
           ) {
             postToServiceWorker({
-              type: 'notificationClickHandled',
+              type: "notificationClickHandled",
               clickId,
             });
           }
@@ -1033,7 +1235,7 @@ export function HandleNotificationClick() {
       };
 
       Sentry.addBreadcrumb(
-        buildNotificationBreadcrumb('click', 'click_message_received', {
+        buildNotificationBreadcrumb("click", "click_message_received", {
           click_id: clickId,
           user_id: userId,
           room_id: roomId,
@@ -1041,17 +1243,17 @@ export function HandleNotificationClick() {
           has_target_url: !!(targetUrl ?? navigateUrl),
           is_invite: isInvite,
           is_reminder: isReminder,
-        })
+        }),
       );
 
       if (userId) setActiveSessionId(userId);
 
       if (isInvite) {
         Sentry.addBreadcrumb(
-          buildNotificationBreadcrumb('click', 'click_routed_invites', {
+          buildNotificationBreadcrumb("click", "click_routed_invites", {
             click_id: clickId,
             user_id: userId,
-          })
+          }),
         );
         navigate(getInboxInvitesPath());
         acknowledgeHandledClick();
@@ -1060,10 +1262,10 @@ export function HandleNotificationClick() {
 
       if (isReminder) {
         Sentry.addBreadcrumb(
-          buildNotificationBreadcrumb('click', 'click_routed_reminders', {
+          buildNotificationBreadcrumb("click", "click_routed_reminders", {
             click_id: clickId,
             user_id: userId,
-          })
+          }),
         );
         navigate(getInboxBookmarksPath());
         acknowledgeHandledClick();
@@ -1073,12 +1275,12 @@ export function HandleNotificationClick() {
       if (!roomId) {
         if (navigateUrl ?? targetUrl) {
           Sentry.addBreadcrumb(
-            buildNotificationBreadcrumb('click', 'click_routed_fallback_url', {
+            buildNotificationBreadcrumb("click", "click_routed_fallback_url", {
               click_id: clickId,
               target_url: targetUrl ?? navigateUrl,
-            })
+            }),
           );
-          navigateToServiceWorkerUrl(navigate, navigateUrl ?? targetUrl ?? '');
+          navigateToServiceWorkerUrl(navigate, navigateUrl ?? targetUrl ?? "");
           acknowledgeHandledClick();
         }
         return;
@@ -1086,60 +1288,80 @@ export function HandleNotificationClick() {
 
       if (userId) {
         Sentry.addBreadcrumb(
-          buildNotificationBreadcrumb('click', 'click_routed_room_restore', {
+          buildNotificationBreadcrumb("click", "click_routed_room_restore", {
             click_id: clickId,
             user_id: userId,
             room_id: roomId,
             event_id: eventId,
-          })
+          }),
         );
         acknowledgeHandledClick();
         navigateToRoomNotificationTarget(navigate, userId, roomId, eventId, {
-          swClickId: typeof clickId === 'string' ? clickId : undefined,
-          jumpMode: 'notification_live',
+          swClickId: typeof clickId === "string" ? clickId : undefined,
+          jumpMode: "notification_live",
         });
         return;
       }
 
       if (targetUrl ?? navigateUrl) {
         Sentry.addBreadcrumb(
-          buildNotificationBreadcrumb('click', 'click_routed_target_url', {
+          buildNotificationBreadcrumb("click", "click_routed_target_url", {
             click_id: clickId,
             target_url: targetUrl ?? navigateUrl,
-          })
+          }),
         );
-        navigateToServiceWorkerUrl(navigate, targetUrl ?? navigateUrl ?? '');
+        navigateToServiceWorkerUrl(navigate, targetUrl ?? navigateUrl ?? "");
         acknowledgeHandledClick();
       }
     };
 
-    navigator.serviceWorker.addEventListener('message', handleMessage);
-    return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
+    navigator.serviceWorker.addEventListener("message", handleMessage);
+    return () =>
+      navigator.serviceWorker.removeEventListener("message", handleMessage);
   }, [setActiveSessionId, navigate]);
 
   return null;
 }
 
 function SyncNotificationSettingsWithServiceWorker() {
-  const [showMessageContent] = useSetting(settingsAtom, 'showMessageContentInNotifications');
+  const mx = useMatrixClient();
+  const [showMessageContent] = useSetting(
+    settingsAtom,
+    "showMessageContentInNotifications",
+  );
   const [showEncryptedMessageContent] = useSetting(
     settingsAtom,
-    'showMessageContentInEncryptedNotifications'
+    "showMessageContentInEncryptedNotifications",
   );
-  const [clearNotificationsOnRead] = useSetting(settingsAtom, 'clearNotificationsOnRead');
-  const [focusMode] = useSetting(settingsAtom, 'focusMode');
+  const [clearNotificationsOnRead] = useSetting(
+    settingsAtom,
+    "clearNotificationsOnRead",
+  );
+  const [focusMode] = useSetting(settingsAtom, "focusMode");
+  const { deviceId, lease, notificationDeviceScope } =
+    useNotificationDeviceScope(mx, {
+      publishLease: false,
+    });
 
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) return undefined;
+    if (!("serviceWorker" in navigator)) return undefined;
 
     let heartbeatIntervalId: number | undefined;
 
     const postVisibility = () => {
-      const visible = document.visibilityState === 'visible';
-      const payload = { type: 'setAppVisible', visible };
+      const visible = document.visibilityState === "visible";
+      const payload = {
+        type: "setAppVisible",
+        visible,
+        deviceId,
+        desktopDelayEnabled: notificationDeviceScope === "desktop_delay",
+        lease,
+      };
 
       navigator.serviceWorker.controller?.postMessage(payload);
-      navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage(payload));
+      navigator.serviceWorker.ready.then((reg) =>
+        reg.active?.postMessage(payload),
+      );
     };
 
     const stopHeartbeat = () => {
@@ -1152,13 +1374,13 @@ function SyncNotificationSettingsWithServiceWorker() {
     const restartHeartbeat = () => {
       stopHeartbeat();
       postVisibility();
-      if (document.visibilityState === 'visible' && document.hasFocus()) {
+      if (document.visibilityState === "visible" && document.hasFocus()) {
         heartbeatIntervalId = window.setInterval(postVisibility, 10_000);
       }
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') restartHeartbeat();
+      if (document.visibilityState === "visible") restartHeartbeat();
       else {
         postVisibility();
         stopHeartbeat();
@@ -1170,27 +1392,27 @@ function SyncNotificationSettingsWithServiceWorker() {
     const handlePageShow = () => restartHeartbeat();
 
     restartHeartbeat();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('blur', handleBlur);
-    window.addEventListener('pageshow', handlePageShow);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
+    window.addEventListener("pageshow", handlePageShow);
 
     return () => {
       stopHeartbeat();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('blur', handleBlur);
-      window.removeEventListener('pageshow', handlePageShow);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("pageshow", handlePageShow);
     };
-  }, []);
+  }, [deviceId, lease, notificationDeviceScope]);
 
   useEffect(() => {
-    if (!('serviceWorker' in navigator) || isTauri()) return;
+    if (!("serviceWorker" in navigator) || isTauri()) return;
     // notificationSoundEnabled is intentionally excluded: push notification sound
     // is governed by the push rule's tweakSound alone (OS/Sygnal handles it).
     // The in-app sound setting only controls the in-page <audio> playback above.
     const payload = {
-      type: 'setNotificationSettings' as const,
+      type: "setNotificationSettings" as const,
       showMessageContent,
       showEncryptedMessageContent,
       clearNotificationsOnRead,
@@ -1198,7 +1420,12 @@ function SyncNotificationSettingsWithServiceWorker() {
     };
 
     postToServiceWorker(payload);
-  }, [showMessageContent, showEncryptedMessageContent, clearNotificationsOnRead, focusMode]);
+  }, [
+    showMessageContent,
+    showEncryptedMessageContent,
+    clearNotificationsOnRead,
+    focusMode,
+  ]);
 
   return null;
 }
@@ -1220,9 +1447,9 @@ function SentryRoomContextFeature() {
 
   useEffect(() => {
     if (!roomId) {
-      Sentry.setContext('room', null);
-      Sentry.setTag('room_type', 'none');
-      Sentry.setTag('room_encrypted', 'none');
+      Sentry.setContext("room", null);
+      Sentry.setTag("room_type", "none");
+      Sentry.setTag("room_encrypted", "none");
       return;
     }
     const room = mx.getRoom(roomId);
@@ -1234,20 +1461,20 @@ function SentryRoomContextFeature() {
     // Bucket member count so we can correlate issues with room scale
     // without leaking precise membership numbers of private rooms.
     let memberCountRange: string;
-    if (memberCount <= 2) memberCountRange = '1-2';
-    else if (memberCount <= 10) memberCountRange = '3-10';
-    else if (memberCount <= 50) memberCountRange = '11-50';
-    else if (memberCount <= 200) memberCountRange = '51-200';
-    else memberCountRange = '200+';
+    if (memberCount <= 2) memberCountRange = "1-2";
+    else if (memberCount <= 10) memberCountRange = "3-10";
+    else if (memberCount <= 50) memberCountRange = "11-50";
+    else if (memberCount <= 200) memberCountRange = "51-200";
+    else memberCountRange = "200+";
 
-    Sentry.setContext('room', {
-      type: isDm ? 'dm' : 'group',
+    Sentry.setContext("room", {
+      type: isDm ? "dm" : "group",
       encrypted,
       member_count_range: memberCountRange,
     });
     // Also set as tags so they can be used to filter events in Sentry
-    Sentry.setTag('room_type', isDm ? 'dm' : 'group');
-    Sentry.setTag('room_encrypted', String(encrypted));
+    Sentry.setTag("room_type", isDm ? "dm" : "group");
+    Sentry.setTag("room_encrypted", String(encrypted));
   }, [mx, mDirect, roomId]);
 
   return null;
@@ -1258,25 +1485,25 @@ function SentryTagsFeature() {
 
   useEffect(() => {
     // Core rendering tags — indexed in Sentry for filtering/search
-    Sentry.setTag('message_layout', String(settings.messageLayout));
-    Sentry.setTag('message_spacing', settings.messageSpacing);
-    Sentry.setTag('twitter_emoji', String(settings.twitterEmoji));
-    Sentry.setTag('page_zoom', String(settings.pageZoom));
-    if (settings.themeId) Sentry.setTag('theme_id', settings.themeId);
+    Sentry.setTag("message_layout", String(settings.messageLayout));
+    Sentry.setTag("message_spacing", settings.messageSpacing);
+    Sentry.setTag("twitter_emoji", String(settings.twitterEmoji));
+    Sentry.setTag("page_zoom", String(settings.pageZoom));
+    if (settings.themeId) Sentry.setTag("theme_id", settings.themeId);
     // Additional high-value tags for bug reproduction
-    Sentry.setTag('use_right_bubbles', String(settings.useRightBubbles));
-    Sentry.setTag('reduced_motion', String(settings.reducedMotion));
-    Sentry.setTag('send_presence', String(settings.sendPresence));
-    Sentry.setTag('enter_for_newline', String(settings.enterForNewline));
-    Sentry.setTag('media_auto_load', String(settings.mediaAutoLoad));
-    Sentry.setTag('url_preview', String(settings.urlPreview));
-    Sentry.setTag('use_system_theme', String(settings.useSystemTheme));
-    Sentry.setTag('uniform_icons', String(settings.uniformIcons));
-    Sentry.setTag('jumbo_emoji_size', settings.jumboEmojiSize);
-    Sentry.setTag('caption_position', settings.captionPosition);
-    Sentry.setTag('right_swipe_action', settings.rightSwipeAction);
+    Sentry.setTag("use_right_bubbles", String(settings.useRightBubbles));
+    Sentry.setTag("reduced_motion", String(settings.reducedMotion));
+    Sentry.setTag("send_presence", String(settings.sendPresence));
+    Sentry.setTag("enter_for_newline", String(settings.enterForNewline));
+    Sentry.setTag("media_auto_load", String(settings.mediaAutoLoad));
+    Sentry.setTag("url_preview", String(settings.urlPreview));
+    Sentry.setTag("use_system_theme", String(settings.useSystemTheme));
+    Sentry.setTag("uniform_icons", String(settings.uniformIcons));
+    Sentry.setTag("jumbo_emoji_size", settings.jumboEmojiSize);
+    Sentry.setTag("caption_position", settings.captionPosition);
+    Sentry.setTag("right_swipe_action", settings.rightSwipeAction);
     // Full settings snapshot as structured Additional Data on every event
-    Sentry.setContext('settings', { ...settings });
+    Sentry.setContext("settings", { ...settings });
   }, [settings]);
 
   return null;
@@ -1292,14 +1519,14 @@ function HandleDecryptPushEvent() {
   const mx = useMatrixClient();
 
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) return undefined;
+    if (!("serviceWorker" in navigator)) return undefined;
 
     const RETRYABLE_DECRYPT_ERROR_PATTERNS = [
       "The sender's device has not sent us the keys",
-      'Unknown inbound session',
-      'Decryption error',
-      'MEGOLM_UNKNOWN_INBOUND_SESSION_ID',
-      'OLM_UNKNOWN_MESSAGE_INDEX',
+      "Unknown inbound session",
+      "Decryption error",
+      "MEGOLM_UNKNOWN_INBOUND_SESSION_ID",
+      "OLM_UNKNOWN_MESSAGE_INDEX",
     ] as const;
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => {
@@ -1307,28 +1534,32 @@ function HandleDecryptPushEvent() {
       });
     const isRetryablePushDecryptError = (error: unknown): error is Error =>
       error instanceof Error &&
-      RETRYABLE_DECRYPT_ERROR_PATTERNS.some((pattern) => error.message.includes(pattern));
+      RETRYABLE_DECRYPT_ERROR_PATTERNS.some((pattern) =>
+        error.message.includes(pattern),
+      );
 
     const handleMessage = async (ev: MessageEvent) => {
       const { data } = ev;
       if (!data) return;
 
-      if (data.type !== 'decryptPushEvent') return;
+      if (data.type !== "decryptPushEvent") return;
 
       const { rawEvent } = data as { rawEvent: Record<string, unknown> };
       const eventId = rawEvent.event_id as string;
       const roomId = rawEvent.room_id as string;
       const decryptStart = performance.now();
-      const mxEvent = new MatrixEvent(rawEvent as ConstructorParameters<typeof MatrixEvent>[0]);
+      const mxEvent = new MatrixEvent(
+        rawEvent as ConstructorParameters<typeof MatrixEvent>[0],
+      );
       let attempts = 0;
-      let failureReason = 'decrypt_failed';
+      let failureReason = "decrypt_failed";
       Sentry.addBreadcrumb(
-        buildNotificationBreadcrumb('push', 'push_relay_requested', {
+        buildNotificationBreadcrumb("push", "push_relay_requested", {
           event_id: eventId,
           room_id: roomId,
-          sync_state: mx.getSyncState() ?? 'unknown',
+          sync_state: mx.getSyncState() ?? "unknown",
           visibility_state: document.visibilityState,
-        })
+        }),
       );
       const decryptWithRetry = async (): Promise<void> => {
         attempts += 1;
@@ -1339,26 +1570,30 @@ function HandleDecryptPushEvent() {
             throw error;
           }
 
-          failureReason = 'missing_room_keys';
+          failureReason = "missing_room_keys";
           const elapsedMs = performance.now() - decryptStart;
           const nextDelayMs = Math.min(400 + attempts * 500, 2_000);
           if (elapsedMs + nextDelayMs >= 7_000) {
             throw error;
           }
 
-          pushRelayLog.warn('notification', 'Push relay decrypt retry scheduled', {
-            attempts,
-            nextDelayMs,
-            syncState: mx.getSyncState() ?? 'unknown',
-          });
+          pushRelayLog.warn(
+            "notification",
+            "Push relay decrypt retry scheduled",
+            {
+              attempts,
+              nextDelayMs,
+              syncState: mx.getSyncState() ?? "unknown",
+            },
+          );
           Sentry.addBreadcrumb(
-            buildNotificationBreadcrumb('push', 'push_relay_retry_scheduled', {
+            buildNotificationBreadcrumb("push", "push_relay_retry_scheduled", {
               event_id: eventId,
               room_id: roomId,
               attempts,
               next_delay_ms: nextDelayMs,
-              sync_state: mx.getSyncState() ?? 'unknown',
-            })
+              sync_state: mx.getSyncState() ?? "unknown",
+            }),
           );
           await sleep(nextDelayMs);
           await decryptWithRetry();
@@ -1370,85 +1605,92 @@ function HandleDecryptPushEvent() {
 
         const room = mx.getRoom(roomId);
         const sender = mxEvent.getSender();
-        let senderName = 'Someone';
+        let senderName = "Someone";
         if (sender) {
           senderName = getMxIdLocalPart(sender) ?? sender;
-          if (room) senderName = getMemberDisplayName(room, sender) ?? senderName;
+          if (room)
+            senderName = getMemberDisplayName(room, sender) ?? senderName;
         }
 
         const decryptMs = Math.round(performance.now() - decryptStart);
-        pushRelayLog.info('notification', 'Push relay decryption succeeded', {
+        pushRelayLog.info("notification", "Push relay decryption succeeded", {
           eventType: mxEvent.getType(),
           decryptMs,
           attempts,
         });
         Sentry.addBreadcrumb(
-          buildNotificationBreadcrumb('push', 'push_relay_succeeded', {
+          buildNotificationBreadcrumb("push", "push_relay_succeeded", {
             event_id: eventId,
             room_id: roomId,
             event_type: mxEvent.getType(),
             decrypt_ms: decryptMs,
             attempts,
-            sync_state: mx.getSyncState() ?? 'unknown',
-          })
+            sync_state: mx.getSyncState() ?? "unknown",
+          }),
         );
 
         const response = {
-          type: 'pushDecryptResult',
+          type: "pushDecryptResult",
           eventId,
           success: true,
           eventType: mxEvent.getType(),
           content: mxEvent.getContent(),
           sender_display_name: senderName,
-          room_name: room?.name ?? '',
+          room_name: room?.name ?? "",
           visibilityState: document.visibilityState,
           focused: document.hasFocus(),
           attempts,
           syncState: mx.getSyncState() ?? undefined,
         };
-        Sentry.metrics.count('sable.push.decrypt_relay_page', 1, {
+        Sentry.metrics.count("sable.push.decrypt_relay_page", 1, {
           attributes: buildNotificationMetricAttributes({
             success: true,
-            failure_reason: 'none',
+            failure_reason: "none",
             attempts,
-            sync_state: mx.getSyncState() ?? 'unknown',
+            sync_state: mx.getSyncState() ?? "unknown",
           }),
         });
-        if (!postToServiceWorkerSource(ev.source, response)) postToServiceWorker(response);
+        if (!postToServiceWorkerSource(ev.source, response))
+          postToServiceWorker(response);
       } catch (err) {
-        console.warn('[ClientFeatures] HandleDecryptPushEvent: failed to decrypt push event', err);
+        console.warn(
+          "[ClientFeatures] HandleDecryptPushEvent: failed to decrypt push event",
+          err,
+        );
         pushRelayLog.error(
-          'notification',
-          'Push relay decryption failed',
-          err instanceof Error ? err : new Error(String(err))
+          "notification",
+          "Push relay decryption failed",
+          err instanceof Error ? err : new Error(String(err)),
         );
 
         // Check if this is a missing keys error
         const isDecryptionError =
           err instanceof Error &&
-          (err.message.includes("The sender's device has not sent us the keys") ||
-            err.message.includes('Unknown inbound session'));
+          (err.message.includes(
+            "The sender's device has not sent us the keys",
+          ) ||
+            err.message.includes("Unknown inbound session"));
         if (isDecryptionError) {
-          failureReason = 'missing_room_keys';
+          failureReason = "missing_room_keys";
         }
 
         if (isDecryptionError) {
           Sentry.addBreadcrumb(
             buildNotificationBreadcrumb(
-              'push',
-              'push_relay_missing_room_keys',
+              "push",
+              "push_relay_missing_room_keys",
               {
                 event_id: eventId,
                 room_id: roomId,
                 error: err.message,
                 attempts,
               },
-              'warning'
-            )
+              "warning",
+            ),
           );
-          Sentry.metrics.count('sable.push.decrypt_missing_keys', 1, {
+          Sentry.metrics.count("sable.push.decrypt_missing_keys", 1, {
             attributes: buildNotificationMetricAttributes({
-              app_visible: document.visibilityState === 'visible',
+              app_visible: document.visibilityState === "visible",
               attempts,
             }),
           });
@@ -1457,30 +1699,30 @@ function HandleDecryptPushEvent() {
         }
         Sentry.addBreadcrumb(
           buildNotificationBreadcrumb(
-            'push',
-            'push_relay_failed',
+            "push",
+            "push_relay_failed",
             {
               event_id: eventId,
               room_id: roomId,
               failure_reason: failureReason,
               attempts,
-              sync_state: mx.getSyncState() ?? 'unknown',
+              sync_state: mx.getSyncState() ?? "unknown",
               error: err instanceof Error ? err.message : String(err),
             },
-            'warning'
-          )
+            "warning",
+          ),
         );
-        Sentry.metrics.count('sable.push.decrypt_relay_page', 1, {
+        Sentry.metrics.count("sable.push.decrypt_relay_page", 1, {
           attributes: buildNotificationMetricAttributes({
             success: false,
             failure_reason: failureReason,
             attempts,
-            sync_state: mx.getSyncState() ?? 'unknown',
+            sync_state: mx.getSyncState() ?? "unknown",
           }),
         });
 
         const response = {
-          type: 'pushDecryptResult',
+          type: "pushDecryptResult",
           eventId,
           success: false,
           visibilityState: document.visibilityState,
@@ -1489,12 +1731,14 @@ function HandleDecryptPushEvent() {
           attempts,
           syncState: mx.getSyncState() ?? undefined,
         };
-        if (!postToServiceWorkerSource(ev.source, response)) postToServiceWorker(response);
+        if (!postToServiceWorkerSource(ev.source, response))
+          postToServiceWorker(response);
       }
     };
 
-    navigator.serviceWorker.addEventListener('message', handleMessage);
-    return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
+    navigator.serviceWorker.addEventListener("message", handleMessage);
+    return () =>
+      navigator.serviceWorker.removeEventListener("message", handleMessage);
   }, [mx]);
 
   return null;
@@ -1502,16 +1746,19 @@ function HandleDecryptPushEvent() {
 
 function PresenceFeature() {
   const mx = useMatrixClient();
-  const [sendPresence] = useSetting(settingsAtom, 'sendPresence');
-  const [presenceMode] = useSetting(settingsAtom, 'presenceMode');
-  const [autoIdlePresence] = useSetting(settingsAtom, 'autoIdlePresence');
-  const [presenceIdleTimeoutMins] = useSetting(settingsAtom, 'presenceIdleTimeoutMins');
+  const [sendPresence] = useSetting(settingsAtom, "sendPresence");
+  const [presenceMode] = useSetting(settingsAtom, "presenceMode");
+  const [autoIdlePresence] = useSetting(settingsAtom, "autoIdlePresence");
+  const [presenceIdleTimeoutMins] = useSetting(
+    settingsAtom,
+    "presenceIdleTimeoutMins",
+  );
 
   // Auto-idle detection: monitors user activity and sets presenceAutoIdledAtom
   // when inactivity timeout is reached. The sync feature will pick up the
   // atom change and broadcast it to other devices + the server.
   const timeoutMs = autoIdlePresence ? presenceIdleTimeoutMins * 60 * 1000 : 0;
-  usePresenceAutoIdle(mx, presenceMode ?? 'online', sendPresence, timeoutMs);
+  usePresenceAutoIdle(mx, presenceMode ?? "online", sendPresence, timeoutMs);
 
   return null;
 }
@@ -1522,26 +1769,41 @@ function PresenceSyncFeature() {
 }
 
 function getNotificationTransportRuntimePlatform(): NotificationTransportPlatform {
-  if (!isTauri()) return 'web';
+  if (!isTauri()) return "web";
 
   const platform = osType();
-  if (platform === 'android') return 'android';
-  if (platform === 'ios') return 'ios';
-  return 'desktop';
+  if (platform === "android") return "android";
+  if (platform === "ios") return "ios";
+  return "desktop";
 }
 
 function NotificationTransportRuntimeFeature() {
   const mx = useMatrixClient();
-  const [backgroundPushEnabled] = useSetting(settingsAtom, 'backgroundPushEnabled');
-  const [backgroundPushProvider] = useSetting(settingsAtom, 'backgroundPushProvider');
-  const [pushTransportMode] = useSetting(settingsAtom, 'pushTransportMode');
-  const [isNotificationSounds] = useSetting(settingsAtom, 'isNotificationSounds');
-  const [showMessageContent] = useSetting(settingsAtom, 'showMessageContentInNotifications');
+  const [backgroundPushEnabled] = useSetting(
+    settingsAtom,
+    "backgroundPushEnabled",
+  );
+  const [backgroundPushProvider] = useSetting(
+    settingsAtom,
+    "backgroundPushProvider",
+  );
+  const [pushTransportMode] = useSetting(settingsAtom, "pushTransportMode");
+  const [isNotificationSounds] = useSetting(
+    settingsAtom,
+    "isNotificationSounds",
+  );
+  const [showMessageContent] = useSetting(
+    settingsAtom,
+    "showMessageContentInNotifications",
+  );
   const [showEncryptedMessageContent] = useSetting(
     settingsAtom,
-    'showMessageContentInEncryptedNotifications'
+    "showMessageContentInEncryptedNotifications",
   );
-  const [useInAppNotifications] = useSetting(settingsAtom, 'useInAppNotifications');
+  const [useInAppNotifications] = useSetting(
+    settingsAtom,
+    "useInAppNotifications",
+  );
 
   const runtimeRef = useRef<NotificationTransportRuntime | null>(null);
   const contextRef = useRef<NotificationTransportRuntimeContext>({
@@ -1567,10 +1829,16 @@ function NotificationTransportRuntimeFeature() {
     if (!isTauri()) return undefined;
 
     const runtimePlatform = getNotificationTransportRuntimePlatform();
-    const normalizedMode = normalizeNotificationTransportMode(pushTransportMode, runtimePlatform);
+    const normalizedMode = normalizeNotificationTransportMode(
+      pushTransportMode,
+      runtimePlatform,
+    );
     const provider = backgroundPushEnabled
       ? (backgroundPushProvider ??
-        resolvePreferredNotificationTransportProvider(normalizedMode, runtimePlatform))
+        resolvePreferredNotificationTransportProvider(
+          normalizedMode,
+          runtimePlatform,
+        ))
       : null;
     const runtime = runtimeRef.current;
     if (!runtime) return undefined;
@@ -1578,18 +1846,18 @@ function NotificationTransportRuntimeFeature() {
     const syncPromise = runtime.sync(provider, () => contextRef.current);
     syncPromise.catch((error) => {
       transportLog.error(
-        'notification',
-        'Notification transport runtime failed',
-        error instanceof Error ? error : new Error(String(error))
+        "notification",
+        "Notification transport runtime failed",
+        error instanceof Error ? error : new Error(String(error)),
       );
     });
     return () => {
       const cleanupPromise = runtime.dispose();
       cleanupPromise.catch((error) => {
         transportLog.error(
-          'notification',
-          'Notification transport runtime cleanup failed',
-          error instanceof Error ? error : new Error(String(error))
+          "notification",
+          "Notification transport runtime cleanup failed",
+          error instanceof Error ? error : new Error(String(error)),
         );
       });
     };
@@ -1623,10 +1891,10 @@ function ReminderBanners() {
   const setInAppBanner = useSetAtom(inAppBannerAtom);
 
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) return undefined;
+    if (!("serviceWorker" in navigator)) return undefined;
 
     const handler = (event: MessageEvent) => {
-      if (event.data?.type !== 'remindersInApp') return;
+      if (event.data?.type !== "remindersInApp") return;
       const reminders: Array<{
         bookmarkId: string;
         note?: string;
@@ -1638,8 +1906,8 @@ function ReminderBanners() {
 
       setInAppBanner({
         id: `reminder-${first.bookmarkId}`,
-        title: 'Bookmark Reminder',
-        body: first.note ?? 'You have a bookmark reminder.',
+        title: "Bookmark Reminder",
+        body: first.note ?? "You have a bookmark reminder.",
         onClick: () => {
           window.focus();
           navigate(getInboxBookmarksPath());
@@ -1647,16 +1915,23 @@ function ReminderBanners() {
       });
     };
 
-    navigator.serviceWorker.addEventListener('message', handler);
-    return () => navigator.serviceWorker.removeEventListener('message', handler);
+    navigator.serviceWorker.addEventListener("message", handler);
+    return () =>
+      navigator.serviceWorker.removeEventListener("message", handler);
   }, [navigate, setInAppBanner]);
 
   return null;
 }
 
 function RemindersFeature() {
-  const [enableMessageBookmarks] = useSetting(settingsAtom, 'enableMessageBookmarks');
-  const [enableBookmarkReminders] = useSetting(settingsAtom, 'enableBookmarkReminders');
+  const [enableMessageBookmarks] = useSetting(
+    settingsAtom,
+    "enableMessageBookmarks",
+  );
+  const [enableBookmarkReminders] = useSetting(
+    settingsAtom,
+    "enableBookmarkReminders",
+  );
   if (!enableMessageBookmarks || !enableBookmarkReminders) return null;
   return (
     <>
