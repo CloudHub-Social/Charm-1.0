@@ -1287,33 +1287,6 @@ export function RoomTimeline({
     }
   }, [openThreadId, scrollToBottom]);
 
-  useLayoutEffect(() => {
-    if (!pendingJumpToLatestRef.current) return;
-    if (!isReady) return;
-    if (!timelineSync.liveTimelineLinked) return;
-    if (processedEvents.length === 0) return;
-
-    pendingJumpToLatestRef.current = false;
-    lastProgrammaticBottomPinAtRef.current = Date.now();
-    setAtBottom(true);
-    startJumpScrollBlock(true);
-    scrollToBottom();
-
-    requestAnimationFrame(() => {
-      const v = vListRef.current;
-      if (!v) return;
-      lastProgrammaticBottomPinAtRef.current = Date.now();
-      v.scrollTo(v.scrollSize);
-    });
-  }, [
-    isReady,
-    processedEvents.length,
-    scrollToBottom,
-    setAtBottom,
-    startJumpScrollBlock,
-    timelineSync.liveTimelineLinked,
-  ]);
-
   const actions = useTimelineActions({
     room,
     mx,
@@ -1807,6 +1780,33 @@ export function RoomTimeline({
   });
 
   processedEventsRef.current = processedEvents;
+
+  useLayoutEffect(() => {
+    if (!pendingJumpToLatestRef.current) return;
+    if (!isReady) return;
+    if (!timelineSync.liveTimelineLinked) return;
+    if (processedEvents.length === 0) return;
+
+    pendingJumpToLatestRef.current = false;
+    lastProgrammaticBottomPinAtRef.current = Date.now();
+    setAtBottom(true);
+    startJumpScrollBlock(true);
+    scrollToBottom();
+
+    requestAnimationFrame(() => {
+      const v = vListRef.current;
+      if (!v) return;
+      lastProgrammaticBottomPinAtRef.current = Date.now();
+      v.scrollTo(v.scrollSize);
+    });
+  }, [
+    isReady,
+    processedEvents.length,
+    scrollToBottom,
+    setAtBottom,
+    startJumpScrollBlock,
+    timelineSync.liveTimelineLinked,
+  ]);
 
   useLayoutEffect(() => {
     if (!jumpLockActiveRef.current) return;
