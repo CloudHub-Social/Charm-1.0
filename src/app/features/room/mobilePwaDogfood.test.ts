@@ -21,15 +21,16 @@ describe('mobile PWA dogfood contract', () => {
     const roomHeader = readWorkspaceFile('src/app/features/room/RoomViewHeader.tsx');
 
     expect(roomHeader).toContain(
-      'const showMobileMembersAction = screenSize !== ScreenSize.Desktop;'
+      'const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();'
     );
+    expect(roomHeader).toContain('const showMobileMembersAction = isMobileMembersSurface;');
     expect(roomHeader).toContain('const showMobileWidgetsAction =');
     expect(roomHeader).toContain(
       'openSettings(room.roomId, parentSpace?.roomId, RoomSettingsPage.MembersPage);'
     );
+    expect(roomHeader).toContain('const handleOpenWidgets = () => {');
     expect(roomHeader).toContain('setWidgetDrawer(true);');
-    expect(roomHeader).toContain('Members\n            </Text>');
-    expect(roomHeader).toContain('Widgets\n            </Text>');
+    expect(roomHeader).toContain('handleOpenWidgets');
   });
 
   it('renders the widgets drawer as an overlay on non-desktop layouts', () => {

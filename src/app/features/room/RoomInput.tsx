@@ -1127,6 +1127,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           setInputKey((prev) => prev + 1);
           setEditDraft(undefined);
           sendTypingStatus(false);
+          if (mobileOrTablet()) {
+            requestAnimationFrame(() => ReactEditor.focus(editor));
+          }
 
           mx.sendMessage(roomId, sendContent as RoomMessageEventContent).catch((error: unknown) => {
             log.error('failed to send edit', { roomId }, error);
@@ -1142,6 +1145,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           resetEditor(editor);
           resetEditorHistory(editor);
           sendTypingStatus(false);
+          if (mobileOrTablet()) {
+            requestAnimationFrame(() => ReactEditor.focus(editor));
+          }
         }
         return;
       }

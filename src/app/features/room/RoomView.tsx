@@ -140,7 +140,7 @@ export function RoomView({
 
   const openSettings = useOpenRoomSettings();
   const space = useSpaceOptionally();
-  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
+  const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();
 
   const handleOpenMembers = useCallback(() => {
     if (isMobileMembersSurface && onOpenMobileMembersDrawer) {

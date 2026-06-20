@@ -14,8 +14,7 @@ type SystemBarStripProps = {
 };
 
 function SystemBarStrip({ position, size }: SystemBarStripProps) {
-  const background =
-    position === 'top' ? 'var(--sable-surface)' : 'var(--sable-bg-container)';
+  const background = position === 'top' ? 'var(--sable-surface)' : 'var(--sable-bg-container)';
   const borderColor =
     position === 'top' ? 'var(--sable-surface-line)' : 'var(--sable-bg-container-line)';
   return (
