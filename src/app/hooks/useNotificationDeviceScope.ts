@@ -152,19 +152,13 @@ export function useNotificationDeviceScope(
       const clearedLease = {} as never;
       mx.setAccountData(NOTIFICATION_DEVICE_LEASE_EVENT_TYPE, clearedLease)
         .then(() => {
-          if (
-            !isMountedRef.current ||
-            leaseMutationVersionRef.current !== mutationVersion
-          ) {
+          if (!isMountedRef.current || leaseMutationVersionRef.current !== mutationVersion) {
             return;
           }
           clearLeaseRetryAtRef.current = 0;
         })
         .catch(() => {
-          if (
-            !isMountedRef.current ||
-            leaseMutationVersionRef.current !== mutationVersion
-          ) {
+          if (!isMountedRef.current || leaseMutationVersionRef.current !== mutationVersion) {
             return;
           }
           clearLeaseRetryAtRef.current = Date.now() + CLEAR_LEASE_RETRY_DELAY_MS;
@@ -173,10 +167,7 @@ export function useNotificationDeviceScope(
           setNow(Date.now());
         })
         .finally(() => {
-          if (
-            isMountedRef.current &&
-            leaseMutationVersionRef.current === mutationVersion
-          ) {
+          if (isMountedRef.current && leaseMutationVersionRef.current === mutationVersion) {
             clearLeaseInFlightRef.current = false;
           }
         });

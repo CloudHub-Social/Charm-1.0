@@ -517,15 +517,6 @@ function MessageNotifications() {
     clearMediaSessionQuickly();
   }, []);
 
-  useEffect(
-    () => () => {
-      pendingDecryptListenersRef.current.forEach((cleanup) => cleanup());
-      pendingDecryptListenersRef.current.clear();
-      skipFocusCheckEventsRef.current.clear();
-    },
-    []
-  );
-
   useEffect(() => {
     const pushProcessor = new PushProcessor(mx);
     // Tracks when each event first arrived so we can measure notification delivery latency
@@ -587,6 +578,12 @@ function MessageNotifications() {
         mEvent.off(MatrixEventEvent.Decrypted, handleDecrypted)
       );
     };
+
+    queuedNotificationEventsRef.current.forEach(({ mEvent, room, data }, queuedEventId) => {
+      if (mEvent.getType() === 'm.room.encrypted' && mEvent.isEncrypted()) {
+        ensurePendingDecryptListener(queuedEventId, mEvent, room, data);
+      }
+    });
 
     const handleTimelineEventImpl = (
       mEvent: Parameters<RoomEventHandlerMap[RoomEvent.Timeline]>[0],
@@ -895,6 +892,8 @@ function MessageNotifications() {
         flushQueuedNotificationsRef.current = null;
       }
       mx.removeListener(RoomEvent.Timeline, handleTimelineEvent);
+      pendingDecryptListenersRef.current.forEach((cleanup) => cleanup());
+      pendingDecryptListenersRef.current.clear();
     };
   }, [
     mx,
