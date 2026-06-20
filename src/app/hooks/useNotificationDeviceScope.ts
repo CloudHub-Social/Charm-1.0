@@ -109,7 +109,10 @@ export function useNotificationDeviceScope(
   const leaseDurationMs = resolveLeaseDurationMs(notificationDesktopDelayMinutes);
   const isMobileClient = mobileOrTablet();
   const scopeEnabled =
-    notificationDeviceScope === 'desktop_delay' && !!deviceId && leaseDurationMs > 0 && !isMobileClient;
+    notificationDeviceScope === 'desktop_delay' &&
+    !!deviceId &&
+    leaseDurationMs > 0 &&
+    !isMobileClient;
   const isVisible = typeof document !== 'undefined' && document.visibilityState === 'visible';
   const shouldHoldLease = scopeEnabled && isVisible && isWindowFocused;
   const freshLease = isLeaseFresh(lease, now);
@@ -125,8 +128,8 @@ export function useNotificationDeviceScope(
     : !freshLease
       ? 'no_fresh_lease'
       : isThisClientLeaseHolder
-      ? 'lease_holder'
-      : 'lease_held_elsewhere';
+        ? 'lease_holder'
+        : 'lease_held_elsewhere';
 
   const clearLease = useCallback(
     (currentLease: NotificationDeviceLease | null): void => {
