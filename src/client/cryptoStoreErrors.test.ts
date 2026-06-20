@@ -62,6 +62,12 @@ describe('crypto store IndexedDB error classification', () => {
         'InvalidStateError: Failed to execute operation on HTMLMediaElement'
       )
     ).toBe(false);
+    expect(isCryptoStoreRuntimeRecoveryError('UnknownError while opening IDB')).toBe(false);
+    expect(
+      isCryptoStoreRuntimeRecoveryError('UnknownError while opening IDB', {
+        hasCryptoContext: true,
+      })
+    ).toBe(true);
   });
 
   it('treats classified backend transaction aborts as recoverable runtime errors', () => {

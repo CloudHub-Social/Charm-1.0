@@ -1,12 +1,16 @@
-import type { MatrixClient } from '$types/matrix-sdk';
-import type { MessagingStyleMessage, MessagingStylePerson } from './TauriNotificationsPluginApi';
-import { EventType } from 'matrix-js-sdk/lib/@types/event';
-import { resolveNotificationPreviewText } from '$utils/notificationStyle';
-import { getMxIdLocalPart } from '$utils/matrix';
-import { getMemberAvatarMxc, getStateEvent } from '$utils/room';
-import { createDebugLogger } from '$utils/debugLogger';
-import { createUnifiedPushMessageListener } from './UnifiedPushMessageListener';
-import { getTauriNotificationsApi } from './TauriNotificationsApiClient';
+import type { MatrixClient, MatrixEvent, Room } from "$types/matrix-sdk";
+import { MatrixEventEvent, RoomEvent } from "$types/matrix-sdk";
+import type {
+  MessagingStyleMessage,
+  MessagingStylePerson,
+} from "./TauriNotificationsPluginApi";
+import { EventType } from "matrix-js-sdk/lib/@types/event";
+import { resolveNotificationPreviewText } from "$utils/notificationStyle";
+import { getMxIdLocalPart } from "$utils/matrix";
+import { getMemberAvatarMxc, getStateEvent } from "$utils/room";
+import { createDebugLogger } from "$utils/debugLogger";
+import { createUnifiedPushMessageListener } from "./UnifiedPushMessageListener";
+import { getTauriNotificationsApi } from "./TauriNotificationsApiClient";
 
 type NotificationSettings = {
   mx: MatrixClient;
@@ -16,17 +20,18 @@ type NotificationSettings = {
   useInAppNotifications: boolean;
 };
 
-const unifiedPushLog = createDebugLogger('unifiedpush');
+const unifiedPushLog = createDebugLogger("unifiedpush");
 
-const NOTIF_GROUP_KEY = 'matrix_messages';
+const NOTIF_GROUP_KEY = "matrix_messages";
 const MAX_MESSAGES = 10;
+const NOTIFICATION_EVENT_WAIT_MS = 4_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
+  return typeof value === "string" ? value : undefined;
 }
 
 function hashCode(str: string): number {
@@ -39,7 +44,7 @@ function hashCode(str: string): number {
 }
 
 const roomNotifId = (roomId: string) => hashCode(roomId);
-const SUMMARY_NOTIF_ID = hashCode('sable-group-summary');
+const SUMMARY_NOTIF_ID = hashCode("sable-group-summary");
 
 type RoomNotifCache = {
   roomName: string;
@@ -52,22 +57,113 @@ type RoomNotifCache = {
 const roomNotifCaches = new Map<string, RoomNotifCache>();
 const minimalPushQueues = new Map<string, Promise<void>>();
 
-function resolveAvatarUrl(mx: MatrixClient, roomId: string, userId: string): string | undefined {
+function resolveAvatarUrl(
+  mx: MatrixClient,
+  roomId: string,
+  userId: string,
+): string | undefined {
   const room = mx.getRoom(roomId);
   if (!room) return undefined;
   const mxcUrl = getMemberAvatarMxc(room, userId);
   if (!mxcUrl) return undefined;
-  return mx.mxcUrlToHttp(mxcUrl, 96, 96, 'crop', false, true, true) ?? undefined;
+  return (
+    mx.mxcUrlToHttp(mxcUrl, 96, 96, "crop", false, true, true) ?? undefined
+  );
 }
 
-function getOrCreateRoomCache(roomId: string, roomName: string): RoomNotifCache {
+function getOrCreateRoomCache(
+  roomId: string,
+  roomName: string,
+): RoomNotifCache {
   let cache = roomNotifCaches.get(roomId);
   if (!cache) {
-    cache = { roomName, messages: [], seenEventIds: new Set(), isGroupConversation: false };
+    cache = {
+      roomName,
+      messages: [],
+      seenEventIds: new Set(),
+      isGroupConversation: false,
+    };
     roomNotifCaches.set(roomId, cache);
   }
   cache.roomName = roomName;
   return cache;
+}
+
+async function waitForNotificationEvent(
+  room: Room,
+  eventId: string,
+): Promise<MatrixEvent | undefined> {
+  const resolveExistingEvent = () => {
+    if (typeof room.findEventById === "function") {
+      return room.findEventById(eventId) ?? undefined;
+    }
+    const timeline = room.getLiveTimeline().getEvents();
+    return timeline.find((event) => event.getId() === eventId);
+  };
+
+  const existingEvent = resolveExistingEvent();
+  if (
+    existingEvent &&
+    (!(
+      typeof existingEvent.isEncrypted === "function" &&
+      existingEvent.isEncrypted()
+    ) ||
+      existingEvent.getType() !== "m.room.encrypted")
+  ) {
+    return existingEvent;
+  }
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    let timeoutId: number | undefined;
+    let removeDecryptedListener: (() => void) | undefined;
+
+    const finish = (event?: MatrixEvent) => {
+      if (resolved) return;
+      resolved = true;
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+      room.off(RoomEvent.Timeline, handleTimeline);
+      removeDecryptedListener?.();
+      resolve(event);
+    };
+
+    const tryResolveEvent = (candidate?: MatrixEvent) => {
+      if (!candidate || candidate.getId() !== eventId) return false;
+      if (
+        typeof candidate.isEncrypted === "function" &&
+        candidate.isEncrypted() &&
+        candidate.getType() === "m.room.encrypted"
+      ) {
+        const handleDecrypted = () => finish(candidate);
+        candidate.once(MatrixEventEvent.Decrypted, handleDecrypted);
+        removeDecryptedListener = () =>
+          candidate.off(MatrixEventEvent.Decrypted, handleDecrypted);
+        return true;
+      }
+
+      finish(candidate);
+      return true;
+    };
+
+    if (tryResolveEvent(existingEvent)) {
+      timeoutId = window.setTimeout(
+        () => finish(resolveExistingEvent()),
+        NOTIFICATION_EVENT_WAIT_MS,
+      );
+      return;
+    }
+
+    const handleTimeline = (candidate: MatrixEvent) => {
+      if (tryResolveEvent(candidate)) return;
+      tryResolveEvent(resolveExistingEvent());
+    };
+
+    room.on(RoomEvent.Timeline, handleTimeline);
+    timeoutId = window.setTimeout(
+      () => finish(resolveExistingEvent()),
+      NOTIFICATION_EVENT_WAIT_MS,
+    );
+  });
 }
 
 export async function clearRoomNotification(roomId: string) {
@@ -88,7 +184,10 @@ export async function clearRoomNotification(roomId: string) {
   }
 }
 
-function queueMinimalPush(roomId: string, task: () => Promise<void>): Promise<void> {
+function queueMinimalPush(
+  roomId: string,
+  task: () => Promise<void>,
+): Promise<void> {
   const previous = minimalPushQueues.get(roomId) ?? Promise.resolve();
   const next = previous.catch(() => undefined).then(task);
   minimalPushQueues.set(roomId, next);
@@ -105,20 +204,22 @@ async function postRoomNotification(
   selfUser: MessagingStylePerson,
   isSilent: boolean,
   extra: Record<string, unknown>,
-  authToken?: string | null
+  authToken?: string | null,
 ) {
   const notificationsApi = await getTauriNotificationsApi();
   const { messages, roomName, isGroupConversation } = cache;
   const latestMsg = messages[messages.length - 1];
-  const latestBody = latestMsg ? `${latestMsg.sender?.name ?? 'You'}: ${latestMsg.text}` : '';
+  const latestBody = latestMsg
+    ? `${latestMsg.sender?.name ?? "You"}: ${latestMsg.text}`
+    : "";
 
   await notificationsApi.sendNotification({
     id: roomNotifId(roomId),
     title: roomName,
     body: latestBody,
-    channelId: 'messages',
+    channelId: "messages",
     group: NOTIF_GROUP_KEY,
-    icon: 'notification_icon',
+    icon: "notification_icon",
     silent: isSilent,
     autoCancel: true,
     extra,
@@ -135,26 +236,28 @@ async function postRoomNotification(
   if (roomCount > 1) {
     const totalMessages = Array.from(roomNotifCaches.values()).reduce(
       (sum, c) => sum + c.messages.length,
-      0
+      0,
     );
     const summaryText = `${totalMessages} messages in ${roomCount} chats`;
     const inboxLines: string[] = [];
     Array.from(roomNotifCaches.values()).forEach((c) => {
       const latest = c.messages[c.messages.length - 1];
       if (latest) {
-        inboxLines.push(`${c.roomName}: ${latest.sender?.name ?? 'You'}: ${latest.text}`);
+        inboxLines.push(
+          `${c.roomName}: ${latest.sender?.name ?? "You"}: ${latest.text}`,
+        );
       }
     });
     await notificationsApi.sendNotification({
       id: SUMMARY_NOTIF_ID,
       title: summaryText,
-      body: '',
+      body: "",
       summary: summaryText,
       inboxLines: inboxLines.slice(-5),
-      channelId: 'messages',
+      channelId: "messages",
       group: NOTIF_GROUP_KEY,
       groupSummary: true,
-      icon: 'notification_icon',
+      icon: "notification_icon",
       silent: true,
       autoCancel: true,
     });
@@ -163,7 +266,7 @@ async function postRoomNotification(
 
 async function handleRichPushPayload(
   pushData: Record<string, unknown>,
-  settings: NotificationSettings
+  settings: NotificationSettings,
 ) {
   const eventType = pushData.type as EventType;
 
@@ -182,17 +285,19 @@ async function handleRichPushPayload(
       });
 
       const roomId = optionalString(pushData?.room_id);
-      const roomName = optionalString(pushData?.room_name) ?? 'Unknown Room';
+      const roomName = optionalString(pushData?.room_name) ?? "Unknown Room";
       const senderName = optionalString(pushData?.sender_display_name);
       const senderId = optionalString(pushData?.sender);
       const isSilent = !settings.notificationSoundEnabled;
 
       const selfUserId = settings.mx.getUserId() ?? undefined;
       const selfUser: MessagingStylePerson = {
-        name: 'You',
+        name: "You",
         key: selfUserId,
         iconUrl:
-          selfUserId && roomId ? resolveAvatarUrl(settings.mx, roomId, selfUserId) : undefined,
+          selfUserId && roomId
+            ? resolveAvatarUrl(settings.mx, roomId, selfUserId)
+            : undefined,
       };
 
       if (!roomId) {
@@ -200,8 +305,8 @@ async function handleRichPushPayload(
         await notificationsApi.sendNotification({
           title: roomName,
           body: senderName ? `${senderName}: ${previewText}` : previewText,
-          channelId: 'messages',
-          icon: 'notification_icon',
+          channelId: "messages",
+          icon: "notification_icon",
           silent: isSilent,
           autoCancel: true,
         });
@@ -212,7 +317,9 @@ async function handleRichPushPayload(
         ? {
             name: senderName,
             key: senderId,
-            iconUrl: senderId ? resolveAvatarUrl(settings.mx, roomId, senderId) : undefined,
+            iconUrl: senderId
+              ? resolveAvatarUrl(settings.mx, roomId, senderId)
+              : undefined,
           }
         : undefined;
 
@@ -249,27 +356,30 @@ async function handleRichPushPayload(
           event_id: pushData?.event_id,
           user_id: pushData?.user_id,
         },
-        settings.mx.getAccessToken()
+        settings.mx.getAccessToken(),
       );
       break;
     }
     case EventType.RoomMember: {
-      const content = isRecord(pushData?.content) ? pushData.content : undefined;
-      if (content?.membership !== 'invite') break;
+      const content = isRecord(pushData?.content)
+        ? pushData.content
+        : undefined;
+      if (content?.membership !== "invite") break;
       const senderName = optionalString(pushData?.sender_display_name);
       const roomName = optionalString(pushData?.room_name);
-      let body = '';
-      if (senderName && roomName) body = `${senderName} invites you to ${roomName}`;
+      let body = "";
+      if (senderName && roomName)
+        body = `${senderName} invites you to ${roomName}`;
       else if (senderName) body = `from ${senderName}`;
       else if (roomName) body = `to ${roomName}`;
 
       const notificationsApi = await getTauriNotificationsApi();
       await notificationsApi.sendNotification({
-        title: 'New Invitation',
+        title: "New Invitation",
         body,
-        channelId: 'messages',
+        channelId: "messages",
         group: NOTIF_GROUP_KEY,
-        icon: 'notification_icon',
+        icon: "notification_icon",
         autoCancel: true,
         extra: {
           room_id: pushData?.room_id,
@@ -286,12 +396,13 @@ async function handleRichPushPayload(
 
 async function handleMinimalPushPayload(
   pushData: Record<string, unknown>,
-  settings: NotificationSettings
+  settings: NotificationSettings,
 ) {
   const roomId = optionalString(pushData?.room_id);
   const eventId = optionalString(pushData?.event_id);
   const counts = isRecord(pushData?.counts) ? pushData.counts : undefined;
-  const unread: number | undefined = typeof counts?.unread === 'number' ? counts.unread : undefined;
+  const unread: number | undefined =
+    typeof counts?.unread === "number" ? counts.unread : undefined;
 
   if (!roomId) return;
 
@@ -301,15 +412,16 @@ async function handleMinimalPushPayload(
   }
 
   const room = settings.mx.getRoom(roomId);
-  const roomName = room?.name ?? 'Unknown Room';
-  const isEncryptedRoom = room ? !!getStateEvent(room, EventType.RoomEncryption) : false;
+  const roomName = room?.name ?? "Unknown Room";
+  const isEncryptedRoom = room
+    ? !!getStateEvent(room, EventType.RoomEncryption)
+    : false;
 
   let senderName: string | undefined;
   let senderId: string | undefined;
   let previewText: string | undefined;
   if (room && eventId) {
-    const timeline = room.getLiveTimeline().getEvents();
-    const mEvent = timeline.find((e) => e.getId() === eventId);
+    const mEvent = await waitForNotificationEvent(room, eventId);
     if (mEvent) {
       const sender = mEvent.getSender();
       if (sender) {
@@ -329,21 +441,27 @@ async function handleMinimalPushPayload(
   }
 
   if (!previewText) {
-    previewText = isEncryptedRoom ? 'Encrypted message' : 'New message';
+    previewText = isEncryptedRoom ? "Encrypted message" : "New message";
   }
 
   const selfUserId = settings.mx.getUserId() ?? undefined;
   const selfUser: MessagingStylePerson = {
-    name: 'You',
+    name: "You",
     key: selfUserId,
-    iconUrl: selfUserId && roomId ? resolveAvatarUrl(settings.mx, roomId, selfUserId) : undefined,
+    iconUrl:
+      selfUserId && roomId
+        ? resolveAvatarUrl(settings.mx, roomId, selfUserId)
+        : undefined,
   };
 
   const sender: MessagingStylePerson | undefined = senderName
     ? {
         name: senderName,
         key: senderId,
-        iconUrl: senderId && roomId ? resolveAvatarUrl(settings.mx, roomId, senderId) : undefined,
+        iconUrl:
+          senderId && roomId
+            ? resolveAvatarUrl(settings.mx, roomId, senderId)
+            : undefined,
       }
     : undefined;
 
@@ -377,17 +495,20 @@ async function handleMinimalPushPayload(
       room_id: roomId,
       event_id: eventId,
     },
-    settings.mx.getAccessToken()
+    settings.mx.getAccessToken(),
   );
 }
 
 async function handleUnifiedPushPayload(
   raw: Record<string, unknown>,
-  getSettings: () => NotificationSettings
+  getSettings: () => NotificationSettings,
 ) {
   const settings = getSettings();
 
-  if (document.visibilityState === 'visible' && settings.useInAppNotifications) {
+  if (
+    document.visibilityState === "visible" &&
+    settings.useInAppNotifications
+  ) {
     return;
   }
 
@@ -403,23 +524,27 @@ async function handleUnifiedPushPayload(
       return;
     }
 
-    await queueMinimalPush(roomId, () => handleMinimalPushPayload(pushData, settings));
+    await queueMinimalPush(roomId, () =>
+      handleMinimalPushPayload(pushData, settings),
+    );
   }
 }
 
-export function listenForUnifiedPushMessages(getSettings: () => NotificationSettings) {
+export function listenForUnifiedPushMessages(
+  getSettings: () => NotificationSettings,
+) {
   return getTauriNotificationsApi().then((notificationsApi) =>
     notificationsApi.onUnifiedPushMessage(
       createUnifiedPushMessageListener(
         (data) => handleUnifiedPushPayload(data, getSettings),
         (error) => {
           unifiedPushLog.error(
-            'notification',
-            'UnifiedPush payload handling failed',
-            error instanceof Error ? error : new Error(String(error))
+            "notification",
+            "UnifiedPush payload handling failed",
+            error instanceof Error ? error : new Error(String(error)),
           );
-        }
-      )
-    )
+        },
+      ),
+    ),
   );
 }
