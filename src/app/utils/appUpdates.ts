@@ -137,12 +137,11 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
     };
   }
 
-  const hadPendingActiveUpdate =
-    !!(
-      navigator.serviceWorker.controller &&
-      registration.active &&
-      registration.active !== navigator.serviceWorker.controller
-    );
+  const hadPendingActiveUpdate = !!(
+    navigator.serviceWorker.controller &&
+    registration.active &&
+    registration.active !== navigator.serviceWorker.controller
+  );
 
   try {
     await registration.update();
@@ -152,12 +151,11 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
       : new Error(UPDATE_CHECK_FAILURE_MESSAGE);
   }
 
-  const hasPendingActiveUpdateAfterCheck =
-    !!(
-      navigator.serviceWorker.controller &&
-      registration.active &&
-      registration.active !== navigator.serviceWorker.controller
-    );
+  const hasPendingActiveUpdateAfterCheck = !!(
+    navigator.serviceWorker.controller &&
+    registration.active &&
+    registration.active !== navigator.serviceWorker.controller
+  );
   if (!hadPendingActiveUpdate && hasPendingActiveUpdateAfterCheck) {
     return {
       kind: 'update-available',
