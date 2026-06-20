@@ -83,7 +83,12 @@ describe('crypto store IndexedDB error classification', () => {
     expect(isCryptoStoreRuntimeRecoveryError('Transaction aborted')).toBe(false);
   });
 
-  it('treats bare connection-closed IndexedDB errors as recoverable runtime errors', () => {
-    expect(isCryptoStoreRuntimeRecoveryError('database connection is closed')).toBe(true);
+  it('requires crypto context for connection-closed runtime recovery errors', () => {
+    expect(isCryptoStoreRuntimeRecoveryError('database connection is closed')).toBe(false);
+    expect(
+      isCryptoStoreRuntimeRecoveryError('database connection is closed', {
+        hasCryptoContext: true,
+      })
+    ).toBe(true);
   });
 });

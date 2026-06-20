@@ -50,11 +50,7 @@ export const isCryptoStoreRuntimeRecoveryError = (
   }
 
   if (errorType === 'connection_closing' || errorType === 'connection_closed') {
-    return (
-      hasCryptoContext ||
-      errorMessage.includes('database connection is closing') ||
-      errorMessage.includes('database connection is closed')
-    );
+    return hasCryptoContext;
   }
 
   if (errorType === 'crypto_store_error') {
@@ -65,11 +61,5 @@ export const isCryptoStoreRuntimeRecoveryError = (
     return hasCryptoContext;
   }
 
-  return (
-    hasCryptoContext ||
-    errorMessage.includes('IndexedDB') ||
-    errorMessage.includes('IDB') ||
-    errorMessage.includes('database connection is closing') ||
-    errorMessage.includes('database connection is closed')
-  );
+  return hasCryptoContext || errorMessage.includes('IndexedDB') || errorMessage.includes('IDB');
 };
