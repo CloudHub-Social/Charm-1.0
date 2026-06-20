@@ -6,8 +6,6 @@ import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { mobileOrTabletLayout } from '$utils/user-agent';
 import { stopPropagation } from '$utils/keyboard';
 
-const rawSafeAreaBottom = 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))';
-
 type Modal500Props = {
   fullScreenOnMobile?: boolean;
   requestClose: () => void;
@@ -42,7 +40,7 @@ export function Modal500({ requestClose, children, fullScreenOnMobile = false }:
                     position: 'fixed',
                     top: 'var(--sable-safe-area-top, 0px)',
                     right: 'var(--sable-safe-area-right, 0px)',
-                    bottom: rawSafeAreaBottom,
+                    bottom: 'var(--sable-safe-area-bottom, 0px)',
                     left: 'var(--sable-safe-area-left, 0px)',
                     width: 'auto',
                     height: 'auto',
