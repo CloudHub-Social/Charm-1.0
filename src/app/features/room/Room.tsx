@@ -150,12 +150,16 @@ export function Room() {
               <CallChatView />
             </>
           )}
-          {!callView && screenSize === ScreenSize.Desktop && isDrawer && (
-            <>
-              <Line variant="Background" direction="Vertical" size="300" />
+          {!callView &&
+            isDrawer &&
+            (screenSize === ScreenSize.Desktop ? (
+              <>
+                <Line variant="Background" direction="Vertical" size="300" />
+                <MembersDrawer key={room.roomId} room={room} members={members} />
+              </>
+            ) : (
               <MembersDrawer key={room.roomId} room={room} members={members} />
-            </>
-          )}
+            ))}
           {screenSize === ScreenSize.Desktop && isWidgetDrawerOpen && (
             <>
               <Line variant="Background" direction="Vertical" size="300" />

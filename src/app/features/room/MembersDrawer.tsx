@@ -357,16 +357,22 @@ export function MembersDrawer({ room, members }: MembersDrawerProps) {
   return (
     <Box
       className={classNames(css.MembersDrawer, ContainerColor({ variant: 'Background' }))}
+      data-testid="members-drawer"
       shrink="No"
       direction="Column"
       style={{
-        position: 'relative',
-        width: !mobileOrTabletLayout() ? toRem(curWidth) : '100%',
+        position: isMobile ? 'fixed' : 'relative',
+        inset: isMobile ? 0 : undefined,
+        zIndex: isMobile ? 20 : undefined,
+        width: isMobile ? '100%' : toRem(curWidth),
+        height: isMobile ? '100%' : undefined,
+        maxWidth: isMobile ? '100%' : undefined,
+        paddingBottom: isMobile ? 'var(--sable-safe-area-bottom, 0px)' : undefined,
       }}
     >
       <MemberDrawerHeader room={room} hideText={hideText} />
-      <Box className={css.MemberDrawerContentBase} grow="Yes">
-        {!mobileOrTabletLayout() && (
+      <Box className={css.MemberDrawerContentBase} grow="Yes" style={{ minHeight: 0 }}>
+        {!isMobile && (
           <SidebarResizer
             setCurWidth={setCurWidth}
             sidebarWidth={memberSidebarWidth}

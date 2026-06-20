@@ -748,12 +748,15 @@ export function Lobby() {
             </Scroll>
           </Box>
         </Page>
-        {screenSize === ScreenSize.Desktop && isDrawer && (
-          <>
-            <Line variant="Background" direction="Vertical" size="300" />
+        {isDrawer &&
+          (screenSize === ScreenSize.Desktop ? (
+            <>
+              <Line variant="Background" direction="Vertical" size="300" />
+              <MembersDrawer room={space} members={members} />
+            </>
+          ) : (
             <MembersDrawer room={space} members={members} />
-          </>
-        )}
+          ))}
       </Box>
     </PowerLevelsContextProvider>
   );
