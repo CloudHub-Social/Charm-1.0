@@ -361,12 +361,14 @@ export function MembersDrawer({ room, members, onClose }: MembersDrawerProps) {
       direction="Column"
       style={{
         position: isMobile ? 'fixed' : 'relative',
-        inset: isMobile ? 0 : undefined,
+        top: isMobile ? 'var(--sable-safe-area-top, 0px)' : undefined,
+        right: isMobile ? 'var(--sable-safe-area-right, 0px)' : undefined,
+        bottom: isMobile ? 'var(--sable-safe-area-bottom, 0px)' : undefined,
+        left: isMobile ? 'var(--sable-safe-area-left, 0px)' : undefined,
         zIndex: isMobile ? 20 : undefined,
-        width: isMobile ? '100%' : toRem(curWidth),
-        height: isMobile ? '100%' : undefined,
-        maxWidth: isMobile ? '100%' : undefined,
-        paddingBottom: isMobile ? 'var(--sable-safe-area-bottom, 0px)' : undefined,
+        width: isMobile ? 'auto' : toRem(curWidth),
+        height: isMobile ? 'auto' : undefined,
+        maxWidth: isMobile ? 'none' : undefined,
       }}
     >
       <MemberDrawerHeader room={room} hideText={hideText} onClose={onClose} />

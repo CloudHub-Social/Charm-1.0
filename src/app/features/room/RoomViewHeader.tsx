@@ -456,6 +456,7 @@ export function RoomViewHeader({
   const [peopleDrawer, setPeopleDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
   const [widgetDrawer, setWidgetDrawer] = useSetting(settingsAtom, 'isWidgetDrawer');
   const widgets = useRoomWidgets(room);
+  const isMobileMembersSurface = screenSize !== ScreenSize.Desktop || mobileOrTabletLayout();
 
   const pinnedIds = useRoomPinnedEvents(room);
   const pinMarker = room
@@ -665,6 +666,10 @@ export function RoomViewHeader({
   const handleMemberToggle = () => {
     if (callView) {
       openSettings(room.roomId, parentSpace?.roomId, RoomSettingsPage.MembersPage);
+      return;
+    }
+    if (isMobileMembersSurface && onOpenMobileMembersDrawer) {
+      onOpenMobileMembersDrawer();
       return;
     }
     setPeopleDrawer(!peopleDrawer);

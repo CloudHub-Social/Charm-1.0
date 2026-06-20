@@ -55,6 +55,8 @@ describe('mobile PWA dogfood contract', () => {
     const userRoomProfileRenderer = readWorkspaceFile(
       'src/app/components/UserRoomProfileRenderer.tsx'
     );
+    const modal500 = readWorkspaceFile('src/app/components/Modal500.tsx');
+    const membersDrawer = readWorkspaceFile('src/app/features/room/MembersDrawer.tsx');
 
     expect(roomSettingsRenderer).toContain(
       '<Modal500 requestClose={closeSettings} fullScreenOnMobile>'
@@ -67,6 +69,16 @@ describe('mobile PWA dogfood contract', () => {
     );
     expect(userRoomProfileRenderer).toContain('<Modal500 requestClose={close} fullScreenOnMobile>');
     expect(userRoomProfileRenderer).toContain('Member Profile');
+    expect(modal500).toContain("top: 'var(--sable-safe-area-top, 0px)'");
+    expect(modal500).toContain("right: 'var(--sable-safe-area-right, 0px)'");
+    expect(modal500).toContain("bottom: 'var(--sable-safe-area-bottom, 0px)'");
+    expect(modal500).toContain("left: 'var(--sable-safe-area-left, 0px)'");
+    expect(membersDrawer).toContain(
+      "top: isMobile ? 'var(--sable-safe-area-top, 0px)' : undefined"
+    );
+    expect(membersDrawer).toContain(
+      "bottom: isMobile ? 'var(--sable-safe-area-bottom, 0px)' : undefined"
+    );
   });
 
   it('keeps pull-to-refresh from firing before the full threshold is reached', () => {

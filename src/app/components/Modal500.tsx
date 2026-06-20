@@ -37,11 +37,18 @@ export function Modal500({ requestClose, children, fullScreenOnMobile = false }:
             style={
               useFullScreen
                 ? {
-                    width: '100%',
-                    height: '100%',
-                    maxWidth: '100%',
+                    position: 'fixed',
+                    top: 'var(--sable-safe-area-top, 0px)',
+                    right: 'var(--sable-safe-area-right, 0px)',
+                    bottom: 'var(--sable-safe-area-bottom, 0px)',
+                    left: 'var(--sable-safe-area-left, 0px)',
+                    width: 'auto',
+                    height: 'auto',
+                    minHeight: 0,
+                    maxHeight: 'none',
+                    maxWidth: 'none',
+                    margin: 0,
                     borderRadius: 0,
-                    paddingBottom: 'var(--sable-safe-area-bottom, 0px)',
                     overflow: 'hidden',
                   }
                 : undefined
