@@ -987,6 +987,7 @@ export function SmokeMobileShell() {
   if (mode === 'renderer-markdown') return <SmokeRendererMarkdown />;
   if (mode === 'renderer-transitions') return <SmokeRendererTransitions />;
   if (mode === 'search-shortcuts') return <SmokeSearchShortcuts />;
+  if (mode === 'members') return <SmokeMembersFullPage />;
   if (mode === 'settings') return <SmokeSettingsModal />;
   if (mode === 'profile') return <SmokeProfileModal />;
   if (mode === 'room') return <SmokeRoomFooter />;
