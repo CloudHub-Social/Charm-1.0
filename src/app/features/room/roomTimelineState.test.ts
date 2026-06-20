@@ -7,10 +7,15 @@ import {
 
 describe('roomTimelineState', () => {
   it('keeps notification-live jumps pinned only when already linked to the live timeline', () => {
-    expect(shouldKeepBottomPinnedAfterJump('notification_live', true, 'end')).toBe(true);
-    expect(shouldKeepBottomPinnedAfterJump('notification_live', true, 'center')).toBe(false);
-    expect(shouldKeepBottomPinnedAfterJump('notification_live', false, 'end')).toBe(false);
-    expect(shouldKeepBottomPinnedAfterJump('history_context', true, 'end')).toBe(false);
+    expect(shouldKeepBottomPinnedAfterJump(undefined, 'notification_live', true, 'end')).toBe(true);
+    expect(shouldKeepBottomPinnedAfterJump(undefined, 'notification_live', true, 'center')).toBe(
+      false
+    );
+    expect(shouldKeepBottomPinnedAfterJump(undefined, 'notification_live', false, 'end')).toBe(
+      false
+    );
+    expect(shouldKeepBottomPinnedAfterJump(undefined, 'history_context', true, 'end')).toBe(false);
+    expect(shouldKeepBottomPinnedAfterJump(true, 'history_context', false, 'center')).toBe(true);
   });
 
   it('continues unread-bridge pagination until live timeline is reached or retries are exhausted', () => {

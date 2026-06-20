@@ -5,10 +5,12 @@ export type RoomTimelineJumpMode =
   | undefined;
 
 export const shouldKeepBottomPinnedAfterJump = (
+  keepBottomPinned: boolean | undefined,
   jumpMode: RoomTimelineJumpMode,
   liveTimelineLinked: boolean,
   align?: 'center' | 'end'
-): boolean => jumpMode === 'notification_live' && liveTimelineLinked && align === 'end';
+): boolean =>
+  keepBottomPinned ?? (jumpMode === 'notification_live' && liveTimelineLinked && align === 'end');
 
 export type UnreadBridgeAction = 'idle' | 'complete' | 'paginate' | 'stop';
 

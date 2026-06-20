@@ -370,6 +370,8 @@ export function RoomTimeline({
   const unreadBridgeActiveRef = useRef(false);
   const unreadBridgeAttemptsRef = useRef(0);
   const unreadBridgeAwaitingContextLoadRef = useRef(false);
+  const unreadBridgeContextReadyRef = useRef(false);
+  const [unreadBridgeTick, setUnreadBridgeTick] = useState(0);
 
   const lastProgrammaticBottomPinAtRef = useRef(0);
 
@@ -382,6 +384,7 @@ export function RoomTimeline({
     unreadBridgeActiveRef.current = false;
     unreadBridgeAttemptsRef.current = 0;
     unreadBridgeAwaitingContextLoadRef.current = false;
+    unreadBridgeContextReadyRef.current = false;
     if (initialScrollTimerRef.current !== undefined) {
       clearTimeout(initialScrollTimerRef.current);
       initialScrollTimerRef.current = undefined;
@@ -469,6 +472,7 @@ export function RoomTimeline({
       if (targetIndex < 0) return false;
 
       const keepBottomPinned = shouldKeepBottomPinnedAfterJump(
+        timelineSyncRef.current.focusItem?.keepBottomPinned,
         timelineSyncRef.current.focusItem?.jumpMode ?? jumpMode,
         timelineSyncRef.current.liveTimelineLinked,
         options?.align ?? timelineSyncRef.current.focusItem?.align
@@ -814,6 +818,7 @@ export function RoomTimeline({
         });
 
         const keepBottomPinned = shouldKeepBottomPinnedAfterJump(
+          timelineSync.focusItem.keepBottomPinned,
           focusJumpMode ?? jumpMode,
           timelineSync.liveTimelineLinked,
           timelineSync.focusItem.align
@@ -1191,6 +1196,9 @@ export function RoomTimeline({
 
   useEffect(() => {
     const unreadEventId = unreadInfo?.readUptoEventId;
+    if (unreadBridgeActiveRef.current && !unreadBridgeContextReadyRef.current) {
+      return;
+    }
     const reachedUnreadTarget =
       !!getUnreadDividerTarget(processedEventsRef.current, unreadEventId) ||
       (!!unreadEventId &&
@@ -1219,6 +1227,7 @@ export function RoomTimeline({
       unreadBridgeActiveRef.current = false;
       unreadBridgeAttemptsRef.current = 0;
       unreadBridgeAwaitingContextLoadRef.current = false;
+      unreadBridgeContextReadyRef.current = false;
       setUnreadInfo((prev) =>
         prev
           ? {
@@ -1233,7 +1242,9 @@ export function RoomTimeline({
 
     if (unreadBridgeAction === 'stop') {
       unreadBridgeActiveRef.current = false;
+      unreadBridgeAttemptsRef.current = 0;
       unreadBridgeAwaitingContextLoadRef.current = false;
+      unreadBridgeContextReadyRef.current = false;
       return;
     }
 
@@ -1242,6 +1253,7 @@ export function RoomTimeline({
   }, [
     room,
     unreadInfo?.readUptoEventId,
+    unreadBridgeTick,
     setUnreadInfo,
     timelineSync.eventsLength,
     timelineSync.forwardStatus,
@@ -2008,12 +2020,23 @@ export function RoomTimeline({
               unreadBridgeActiveRef.current = true;
               unreadBridgeAttemptsRef.current = 0;
               unreadBridgeAwaitingContextLoadRef.current = true;
+              unreadBridgeContextReadyRef.current = false;
+              setUnreadBridgeTick((tick) => tick + 1);
               void timelineSync
                 .loadEventTimeline(unreadInfo.readUptoEventId, undefined, {
                   jumpMode: 'history_context',
                 })
+                .then(() => {
+                  unreadBridgeContextReadyRef.current = true;
+                })
+                .catch(() => {
+                  unreadBridgeActiveRef.current = false;
+                  unreadBridgeAttemptsRef.current = 0;
+                  unreadBridgeContextReadyRef.current = false;
+                })
                 .finally(() => {
                   unreadBridgeAwaitingContextLoadRef.current = false;
+                  setUnreadBridgeTick((tick) => tick + 1);
                 });
             }}
           >
@@ -2191,6 +2214,7 @@ export function RoomTimeline({
                 unreadBridgeActiveRef.current = false;
                 unreadBridgeAttemptsRef.current = 0;
                 unreadBridgeAwaitingContextLoadRef.current = false;
+                unreadBridgeContextReadyRef.current = false;
                 lastProgrammaticBottomPinAtRef.current = Date.now();
                 setAtBottom(true);
                 startJumpScrollBlock(true);
