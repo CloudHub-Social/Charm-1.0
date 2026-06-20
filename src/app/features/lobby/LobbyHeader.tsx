@@ -46,14 +46,16 @@ import { useOpenSpaceSettings } from '$state/hooks/spaceSettings';
 import { useRoomCreators } from '$hooks/useRoomCreators';
 import { useRoomPermissions } from '$hooks/useRoomPermissions';
 import { InviteUserPrompt } from '$components/invite-user-prompt';
+import { mobileOrTabletLayout } from '$utils/user-agent';
 import * as css from './LobbyHeader.css';
 
 type LobbyMenuProps = {
   powerLevels: IPowerLevels;
   requestClose: () => void;
+  onOpenMobileMembersDrawer?: () => void;
 };
 const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
-  ({ powerLevels, requestClose }, ref) => {
+  ({ powerLevels, requestClose, onOpenMobileMembersDrawer }, ref) => {
     const mx = useMatrixClient();
     const space = useSpace();
     const creators = useRoomCreators(space);
@@ -61,6 +63,8 @@ const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
     const permissions = useRoomPermissions(creators, powerLevels);
     const canInvite = permissions.action('invite', mx.getSafeUserId());
     const openSpaceSettings = useOpenSpaceSettings();
+    const screenSize = useScreenSizeContext();
+    const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
 
     const [invitePrompt, setInvitePrompt] = useState(false);
 
@@ -70,6 +74,11 @@ const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
 
     const handleRoomSettings = () => {
       openSpaceSettings(space.roomId);
+      requestClose();
+    };
+
+    const handleOpenMembers = () => {
+      onOpenMobileMembersDrawer?.();
       requestClose();
     };
 
@@ -104,6 +113,18 @@ const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
               Space Settings
             </Text>
           </MenuItem>
+          {isMobileMembersSurface && (
+            <MenuItem
+              onClick={handleOpenMembers}
+              size="300"
+              after={menuIcon(UserCircle)}
+              radii="300"
+            >
+              <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+                Members
+              </Text>
+            </MenuItem>
+          )}
         </Box>
         <Line variant="Surface" size="300" />
         <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
@@ -142,8 +163,13 @@ const LobbyMenu = forwardRef<HTMLDivElement, LobbyMenuProps>(
 type LobbyHeaderProps = {
   showProfile?: boolean;
   powerLevels: IPowerLevels;
+  onOpenMobileMembersDrawer?: () => void;
 };
-export function LobbyHeader({ showProfile, powerLevels }: LobbyHeaderProps) {
+export function LobbyHeader({
+  showProfile,
+  powerLevels,
+  onOpenMobileMembersDrawer,
+}: LobbyHeaderProps) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
   const space = useSpace();
@@ -151,6 +177,7 @@ export function LobbyHeader({ showProfile, powerLevels }: LobbyHeaderProps) {
   const [peopleDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
   const screenSize = useScreenSizeContext();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
 
   const name = useRoomName(space);
   const avatarMxc = useRoomAvatar(space);
@@ -226,7 +253,13 @@ export function LobbyHeader({ showProfile, powerLevels }: LobbyHeaderProps) {
                 <IconButton
                   fill="None"
                   ref={triggerRef}
-                  onClick={() => setPeopleDrawer((drawer) => !drawer)}
+                  onClick={() => {
+                    if (isMobileMembersSurface && onOpenMobileMembersDrawer) {
+                      onOpenMobileMembersDrawer();
+                      return;
+                    }
+                    setPeopleDrawer((drawer) => !drawer);
+                  }}
                 >
                   {composerIcon(UserCircle, { weight: peopleDrawer ? 'fill' : 'regular' })}
                 </IconButton>
@@ -275,6 +308,7 @@ export function LobbyHeader({ showProfile, powerLevels }: LobbyHeaderProps) {
                 <LobbyMenu
                   powerLevels={powerLevels}
                   requestClose={() => setMenuAnchor(undefined)}
+                  onOpenMobileMembersDrawer={onOpenMobileMembersDrawer}
                 />
               </FocusTrap>
             }

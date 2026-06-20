@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Box, Line } from 'folds';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { isKeyHotkey } from 'is-hotkey';
@@ -19,6 +19,7 @@ import { callChatAtom } from '$state/callEmbed';
 import { roomIdToOpenThreadAtomFamily } from '$state/room/roomToOpenThread';
 import { roomIdToThreadBrowserAtomFamily } from '$state/room/roomToThreadBrowser';
 import { createDebugLogger } from '$utils/debugLogger';
+import { mobileOrTabletLayout } from '$utils/user-agent';
 import { useMergedAbbreviations, RoomAbbreviationsContext } from '$hooks/useRoomAbbreviations';
 import { RoomViewHeader } from './RoomViewHeader';
 import { MembersDrawer } from './MembersDrawer';
@@ -50,6 +51,9 @@ export function Room() {
   const [isWidgetDrawerOpen] = useSetting(settingsAtom, 'isWidgetDrawer');
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
   const screenSize = useScreenSizeContext();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
+  const [mobileMembersDrawerOpen, setMobileMembersDrawerOpen] = useState(false);
+  const isMembersDrawerOpen = isMobileMembersSurface ? mobileMembersDrawerOpen : isDrawer;
 
   // Log drawer state changes
   useEffect(() => {
@@ -123,7 +127,12 @@ export function Room() {
         <Box grow="Yes" style={{ position: 'relative' }}>
           {callView && (screenSize === ScreenSize.Desktop || !chat) && (
             <Box grow="Yes" direction="Column">
-              <RoomViewHeader callView />
+              <RoomViewHeader
+                callView
+                onOpenMobileMembersDrawer={
+                  isMobileMembersSurface ? () => setMobileMembersDrawerOpen(true) : undefined
+                }
+              />
               <Box grow="Yes">
                 <CallView />
               </Box>
@@ -131,12 +140,19 @@ export function Room() {
           )}
           {!callView && (
             <Box grow="Yes" direction="Column">
-              <RoomViewHeader />
+              <RoomViewHeader
+                onOpenMobileMembersDrawer={
+                  isMobileMembersSurface ? () => setMobileMembersDrawerOpen(true) : undefined
+                }
+              />
               <Box grow="Yes">
                 <RoomView
                   eventId={eventId}
                   jumpMode={jumpMode}
                   hasDesktopRightDrawer={hasDesktopRightDrawer}
+                  onOpenMobileMembersDrawer={
+                    isMobileMembersSurface ? () => setMobileMembersDrawerOpen(true) : undefined
+                  }
                 />
               </Box>
             </Box>
@@ -147,15 +163,28 @@ export function Room() {
               {screenSize === ScreenSize.Desktop && (
                 <Line variant="Background" direction="Vertical" size="300" />
               )}
-              <CallChatView />
+              <CallChatView
+                onOpenMobileMembersDrawer={
+                  isMobileMembersSurface ? () => setMobileMembersDrawerOpen(true) : undefined
+                }
+              />
             </>
           )}
-          {!callView && screenSize === ScreenSize.Desktop && isDrawer && (
-            <>
-              <Line variant="Background" direction="Vertical" size="300" />
-              <MembersDrawer key={room.roomId} room={room} members={members} />
-            </>
-          )}
+          {isMembersDrawerOpen &&
+            (isMobileMembersSurface || !callView) &&
+            (!isMobileMembersSurface ? (
+              <>
+                <Line variant="Background" direction="Vertical" size="300" />
+                <MembersDrawer key={room.roomId} room={room} members={members} />
+              </>
+            ) : (
+              <MembersDrawer
+                key={room.roomId}
+                room={room}
+                members={members}
+                onClose={() => setMobileMembersDrawerOpen(false)}
+              />
+            ))}
           {screenSize === ScreenSize.Desktop && isWidgetDrawerOpen && (
             <>
               <Line variant="Background" direction="Vertical" size="300" />

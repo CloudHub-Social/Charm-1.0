@@ -31,6 +31,7 @@ import { useCallMembers, useCallSession } from '$hooks/useCall';
 import { callEmbedAtom } from '$state/callEmbed';
 import { useCallJoined } from '$hooks/useCallEmbed';
 import { useRoomTypingMember } from '$hooks/useRoomTypingMembers';
+import { mobileOrTabletLayout } from '$utils/user-agent';
 import { CallView } from '$features/call/CallView';
 import { useRoom } from '$hooks/useRoom';
 import { RoomViewFollowing, RoomViewFollowingPlaceholder } from './RoomViewFollowing';
@@ -76,10 +77,12 @@ export function RoomView({
   eventId,
   jumpMode,
   hasDesktopRightDrawer = false,
+  onOpenMobileMembersDrawer,
 }: {
   eventId?: string;
   jumpMode?: 'notification_live' | 'history_context';
   hasDesktopRightDrawer?: boolean;
+  onOpenMobileMembersDrawer?: () => void;
 }) {
   const roomInputRef = useRef<HTMLDivElement>(null);
   const roomViewRef = useRef<HTMLDivElement>(null);
@@ -137,12 +140,15 @@ export function RoomView({
 
   const openSettings = useOpenRoomSettings();
   const space = useSpaceOptionally();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
 
   const handleOpenMembers = useCallback(() => {
-    if (screenSize === ScreenSize.Mobile) {
+    if (isMobileMembersSurface && onOpenMobileMembersDrawer) {
+      onOpenMobileMembersDrawer();
+    } else {
       openSettings(room.roomId, space?.roomId, RoomSettingsPage.MembersPage);
     }
-  }, [screenSize, openSettings, room.roomId, space?.roomId]);
+  }, [isMobileMembersSurface, onOpenMobileMembersDrawer, openSettings, room.roomId, space?.roomId]);
 
   const callSession = useCallSession(room);
   const callMembers = useCallMembers(room, callSession);
@@ -156,7 +162,10 @@ export function RoomView({
     <BackRouteHandler>
       {(onBack) => (
         <Page ref={roomViewRef}>
-          <SwipeableChatWrapper onOpenSidebar={onBack} onOpenMembers={handleOpenMembers}>
+          <SwipeableChatWrapper
+            onOpenSidebar={onBack}
+            onOpenMembers={isMobileMembersSurface ? handleOpenMembers : undefined}
+          >
             <Box grow="Yes" direction="Column">
               {showCallView && (
                 <Box shrink="No" style={{ width: '100%', position: 'relative' }}>

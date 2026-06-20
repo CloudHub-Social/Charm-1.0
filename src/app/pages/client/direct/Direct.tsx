@@ -46,7 +46,7 @@ import {
   NavLink,
 } from '$components/nav';
 import { getDirectCreatePath, getDirectRoomPath, getDirectSearchPath } from '$pages/pathUtils';
-import { getCanonicalAliasOrRoomId } from '$utils/matrix';
+import { getCanonicalAliasOrRoomId, getCanonicalAliasRoomId, isRoomAlias } from '$utils/matrix';
 import { useSelectedRoom } from '$hooks/router/useSelectedRoom';
 import { VirtualTile } from '$components/virtualizer';
 import { RoomNavCategoryButton, RoomNavItem } from '$features/room-nav';
@@ -68,19 +68,21 @@ import {
 import { useDirectCreateSelected, useDirectSearchSelected } from '$hooks/router/useDirectSelected';
 import { useDirectRooms } from './useDirectRooms';
 import { SidebarResizer } from '$pages/client/sidebar/SidebarResizer';
-import { mobileOrTabletLayout } from '$utils/user-agent';
+import { mobileOrTablet, mobileOrTabletLayout } from '$utils/user-agent';
 import { useScreenSizeContext, ScreenSize } from '$hooks/useScreenSize';
 import { usePullToRefresh } from '$hooks/usePullToRefresh';
 import { getSlidingSyncManager } from '$client/initMatrix';
 import { LIST_DMS } from '$client/slidingSync';
 import { getNextSlidingSyncListWindowEnd } from '$client/slidingSyncListPaging';
 import { allRoomsAtom } from '$state/room-list/roomList';
+import { lastVisitedRoomIdAtom } from '$state/room/lastRoom';
 import { markStartupRoomListReady } from '$utils/perfTelemetry';
 import {
   ensureManualRefreshSpinStyle,
   getManualRefreshSpinStyle,
   triggerManualRefresh,
 } from '$utils/manualRefresh';
+import { SwipeableOverlayWrapper } from '$components/SwipeableOverlayWrapper';
 
 type DirectMenuProps = {
   isRefreshing: boolean;
@@ -376,6 +378,23 @@ export function Direct() {
 
   usePullToRefresh(scrollRef, mx);
 
+  const lastRoomId = useAtomValue(lastVisitedRoomIdAtom);
+  const handleSwipeToRoom = useCallback(() => {
+    if (!mobileOrTablet()) return;
+
+    const resolvedLastRoomId =
+      lastRoomId && isRoomAlias(lastRoomId) ? getCanonicalAliasRoomId(mx, lastRoomId) : lastRoomId;
+    const fallbackRoomId =
+      selectedRoomId && directs.includes(selectedRoomId)
+        ? selectedRoomId
+        : resolvedLastRoomId && directs.includes(resolvedLastRoomId)
+          ? resolvedLastRoomId
+          : undefined;
+    if (!fallbackRoomId) return;
+
+    navigate(getDirectRoomPath(getCanonicalAliasOrRoomId(mx, fallbackRoomId)));
+  }, [directs, lastRoomId, mx, navigate, selectedRoomId]);
+
   return (
     <Box
       shrink="No"
@@ -385,132 +404,134 @@ export function Direct() {
       }}
     >
       <PageNav>
-        <DirectHeader hideText={hideText} isRefreshing={isRefreshing} onRefresh={handleRefresh} />
-        {noRoomToDisplay ? (
-          <DirectEmpty />
-        ) : (
-          <PageNavContent scrollRef={scrollRef}>
-            <Box direction="Column" gap="300">
-              <NavCategory>
-                <NavItem variant="Background" radii="400" aria-selected={createDirectSelected}>
-                  <NavButton onClick={() => navigate(getDirectCreatePath())}>
-                    <NavItemContent>
-                      <Box
-                        as="span"
-                        grow="Yes"
-                        alignItems="Center"
-                        gap="200"
-                        justifyContent="Center"
-                      >
-                        <Avatar size="200" radii="400">
-                          {menuIcon(Plus)}
-                        </Avatar>
-                        {!hideText && (
-                          <Box as="span" grow="Yes">
-                            <Text as="span" size="Inherit" truncate>
-                              Create Chat
-                            </Text>
-                          </Box>
-                        )}
-                      </Box>
-                    </NavItemContent>
-                  </NavButton>
-                </NavItem>
-                <NavItem variant="Background" radii="400" aria-selected={searchSelected}>
-                  <NavLink to={getDirectSearchPath()}>
-                    <NavItemContent>
-                      <Box
-                        as="span"
-                        grow="Yes"
-                        alignItems="Center"
-                        justifyContent="Start"
-                        gap="200"
-                      >
-                        <Avatar
-                          size={hideText ? undefined : '200'}
-                          radii="400"
-                          style={hideText ? { width: '100%' } : undefined}
+        <SwipeableOverlayWrapper direction="left" onClose={handleSwipeToRoom}>
+          <DirectHeader hideText={hideText} isRefreshing={isRefreshing} onRefresh={handleRefresh} />
+          {noRoomToDisplay ? (
+            <DirectEmpty />
+          ) : (
+            <PageNavContent scrollRef={scrollRef}>
+              <Box direction="Column" gap="300">
+                <NavCategory>
+                  <NavItem variant="Background" radii="400" aria-selected={createDirectSelected}>
+                    <NavButton onClick={() => navigate(getDirectCreatePath())}>
+                      <NavItemContent>
+                        <Box
+                          as="span"
+                          grow="Yes"
+                          alignItems="Center"
+                          gap="200"
+                          justifyContent="Center"
                         >
-                          <Icon src={Icons.Search} size="100" filled={searchSelected} />
-                        </Avatar>
-                        <Box as="span" grow="Yes">
+                          <Avatar size="200" radii="400">
+                            {menuIcon(Plus)}
+                          </Avatar>
                           {!hideText && (
-                            <Text as="span" size="Inherit" truncate>
-                              Message Search
-                            </Text>
+                            <Box as="span" grow="Yes">
+                              <Text as="span" size="Inherit" truncate>
+                                Create Chat
+                              </Text>
+                            </Box>
                           )}
                         </Box>
-                      </Box>
-                    </NavItemContent>
-                  </NavLink>
-                </NavItem>
-              </NavCategory>
-              <NavCategory>
-                <NavCategoryHeader>
-                  <RoomNavCategoryButton
-                    closed={closedCategories.has(DEFAULT_CATEGORY_ID)}
-                    data-category-id={DEFAULT_CATEGORY_ID}
-                    onClick={handleCategoryClick}
-                  >
-                    {!hideText && 'Chats'}
-                  </RoomNavCategoryButton>
-                </NavCategoryHeader>
-                <div
-                  style={{
-                    position: 'relative',
-                    height: virtualizer.getTotalSize(),
-                    overflow: 'clip',
-                  }}
-                >
-                  {virtualItems.map((vItem) => {
-                    const roomId = sortedDirects[vItem.index];
-                    if (!roomId) return null;
-                    const room = mx.getRoom(roomId);
-                    if (!room) return null;
-                    const selected = selectedRoomId === roomId;
-
-                    return (
-                      <VirtualTile
-                        virtualItem={vItem}
-                        key={vItem.index}
-                        ref={virtualizer.measureElement}
-                      >
-                        <div
-                          style={
-                            hideText
-                              ? {
-                                  padding: '0',
-                                  width: '100%',
-                                  aspectRatio: 1,
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                }
-                              : {}
-                          }
+                      </NavItemContent>
+                    </NavButton>
+                  </NavItem>
+                  <NavItem variant="Background" radii="400" aria-selected={searchSelected}>
+                    <NavLink to={getDirectSearchPath()}>
+                      <NavItemContent>
+                        <Box
+                          as="span"
+                          grow="Yes"
+                          alignItems="Center"
+                          justifyContent="Start"
+                          gap="200"
                         >
-                          <RoomNavItem
-                            room={room}
-                            selected={selected}
-                            showAvatar
-                            direct
-                            customDMCards={customDMCards}
-                            hideText={hideText}
-                            linkPath={getDirectRoomPath(getCanonicalAliasOrRoomId(mx, roomId))}
-                            notificationMode={getRoomNotificationMode(
-                              notificationPreferences,
-                              room.roomId
+                          <Avatar
+                            size={hideText ? undefined : '200'}
+                            radii="400"
+                            style={hideText ? { width: '100%' } : undefined}
+                          >
+                            <Icon src={Icons.Search} size="100" filled={searchSelected} />
+                          </Avatar>
+                          <Box as="span" grow="Yes">
+                            {!hideText && (
+                              <Text as="span" size="Inherit" truncate>
+                                Message Search
+                              </Text>
                             )}
-                            joinCallOnSingleClick={joinCallOnSingleClick}
-                          />
-                        </div>
-                      </VirtualTile>
-                    );
-                  })}
-                </div>
-              </NavCategory>
-            </Box>
-          </PageNavContent>
-        )}
+                          </Box>
+                        </Box>
+                      </NavItemContent>
+                    </NavLink>
+                  </NavItem>
+                </NavCategory>
+                <NavCategory>
+                  <NavCategoryHeader>
+                    <RoomNavCategoryButton
+                      closed={closedCategories.has(DEFAULT_CATEGORY_ID)}
+                      data-category-id={DEFAULT_CATEGORY_ID}
+                      onClick={handleCategoryClick}
+                    >
+                      {!hideText && 'Chats'}
+                    </RoomNavCategoryButton>
+                  </NavCategoryHeader>
+                  <div
+                    style={{
+                      position: 'relative',
+                      height: virtualizer.getTotalSize(),
+                      overflow: 'clip',
+                    }}
+                  >
+                    {virtualItems.map((vItem) => {
+                      const roomId = sortedDirects[vItem.index];
+                      if (!roomId) return null;
+                      const room = mx.getRoom(roomId);
+                      if (!room) return null;
+                      const selected = selectedRoomId === roomId;
+
+                      return (
+                        <VirtualTile
+                          virtualItem={vItem}
+                          key={vItem.index}
+                          ref={virtualizer.measureElement}
+                        >
+                          <div
+                            style={
+                              hideText
+                                ? {
+                                    padding: '0',
+                                    width: '100%',
+                                    aspectRatio: 1,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                  }
+                                : {}
+                            }
+                          >
+                            <RoomNavItem
+                              room={room}
+                              selected={selected}
+                              showAvatar
+                              direct
+                              customDMCards={customDMCards}
+                              hideText={hideText}
+                              linkPath={getDirectRoomPath(getCanonicalAliasOrRoomId(mx, roomId))}
+                              notificationMode={getRoomNotificationMode(
+                                notificationPreferences,
+                                room.roomId
+                              )}
+                              joinCallOnSingleClick={joinCallOnSingleClick}
+                            />
+                          </div>
+                        </VirtualTile>
+                      );
+                    })}
+                  </div>
+                </NavCategory>
+              </Box>
+            </PageNavContent>
+          )}
+        </SwipeableOverlayWrapper>
       </PageNav>
       {!mobileOrTabletLayout() && (
         <SidebarResizer

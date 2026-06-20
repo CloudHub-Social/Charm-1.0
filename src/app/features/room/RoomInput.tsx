@@ -173,6 +173,11 @@ import { ImageUsage } from '$plugins/custom-emoji';
 import { SerializableMap } from '$types/wrapper/SerializableMap';
 import { useSettingsLinkBaseUrl } from '$features/settings/useSettingsLinkBaseUrl';
 import { useKeyboardHeight, useScrollLock } from '$hooks/ios-keyboard-fix';
+import {
+  clearTextSelection,
+  suppressUserSelect,
+  waitForMobileViewportStabilize,
+} from '$utils/mobileOverlay';
 import { SchedulePickerDialog } from './schedule-send';
 import * as css from './schedule-send/SchedulePickerDialog.css';
 import {
@@ -320,16 +325,36 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
     const [pkCompatEnable] = useSetting(settingsAtom, 'pkCompat');
     const [pmpProxyingEnable] = useSetting(settingsAtom, 'pmpProxying');
+    const isMobileLayout = mobileOrTablet();
     const emojiBtnRef = useRef<HTMLButtonElement>(null);
     // Hoisted from the UseStateProvider in JSX so EmojiBoard can be kept mounted
     // after first open (avoids re-initializing virtualizer on every open).
     const [emojiBoardTab, setEmojiBoardTab] = useState<EmojiBoardTab | undefined>(undefined);
     const [emojiBoardAnchorRect, setEmojiBoardAnchorRect] = useState<DOMRect | null>(null);
-    const openEmojiBoard = useCallback((tab: EmojiBoardTab) => {
-      const rect = emojiBtnRef.current?.getBoundingClientRect() ?? null;
-      setEmojiBoardAnchorRect(rect);
-      setEmojiBoardTab(tab);
-    }, []);
+    const openMobileOverlay = useCallback(
+      async (open: () => void) => {
+        if (!isMobileLayout) {
+          open();
+          return;
+        }
+
+        clearTextSelection();
+        await waitForMobileViewportStabilize();
+        requestAnimationFrame(() => {
+          open();
+        });
+      },
+      [isMobileLayout]
+    );
+    const openEmojiBoard = useCallback(
+      (tab: EmojiBoardTab) => {
+        void openMobileOverlay(() => {
+          setEmojiBoardAnchorRect(emojiBtnRef.current?.getBoundingClientRect() ?? null);
+          setEmojiBoardTab(tab);
+        });
+      },
+      [openMobileOverlay]
+    );
     // Keep the emoji/sticker picker position in sync with viewport changes (e.g.
     // the iOS virtual keyboard appearing/disappearing while the board is open).
     useEffect(() => {
@@ -355,6 +380,15 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           return undefined;
         }
         return t;
+      });
+    }, [editor]);
+    const focusEditorNextFrame = useCallback(() => {
+      requestAnimationFrame(() => {
+        try {
+          ReactEditor.focus(editor);
+        } catch {
+          // Ignore focus errors if the editor remounted before the callback ran.
+        }
       });
     }, [editor]);
     const micBtnRef = useRef<HTMLButtonElement>(null);
@@ -501,7 +535,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const isEncrypted = room.hasEncryptionStateEvent();
 
     const { triggerPreLift } = useKeyboardHeight();
-    const isMobileLayout = mobileOrTablet();
     const handleMobilePreLift = useCallback(() => {
       if (!isMobileLayout) return;
       triggerPreLift();
@@ -535,10 +568,27 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     }, [clearLongPressTimer]);
 
     const openSchedulePicker = useCallback(() => {
-      setSendError(undefined);
-      setScheduleMenuAnchor(undefined);
-      setShowSchedulePicker(true);
-    }, []);
+      void openMobileOverlay(() => {
+        setSendError(undefined);
+        setScheduleMenuAnchor(undefined);
+        setShowSchedulePicker(true);
+      });
+    }, [openMobileOverlay]);
+
+    useEffect(() => {
+      if (!showSchedulePicker) return undefined;
+
+      clearTextSelection();
+      const restoreSelection = suppressUserSelect();
+      const handleSelectionChange = () => {
+        clearTextSelection();
+      };
+      document.addEventListener('selectionchange', handleSelectionChange);
+      return () => {
+        document.removeEventListener('selectionchange', handleSelectionChange);
+        restoreSelection();
+      };
+    }, [showSchedulePicker]);
 
     useEffect(() => resetLongPressState, [resetLongPressState]);
 
@@ -722,6 +772,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         onWaveformUpdate={() => {}}
       />
     ) : undefined;
+    const forceStableMobileMultilineLayout =
+      isMobileLayout && toPlainText(editor.children).trim().length >= 48;
 
     const handleCancelUpload = (uploads: Upload[]) => {
       uploads.forEach((upload) => {
@@ -1127,6 +1179,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           setInputKey((prev) => prev + 1);
           setEditDraft(undefined);
           sendTypingStatus(false);
+          if (mobileOrTablet()) {
+            focusEditorNextFrame();
+          }
 
           mx.sendMessage(roomId, sendContent as RoomMessageEventContent).catch((error: unknown) => {
             log.error('failed to send edit', { roomId }, error);
@@ -1142,6 +1197,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           resetEditor(editor);
           resetEditorHistory(editor);
           sendTypingStatus(false);
+          if (mobileOrTablet()) {
+            focusEditorNextFrame();
+          }
         }
         return;
       }
@@ -1265,6 +1323,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         imagePacksUsedRef.current.clear();
         setReplyDraft(replyDraftBase);
         sendTypingStatus(false);
+        if (mobileOrTablet()) {
+          focusEditorNextFrame();
+        }
       };
       if (scheduledTime) {
         try {
@@ -1394,6 +1455,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       setServerMaxDelayMs,
       replyDraftBase,
       emojiAutoExpand,
+      focusEditorNextFrame,
     ]);
 
     const handleKeyDown: KeyboardEventHandler = useCallback(
@@ -1779,7 +1841,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           onKeyUp={handleKeyUp}
           onPaste={handlePaste}
           responsiveAfter={audioRecorder}
-          forceMultilineLayout={showAudioRecorder}
+          forceMultilineLayout={showAudioRecorder || forceStableMobileMultilineLayout}
           top={
             <>
               {scheduledTime && (

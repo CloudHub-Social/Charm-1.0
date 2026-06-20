@@ -99,6 +99,11 @@ import {
   addStickerToDefaultPack,
   doesStickerExistInDefaultPack,
 } from '$utils/addStickerToDefaultStickerPack';
+import {
+  clearTextSelection,
+  suppressUserSelect,
+  waitForMobileViewportStabilize,
+} from '$utils/mobileOverlay';
 import type { PerMessageProfileBeeperFormat } from '$hooks/usePerMessageProfile';
 import { convertBeeperFormatToOurPerMessageProfile } from '$hooks/usePerMessageProfile';
 import { MessageEditor } from './MessageEditor';
@@ -356,12 +361,30 @@ export type MessageProps = {
 function useMobileLongPress(callback: () => void, delay = 500) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
+  const restoreSelectionRef = useRef<(() => void) | null>(null);
+  const removeSelectionGuardRef = useRef<(() => void) | null>(null);
+  const mountedRef = useRef(true);
+
+  const installSelectionGuard = useCallback(() => {
+    removeSelectionGuardRef.current?.();
+    const handleSelectionChange = () => {
+      clearTextSelection();
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    removeSelectionGuardRef.current = () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      removeSelectionGuardRef.current = null;
+    };
+  }, []);
 
   const cancel = useCallback(() => {
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    restoreSelectionRef.current?.();
+    restoreSelectionRef.current = null;
+    removeSelectionGuardRef.current?.();
     startPosRef.current = null;
   }, []);
 
@@ -374,13 +397,18 @@ function useMobileLongPress(callback: () => void, delay = 500) {
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
         requestAnimationFrame(() => {
+          if (!mountedRef.current) return;
           const selection = window.getSelection();
           if (selection && !selection.isCollapsed) return;
+          restoreSelectionRef.current?.();
+          restoreSelectionRef.current = suppressUserSelect();
+          installSelectionGuard();
+          clearTextSelection();
           callback();
         });
       }, delay);
     },
-    [callback, delay]
+    [callback, delay, installSelectionGuard]
   );
 
   const onTouchMove = useCallback(
@@ -401,6 +429,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
 
   useEffect(
     () => () => {
+      mountedRef.current = false;
       cancel();
     },
     [cancel]
@@ -896,6 +925,44 @@ function MessageInternal(
 
   const MSG_CONTENT_STYLE = { maxWidth: '100%' };
   const isSableFeedback = mEvent.getId()?.startsWith('~sable-feedback-');
+  const [pendingMobileOptionsOpen, setPendingMobileOptionsOpen] = useState(false);
+  const openMobileOptionsMenu = useCallback(() => {
+    clearTextSelection();
+    setPendingMobileOptionsOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingMobileOptionsOpen) return undefined;
+
+    let cancelled = false;
+    void waitForMobileViewportStabilize().then(() => {
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        setMobileOptionsOpen(true);
+        setPendingMobileOptionsOpen(false);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingMobileOptionsOpen]);
+
+  useEffect(() => {
+    if (!mobileOptionsOpen) return undefined;
+
+    clearTextSelection();
+    const restoreSelection = suppressUserSelect();
+    const handleSelectionChange = () => {
+      clearTextSelection();
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      restoreSelection();
+    };
+  }, [mobileOptionsOpen]);
 
   const msgContentJSX = (
     <Box
@@ -930,7 +997,10 @@ function MessageInternal(
               compact={messageLayout === MessageLayout.Compact}
               hour24Clock={hour24Clock}
               dateFormatString={dateFormatString}
-              style={{ marginLeft: config.space.S100, justifyContent: 'flex-end' }}
+              style={{
+                marginLeft: config.space.S100,
+                justifyContent: 'flex-end',
+              }}
             />
           </Text>
         </Chip>
@@ -1005,7 +1075,7 @@ function MessageInternal(
   const handleContextMenu: MouseEventHandler<HTMLDivElement> = (evt) => {
     if (mobileOrTablet()) {
       evt.preventDefault();
-      setMobileOptionsOpen(true);
+      openMobileOptionsMenu();
       return;
     }
 
@@ -1062,7 +1132,7 @@ function MessageInternal(
   };
 
   const longPress = useMobileLongPress(() => {
-    setMobileOptionsOpen(true);
+    openMobileOptionsMenu();
   });
 
   const isThreadedMessage = isThreadRelationEvent(mEvent, mEvent.threadRootId);
@@ -1547,12 +1617,50 @@ export const Event = as<'div', EventProps>(
 
     const [menuAnchor, setMenuAnchor] = useState<RectCords>();
     const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
+    const [pendingMobileOptionsOpen, setPendingMobileOptionsOpen] = useState(false);
     const [highlightMentions] = useSetting(settingsAtom, 'highlightMentions');
+    const openMobileOptionsMenu = useCallback(() => {
+      clearTextSelection();
+      setPendingMobileOptionsOpen(true);
+    }, []);
+
+    useEffect(() => {
+      if (!pendingMobileOptionsOpen) return undefined;
+
+      let cancelled = false;
+      void waitForMobileViewportStabilize().then(() => {
+        if (cancelled) return;
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          setMobileOptionsOpen(true);
+          setPendingMobileOptionsOpen(false);
+        });
+      });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [pendingMobileOptionsOpen]);
+
+    useEffect(() => {
+      if (!mobileOptionsOpen) return undefined;
+
+      clearTextSelection();
+      const restoreSelection = suppressUserSelect();
+      const handleSelectionChange = () => {
+        clearTextSelection();
+      };
+      document.addEventListener('selectionchange', handleSelectionChange);
+      return () => {
+        document.removeEventListener('selectionchange', handleSelectionChange);
+        restoreSelection();
+      };
+    }, [mobileOptionsOpen]);
 
     const handleContextMenu: MouseEventHandler<HTMLDivElement> = (evt) => {
       if (mobileOrTablet()) {
         evt.preventDefault();
-        setMobileOptionsOpen(true);
+        openMobileOptionsMenu();
         return;
       }
 
@@ -1597,7 +1705,7 @@ export const Event = as<'div', EventProps>(
     const optionsRef = useRef<HTMLDivElement>(null);
 
     const longPress = useMobileLongPress(() => {
-      setMobileOptionsOpen(true);
+      openMobileOptionsMenu();
     });
 
     const evtId = mEvent.getId()!;

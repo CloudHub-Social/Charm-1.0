@@ -38,6 +38,7 @@ import { useMatrixClient } from '$hooks/useMatrixClient';
 import { allRoomsAtom } from '$state/room-list/roomList';
 import { getCanonicalAliasOrRoomId, rateLimitedActions } from '$utils/matrix';
 import { getSpaceRoomPath } from '$pages/pathUtils';
+import { mobileOrTabletLayout } from '$utils/user-agent';
 
 import { ASCIILexicalTable, orderKeys } from '$utils/ASCIILexicalTable';
 import { getStateEvent } from '$utils/room';
@@ -178,6 +179,9 @@ export function Lobby() {
   const [spaceRooms, setSpaceRooms] = useAtom(spaceRoomsAtom);
   const [isDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
   const screenSize = useScreenSizeContext();
+  const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
+  const [mobileMembersDrawerOpen, setMobileMembersDrawerOpen] = useState(false);
+  const isMembersDrawerOpen = isMobileMembersSurface ? mobileMembersDrawerOpen : isDrawer;
   const [onTop, setOnTop] = useState(true);
   const [closedCategories, setClosedCategories] = useAtom(useClosedLobbyCategoriesAtom());
   const roomToParents = useAtomValue(roomToParentsAtom);
@@ -623,6 +627,9 @@ export function Lobby() {
           <LobbyHeader
             showProfile={!onTop}
             powerLevels={roomsPowerLevels.get(space.roomId) ?? {}}
+            onOpenMobileMembersDrawer={
+              isMobileMembersSurface ? () => setMobileMembersDrawerOpen(true) : undefined
+            }
           />
           <Box style={{ position: 'relative' }} grow="Yes">
             <Scroll ref={scrollRef} hideTrack visibility="Hover">
@@ -748,12 +755,19 @@ export function Lobby() {
             </Scroll>
           </Box>
         </Page>
-        {screenSize === ScreenSize.Desktop && isDrawer && (
-          <>
-            <Line variant="Background" direction="Vertical" size="300" />
-            <MembersDrawer room={space} members={members} />
-          </>
-        )}
+        {isMembersDrawerOpen &&
+          (!isMobileMembersSurface ? (
+            <>
+              <Line variant="Background" direction="Vertical" size="300" />
+              <MembersDrawer room={space} members={members} />
+            </>
+          ) : (
+            <MembersDrawer
+              room={space}
+              members={members}
+              onClose={() => setMobileMembersDrawerOpen(false)}
+            />
+          ))}
       </Box>
     </PowerLevelsContextProvider>
   );

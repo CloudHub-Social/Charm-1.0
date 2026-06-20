@@ -21,15 +21,18 @@ describe('mobile PWA dogfood contract', () => {
     const roomHeader = readWorkspaceFile('src/app/features/room/RoomViewHeader.tsx');
 
     expect(roomHeader).toContain(
+      'const isMobileMembersSurface = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();'
+    );
+    expect(roomHeader).toContain(
       'const showMobileMembersAction = screenSize !== ScreenSize.Desktop;'
     );
     expect(roomHeader).toContain('const showMobileWidgetsAction =');
     expect(roomHeader).toContain(
       'openSettings(room.roomId, parentSpace?.roomId, RoomSettingsPage.MembersPage);'
     );
+    expect(roomHeader).toContain('const handleOpenWidgets = () => {');
     expect(roomHeader).toContain('setWidgetDrawer(true);');
-    expect(roomHeader).toContain('Members\n            </Text>');
-    expect(roomHeader).toContain('Widgets\n            </Text>');
+    expect(roomHeader).toContain('handleOpenWidgets');
   });
 
   it('renders the widgets drawer as an overlay on non-desktop layouts', () => {
@@ -54,6 +57,8 @@ describe('mobile PWA dogfood contract', () => {
     const userRoomProfileRenderer = readWorkspaceFile(
       'src/app/components/UserRoomProfileRenderer.tsx'
     );
+    const modal500 = readWorkspaceFile('src/app/components/Modal500.tsx');
+    const membersDrawer = readWorkspaceFile('src/app/features/room/MembersDrawer.tsx');
 
     expect(roomSettingsRenderer).toContain(
       '<Modal500 requestClose={closeSettings} fullScreenOnMobile>'
@@ -66,6 +71,19 @@ describe('mobile PWA dogfood contract', () => {
     );
     expect(userRoomProfileRenderer).toContain('<Modal500 requestClose={close} fullScreenOnMobile>');
     expect(userRoomProfileRenderer).toContain('Member Profile');
+    expect(modal500).toContain("top: 'var(--sable-safe-area-top, 0px)'");
+    expect(modal500).toContain("right: 'var(--sable-safe-area-right, 0px)'");
+    expect(modal500).toContain(
+      "bottom: 'var(--sable-safe-area-bottom-raw, var(--sable-safe-area-bottom, 0px))'"
+    );
+    expect(modal500).toContain("left: 'var(--sable-safe-area-left, 0px)'");
+    expect(membersDrawer).toContain(
+      "top: isMobile ? 'var(--sable-safe-area-top, 0px)' : undefined"
+    );
+    expect(membersDrawer).toContain('bottom: isMobile');
+    expect(membersDrawer).toContain(
+      "? 'var(--sable-safe-area-bottom-raw, var(--sable-safe-area-bottom, 0px))'"
+    );
   });
 
   it('keeps pull-to-refresh from firing before the full threshold is reached', () => {

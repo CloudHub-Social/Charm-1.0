@@ -68,6 +68,9 @@ export function useKeyboardHeight() {
     mountCount += 1;
     let baselineHeight = window.innerHeight;
     let stabilityTimer: ReturnType<typeof setTimeout> | null = null;
+    let closeVerificationTimer: number | null = null;
+    let closeVerificationAttempts = 0;
+    let closeVerificationForceCloseOnTimeout = false;
     let pendingValue = 0;
 
     const setCSSVars = (viewportHeight: number) => {
@@ -90,6 +93,12 @@ export function useKeyboardHeight() {
         clearTimeout(stabilityTimer);
         stabilityTimer = null;
       }
+      if (closeVerificationTimer) {
+        clearTimeout(closeVerificationTimer);
+        closeVerificationTimer = null;
+      }
+      closeVerificationAttempts = 0;
+      closeVerificationForceCloseOnTimeout = false;
       pendingValue = 0;
       baselineHeight = window.innerHeight;
       clearCSSVars();
@@ -98,18 +107,43 @@ export function useKeyboardHeight() {
       isVisibleRef.current = false;
     };
 
-    const verifyKeyboardClosed = () => {
-      window.setTimeout(() => {
-        if (!isEditableElement(document.activeElement)) {
+    const verifyKeyboardClosed = (forceCloseOnTimeout = false) => {
+      if (closeVerificationTimer) {
+        if (closeVerificationForceCloseOnTimeout && !forceCloseOnTimeout) {
+          return;
+        }
+
+        clearTimeout(closeVerificationTimer);
+      }
+
+      closeVerificationAttempts = 0;
+      closeVerificationForceCloseOnTimeout ||= forceCloseOnTimeout;
+
+      const check = () => {
+        closeVerificationTimer = null;
+
+        if (!isEditableElement(document.activeElement) || baselineHeight - viewport.height < 30) {
           markKeyboardClosed();
           return;
         }
 
-        if (baselineHeight - viewport.height < 30) {
-          markKeyboardClosed();
+        closeVerificationAttempts += 1;
+        if (closeVerificationAttempts >= 8) {
+          if (closeVerificationForceCloseOnTimeout) {
+            markKeyboardClosed();
+          }
+          return;
         }
-      }, 50);
+
+        closeVerificationTimer = window.setTimeout(check, 50);
+      };
+
+      closeVerificationTimer = window.setTimeout(check, 50);
     };
+
+    if (mountCount === 1 && !isEditableElement(document.activeElement) && cssVarsApplied) {
+      verifyKeyboardClosed(true);
+    }
 
     const handleResize = () => {
       const calculatedHeight = baselineHeight - viewport.height;
@@ -179,16 +213,19 @@ export function useKeyboardHeight() {
     };
 
     viewport.addEventListener('resize', handleResize);
-    viewport.addEventListener('scroll', verifyKeyboardClosed);
+    const handleViewportScroll = () => verifyKeyboardClosed(false);
+    const handleFocusOut = () => verifyKeyboardClosed(false);
+    viewport.addEventListener('scroll', handleViewportScroll);
     window.addEventListener('orientationchange', handleOrientationChange);
-    window.addEventListener('focusout', verifyKeyboardClosed);
+    window.addEventListener('focusout', handleFocusOut);
     return () => {
       mountCount -= 1;
       if (stabilityTimer) clearTimeout(stabilityTimer);
+      if (closeVerificationTimer) clearTimeout(closeVerificationTimer);
       viewport.removeEventListener('resize', handleResize);
-      viewport.removeEventListener('scroll', verifyKeyboardClosed);
+      viewport.removeEventListener('scroll', handleViewportScroll);
       window.removeEventListener('orientationchange', handleOrientationChange);
-      window.removeEventListener('focusout', verifyKeyboardClosed);
+      window.removeEventListener('focusout', handleFocusOut);
       // Only clear CSS vars when the last instance unmounts — prevents the thread
       // drawer unmounting mid-keyboard-open from wiping the variable while the
       // main room's RoomInput still has the keyboard open.
