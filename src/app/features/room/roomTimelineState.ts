@@ -52,11 +52,7 @@ export const getTimelineBottomScrollAction = ({
   withinSettleWindow,
   withinViewportChangeWindow,
 }: TimelineBottomScrollActionInput): TimelineBottomScrollAction => {
-  if (
-    atBottom &&
-    !isNowAtBottom &&
-    (contentGrew || viewportChanged || withinSettleWindow)
-  ) {
+  if (atBottom && !isNowAtBottom && (contentGrew || viewportChanged || withinSettleWindow)) {
     return 'chase_bottom';
   }
 
