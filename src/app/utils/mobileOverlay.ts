@@ -1,6 +1,10 @@
 const KEYBOARD_SETTLE_TIMEOUT_MS = 260;
 const VIEWPORT_STABLE_DELTA_PX = 1;
 const VIEWPORT_STABLE_FRAMES = 2;
+let userSelectSuppressionCount = 0;
+let previousUserSelect = "";
+let previousWebkitUserSelect = "";
+let previousWebkitTouchCallout = "";
 
 const isEditableElement = (element: Element | null): element is HTMLElement => {
   if (!(element instanceof HTMLElement)) return false;
@@ -8,11 +12,18 @@ const isEditableElement = (element: Element | null): element is HTMLElement => {
   const tagName = element.tagName.toLowerCase();
   return (
     element.isContentEditable ||
-    tagName === 'textarea' ||
-    (tagName === 'input' &&
-      !['button', 'checkbox', 'file', 'hidden', 'radio', 'range', 'reset', 'submit'].includes(
-        (element as HTMLInputElement).type
-      ))
+    tagName === "textarea" ||
+    (tagName === "input" &&
+      ![
+        "button",
+        "checkbox",
+        "file",
+        "hidden",
+        "radio",
+        "range",
+        "reset",
+        "submit",
+      ].includes((element as HTMLInputElement).type))
   );
 };
 
@@ -28,7 +39,7 @@ export const dismissActiveKeyboard = () => {
 };
 
 export const waitForMobileViewportStabilize = (
-  timeoutMs = KEYBOARD_SETTLE_TIMEOUT_MS
+  timeoutMs = KEYBOARD_SETTLE_TIMEOUT_MS,
 ): Promise<void> =>
   new Promise((resolve) => {
     const viewport = window.visualViewport;
@@ -82,16 +93,24 @@ export const waitForMobileViewportStabilize = (
 
 export const suppressUserSelect = () => {
   const { style } = document.body;
-  const touchCalloutStyle = style as CSSStyleDeclaration & { webkitTouchCallout?: string };
-  const previousUserSelect = style.userSelect;
-  const previousWebkitUserSelect = style.webkitUserSelect;
-  const previousWebkitTouchCallout = touchCalloutStyle.webkitTouchCallout;
-
-  style.userSelect = 'none';
-  style.webkitUserSelect = 'none';
-  touchCalloutStyle.webkitTouchCallout = 'none';
+  const touchCalloutStyle = style as CSSStyleDeclaration & {
+    webkitTouchCallout?: string;
+  };
+  if (userSelectSuppressionCount === 0) {
+    previousUserSelect = style.userSelect;
+    previousWebkitUserSelect = style.webkitUserSelect;
+    previousWebkitTouchCallout = touchCalloutStyle.webkitTouchCallout ?? "";
+    style.userSelect = "none";
+    style.webkitUserSelect = "none";
+    touchCalloutStyle.webkitTouchCallout = "none";
+  }
+  userSelectSuppressionCount += 1;
 
   return () => {
+    if (userSelectSuppressionCount === 0) return;
+    userSelectSuppressionCount -= 1;
+    if (userSelectSuppressionCount > 0) return;
+
     style.userSelect = previousUserSelect;
     style.webkitUserSelect = previousWebkitUserSelect;
     touchCalloutStyle.webkitTouchCallout = previousWebkitTouchCallout;

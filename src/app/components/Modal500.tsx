@@ -1,17 +1,21 @@
-import type { ReactNode } from 'react';
-import { useRef } from 'react';
-import FocusTrap from 'focus-trap-react';
-import { Modal, Overlay, OverlayBackdrop, OverlayCenter } from 'folds';
-import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
-import { mobileOrTabletLayout } from '$utils/user-agent';
-import { stopPropagation } from '$utils/keyboard';
+import type { ReactNode } from "react";
+import { useRef } from "react";
+import FocusTrap from "focus-trap-react";
+import { Modal, Overlay, OverlayBackdrop, OverlayCenter } from "folds";
+import { ScreenSize, useScreenSizeContext } from "$hooks/useScreenSize";
+import { mobileOrTabletLayout } from "$utils/user-agent";
+import { stopPropagation } from "$utils/keyboard";
 
 type Modal500Props = {
   fullScreenOnMobile?: boolean;
   requestClose: () => void;
   children: ReactNode;
 };
-export function Modal500({ requestClose, children, fullScreenOnMobile = false }: Modal500Props) {
+export function Modal500({
+  requestClose,
+  children,
+  fullScreenOnMobile = false,
+}: Modal500Props) {
   const modalRef = useRef<HTMLDivElement | null>(null);
   const screenSize = useScreenSizeContext();
   const isMobile = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();
@@ -37,19 +41,20 @@ export function Modal500({ requestClose, children, fullScreenOnMobile = false }:
             style={
               useFullScreen
                 ? {
-                    position: 'fixed',
-                    top: 'var(--sable-safe-area-top, 0px)',
-                    right: 'var(--sable-safe-area-right, 0px)',
-                    bottom: 'var(--sable-safe-area-bottom, 0px)',
-                    left: 'var(--sable-safe-area-left, 0px)',
-                    width: 'auto',
-                    height: 'auto',
+                    position: "fixed",
+                    top: "var(--sable-safe-area-top, 0px)",
+                    right: "var(--sable-safe-area-right, 0px)",
+                    bottom:
+                      "var(--sable-safe-area-bottom-raw, var(--sable-safe-area-bottom, 0px))",
+                    left: "var(--sable-safe-area-left, 0px)",
+                    width: "auto",
+                    height: "auto",
                     minHeight: 0,
-                    maxHeight: 'none',
-                    maxWidth: 'none',
+                    maxHeight: "none",
+                    maxWidth: "none",
                     margin: 0,
                     borderRadius: 0,
-                    overflow: 'hidden',
+                    overflow: "hidden",
                   }
                 : undefined
             }

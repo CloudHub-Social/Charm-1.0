@@ -1,4 +1,4 @@
-import type { RectCords } from 'folds';
+import type { RectCords } from "folds";
 import {
   Avatar,
   Box,
@@ -16,15 +16,30 @@ import {
   as,
   config,
   toRem,
-} from 'folds';
-import type { KeyboardEventHandler, MouseEventHandler, MouseEvent, ReactNode } from 'react';
-import { memo, useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import FocusTrap from 'focus-trap-react';
-import { useHover, useFocusWithin } from 'react-aria';
-import type { MatrixEvent, Room, Relations, RoomPinnedEventsEventContent } from '$types/matrix-sdk';
-import { EventStatus, MatrixEventEvent, RoomEvent, EventType } from '$types/matrix-sdk';
-import classNames from 'classnames';
-import { useAtomValue, useSetAtom } from 'jotai';
+} from "folds";
+import type {
+  KeyboardEventHandler,
+  MouseEventHandler,
+  MouseEvent,
+  ReactNode,
+} from "react";
+import { memo, useCallback, useRef, useState, useEffect, useMemo } from "react";
+import FocusTrap from "focus-trap-react";
+import { useHover, useFocusWithin } from "react-aria";
+import type {
+  MatrixEvent,
+  Room,
+  Relations,
+  RoomPinnedEventsEventContent,
+} from "$types/matrix-sdk";
+import {
+  EventStatus,
+  MatrixEventEvent,
+  RoomEvent,
+  EventType,
+} from "$types/matrix-sdk";
+import classNames from "classnames";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   AvatarBase,
   BubbleLayout,
@@ -35,31 +50,31 @@ import {
   Time,
   Username,
   UsernameBold,
-} from '$components/message';
+} from "$components/message";
 import {
   canEditEvent,
   getEditedEvent,
   getEventEdits,
   getMemberAvatarMxc,
   isThreadRelationEvent,
-} from '$utils/room';
-import type { MessageSpacing } from '$state/settings';
-import { getSettings, MessageLayout, settingsAtom } from '$state/settings';
-import { nicknamesAtom, setNicknameAtom } from '$state/nicknames';
-import { useMatrixClient } from '$hooks/useMatrixClient';
-import { useRecentEmoji } from '$hooks/useRecentEmoji';
-import { EmojiBoard } from '$components/emoji-board';
-import { UserAvatar } from '$components/user-avatar';
-import { copyToClipboard } from '$utils/dom';
-import { stopPropagation } from '$utils/keyboard';
-import { getMatrixToRoomEvent } from '$plugins/matrix-to';
-import { getViaServers } from '$plugins/via-servers';
-import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
-import { useRoomPinnedEvents } from '$hooks/useRoomPinnedEvents';
-import type { MemberPowerTag } from '$types/matrix/room';
-import type { StateEvents } from '$types/matrix-sdk';
+} from "$utils/room";
+import type { MessageSpacing } from "$state/settings";
+import { getSettings, MessageLayout, settingsAtom } from "$state/settings";
+import { nicknamesAtom, setNicknameAtom } from "$state/nicknames";
+import { useMatrixClient } from "$hooks/useMatrixClient";
+import { useRecentEmoji } from "$hooks/useRecentEmoji";
+import { EmojiBoard } from "$components/emoji-board";
+import { UserAvatar } from "$components/user-avatar";
+import { copyToClipboard } from "$utils/dom";
+import { stopPropagation } from "$utils/keyboard";
+import { getMatrixToRoomEvent } from "$plugins/matrix-to";
+import { getViaServers } from "$plugins/via-servers";
+import { useMediaAuthentication } from "$hooks/useMediaAuthentication";
+import { useRoomPinnedEvents } from "$hooks/useRoomPinnedEvents";
+import type { MemberPowerTag } from "$types/matrix/room";
+import type { StateEvents } from "$types/matrix-sdk";
 
-import { PowerIcon } from '$components/power';
+import { PowerIcon } from "$components/power";
 import {
   ArrowBendUpLeftIcon,
   ChatsCircle,
@@ -74,41 +89,47 @@ import {
   Smiley,
   Star,
   userFallbackIcon,
-} from '$components/icons/phosphor';
-import { getPowerTagIconSrc } from '$hooks/useMemberPowerTag';
-import { useSableCosmetics } from '$hooks/useSableCosmetics';
-import { SwipeableMessageWrapper } from '$components/SwipeableMessageWrapper';
-import { mobileOrTablet } from '$utils/user-agent';
-import { useUserProfile } from '$hooks/useUserProfile';
-import { useSetting } from '$state/hooks/settings';
-import { useRenderableMediaUrl } from '$hooks/useRenderableMediaUrl';
-import { MessageAllReactionItem } from '$components/message/modals/MessageReactions';
-import { MessageReadReceiptItem } from '$components/message/modals/MessageReadRecipts';
-import { MessageEditHistoryItem } from '$components/message/modals/MessageEditHistory';
-import { MessageSourceCodeItem } from '$components/message/modals/MessageSource';
-import { MessageForwardItem } from '$components/message/modals/MessageForward';
-import { MessageDeleteItem } from '$components/message/modals/MessageDelete';
-import { computeBookmarkId, createBookmarkItem } from '$features/bookmarks/bookmarkDomain';
-import { useIsBookmarked, useBookmarkActions } from '$features/bookmarks/useBookmarks';
-import { MessageReportItem } from '$components/message/modals/MessageReport';
-import { filterPronounsByLanguage, getParsedPronouns } from '$utils/pronouns';
-import type { PronounSet } from '$utils/pronouns';
-import { useMentionClickHandler } from '$hooks/useMentionClickHandler';
-import { useCachedMxcConverter } from '$hooks/useCachedMxcConverter';
+} from "$components/icons/phosphor";
+import { getPowerTagIconSrc } from "$hooks/useMemberPowerTag";
+import { useSableCosmetics } from "$hooks/useSableCosmetics";
+import { SwipeableMessageWrapper } from "$components/SwipeableMessageWrapper";
+import { mobileOrTablet } from "$utils/user-agent";
+import { useUserProfile } from "$hooks/useUserProfile";
+import { useSetting } from "$state/hooks/settings";
+import { useRenderableMediaUrl } from "$hooks/useRenderableMediaUrl";
+import { MessageAllReactionItem } from "$components/message/modals/MessageReactions";
+import { MessageReadReceiptItem } from "$components/message/modals/MessageReadRecipts";
+import { MessageEditHistoryItem } from "$components/message/modals/MessageEditHistory";
+import { MessageSourceCodeItem } from "$components/message/modals/MessageSource";
+import { MessageForwardItem } from "$components/message/modals/MessageForward";
+import { MessageDeleteItem } from "$components/message/modals/MessageDelete";
+import {
+  computeBookmarkId,
+  createBookmarkItem,
+} from "$features/bookmarks/bookmarkDomain";
+import {
+  useIsBookmarked,
+  useBookmarkActions,
+} from "$features/bookmarks/useBookmarks";
+import { MessageReportItem } from "$components/message/modals/MessageReport";
+import { filterPronounsByLanguage, getParsedPronouns } from "$utils/pronouns";
+import type { PronounSet } from "$utils/pronouns";
+import { useMentionClickHandler } from "$hooks/useMentionClickHandler";
+import { useCachedMxcConverter } from "$hooks/useCachedMxcConverter";
 import {
   addStickerToDefaultPack,
   doesStickerExistInDefaultPack,
-} from '$utils/addStickerToDefaultStickerPack';
+} from "$utils/addStickerToDefaultStickerPack";
 import {
   clearTextSelection,
   suppressUserSelect,
   waitForMobileViewportStabilize,
-} from '$utils/mobileOverlay';
-import type { PerMessageProfileBeeperFormat } from '$hooks/usePerMessageProfile';
-import { convertBeeperFormatToOurPerMessageProfile } from '$hooks/usePerMessageProfile';
-import { MessageEditor } from './MessageEditor';
-import { MobileMessageMenu } from './MobileMessageMenu';
-import * as css from './styles.css';
+} from "$utils/mobileOverlay";
+import type { PerMessageProfileBeeperFormat } from "$hooks/usePerMessageProfile";
+import { convertBeeperFormatToOurPerMessageProfile } from "$hooks/usePerMessageProfile";
+import { MessageEditor } from "./MessageEditor";
+import { MobileMessageMenu } from "./MobileMessageMenu";
+import * as css from "./styles.css";
 
 export type ReactionHandler = (keyOrMxc: string, shortcode: string) => void;
 
@@ -116,7 +137,7 @@ const MemoizedBody = memo(({ children }: { children: ReactNode }) => children);
 type MessageQuickReactionsProps = {
   onReaction: ReactionHandler;
 };
-export const MessageQuickReactions = as<'div', MessageQuickReactionsProps>(
+export const MessageQuickReactions = as<"div", MessageQuickReactionsProps>(
   ({ onReaction, ...props }, ref) => {
     const mx = useMatrixClient();
     const recentEmojis = useRecentEmoji(mx, 4);
@@ -150,11 +171,11 @@ export const MessageQuickReactions = as<'div', MessageQuickReactionsProps>(
         <Line size="300" />
       </>
     );
-  }
+  },
 );
 
 export const MessageCopyLinkItem = as<
-  'button',
+  "button",
   {
     room: Room;
     mEvent: MatrixEvent;
@@ -164,7 +185,9 @@ export const MessageCopyLinkItem = as<
   const handleCopy = () => {
     const eventId = mEvent.getId();
     if (!eventId) return;
-    copyToClipboard(getMatrixToRoomEvent(room.roomId, eventId, getViaServers(room)));
+    copyToClipboard(
+      getMatrixToRoomEvent(room.roomId, eventId, getViaServers(room)),
+    );
     onClose?.();
   };
 
@@ -185,7 +208,7 @@ export const MessageCopyLinkItem = as<
 });
 
 export const MessageCopyTextItem = as<
-  'button',
+  "button",
   {
     mEvent: MatrixEvent;
     onClose?: () => void;
@@ -193,7 +216,8 @@ export const MessageCopyTextItem = as<
 >(({ mEvent, onClose, ...props }, ref) => {
   const content = mEvent.getContent();
   // For edited messages, prefer the new content body
-  const body: string | undefined = content['m.new_content']?.body ?? content.body;
+  const body: string | undefined =
+    content["m.new_content"]?.body ?? content.body;
 
   if (!body || mEvent.isRedacted()) return null;
 
@@ -220,7 +244,7 @@ export const MessageCopyTextItem = as<
 
 // message pinning
 export const MessagePinItem = as<
-  'button',
+  "button",
   {
     room: Room;
     mEvent: MatrixEvent;
@@ -229,7 +253,7 @@ export const MessagePinItem = as<
 >(({ room, mEvent, onClose, ...props }, ref) => {
   const mx = useMatrixClient();
   const pinnedEvents = useRoomPinnedEvents(room);
-  const isPinned = pinnedEvents.includes(mEvent.getId() ?? '');
+  const isPinned = pinnedEvents.includes(mEvent.getId() ?? "");
 
   const handlePin = () => {
     const eventId = mEvent.getId();
@@ -239,7 +263,11 @@ export const MessagePinItem = as<
     if (!isPinned && eventId) {
       pinContent.pinned.push(eventId);
     }
-    mx.sendStateEvent(room.roomId, EventType.RoomPinnedEvents as keyof StateEvents, pinContent);
+    mx.sendStateEvent(
+      room.roomId,
+      EventType.RoomPinnedEvents as keyof StateEvents,
+      pinContent,
+    );
     onClose?.();
   };
 
@@ -253,7 +281,7 @@ export const MessagePinItem = as<
       ref={ref}
     >
       <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
-        {isPinned ? 'Unpin Message' : 'Pin Message'}
+        {isPinned ? "Unpin Message" : "Pin Message"}
       </Text>
     </MenuItem>
   );
@@ -261,16 +289,19 @@ export const MessagePinItem = as<
 
 // message bookmarking
 export const MessageBookmarkItem = as<
-  'button',
+  "button",
   {
     room: Room;
     mEvent: MatrixEvent;
     onClose?: () => void;
   }
 >(({ room, mEvent, onClose, ...props }, ref) => {
-  const [enableMessageBookmarks] = useSetting(settingsAtom, 'enableMessageBookmarks');
+  const [enableMessageBookmarks] = useSetting(
+    settingsAtom,
+    "enableMessageBookmarks",
+  );
   const eventId = mEvent.getId();
-  const isBookmarked = useIsBookmarked(room.roomId, eventId ?? '');
+  const isBookmarked = useIsBookmarked(room.roomId, eventId ?? "");
   const { add, remove } = useBookmarkActions();
 
   if (!eventId) return null;
@@ -296,7 +327,7 @@ export const MessageBookmarkItem = as<
       ref={ref}
     >
       <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
-        {isBookmarked ? 'Remove Bookmark' : 'Bookmark Message'}
+        {isBookmarked ? "Remove Bookmark" : "Bookmark Message"}
       </Text>
     </MenuItem>
   );
@@ -322,7 +353,7 @@ export type MessageProps = {
   mEvent: MatrixEvent;
   collapse: boolean;
   highlight: boolean;
-  notifyHighlight?: 'silent' | 'loud';
+  notifyHighlight?: "silent" | "loud";
   isMarked?: boolean;
   edit?: boolean;
   canDelete?: boolean;
@@ -336,10 +367,14 @@ export type MessageProps = {
   onUsernameClick: MouseEventHandler<HTMLButtonElement>;
   onReplyClick: (
     ev: Parameters<MouseEventHandler<HTMLButtonElement>>[0],
-    startThread?: boolean
+    startThread?: boolean,
   ) => void;
   onEditId?: (eventId?: string) => void;
-  onReactionToggle: (targetEventId: string, key: string, shortcode?: string) => void;
+  onReactionToggle: (
+    targetEventId: string,
+    key: string,
+    shortcode?: string,
+  ) => void;
   reply?: ReactNode;
   reactions?: ReactNode;
   hideReadReceipts?: boolean;
@@ -391,7 +426,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
         });
       }, delay);
     },
-    [callback, delay]
+    [callback, delay],
   );
 
   const onTouchMove = useCallback(
@@ -403,7 +438,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
       const dy = touch.clientY - startPosRef.current.y;
       if (Math.sqrt(dx * dx + dy * dy) > 10) cancel();
     },
-    [cancel]
+    [cancel],
   );
 
   const onTouchEnd = useCallback(() => {
@@ -414,7 +449,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
     () => () => {
       cancel();
     },
-    [cancel]
+    [cancel],
   );
 
   return {
@@ -425,7 +460,8 @@ function useMobileLongPress(callback: () => void, delay = 500) {
   };
 }
 
-const clamp = (str: string, len: number) => (str.length > len ? `${str.slice(0, len)}...` : str);
+const clamp = (str: string, len: number) =>
+  str.length > len ? `${str.slice(0, len)}...` : str;
 
 type MorePronounsPillProps = {
   pronouns: PronounSet[];
@@ -433,7 +469,11 @@ type MorePronounsPillProps = {
   maxPillLength: number;
 };
 
-function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPillProps) {
+function MorePronounsPill({
+  pronouns,
+  tagColor,
+  maxPillLength,
+}: MorePronounsPillProps) {
   const [anchor, setAnchor] = useState<RectCords | undefined>();
 
   const toggleAnchor = (target: HTMLElement) => {
@@ -446,7 +486,7 @@ function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPil
   };
 
   const handleKeyDown: KeyboardEventHandler<HTMLElement> = (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.key !== "Enter" && e.key !== " ") return;
     e.preventDefault();
     e.stopPropagation();
     toggleAnchor(e.currentTarget);
@@ -457,11 +497,13 @@ function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPil
   useEffect(() => {
     if (!anchor) return undefined;
     const dismiss = () => setAnchor(undefined);
-    document.addEventListener('click', dismiss, { once: true });
-    return () => document.removeEventListener('click', dismiss);
+    document.addEventListener("click", dismiss, { once: true });
+    return () => document.removeEventListener("click", dismiss);
   }, [anchor]);
 
-  const tooltipText = pronouns.map((p) => clamp(p.summary, maxPillLength)).join(', ');
+  const tooltipText = pronouns
+    .map((p) => clamp(p.summary, maxPillLength))
+    .join(", ");
 
   const tooltipContent = (
     <Tooltip style={{ maxWidth: toRem(250) }}>
@@ -475,7 +517,7 @@ function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPil
         {(triggerRef) => (
           <PronounPill
             ref={triggerRef as React.Ref<HTMLSpanElement>}
-            style={{ color: tagColor, cursor: 'help' }}
+            style={{ color: tagColor, cursor: "help" }}
             onClick={handleClick}
             onKeyDown={handleKeyDown}
             role="button"
@@ -486,7 +528,12 @@ function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPil
         )}
       </TooltipProvider>
       {anchor && (
-        <PopOut anchor={anchor} position="Top" align="Center" content={tooltipContent}>
+        <PopOut
+          anchor={anchor}
+          position="Top"
+          align="Center"
+          content={tooltipContent}
+        >
           {null}
         </PopOut>
       )}
@@ -499,17 +546,18 @@ function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPil
  * It also filters them.
  */
 const Pronouns = as<
-  'span',
+  "span",
   {
     pronouns?: PronounSet[];
     tagColor: string;
   }
->(({ as: AsPronouns = 'span', pronouns, tagColor, ...props }, ref) => {
+>(({ as: AsPronouns = "span", pronouns, tagColor, ...props }, ref) => {
   if (!pronouns || pronouns.length === 0) return null;
 
-  const languageFilterEnabled = getSettings().filterPronounsBasedOnLanguage ?? false;
+  const languageFilterEnabled =
+    getSettings().filterPronounsBasedOnLanguage ?? false;
   // if no language is given use english
-  const selectedLanguages = (getSettings().filterPronounsLanguages ?? ['en'])
+  const selectedLanguages = (getSettings().filterPronounsLanguages ?? ["en"])
     .map((lang: string) => lang.trim().toLowerCase())
     .filter(Boolean);
 
@@ -523,7 +571,7 @@ const Pronouns = as<
   const visiblePronouns = filterPronounsByLanguage(
     pronouns,
     languageFilterEnabled,
-    selectedLanguages
+    selectedLanguages,
   );
 
   const limit = getSettings().pronounPillMaxCount ?? 3;
@@ -596,7 +644,7 @@ function MessageInternal(
     | ((instance: HTMLDivElement | null) => void)
     | React.RefObject<HTMLDivElement>
     | null
-    | undefined
+    | undefined,
 ) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
@@ -645,10 +693,10 @@ function MessageInternal(
         : undefined;
 
     const resolvedContent = editedEvent
-      ? editedEvent.getContent()['m.new_content']
+      ? editedEvent.getContent()["m.new_content"]
       : mEvent.getContent();
 
-    return resolvedContent?.['com.beeper.per_message_profile'] as
+    return resolvedContent?.["com.beeper.per_message_profile"] as
       | PerMessageProfileBeeperFormat
       | undefined;
   }, [mEvent, room, contentVersion]);
@@ -665,10 +713,14 @@ function MessageInternal(
    * boolean to indicate wheather we should indicate to the user that it is a pmp
    * We want to not show it, when the name is unset, or whitespace only
    */
-  const showPmPInfo = parsedPMPContent?.name && parsedPMPContent.name?.trim() !== '';
+  const showPmPInfo =
+    parsedPMPContent?.name && parsedPMPContent.name?.trim() !== "";
   // Profiles and Colors
   const profile = useUserProfile(senderId, room);
-  const { color: usernameColor, font: usernameFont } = useSableCosmetics(senderId, room);
+  const { color: usernameColor, font: usernameFont } = useSableCosmetics(
+    senderId,
+    room,
+  );
 
   /**
    * If there is a per-message profile, we want to use the per message pronouns,
@@ -677,7 +729,7 @@ function MessageInternal(
    */
   const pronouns = parsedPMPContent?.pronouns ?? profile.pronouns;
 
-  const [highlightMentions] = useSetting(settingsAtom, 'highlightMentions');
+  const [highlightMentions] = useSetting(settingsAtom, "highlightMentions");
 
   // Avatars
   // Prefer the room-scoped member avatar (m.room.member) over the global profile
@@ -686,8 +738,18 @@ function MessageInternal(
   const avatarUrl = useMemo(() => {
     if (collapse) return undefined;
     const mxc = pmp?.avatar_url || memberAvatarMxc || profile.avatarUrl;
-    return mxc ? convertMxc(mx, mxc, useAuthentication, 48, 48, 'crop') : undefined;
-  }, [pmp, collapse, memberAvatarMxc, profile.avatarUrl, mx, useAuthentication, convertMxc]);
+    return mxc
+      ? convertMxc(mx, mxc, useAuthentication, 48, 48, "crop")
+      : undefined;
+  }, [
+    pmp,
+    collapse,
+    memberAvatarMxc,
+    profile.avatarUrl,
+    mx,
+    useAuthentication,
+    convertMxc,
+  ]);
 
   const cachedAvatar = useRenderableMediaUrl(avatarUrl ?? undefined);
 
@@ -707,7 +769,7 @@ function MessageInternal(
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
   const [emojiBoardAnchor, setEmojiBoardAnchor] = useState<RectCords>();
   const [nickEditOpen, setNickEditOpen] = useState(false);
-  const [nickDraft, setNickDraft] = useState('');
+  const [nickDraft, setNickDraft] = useState("");
   const nicknames = useAtomValue(nicknamesAtom);
   const setNickname = useSetAtom(setNicknameAtom);
 
@@ -717,12 +779,12 @@ function MessageInternal(
 
   const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
   const optionsRef = useRef<HTMLDivElement>(null);
-  const [showPronouns] = useSetting(settingsAtom, 'showPronouns');
-  const [parsePronouns] = useSetting(settingsAtom, 'parsePronouns');
+  const [showPronouns] = useSetting(settingsAtom, "showPronouns");
+  const [parsePronouns] = useSetting(settingsAtom, "parsePronouns");
 
-  const [useRightBubbles] = useSetting(settingsAtom, 'useRightBubbles');
+  const [useRightBubbles] = useSetting(settingsAtom, "useRightBubbles");
   const { cleanedDisplayName, inlinePronoun } = useMemo(() => {
-    const rawName = pmp?.displayname || senderDisplayName || '';
+    const rawName = pmp?.displayname || senderDisplayName || "";
     return getParsedPronouns(rawName, parsePronouns);
   }, [pmp, senderDisplayName, parsePronouns]);
 
@@ -730,12 +792,14 @@ function MessageInternal(
     const existing = pronouns ? [...pronouns] : [];
 
     if (inlinePronoun) {
-      const isDupe = existing.some((p) => p.summary?.toLowerCase() === inlinePronoun);
+      const isDupe = existing.some(
+        (p) => p.summary?.toLowerCase() === inlinePronoun,
+      );
 
       if (!isDupe) {
         existing.push({
           summary: inlinePronoun,
-          language: 'en',
+          language: "en",
         });
       }
     }
@@ -746,7 +810,7 @@ function MessageInternal(
   const headerJSX = !collapse && (
     <Box
       gap="300"
-      direction={messageLayout === MessageLayout.Compact ? 'RowReverse' : 'Row'}
+      direction={messageLayout === MessageLayout.Compact ? "RowReverse" : "Row"}
       justifyContent="SpaceBetween"
       alignItems="Baseline"
       grow="Yes"
@@ -762,12 +826,19 @@ function MessageInternal(
           onContextMenu={onUserClick}
           onClick={onUsernameClick}
         >
-          <Text as="span" size={messageLayout === MessageLayout.Bubble ? 'T300' : 'T400'} truncate>
+          <Text
+            as="span"
+            size={messageLayout === MessageLayout.Bubble ? "T300" : "T400"}
+            truncate
+          >
             <UsernameBold>{cleanedDisplayName}</UsernameBold>
           </Text>
         </Username>
         {showPronouns && mergedPronouns.length > 0 && (
-          <Pronouns pronouns={mergedPronouns} tagColor={usernameColor ?? 'currentColor'} />
+          <Pronouns
+            pronouns={mergedPronouns}
+            tagColor={usernameColor ?? "currentColor"}
+          />
         )}
         {showPmPInfo && (
           <Box>
@@ -785,7 +856,7 @@ function MessageInternal(
               </Text>
               <Text
                 as="span"
-                size={messageLayout === MessageLayout.Bubble ? 'T300' : 'T400'}
+                size={messageLayout === MessageLayout.Bubble ? "T300" : "T400"}
                 style={{ fontSize: 11 }}
                 truncate
               >
@@ -819,7 +890,11 @@ function MessageInternal(
 
   const avatarJSX = !collapse && messageLayout !== MessageLayout.Compact && (
     <AvatarBase
-      className={messageLayout === MessageLayout.Bubble ? css.BubbleAvatarBase : undefined}
+      className={
+        messageLayout === MessageLayout.Bubble
+          ? css.BubbleAvatarBase
+          : undefined
+      }
     >
       <Avatar
         className={css.MessageAvatar}
@@ -832,15 +907,18 @@ function MessageInternal(
           userId={senderId}
           src={cachedAvatar}
           alt={cleanedDisplayName}
-          renderFallback={() => userFallbackIcon('md')}
+          renderFallback={() => userFallbackIcon("md")}
         />
       </Avatar>
     </AvatarBase>
   );
 
   const stableContent = useMemo(
-    () => mEvent.getContent().body || mEvent.getContent()['org.matrix.msc3381.poll.start'] || '',
-    [mEvent]
+    () =>
+      mEvent.getContent().body ||
+      mEvent.getContent()["org.matrix.msc3381.poll.start"] ||
+      "",
+    [mEvent],
   );
   const isPendingSend =
     sendStatus === EventStatus.ENCRYPTING ||
@@ -848,7 +926,8 @@ function MessageInternal(
     sendStatus === EventStatus.SENDING;
   const isFailedSend = sendStatus === EventStatus.NOT_SENT;
   const canResend = isFailedSend && senderId === mx.getUserId() && !!onResend;
-  const canDeleteFailedSend = isFailedSend && senderId === mx.getUserId() && !!onDeleteFailedSend;
+  const canDeleteFailedSend =
+    isFailedSend && senderId === mx.getUserId() && !!onDeleteFailedSend;
   // handle clicks on mentions in the message body (e.g. jump to original message from a forwarded message notice)
   const mentionClickHandler = useMentionClickHandler(room.roomId);
 
@@ -860,10 +939,10 @@ function MessageInternal(
       const originalRoomId = messageForwardedProps.originalRoomId;
       return {
         label: messageForwardedProps.originalEventPrivate
-          ? 'Forwarded private message'
+          ? "Forwarded private message"
           : isSameRoomForward(originalRoomId)
-            ? 'Forwarded from earlier in this room'
-            : 'Forwarded from another room',
+            ? "Forwarded from earlier in this room"
+            : "Forwarded from another room",
         roomId: originalRoomId,
         eventId: messageForwardedProps.originalEventId,
         ts: messageForwardedProps.originalTimestamp ?? 0,
@@ -875,8 +954,8 @@ function MessageInternal(
       const originalRoomId = msc2723ForwardedMessageProps.room_id;
       return {
         label: isSameRoomForward(originalRoomId)
-          ? 'Forwarded from earlier in this room'
-          : 'Forwarded from another room',
+          ? "Forwarded from earlier in this room"
+          : "Forwarded from another room",
         roomId: originalRoomId,
         eventId: msc2723ForwardedMessageProps.event_id,
         ts: msc2723ForwardedMessageProps.origin_server_ts ?? 0,
@@ -893,28 +972,45 @@ function MessageInternal(
       evt.stopPropagation();
       onResend?.(mEvent);
     },
-    [mEvent, onResend]
+    [mEvent, onResend],
   );
 
-  const handleDeleteFailedSendClick: MouseEventHandler<HTMLButtonElement> = useCallback(
-    (evt) => {
-      evt.preventDefault();
-      evt.stopPropagation();
-      onDeleteFailedSend?.(mEvent);
-    },
-    [mEvent, onDeleteFailedSend]
-  );
+  const handleDeleteFailedSendClick: MouseEventHandler<HTMLButtonElement> =
+    useCallback(
+      (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        onDeleteFailedSend?.(mEvent);
+      },
+      [mEvent, onDeleteFailedSend],
+    );
 
-  const MSG_CONTENT_STYLE = { maxWidth: '100%' };
-  const isSableFeedback = mEvent.getId()?.startsWith('~sable-feedback-');
+  const MSG_CONTENT_STYLE = { maxWidth: "100%" };
+  const isSableFeedback = mEvent.getId()?.startsWith("~sable-feedback-");
+  const [pendingMobileOptionsOpen, setPendingMobileOptionsOpen] =
+    useState(false);
   const openMobileOptionsMenu = useCallback(() => {
     clearTextSelection();
+    setPendingMobileOptionsOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingMobileOptionsOpen) return undefined;
+
+    let cancelled = false;
     void waitForMobileViewportStabilize().then(() => {
+      if (cancelled) return;
       requestAnimationFrame(() => {
+        if (cancelled) return;
         setMobileOptionsOpen(true);
+        setPendingMobileOptionsOpen(false);
       });
     });
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingMobileOptionsOpen]);
 
   useEffect(() => {
     if (!mobileOptionsOpen) return undefined;
@@ -939,9 +1035,12 @@ function MessageInternal(
             {forwardedNotice.label}
             {forwardedNotice.showLink && (
               <>
-                {' '}
+                {" "}
                 <a
-                  href={getMatrixToRoomEvent(forwardedNotice.roomId, forwardedNotice.eventId)}
+                  href={getMatrixToRoomEvent(
+                    forwardedNotice.roomId,
+                    forwardedNotice.eventId,
+                  )}
                   rel="noreferrer noopener"
                   data-mention-id={forwardedNotice.roomId}
                   data-mention-event-id={forwardedNotice.eventId}
@@ -956,7 +1055,10 @@ function MessageInternal(
               compact={messageLayout === MessageLayout.Compact}
               hour24Clock={hour24Clock}
               dateFormatString={dateFormatString}
-              style={{ marginLeft: config.space.S100, justifyContent: 'flex-end' }}
+              style={{
+                marginLeft: config.space.S100,
+                justifyContent: "flex-end",
+              }}
             />
           </Text>
         </Chip>
@@ -965,8 +1067,8 @@ function MessageInternal(
       {edit && onEditId ? (
         <MessageEditor
           style={{
-            maxWidth: '100%',
-            width: '100%',
+            maxWidth: "100%",
+            width: "100%",
           }}
           roomId={room.roomId}
           room={room}
@@ -984,7 +1086,13 @@ function MessageInternal(
             Failed to send.
           </Text>
           {canResend && (
-            <Chip type="button" variant="Primary" radii="Pill" outlined onClick={handleResendClick}>
+            <Chip
+              type="button"
+              variant="Primary"
+              radii="Pill"
+              outlined
+              onClick={handleResendClick}
+            >
               <Text size="B300">Retry</Text>
             </Chip>
           )}
@@ -1037,7 +1145,7 @@ function MessageInternal(
 
     if (evt.altKey || !window.getSelection()?.isCollapsed || edit) return;
     const tag = (evt.target as HTMLElement).tagName;
-    if (typeof tag === 'string' && tag.toLowerCase() === 'a') return;
+    if (typeof tag === "string" && tag.toLowerCase() === "a") return;
     evt.preventDefault();
     setMenuAnchor({
       x: evt.clientX,
@@ -1048,7 +1156,8 @@ function MessageInternal(
   };
 
   const handleOpenMenu: MouseEventHandler<HTMLButtonElement> = (evt) => {
-    const target = evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
+    const target =
+      evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
     const rect = target.getBoundingClientRect();
 
     window.requestAnimationFrame(() => {
@@ -1063,7 +1172,8 @@ function MessageInternal(
   };
 
   const handleOpenEmojiBoard: MouseEventHandler<HTMLButtonElement> = (evt) => {
-    const target = evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
+    const target =
+      evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
     setEmojiBoardAnchor(target.getBoundingClientRect());
   };
 
@@ -1080,7 +1190,8 @@ function MessageInternal(
     const targetId = activeReplyId === currentId ? null : currentId;
     const mockEvent = {
       currentTarget: {
-        getAttribute: (attr: string) => (attr === 'data-event-id' ? targetId : null),
+        getAttribute: (attr: string) =>
+          attr === "data-event-id" ? targetId : null,
       },
     } as unknown as MouseEvent<HTMLButtonElement>;
 
@@ -1092,19 +1203,24 @@ function MessageInternal(
   });
 
   const isThreadedMessage = isThreadRelationEvent(mEvent, mEvent.threadRootId);
-  const isStickerMessage = mEvent.getType() === 'm.sticker';
+  const isStickerMessage = mEvent.getType() === "m.sticker";
 
   const evtId = mEvent.getId()!;
   const evtTimeline = room.getTimelineForEvent(evtId);
   const edits =
     evtTimeline &&
-    getEventEdits(evtTimeline.getTimelineSet(), evtId, mEvent.getType())?.getRelations();
+    getEventEdits(
+      evtTimeline.getTimelineSet(),
+      evtId,
+      mEvent.getType(),
+    )?.getRelations();
   const isEdited = !!edits?.length;
 
   return (
     <MessageBase
       className={classNames(css.MessageBase, className, {
-        [css.MessageBaseBubbleCollapsed]: messageLayout === MessageLayout.Bubble && collapse,
+        [css.MessageBaseBubbleCollapsed]:
+          messageLayout === MessageLayout.Bubble && collapse,
       })}
       tabIndex={0}
       space={messageSpacing}
@@ -1125,7 +1241,7 @@ function MessageInternal(
               {canSendReaction && (
                 <PopOut
                   position="Bottom"
-                  align={emojiBoardAnchor?.width === 0 ? 'Start' : 'End'}
+                  align={emojiBoardAnchor?.width === 0 ? "Start" : "End"}
                   offset={emojiBoardAnchor?.width === 0 ? 0 : undefined}
                   anchor={emojiBoardAnchor}
                   content={
@@ -1176,7 +1292,7 @@ function MessageInternal(
                 <IconButton
                   onClick={(ev) => {
                     if (activeReplyId === mEvent.getId()) {
-                      ev.currentTarget.setAttribute('data-event-id', '');
+                      ev.currentTarget.setAttribute("data-event-id", "");
                     }
                     onReplyClick(ev, true);
                     setMobileOptionsOpen(false);
@@ -1205,7 +1321,7 @@ function MessageInternal(
               <PopOut
                 anchor={menuAnchor}
                 position="Bottom"
-                align={menuAnchor?.width === 0 ? 'Start' : 'End'}
+                align={menuAnchor?.width === 0 ? "Start" : "End"}
                 offset={menuAnchor?.width === 0 ? 0 : undefined}
                 content={
                   <FocusTrap
@@ -1213,8 +1329,10 @@ function MessageInternal(
                       initialFocus: false,
                       onDeactivate: () => setMenuAnchor(undefined),
                       clickOutsideDeactivates: true,
-                      isKeyForward: (evt: KeyboardEvent) => evt.key === 'ArrowDown',
-                      isKeyBackward: (evt: KeyboardEvent) => evt.key === 'ArrowUp',
+                      isKeyForward: (evt: KeyboardEvent) =>
+                        evt.key === "ArrowDown",
+                      isKeyBackward: (evt: KeyboardEvent) =>
+                        evt.key === "ArrowUp",
                       escapeDeactivates: stopPropagation,
                     }}
                   >
@@ -1227,7 +1345,11 @@ function MessageInternal(
                           }}
                         />
                       )}
-                      <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
+                      <Box
+                        direction="Column"
+                        gap="100"
+                        className={css.MessageMenuGroup}
+                      >
                         {canSendReaction && (
                           <MenuItem
                             size="300"
@@ -1248,7 +1370,10 @@ function MessageInternal(
                         {/* Only show "Add to User Sticker Pack" if the sticker isn't already in the default pack and isn't encrypted */}
                         {isStickerMessage &&
                           mEvent.getContent().url &&
-                          !doesStickerExistInDefaultPack(mx, mEvent.getContent().url) && (
+                          !doesStickerExistInDefaultPack(
+                            mx,
+                            mEvent.getContent().url,
+                          ) && (
                             <MenuItem
                               size="300"
                               after={menuIcon(Star)}
@@ -1257,9 +1382,11 @@ function MessageInternal(
                                 addStickerToDefaultPack(
                                   mx,
                                   `sticker-${mEvent.getId()}`,
-                                  mEvent.getContent().url ?? mEvent.getContent().file?.url ?? '',
+                                  mEvent.getContent().url ??
+                                    mEvent.getContent().file?.url ??
+                                    "",
                                   mEvent.getContent().body,
-                                  mEvent.getContent().info
+                                  mEvent.getContent().info,
                                 );
                                 closeMenu();
                               }}
@@ -1274,7 +1401,12 @@ function MessageInternal(
                               </Text>
                             </MenuItem>
                           )}
-                        {relations && <MessageAllReactionItem room={room} relations={relations} />}
+                        {relations && (
+                          <MessageAllReactionItem
+                            room={room}
+                            relations={relations}
+                          />
+                        )}
                         <MenuItem
                           size="300"
                           after={menuIcon(ArrowBendUpLeftIcon)}
@@ -1282,12 +1414,19 @@ function MessageInternal(
                           data-event-id={mEvent.getId()}
                           onClick={(evt: React.MouseEvent) => {
                             onReplyClick(
-                              evt as unknown as Parameters<MouseEventHandler<HTMLButtonElement>>[0]
+                              evt as unknown as Parameters<
+                                MouseEventHandler<HTMLButtonElement>
+                              >[0],
                             );
                             closeMenu();
                           }}
                         >
-                          <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
+                          <Text
+                            className={css.MessageMenuItemText}
+                            as="span"
+                            size="T300"
+                            truncate
+                          >
                             Reply
                           </Text>
                         </MenuItem>
@@ -1302,7 +1441,7 @@ function MessageInternal(
                                 evt as unknown as Parameters<
                                   MouseEventHandler<HTMLButtonElement>
                                 >[0],
-                                true
+                                true,
                               );
                               closeMenu();
                             }}
@@ -1339,7 +1478,10 @@ function MessageInternal(
                           </MenuItem>
                         )}
                         {!hideReadReceipts && (
-                          <MessageReadReceiptItem room={room} eventId={mEvent.getId() ?? ''} />
+                          <MessageReadReceiptItem
+                            room={room}
+                            eventId={mEvent.getId() ?? ""}
+                          />
                         )}
                         {isEdited && (
                           <MessageEditHistoryItem
@@ -1351,15 +1493,38 @@ function MessageInternal(
                         {showDeveloperTools && (
                           <MessageSourceCodeItem room={room} mEvent={mEvent} />
                         )}
-                        <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
-                        <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
-                        <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
+                        <MessageCopyLinkItem
+                          room={room}
+                          mEvent={mEvent}
+                          onClose={closeMenu}
+                        />
+                        <MessageCopyTextItem
+                          mEvent={mEvent}
+                          onClose={closeMenu}
+                        />
+                        <MessageForwardItem
+                          room={room}
+                          mEvent={mEvent}
+                          onClose={closeMenu}
+                        />
                       </Box>
                       <Line size="300" />
-                      <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
-                        <MessageBookmarkItem room={room} mEvent={mEvent} onClose={closeMenu} />
+                      <Box
+                        direction="Column"
+                        gap="100"
+                        className={css.MessageMenuGroup}
+                      >
+                        <MessageBookmarkItem
+                          room={room}
+                          mEvent={mEvent}
+                          onClose={closeMenu}
+                        />
                         {canPinEvent && (
-                          <MessagePinItem room={room} mEvent={mEvent} onClose={closeMenu} />
+                          <MessagePinItem
+                            room={room}
+                            mEvent={mEvent}
+                            onClose={closeMenu}
+                          />
                         )}
                         {senderId !== mx.getUserId() &&
                           (nickEditOpen ? (
@@ -1377,21 +1542,25 @@ function MessageInternal(
                                 onChange={(e) => setNickDraft(e.target.value)}
                                 placeholder={cleanedDisplayName}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    setNickname(senderId, nickDraft || undefined, mx);
+                                  if (e.key === "Enter") {
+                                    setNickname(
+                                      senderId,
+                                      nickDraft || undefined,
+                                      mx,
+                                    );
                                     closeMenu();
                                   }
-                                  if (e.key === 'Escape') closeMenu();
+                                  if (e.key === "Escape") closeMenu();
                                 }}
                                 style={{
-                                  background: 'var(--mx-c-surface)',
-                                  color: 'var(--mx-c-on-surface)',
-                                  border: '1px solid var(--mx-c-outline)',
-                                  borderRadius: '6px',
-                                  padding: '4px 8px',
-                                  fontSize: '14px',
-                                  width: '100%',
-                                  outline: 'none',
+                                  background: "var(--mx-c-surface)",
+                                  color: "var(--mx-c-on-surface)",
+                                  border: "1px solid var(--mx-c-outline)",
+                                  borderRadius: "6px",
+                                  padding: "4px 8px",
+                                  fontSize: "14px",
+                                  width: "100%",
+                                  outline: "none",
                                 }}
                               />
                               <Box gap="200">
@@ -1401,7 +1570,11 @@ function MessageInternal(
                                   variant="Success"
                                   fill="None"
                                   onClick={() => {
-                                    setNickname(senderId, nickDraft || undefined, mx);
+                                    setNickname(
+                                      senderId,
+                                      nickDraft || undefined,
+                                      mx,
+                                    );
                                     closeMenu();
                                   }}
                                 >
@@ -1429,7 +1602,7 @@ function MessageInternal(
                               after={menuIcon(PencilSimple)}
                               radii="300"
                               onClick={() => {
-                                setNickDraft(nicknames[senderId] ?? '');
+                                setNickDraft(nicknames[senderId] ?? "");
                                 setNickEditOpen(true);
                               }}
                             >
@@ -1439,7 +1612,9 @@ function MessageInternal(
                                 size="T300"
                                 truncate
                               >
-                                {nicknames[senderId] ? 'Edit Nickname' : 'Set Nickname'}
+                                {nicknames[senderId]
+                                  ? "Edit Nickname"
+                                  : "Set Nickname"}
                               </Text>
                             </MenuItem>
                           ))}
@@ -1448,7 +1623,11 @@ function MessageInternal(
                         mEvent.getSender() !== mx.getUserId()) && (
                         <>
                           <Line size="300" />
-                          <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
+                          <Box
+                            direction="Column"
+                            gap="100"
+                            className={css.MessageMenuGroup}
+                          >
                             {!mEvent.isRedacted() && canDelete && (
                               <MessageDeleteItem room={room} mEvent={mEvent} />
                             )}
@@ -1470,7 +1649,7 @@ function MessageInternal(
                   aria-pressed={!!menuAnchor}
                 >
                   {menuIcon(DotsThreeOutlineVerticalIcon, {
-                    weight: menuAnchor ? 'fill' : 'regular',
+                    weight: menuAnchor ? "fill" : "regular",
                   })}
                 </IconButton>
               </PopOut>
@@ -1491,22 +1670,25 @@ function MessageInternal(
             before={avatarJSX}
             header={headerJSX}
             onContextMenu={handleContextMenu}
-            align={useRightBubbles && senderId === mx.getUserId() ? 'right' : 'left'}
+            align={
+              useRightBubbles && senderId === mx.getUserId() ? "right" : "left"
+            }
           >
             <div {...longPress}>{msgContentJSX}</div>
           </BubbleLayout>
         </SwipeableMessageWrapper>
       )}
-      {messageLayout !== MessageLayout.Compact && messageLayout !== MessageLayout.Bubble && (
-        <SwipeableMessageWrapper onReply={handleSwipeReply}>
-          <ModernLayout before={avatarJSX} onContextMenu={handleContextMenu}>
-            <div {...longPress}>
-              {headerJSX}
-              {msgContentJSX}
-            </div>
-          </ModernLayout>
-        </SwipeableMessageWrapper>
-      )}
+      {messageLayout !== MessageLayout.Compact &&
+        messageLayout !== MessageLayout.Bubble && (
+          <SwipeableMessageWrapper onReply={handleSwipeReply}>
+            <ModernLayout before={avatarJSX} onContextMenu={handleContextMenu}>
+              <div {...longPress}>
+                {headerJSX}
+                {msgContentJSX}
+              </div>
+            </ModernLayout>
+          </SwipeableMessageWrapper>
+        )}
       {mobileOptionsOpen && (
         <MobileMessageMenu
           room={room}
@@ -1529,26 +1711,26 @@ function MessageInternal(
   );
 }
 
-const MessageAs = as<'div', MessageProps>(MessageInternal);
+const MessageAs = as<"div", MessageProps>(MessageInternal);
 export const Message = memo(MessageAs);
 
 export type EventProps = {
   room: Room;
   mEvent: MatrixEvent;
   highlight: boolean;
-  notifyHighlight?: 'silent' | 'loud';
+  notifyHighlight?: "silent" | "loud";
   isMarked?: boolean;
   canDelete?: boolean;
   onReplyClick: (
     ev: Parameters<MouseEventHandler<HTMLButtonElement>>[0],
-    startThread?: boolean
+    startThread?: boolean,
   ) => void;
   messageSpacing: MessageSpacing;
   hideReadReceipts?: boolean;
   showDeveloperTools?: boolean;
   collapse?: boolean;
 };
-export const Event = as<'div', EventProps>(
+export const Event = as<"div", EventProps>(
   (
     {
       className,
@@ -1566,22 +1748,38 @@ export const Event = as<'div', EventProps>(
       children,
       ...props
     },
-    ref
+    ref,
   ) => {
     const mx = useMatrixClient();
-    const stateEvent = typeof mEvent.getStateKey() === 'string';
+    const stateEvent = typeof mEvent.getStateKey() === "string";
 
     const [menuAnchor, setMenuAnchor] = useState<RectCords>();
     const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
-    const [highlightMentions] = useSetting(settingsAtom, 'highlightMentions');
+    const [pendingMobileOptionsOpen, setPendingMobileOptionsOpen] =
+      useState(false);
+    const [highlightMentions] = useSetting(settingsAtom, "highlightMentions");
     const openMobileOptionsMenu = useCallback(() => {
       clearTextSelection();
+      setPendingMobileOptionsOpen(true);
+    }, []);
+
+    useEffect(() => {
+      if (!pendingMobileOptionsOpen) return undefined;
+
+      let cancelled = false;
       void waitForMobileViewportStabilize().then(() => {
+        if (cancelled) return;
         requestAnimationFrame(() => {
+          if (cancelled) return;
           setMobileOptionsOpen(true);
+          setPendingMobileOptionsOpen(false);
         });
       });
-    }, []);
+
+      return () => {
+        cancelled = true;
+      };
+    }, [pendingMobileOptionsOpen]);
 
     useEffect(() => {
       if (!mobileOptionsOpen) return undefined;
@@ -1599,7 +1797,7 @@ export const Event = as<'div', EventProps>(
 
       if (evt.altKey || !window.getSelection()?.isCollapsed) return;
       const tag = (evt.target as HTMLElement).tagName;
-      if (typeof tag === 'string' && tag.toLowerCase() === 'a') return;
+      if (typeof tag === "string" && tag.toLowerCase() === "a") return;
       evt.preventDefault();
       setMenuAnchor({
         x: evt.clientX,
@@ -1610,7 +1808,8 @@ export const Event = as<'div', EventProps>(
     };
 
     const handleOpenMenu: MouseEventHandler<HTMLButtonElement> = (evt) => {
-      const target = evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
+      const target =
+        evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
       const rect = target.getBoundingClientRect();
 
       window.requestAnimationFrame(() => {
@@ -1645,7 +1844,11 @@ export const Event = as<'div', EventProps>(
     const evtTimeline = room.getTimelineForEvent(evtId);
     const edits =
       evtTimeline &&
-      getEventEdits(evtTimeline.getTimelineSet(), evtId, mEvent.getType())?.getRelations();
+      getEventEdits(
+        evtTimeline.getTimelineSet(),
+        evtId,
+        mEvent.getType(),
+      )?.getRelations();
     const isEdited = !!edits?.length;
 
     return (
@@ -1671,7 +1874,7 @@ export const Event = as<'div', EventProps>(
                   <PopOut
                     anchor={menuAnchor}
                     position="Bottom"
-                    align={menuAnchor?.width === 0 ? 'Start' : 'End'}
+                    align={menuAnchor?.width === 0 ? "Start" : "End"}
                     offset={menuAnchor?.width === 0 ? 0 : undefined}
                     content={
                       <FocusTrap
@@ -1679,13 +1882,19 @@ export const Event = as<'div', EventProps>(
                           initialFocus: false,
                           onDeactivate: () => setMenuAnchor(undefined),
                           clickOutsideDeactivates: true,
-                          isKeyForward: (evt: KeyboardEvent) => evt.key === 'ArrowDown',
-                          isKeyBackward: (evt: KeyboardEvent) => evt.key === 'ArrowUp',
+                          isKeyForward: (evt: KeyboardEvent) =>
+                            evt.key === "ArrowDown",
+                          isKeyBackward: (evt: KeyboardEvent) =>
+                            evt.key === "ArrowUp",
                           escapeDeactivates: stopPropagation,
                         }}
                       >
                         <Menu {...props} ref={ref}>
-                          <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
+                          <Box
+                            direction="Column"
+                            gap="100"
+                            className={css.MessageMenuGroup}
+                          >
                             <MenuItem
                               size="300"
                               after={menuIcon(ArrowBendUpLeftIcon)}
@@ -1695,7 +1904,7 @@ export const Event = as<'div', EventProps>(
                                 onReplyClick(
                                   evt as unknown as Parameters<
                                     MouseEventHandler<HTMLButtonElement>
-                                  >[0]
+                                  >[0],
                                 );
                                 closeMenu();
                               }}
@@ -1710,7 +1919,10 @@ export const Event = as<'div', EventProps>(
                               </Text>
                             </MenuItem>
                             {!hideReadReceipts && (
-                              <MessageReadReceiptItem room={room} eventId={mEvent.getId() ?? ''} />
+                              <MessageReadReceiptItem
+                                room={room}
+                                eventId={mEvent.getId() ?? ""}
+                              />
                             )}
                             {isEdited && (
                               <MessageEditHistoryItem
@@ -1720,11 +1932,25 @@ export const Event = as<'div', EventProps>(
                               />
                             )}
                             {showDeveloperTools && (
-                              <MessageSourceCodeItem room={room} mEvent={mEvent} />
+                              <MessageSourceCodeItem
+                                room={room}
+                                mEvent={mEvent}
+                              />
                             )}
-                            <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
-                            <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
-                            <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
+                            <MessageCopyLinkItem
+                              room={room}
+                              mEvent={mEvent}
+                              onClose={closeMenu}
+                            />
+                            <MessageCopyTextItem
+                              mEvent={mEvent}
+                              onClose={closeMenu}
+                            />
+                            <MessageForwardItem
+                              room={room}
+                              mEvent={mEvent}
+                              onClose={closeMenu}
+                            />
                             {!stateEvent && (
                               <MessageBookmarkItem
                                 room={room}
@@ -1733,16 +1959,29 @@ export const Event = as<'div', EventProps>(
                               />
                             )}
                           </Box>
-                          {((!mEvent.isRedacted() && canDelete && !stateEvent) ||
-                            (mEvent.getSender() !== mx.getUserId() && !stateEvent)) && (
+                          {((!mEvent.isRedacted() &&
+                            canDelete &&
+                            !stateEvent) ||
+                            (mEvent.getSender() !== mx.getUserId() &&
+                              !stateEvent)) && (
                             <>
                               <Line size="300" />
-                              <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
+                              <Box
+                                direction="Column"
+                                gap="100"
+                                className={css.MessageMenuGroup}
+                              >
                                 {!mEvent.isRedacted() && canDelete && (
-                                  <MessageDeleteItem room={room} mEvent={mEvent} />
+                                  <MessageDeleteItem
+                                    room={room}
+                                    mEvent={mEvent}
+                                  />
                                 )}
                                 {mEvent.getSender() !== mx.getUserId() && (
-                                  <MessageReportItem room={room} mEvent={mEvent} />
+                                  <MessageReportItem
+                                    room={room}
+                                    mEvent={mEvent}
+                                  />
                                 )}
                               </Box>
                             </>
@@ -1768,7 +2007,7 @@ export const Event = as<'div', EventProps>(
                       aria-pressed={!!menuAnchor}
                     >
                       {menuIcon(DotsThreeOutlineVerticalIcon, {
-                        weight: menuAnchor ? 'fill' : 'regular',
+                        weight: menuAnchor ? "fill" : "regular",
                       })}
                     </IconButton>
                   </PopOut>
@@ -1795,5 +2034,5 @@ export const Event = as<'div', EventProps>(
         )}
       </MessageBase>
     );
-  }
+  },
 );
