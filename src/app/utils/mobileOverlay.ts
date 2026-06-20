@@ -82,17 +82,18 @@ export const waitForMobileViewportStabilize = (
 
 export const suppressUserSelect = () => {
   const { style } = document.body;
+  const touchCalloutStyle = style as CSSStyleDeclaration & { webkitTouchCallout?: string };
   const previousUserSelect = style.userSelect;
   const previousWebkitUserSelect = style.webkitUserSelect;
-  const previousWebkitTouchCallout = style.webkitTouchCallout;
+  const previousWebkitTouchCallout = touchCalloutStyle.webkitTouchCallout;
 
   style.userSelect = 'none';
   style.webkitUserSelect = 'none';
-  style.webkitTouchCallout = 'none';
+  touchCalloutStyle.webkitTouchCallout = 'none';
 
   return () => {
     style.userSelect = previousUserSelect;
     style.webkitUserSelect = previousWebkitUserSelect;
-    style.webkitTouchCallout = previousWebkitTouchCallout;
+    touchCalloutStyle.webkitTouchCallout = previousWebkitTouchCallout;
   };
 };
