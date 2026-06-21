@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/react';
 import type { MatrixClient } from '$types/matrix-sdk';
-import { MatrixEvent } from '$types/matrix-sdk';
+import { ClientEvent, MatrixEvent, SyncState } from '$types/matrix-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearSentryMatrixDeviceContext,
@@ -11,6 +11,7 @@ import {
   startClient,
   stopClient,
 } from './initMatrix';
+import { requestStoreDegradedRecoveryReload } from './storeDegradedRecovery';
 
 vi.mock('@sentry/react', () => ({
   addBreadcrumb: vi.fn<(breadcrumb: unknown) => void>(),
@@ -26,6 +27,14 @@ vi.mock('@sentry/react', () => ({
     end: vi.fn<() => void>(),
   })),
   setTag: vi.fn<(key: string, value: string) => void>(),
+}));
+
+const { mockReloadWithTelemetry } = vi.hoisted(() => ({
+  mockReloadWithTelemetry: vi.fn<(reason: string, data?: Record<string, unknown>) => void>(),
+}));
+
+vi.mock('$utils/reloadWithTelemetry', () => ({
+  reloadWithTelemetry: mockReloadWithTelemetry,
 }));
 
 type MockMatrixClient = MatrixClient & {
@@ -77,6 +86,13 @@ const flushMicrotasks = async (): Promise<void> => {
   await Promise.resolve();
 };
 
+const setVisibilityState = (visibilityState: DocumentVisibilityState): void => {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    value: visibilityState,
+  });
+};
+
 const waitForStopSettlement = async (): Promise<void> => {
   await new Promise<void>((resolve) => {
     window.setTimeout(resolve, 0);
@@ -111,6 +127,7 @@ describe('normalizeMatrixEventType', () => {
 describe('setSentryMatrixDeviceContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
   });
 
   it('sets matrix.device_id from the Matrix client', () => {
@@ -135,6 +152,57 @@ describe('setSentryMatrixDeviceContext', () => {
     clearSentryMatrixDeviceContext();
 
     expect(Sentry.setTag).toHaveBeenCalledWith('matrix.device_id', 'none');
+  });
+});
+
+describe('requestStoreDegradedRecoveryReload', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.sessionStorage.clear();
+  });
+
+  it('reloads immediately when the document is visible', async () => {
+    vi.useFakeTimers();
+    setVisibilityState('visible');
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'test' })).toBe(true);
+    expect(mockReloadWithTelemetry).not.toHaveBeenCalled();
+
+    await vi.runAllTimersAsync();
+
+    expect(mockReloadWithTelemetry).toHaveBeenCalledWith('sync_store_degraded_recovery', {
+      source: 'test',
+    });
+    vi.useRealTimers();
+  });
+
+  it('waits for visible resume when the document is hidden', async () => {
+    setVisibilityState('hidden');
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'hidden' })).toBe(true);
+    expect(mockReloadWithTelemetry).not.toHaveBeenCalled();
+
+    setVisibilityState('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushMicrotasks();
+
+    expect(mockReloadWithTelemetry).toHaveBeenCalledWith('sync_store_degraded_recovery', {
+      source: 'hidden',
+    });
+  });
+
+  it('suppresses duplicate recovery requests inside the throttle window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-21T12:00:00.000Z'));
+    setVisibilityState('visible');
+
+    expect(requestStoreDegradedRecoveryReload()).toBe(true);
+    await vi.runAllTimersAsync();
+    expect(mockReloadWithTelemetry).toHaveBeenCalledTimes(1);
+
+    expect(requestStoreDegradedRecoveryReload()).toBe(false);
+    expect(mockReloadWithTelemetry).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });
 
@@ -234,6 +302,38 @@ describe('startClient app singleton gate', () => {
     window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
 
     expect(mx.retryImmediately).toHaveBeenCalledOnce();
+  });
+
+  it('requests degraded-store recovery when classic sync hits a crypto IndexedDB error', async () => {
+    vi.useFakeTimers();
+    setVisibilityState('visible');
+    let syncListener:
+      | ((state: SyncState, prevState: SyncState | null, data?: { error?: Error }) => void)
+      | undefined;
+    const mx = makeClient('@alice:example.com');
+    mx.on = vi.fn<(...args: unknown[]) => MockMatrixClient>((event, listener) => {
+      if (event === ClientEvent.Sync) {
+        syncListener = listener as typeof syncListener;
+      }
+      return mx;
+    });
+
+    await startClassicClient(mx);
+    syncListener?.(SyncState.Reconnecting, SyncState.Syncing, {
+      error: new Error("InvalidStateError: Failed to execute 'transaction' on 'IDBDatabase'"),
+    });
+    await vi.runAllTimersAsync();
+
+    expect(mockReloadWithTelemetry).toHaveBeenCalledWith(
+      'sync_store_degraded_recovery',
+      expect.objectContaining({
+        errorType: 'invalid_state',
+        syncState: SyncState.Reconnecting,
+        transport: 'classic',
+        userId: '@alice:example.com',
+      })
+    );
+    vi.useRealTimers();
   });
 
   it('does not retry classic sync on non-persisted pageshow', async () => {

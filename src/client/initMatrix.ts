@@ -25,6 +25,7 @@ import { installThreadEventInstrumentation } from './threadEventPatch';
 import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
 import { clearClientCachesAndServiceWorkers } from '$utils/appCacheReset';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
+import { requestStoreDegradedRecoveryReload } from './storeDegradedRecovery';
 
 const log = createLogger('initMatrix');
 const debugLog = createDebugLogger('initMatrix');
@@ -608,6 +609,31 @@ const buildClient = async (
         userId: session.userId,
       },
     });
+
+    if (!isRecoverableStoreInitError(err)) {
+      return;
+    }
+
+    Sentry.addBreadcrumb({
+      category: 'sync',
+      message: 'Scheduling reload after recoverable IndexedDB store degradation',
+      level: 'warning',
+      data: {
+        errorName: err.name,
+        errorMessage: err.message,
+        userId: session.userId,
+      },
+    });
+    Sentry.metrics.count('sable.sync.store_degraded_recovery_requested', 1, {
+      attributes: {
+        error_name: err.name || 'unknown',
+      },
+    });
+    requestStoreDegradedRecoveryReload({
+      errorName: err.name,
+      errorMessage: err.message,
+      userId: session.userId,
+    });
   });
 
   const legacyCryptoStore = new IndexedDBCryptoStore(global.indexedDB, storeName.crypto);
@@ -1090,6 +1116,14 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
               recovery_recommendation:
                 'Matrix SDK WASM crypto layer issue - client will attempt to reconnect',
             },
+          });
+          requestStoreDegradedRecoveryReload({
+            errorMessage: errorMsg,
+            errorType: cryptoStoreErrorType,
+            prevState: prevState ?? undefined,
+            syncState: state,
+            transport: 'classic',
+            userId: mx.getUserId(),
           });
         }
       }

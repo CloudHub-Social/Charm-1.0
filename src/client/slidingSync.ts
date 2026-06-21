@@ -26,6 +26,7 @@ import { completeRoomNavigation } from '$utils/perfTelemetry';
 import * as Sentry from '@sentry/react';
 import { CustomStateEvent } from '$types/matrix/room';
 import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
+import { requestStoreDegradedRecoveryReload } from './storeDegradedRecovery';
 
 const log = createLogger('slidingSync');
 const debugLog = createDebugLogger('slidingSync');
@@ -485,6 +486,13 @@ export class SlidingSyncManager {
               recovery_recommendation:
                 'Matrix SDK WASM crypto layer issue - client will attempt to reconnect',
             },
+          });
+          requestStoreDegradedRecoveryReload({
+            errorMessage: errorMsg,
+            errorType: cryptoStoreErrorType,
+            syncState: state,
+            transport: 'sliding',
+            userId: this.mx.getUserId(),
           });
         }
 
