@@ -25,10 +25,7 @@ import { installThreadEventInstrumentation } from './threadEventPatch';
 import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
 import { clearClientCachesAndServiceWorkers } from '$utils/appCacheReset';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
-import {
-  clearStoreDegradedRecoveryThrottle,
-  requestStoreDegradedRecoveryReload,
-} from './storeDegradedRecovery';
+import { requestStoreDegradedRecoveryReload } from './storeDegradedRecovery';
 
 const log = createLogger('initMatrix');
 const debugLog = createDebugLogger('initMatrix');
@@ -61,6 +58,8 @@ const syncTransportByClient = new WeakMap<MatrixClient, SyncTransportMeta>();
 const fetchRoomEventStartupCleanupByClient = new WeakMap<MatrixClient, () => void>();
 const classicSyncNetworkCleanupByClient = new WeakMap<MatrixClient, () => void>();
 const stoppingClients = new WeakSet<MatrixClient>();
+const canRequestStoreDegradedRecovery = (mx: MatrixClient): boolean =>
+  !stoppingClients.has(mx) && (activeAppClient === undefined || activeAppClient === mx);
 const MATRIX_DEVICE_ID_SENTRY_TAG = 'matrix.device_id';
 type MatrixClientScope = 'app' | 'background';
 const CLASSIC_SYNC_FOREGROUND_RETRY_THROTTLE_MS = 15_000;
@@ -600,6 +599,10 @@ const buildClient = async (
   // Register a listener so we can see this in Sentry and understand how often
   // transient IDB aborts are triggering permanent MemoryStore degradation.
   indexedDBStore.on('degraded', (err: Error) => {
+    if (!canRequestStoreDegradedRecovery(mx)) {
+      return;
+    }
+
     debugLog.error('sync', 'IndexedDBStore degraded to MemoryStore — sync IDB deleted', {
       error: err.message,
     });
@@ -640,6 +643,10 @@ const buildClient = async (
     });
   });
   indexedDBStore.on('closed', () => {
+    if (!canRequestStoreDegradedRecovery(mx)) {
+      return;
+    }
+
     debugLog.warn('sync', 'IndexedDBStore closed unexpectedly', {
       userId: session.userId,
     });
@@ -833,7 +840,6 @@ export const initClient = async (
   // and the global call-signaling hook. Default EventEmitter limits are too low
   // for a large visible room list and produce noisy false-positive warnings.
   mx.matrixRTC?.setMaxListeners?.(100);
-  clearStoreDegradedRecoveryThrottle();
   return mx;
 };
 
