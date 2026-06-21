@@ -25,6 +25,13 @@ import { installThreadEventInstrumentation } from './threadEventPatch';
 import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
 import { clearClientCachesAndServiceWorkers } from '$utils/appCacheReset';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
+import { requestStoreDegradedRecoveryReload } from './storeDegradedRecovery';
+import {
+  canClientRequestStoreDegradedRecovery,
+  markStoreDegradedRecoveryActiveAppClient,
+  markStoreDegradedRecoveryInitializingAppClient,
+  retireStoreDegradedRecoveryClient,
+} from './storeDegradedRecoveryClients';
 
 const log = createLogger('initMatrix');
 const debugLog = createDebugLogger('initMatrix');
@@ -56,6 +63,9 @@ type SyncTransportMeta = {
 const syncTransportByClient = new WeakMap<MatrixClient, SyncTransportMeta>();
 const fetchRoomEventStartupCleanupByClient = new WeakMap<MatrixClient, () => void>();
 const classicSyncNetworkCleanupByClient = new WeakMap<MatrixClient, () => void>();
+const stoppingClients = new WeakSet<MatrixClient>();
+const canRequestStoreDegradedRecovery = (mx: MatrixClient): boolean =>
+  !stoppingClients.has(mx) && canClientRequestStoreDegradedRecovery(mx);
 const MATRIX_DEVICE_ID_SENTRY_TAG = 'matrix.device_id';
 type MatrixClientScope = 'app' | 'background';
 const CLASSIC_SYNC_FOREGROUND_RETRY_THROTTLE_MS = 15_000;
@@ -120,7 +130,7 @@ const installMatrixEventTypeGuard = (): void => {
 const isRecoverableStoreInitError = (err: unknown): boolean => {
   const msg = err instanceof Error ? err.message : String(err);
   const name = err instanceof Error ? err.name : '';
-  if (classifyCryptoStoreIndexedDbError(msg)) return true;
+  if (classifyCryptoStoreIndexedDbError(msg, name)) return true;
 
   return (
     name === 'AbortError' ||
@@ -595,6 +605,10 @@ const buildClient = async (
   // Register a listener so we can see this in Sentry and understand how often
   // transient IDB aborts are triggering permanent MemoryStore degradation.
   indexedDBStore.on('degraded', (err: Error) => {
+    if (!canRequestStoreDegradedRecovery(mx)) {
+      return;
+    }
+
     debugLog.error('sync', 'IndexedDBStore degraded to MemoryStore — sync IDB deleted', {
       error: err.message,
     });
@@ -607,6 +621,58 @@ const buildClient = async (
         isTransientAbort: err.message.includes('Transaction aborted'),
         userId: session.userId,
       },
+    });
+
+    if (!isRecoverableStoreInitError(err)) {
+      return;
+    }
+
+    Sentry.addBreadcrumb({
+      category: 'sync',
+      message: 'Scheduling reload after recoverable IndexedDB store degradation',
+      level: 'warning',
+      data: {
+        errorName: err.name,
+        errorMessage: err.message,
+        userId: session.userId,
+      },
+    });
+    Sentry.metrics.count('sable.sync.store_degraded_recovery_requested', 1, {
+      attributes: {
+        error_name: err.name || 'unknown',
+      },
+    });
+    requestStoreDegradedRecoveryReload({
+      errorName: err.name,
+      errorMessage: err.message,
+      userId: session.userId,
+    });
+  });
+  indexedDBStore.on('closed', () => {
+    if (!canRequestStoreDegradedRecovery(mx)) {
+      return;
+    }
+
+    debugLog.warn('sync', 'IndexedDBStore closed unexpectedly', {
+      userId: session.userId,
+    });
+    Sentry.addBreadcrumb({
+      category: 'sync',
+      message: 'IndexedDBStore closed unexpectedly',
+      level: 'warning',
+      data: {
+        userId: session.userId,
+      },
+    });
+    Sentry.metrics.count('sable.sync.store_degraded_recovery_requested', 1, {
+      attributes: {
+        error_name: 'closed',
+      },
+    });
+    requestStoreDegradedRecoveryReload({
+      errorName: 'closed',
+      errorType: 'connection_closed',
+      userId: session.userId,
     });
   });
 
@@ -692,6 +758,7 @@ export const initClient = async (
   try {
     const result = await buildClient(session, onTokenRefresh);
     mx = result.mx;
+    markStoreDegradedRecoveryInitializingAppClient(mx);
     storeStartup = result.storeStartup;
   } catch (err) {
     if (!isMismatch(err)) {
@@ -728,6 +795,7 @@ export const initClient = async (
     await wipeAllStores();
     const result = await buildClient(session, onTokenRefresh);
     mx = result.mx;
+    markStoreDegradedRecoveryInitializingAppClient(mx);
     storeStartup = result.storeStartup;
   }
 
@@ -761,10 +829,12 @@ export const initClient = async (
         errorMessage: err instanceof Error ? err.message : String(err),
       },
     });
+    retireStoreDegradedRecoveryClient(mx);
     mx.stopClient();
     await wipeAllStores();
     const result = await buildClient(session, onTokenRefresh);
     mx = result.mx;
+    markStoreDegradedRecoveryInitializingAppClient(mx);
     await Promise.all([
       result.storeStartup,
       mx.initRustCrypto({
@@ -995,22 +1065,8 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
     installStartupFetchRoomEventPatch(mx, { stubOnCacheMiss: true });
     installClassicSyncNetworkReconnect(mx);
 
-    let syncStarted: Promise<void>;
-    try {
-      syncStarted = mx.startClient({
-        lazyLoadMembers: true,
-        pollTimeout: effectivePollTimeout,
-        threadSupport: true,
-        filter: classicFilter,
-      });
-    } catch (syncErr) {
-      fetchRoomEventStartupCleanupByClient.get(mx)?.();
-      throw syncErr;
-    }
-
-    await Promise.race([syncStarted, startupTimeout]);
-    // Attach an ongoing classic-sync observer — equivalent to SlidingSyncManager's
-    // onLifecycle listener. Tracks state transitions, initial-sync timing, and errors.
+    // Attach an ongoing classic-sync observer before startClient() so IndexedDB
+    // failures during the initial sync window also flow through recovery.
     let classicSyncCount = 0;
     const classicSyncStartMs = performance.now();
     let classicInitialSyncDone = false;
@@ -1041,8 +1097,9 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
         error: data?.error?.message,
       });
       if (state === SyncState.Error || state === SyncState.Reconnecting) {
+        if (stoppingClients.has(mx)) return;
         const errorMsg = data?.error?.message ?? '';
-        const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(errorMsg);
+        const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(errorMsg, data?.error?.name);
         const isCryptoStoreError = cryptoStoreErrorType !== undefined;
 
         debugLog.warn('sync', `Classic sync problem: ${state}`, {
@@ -1073,7 +1130,7 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
         });
 
         // Capture crypto store errors to Sentry with additional context
-        if (isCryptoStoreError) {
+        if (isCryptoStoreError && canRequestStoreDegradedRecovery(mx)) {
           Sentry.captureMessage('Crypto store IndexedDB error during sync', {
             level: 'error',
             tags: {
@@ -1090,6 +1147,14 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
               recovery_recommendation:
                 'Matrix SDK WASM crypto layer issue - client will attempt to reconnect',
             },
+          });
+          requestStoreDegradedRecoveryReload({
+            errorMessage: errorMsg,
+            errorType: cryptoStoreErrorType,
+            prevState: prevState ?? undefined,
+            syncState: state,
+            transport: 'classic',
+            userId: mx.getUserId(),
           });
         }
       }
@@ -1125,6 +1190,23 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
     };
     classicSyncObserverByClient.set(mx, classicSyncListener);
     mx.on(ClientEvent.Sync, classicSyncListener);
+
+    let syncStarted: Promise<void>;
+    try {
+      syncStarted = mx.startClient({
+        lazyLoadMembers: true,
+        pollTimeout: effectivePollTimeout,
+        threadSupport: true,
+        filter: classicFilter,
+      });
+    } catch (syncErr) {
+      fetchRoomEventStartupCleanupByClient.get(mx)?.();
+      mx.removeListener(ClientEvent.Sync, classicSyncListener);
+      classicSyncObserverByClient.delete(mx);
+      throw syncErr;
+    }
+
+    await Promise.race([syncStarted, startupTimeout]);
   };
 
   let slidingWarmCacheAtStart = mx.getRooms().length > 0;
@@ -1372,6 +1454,7 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
     await stopClient(activeAppClient);
   }
 
+  markStoreDegradedRecoveryActiveAppClient(mx);
   activeAppClient = mx;
   const startPromise = startClientInternal(mx, config);
   activeAppClientStartPromise = startPromise;
@@ -1393,6 +1476,8 @@ const settleClientStop = async (): Promise<void> => {
 export const stopClient = (mx: MatrixClient): Promise<void> => {
   log.log('stopClient', mx.getUserId());
   debugLog.info('sync', 'Stopping client', { userId: mx.getUserId() });
+  stoppingClients.add(mx);
+  retireStoreDegradedRecoveryClient(mx);
   const meta = syncTransportByClient.get(mx);
   Sentry.addBreadcrumb({
     category: 'sync.lifecycle',

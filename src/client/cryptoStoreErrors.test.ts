@@ -34,6 +34,11 @@ describe('crypto store IndexedDB error classification', () => {
     expect(classifyCryptoStoreIndexedDbError('UnknownError while opening IDB')).toBe(
       'unknown_idb_error'
     );
+    expect(
+      classifyCryptoStoreIndexedDbError(
+        "Failed to execute 'transaction' on 'IDBDatabase': The database connection is closing"
+      )
+    ).toBe('connection_closed');
   });
 
   it('classifies generic crypto store read/write errors', () => {

@@ -26,6 +26,8 @@ import { completeRoomNavigation } from '$utils/perfTelemetry';
 import * as Sentry from '@sentry/react';
 import { CustomStateEvent } from '$types/matrix/room';
 import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
+import { requestStoreDegradedRecoveryReload } from './storeDegradedRecovery';
+import { canClientRequestStoreDegradedRecovery } from './storeDegradedRecoveryClients';
 
 const log = createLogger('slidingSync');
 const debugLog = createDebugLogger('slidingSync');
@@ -449,8 +451,15 @@ export class SlidingSyncManager {
       });
 
       if (err) {
+        if (this.disposed) {
+          return;
+        }
+
         const errorMsg = err.message ?? '';
-        const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(errorMsg);
+        const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(
+          errorMsg,
+          err instanceof Error ? err.name : undefined
+        );
         const isCryptoStoreError = cryptoStoreErrorType !== undefined;
 
         debugLog.error('sync', 'Sliding sync error', {
@@ -469,7 +478,7 @@ export class SlidingSyncManager {
         });
 
         // Capture crypto store errors to Sentry with additional context
-        if (isCryptoStoreError) {
+        if (isCryptoStoreError && canClientRequestStoreDegradedRecovery(this.mx)) {
           Sentry.captureMessage('Crypto store IndexedDB error during sync', {
             level: 'error',
             tags: {
@@ -485,6 +494,13 @@ export class SlidingSyncManager {
               recovery_recommendation:
                 'Matrix SDK WASM crypto layer issue - client will attempt to reconnect',
             },
+          });
+          requestStoreDegradedRecoveryReload({
+            errorMessage: errorMsg,
+            errorType: cryptoStoreErrorType,
+            syncState: state,
+            transport: 'sliding',
+            userId: this.mx.getUserId(),
           });
         }
 
