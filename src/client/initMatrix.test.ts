@@ -12,6 +12,7 @@ import {
   stopClient,
 } from './initMatrix';
 import {
+  clearStoreDegradedRecoveryThrottle,
   requestStoreDegradedRecoveryReload,
   resetStoreDegradedRecoveryForTests,
 } from './storeDegradedRecovery';
@@ -51,8 +52,8 @@ const startedClients: MockMatrixClient[] = [];
 const makeClient = (
   userId: string,
   startPromise: Promise<void> = Promise.resolve()
-): MockMatrixClient =>
-  ({
+): MockMatrixClient => {
+  const client = {
     clientRunning: false,
     fetchRoomEvent: vi.fn<() => Promise<unknown>>(),
     getDeviceId: vi.fn<() => string>(() => `${userId}:DEVICE`),
@@ -65,9 +66,17 @@ const makeClient = (
     removeAllListeners: vi.fn<() => void>(),
     removeListener: vi.fn<(...args: unknown[]) => void>(),
     retryImmediately: vi.fn<() => boolean>(() => true),
-    startClient: vi.fn<() => Promise<void>>(() => startPromise),
-    stopClient: vi.fn<() => void>(),
-  }) as unknown as MockMatrixClient;
+    startClient: vi.fn<() => Promise<void>>(() => {
+      client.clientRunning = true;
+      return startPromise;
+    }),
+    stopClient: vi.fn<() => void>(() => {
+      client.clientRunning = false;
+    }),
+  };
+
+  return client as unknown as MockMatrixClient;
+};
 
 const makeDeferred = (): { promise: Promise<void>; resolve: () => void } => {
   let resolve!: () => void;
@@ -105,6 +114,7 @@ const waitForStopSettlement = async (): Promise<void> => {
 
 afterEach(async () => {
   vi.useRealTimers();
+  window.sessionStorage.clear();
   resetStoreDegradedRecoveryForTests();
   const clients = startedClients.splice(0);
   await Promise.all(clients.map((mx) => stopClient(mx)));
@@ -231,6 +241,35 @@ describe('requestStoreDegradedRecoveryReload', () => {
     });
     vi.useRealTimers();
   });
+
+  it('does not reload when the recovery marker cannot be persisted', async () => {
+    vi.useFakeTimers();
+    setVisibilityState('visible');
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage disabled');
+    });
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'storage-failure' })).toBe(false);
+    await vi.runAllTimersAsync();
+
+    expect(mockReloadWithTelemetry).not.toHaveBeenCalled();
+    setItem.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('clears the persisted recovery throttle after the client stabilizes', async () => {
+    vi.useFakeTimers();
+    setVisibilityState('visible');
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'first' })).toBe(true);
+    await vi.runAllTimersAsync();
+    expect(requestStoreDegradedRecoveryReload({ source: 'second' })).toBe(false);
+
+    clearStoreDegradedRecoveryThrottle();
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'third' })).toBe(true);
+    vi.useRealTimers();
+  });
 });
 
 describe('startClient app singleton gate', () => {
@@ -334,19 +373,32 @@ describe('startClient app singleton gate', () => {
   it('requests degraded-store recovery when classic sync hits a crypto IndexedDB error', async () => {
     vi.useFakeTimers();
     setVisibilityState('visible');
-    let syncListener:
-      | ((state: SyncState, prevState: SyncState | null, data?: { error?: Error }) => void)
-      | undefined;
+    const syncListeners: Array<
+      (state: SyncState, prevState: SyncState | null, data?: { error?: Error }) => void
+    > = [];
     const mx = makeClient('@alice:example.com');
     mx.on = vi.fn<(...args: unknown[]) => MockMatrixClient>((event, listener) => {
       if (event === ClientEvent.Sync) {
-        syncListener = listener as typeof syncListener;
+        syncListeners.push(
+          listener as (
+            state: SyncState,
+            prevState: SyncState | null,
+            data?: { error?: Error }
+          ) => void
+        );
       }
       return mx;
     });
 
     await startClassicClient(mx);
-    syncListener?.(SyncState.Reconnecting, SyncState.Syncing, {
+    mx.clientRunning = true;
+    const recoveryListener = syncListeners.find((listener) =>
+      listener.toString().includes('requestStoreDegradedRecoveryReload')
+    );
+
+    expect(recoveryListener).toBeDefined();
+
+    recoveryListener?.(SyncState.Reconnecting, SyncState.Syncing, {
       error: new Error("InvalidStateError: Failed to execute 'transaction' on 'IDBDatabase'"),
     });
     await vi.runAllTimersAsync();

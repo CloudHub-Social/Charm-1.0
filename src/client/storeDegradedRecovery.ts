@@ -5,30 +5,54 @@ const STORE_DEGRADED_RECOVERY_THROTTLE_MS = 60_000;
 const STORE_DEGRADED_RECOVERY_AT_KEY = 'sable_sync_store_degraded_recovery_at';
 const noop = (): void => undefined;
 let pendingStoreDegradedRecovery = false;
+type StoreDegradedRecoveryMarkerState = 'pending' | 'reloading';
+
+const parseStoreDegradedRecoveryMarker = (
+  value: string | null
+): { state: StoreDegradedRecoveryMarkerState; requestedAt: number } | undefined => {
+  if (!value) return undefined;
+
+  const [state, requestedAtRaw] = value.split(':');
+  if (state !== 'pending' && state !== 'reloading') return undefined;
+
+  const requestedAt = Number.parseInt(requestedAtRaw ?? '', 10);
+  if (!Number.isFinite(requestedAt)) return undefined;
+
+  return { state, requestedAt };
+};
 
 export const resetStoreDegradedRecoveryForTests = (): void => {
   pendingStoreDegradedRecovery = false;
 };
 
+export const clearStoreDegradedRecoveryThrottle = (): void => {
+  pendingStoreDegradedRecovery = false;
+  try {
+    window.sessionStorage.removeItem(STORE_DEGRADED_RECOVERY_AT_KEY);
+  } catch {
+    // ignore
+  }
+};
+
 const recentlyRequestedStoreDegradedRecovery = (): boolean => {
   try {
-    const requestedAt = Number.parseInt(
-      window.sessionStorage.getItem(STORE_DEGRADED_RECOVERY_AT_KEY) ?? '',
-      10
+    const marker = parseStoreDegradedRecoveryMarker(
+      window.sessionStorage.getItem(STORE_DEGRADED_RECOVERY_AT_KEY)
     );
-    return (
-      Number.isFinite(requestedAt) && Date.now() - requestedAt < STORE_DEGRADED_RECOVERY_THROTTLE_MS
-    );
+    if (!marker) return false;
+    if (marker.state === 'pending') return true;
+    return Date.now() - marker.requestedAt < STORE_DEGRADED_RECOVERY_THROTTLE_MS;
   } catch {
     return false;
   }
 };
 
-const markStoreDegradedRecoveryRequested = (): void => {
+const markStoreDegradedRecoveryRequested = (state: StoreDegradedRecoveryMarkerState): boolean => {
   try {
-    window.sessionStorage.setItem(STORE_DEGRADED_RECOVERY_AT_KEY, String(Date.now()));
+    window.sessionStorage.setItem(STORE_DEGRADED_RECOVERY_AT_KEY, `${state}:${Date.now()}`);
+    return true;
   } catch {
-    // ignore
+    return false;
   }
 };
 
@@ -38,7 +62,10 @@ export const requestStoreDegradedRecoveryReload = (data?: Record<string, unknown
   }
 
   pendingStoreDegradedRecovery = true;
-  markStoreDegradedRecoveryRequested();
+  if (!markStoreDegradedRecoveryRequested('pending')) {
+    pendingStoreDegradedRecovery = false;
+    return false;
+  }
   let settled = false;
   let cleanup = noop;
 
@@ -46,6 +73,10 @@ export const requestStoreDegradedRecoveryReload = (data?: Record<string, unknown
     if (settled) return;
     settled = true;
     cleanup();
+    if (!markStoreDegradedRecoveryRequested('reloading')) {
+      pendingStoreDegradedRecovery = false;
+      return;
+    }
     reloadWithTelemetry(STORE_DEGRADED_RECOVERY_REASON, data);
   };
 

@@ -455,7 +455,10 @@ export class SlidingSyncManager {
         }
 
         const errorMsg = err.message ?? '';
-        const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(errorMsg);
+        const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(
+          errorMsg,
+          err instanceof Error ? err.name : undefined
+        );
         const isCryptoStoreError = cryptoStoreErrorType !== undefined;
 
         debugLog.error('sync', 'Sliding sync error', {

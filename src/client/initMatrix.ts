@@ -25,7 +25,10 @@ import { installThreadEventInstrumentation } from './threadEventPatch';
 import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
 import { clearClientCachesAndServiceWorkers } from '$utils/appCacheReset';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
-import { requestStoreDegradedRecoveryReload } from './storeDegradedRecovery';
+import {
+  clearStoreDegradedRecoveryThrottle,
+  requestStoreDegradedRecoveryReload,
+} from './storeDegradedRecovery';
 
 const log = createLogger('initMatrix');
 const debugLog = createDebugLogger('initMatrix');
@@ -57,6 +60,7 @@ type SyncTransportMeta = {
 const syncTransportByClient = new WeakMap<MatrixClient, SyncTransportMeta>();
 const fetchRoomEventStartupCleanupByClient = new WeakMap<MatrixClient, () => void>();
 const classicSyncNetworkCleanupByClient = new WeakMap<MatrixClient, () => void>();
+const stoppingClients = new WeakSet<MatrixClient>();
 const MATRIX_DEVICE_ID_SENTRY_TAG = 'matrix.device_id';
 type MatrixClientScope = 'app' | 'background';
 const CLASSIC_SYNC_FOREGROUND_RETRY_THROTTLE_MS = 15_000;
@@ -121,7 +125,7 @@ const installMatrixEventTypeGuard = (): void => {
 const isRecoverableStoreInitError = (err: unknown): boolean => {
   const msg = err instanceof Error ? err.message : String(err);
   const name = err instanceof Error ? err.name : '';
-  if (classifyCryptoStoreIndexedDbError(msg)) return true;
+  if (classifyCryptoStoreIndexedDbError(msg, name)) return true;
 
   return (
     name === 'AbortError' ||
@@ -635,6 +639,29 @@ const buildClient = async (
       userId: session.userId,
     });
   });
+  indexedDBStore.on('closed', () => {
+    debugLog.warn('sync', 'IndexedDBStore closed unexpectedly', {
+      userId: session.userId,
+    });
+    Sentry.addBreadcrumb({
+      category: 'sync',
+      message: 'IndexedDBStore closed unexpectedly',
+      level: 'warning',
+      data: {
+        userId: session.userId,
+      },
+    });
+    Sentry.metrics.count('sable.sync.store_degraded_recovery_requested', 1, {
+      attributes: {
+        error_name: 'closed',
+      },
+    });
+    requestStoreDegradedRecoveryReload({
+      errorName: 'closed',
+      errorType: 'connection_closed',
+      userId: session.userId,
+    });
+  });
 
   const legacyCryptoStore = new IndexedDBCryptoStore(global.indexedDB, storeName.crypto);
 
@@ -806,6 +833,7 @@ export const initClient = async (
   // and the global call-signaling hook. Default EventEmitter limits are too low
   // for a large visible room list and produce noisy false-positive warnings.
   mx.matrixRTC?.setMaxListeners?.(100);
+  clearStoreDegradedRecoveryThrottle();
   return mx;
 };
 
@@ -1021,22 +1049,8 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
     installStartupFetchRoomEventPatch(mx, { stubOnCacheMiss: true });
     installClassicSyncNetworkReconnect(mx);
 
-    let syncStarted: Promise<void>;
-    try {
-      syncStarted = mx.startClient({
-        lazyLoadMembers: true,
-        pollTimeout: effectivePollTimeout,
-        threadSupport: true,
-        filter: classicFilter,
-      });
-    } catch (syncErr) {
-      fetchRoomEventStartupCleanupByClient.get(mx)?.();
-      throw syncErr;
-    }
-
-    await Promise.race([syncStarted, startupTimeout]);
-    // Attach an ongoing classic-sync observer — equivalent to SlidingSyncManager's
-    // onLifecycle listener. Tracks state transitions, initial-sync timing, and errors.
+    // Attach an ongoing classic-sync observer before startClient() so IndexedDB
+    // failures during the initial sync window also flow through recovery.
     let classicSyncCount = 0;
     const classicSyncStartMs = performance.now();
     let classicInitialSyncDone = false;
@@ -1067,8 +1081,9 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
         error: data?.error?.message,
       });
       if (state === SyncState.Error || state === SyncState.Reconnecting) {
+        if (stoppingClients.has(mx)) return;
         const errorMsg = data?.error?.message ?? '';
-        const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(errorMsg);
+        const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(errorMsg, data?.error?.name);
         const isCryptoStoreError = cryptoStoreErrorType !== undefined;
 
         debugLog.warn('sync', `Classic sync problem: ${state}`, {
@@ -1159,6 +1174,23 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
     };
     classicSyncObserverByClient.set(mx, classicSyncListener);
     mx.on(ClientEvent.Sync, classicSyncListener);
+
+    let syncStarted: Promise<void>;
+    try {
+      syncStarted = mx.startClient({
+        lazyLoadMembers: true,
+        pollTimeout: effectivePollTimeout,
+        threadSupport: true,
+        filter: classicFilter,
+      });
+    } catch (syncErr) {
+      fetchRoomEventStartupCleanupByClient.get(mx)?.();
+      mx.removeListener(ClientEvent.Sync, classicSyncListener);
+      classicSyncObserverByClient.delete(mx);
+      throw syncErr;
+    }
+
+    await Promise.race([syncStarted, startupTimeout]);
   };
 
   let slidingWarmCacheAtStart = mx.getRooms().length > 0;
@@ -1427,6 +1459,7 @@ const settleClientStop = async (): Promise<void> => {
 export const stopClient = (mx: MatrixClient): Promise<void> => {
   log.log('stopClient', mx.getUserId());
   debugLog.info('sync', 'Stopping client', { userId: mx.getUserId() });
+  stoppingClients.add(mx);
   const meta = syncTransportByClient.get(mx);
   Sentry.addBreadcrumb({
     category: 'sync.lifecycle',
@@ -1466,6 +1499,9 @@ export const stopClient = (mx: MatrixClient): Promise<void> => {
   syncTransportByClient.delete(mx);
 
   const stopPromise = settleClientStop();
+  void stopPromise.finally(() => {
+    stoppingClients.delete(mx);
+  });
   if (activeAppClient === mx) {
     activeAppClient = undefined;
     activeAppClientStartPromise = undefined;
