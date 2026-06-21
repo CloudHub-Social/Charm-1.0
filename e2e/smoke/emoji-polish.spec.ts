@@ -66,6 +66,29 @@ test.describe('emoji polish smoke', () => {
     expect(pickerBox!.x).toBeGreaterThanOrEqual(12);
     expect(390 - (pickerBox!.x + pickerBox!.width)).toBeGreaterThanOrEqual(12);
 
+    const mobileBaselineMetrics = await page.evaluate(() => {
+      const root = document;
+      const measureRect = (selector: string) => {
+        const el = root.querySelector(selector);
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        return {
+          centerY: rect.top + rect.height / 2,
+        };
+      };
+
+      return {
+        text: measureRect('[data-testid="smoke-emoji-baseline-text"]'),
+        emoji: measureRect('[data-testid="smoke-emoji-baseline-line"] span[title]'),
+      };
+    });
+
+    expect(mobileBaselineMetrics.text).not.toBeNull();
+    expect(mobileBaselineMetrics.emoji).not.toBeNull();
+    expect(
+      Math.abs(mobileBaselineMetrics.emoji!.centerY - mobileBaselineMetrics.text!.centerY)
+    ).toBeLessThan(3);
+
     await captureSnapshot(page, 'emoji-polish/mobile-picker-gutter');
   });
 
@@ -80,8 +103,9 @@ test.describe('emoji polish smoke', () => {
     await expect(page.getByTestId('smoke-sticker-a')).toBeVisible();
 
     const metrics = await page.evaluate(() => {
-      const measure = (selector: string) => {
-        const el = document.querySelector(selector);
+      const root = document;
+      const measureRect = (selector: string) => {
+        const el = root.querySelector(selector);
         if (!el) return null;
         const rect = el.getBoundingClientRect();
         return {
@@ -95,24 +119,24 @@ test.describe('emoji polish smoke', () => {
         };
       };
 
-      const firstSticker = measure('[data-testid="smoke-sticker-a"]');
-      const secondSticker = measure('[data-testid="smoke-sticker-b"]');
-      const thirdSticker = measure('[data-testid="smoke-sticker-c"]');
+      const firstSticker = measureRect('[data-testid="smoke-sticker-a"]');
+      const secondSticker = measureRect('[data-testid="smoke-sticker-b"]');
+      const thirdSticker = measureRect('[data-testid="smoke-sticker-c"]');
 
       return {
-        pickerButton: measure('[data-testid="smoke-standard-emoji-button"]'),
-        pickerGlyph: measure('[data-testid="smoke-standard-emoji-glyph"]'),
-        packIcon: measure('[data-testid="smoke-pack-icon-reference"] img'),
-        stickerButton: measure('[data-testid="smoke-sticker-a"]'),
-        stickerImage: measure('[data-testid="smoke-sticker-a"] img'),
+        pickerButton: measureRect('[data-testid="smoke-standard-emoji-button"]'),
+        pickerGlyph: measureRect('[data-testid="smoke-standard-emoji-glyph"]'),
+        packIcon: measureRect('[data-testid="smoke-pack-icon-reference"] img'),
+        stickerButton: measureRect('[data-testid="smoke-sticker-a"]'),
+        stickerImage: measureRect('[data-testid="smoke-sticker-a"] img'),
         firstSticker,
         secondSticker,
         thirdSticker,
-        baselineLine: measure('[data-testid="smoke-emoji-baseline-line"]'),
-        baselineText: measure('[data-testid="smoke-emoji-baseline-text"]'),
-        baselineEmoji: measure('[data-testid="smoke-emoji-baseline-line"] span[title]'),
-        compactPreview: measure('[data-testid="smoke-compact-preview-line"]'),
-        compactPreviewEmoji: measure('[data-testid="smoke-compact-preview-block"] span[title]'),
+        baselineLine: measureRect('[data-testid="smoke-emoji-baseline-line"]'),
+        baselineText: measureRect('[data-testid="smoke-emoji-baseline-text"]'),
+        baselineEmoji: measureRect('[data-testid="smoke-emoji-baseline-line"] span[title]'),
+        compactPreview: measureRect('[data-testid="smoke-compact-preview-line"]'),
+        compactPreviewEmoji: measureRect('[data-testid="smoke-compact-preview-block"] span[title]'),
         fixedCellBlackSquareFontFamily: getComputedStyle(
           document.querySelector(
             '[data-testid="smoke-emoji-fixed-cell-line"] span[title="black_large_square"]'
@@ -152,8 +176,9 @@ test.describe('emoji polish smoke', () => {
     expect(metrics.stickerImage!.height).toBe(96);
     expect(metrics.secondSticker!.left - metrics.firstSticker!.right).toBeGreaterThanOrEqual(4);
     expect(metrics.thirdSticker!.left - metrics.secondSticker!.right).toBeGreaterThanOrEqual(4);
-    expect(metrics.baselineEmoji!.top).toBeGreaterThanOrEqual(metrics.baselineLine!.top - 6);
-    expect(metrics.baselineEmoji!.bottom).toBeLessThanOrEqual(metrics.baselineLine!.bottom + 2);
+    expect(Math.abs(metrics.baselineEmoji!.centerY - metrics.baselineText!.centerY)).toBeLessThan(
+      3
+    );
     expect(metrics.compactPreviewEmoji!.top).toBeGreaterThanOrEqual(
       metrics.compactPreview!.top - 4
     );
