@@ -282,7 +282,7 @@ export const SystemEmoji = style({
       lineHeight: '1em',
       verticalAlign: 'middle',
       position: 'relative',
-      top: 'var(--sable-system-emoji-top, -0.28em)',
+      top: 'var(--sable-system-emoji-top, -0.18em)',
       textAlign: 'center',
     },
   },

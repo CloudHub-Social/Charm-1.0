@@ -256,7 +256,7 @@ export const MessageTextBody = recipe({
   base: {
     vars: {
       '--sable-system-emoji-font-size': '1.33em',
-      '--sable-system-emoji-top': '-0.28em',
+      '--sable-system-emoji-top': '-0.18em',
       '--sable-custom-emoji-font-size': '1.2em',
       '--sable-custom-emoji-align': '-0.12em',
     },
