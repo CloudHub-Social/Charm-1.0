@@ -450,6 +450,10 @@ export class SlidingSyncManager {
       });
 
       if (err) {
+        if (this.disposed) {
+          return;
+        }
+
         const errorMsg = err.message ?? '';
         const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(errorMsg);
         const isCryptoStoreError = cryptoStoreErrorType !== undefined;

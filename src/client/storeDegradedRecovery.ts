@@ -4,6 +4,11 @@ const STORE_DEGRADED_RECOVERY_REASON = 'sync_store_degraded_recovery';
 const STORE_DEGRADED_RECOVERY_THROTTLE_MS = 60_000;
 const STORE_DEGRADED_RECOVERY_AT_KEY = 'sable_sync_store_degraded_recovery_at';
 const noop = (): void => undefined;
+let pendingStoreDegradedRecovery = false;
+
+export const resetStoreDegradedRecoveryForTests = (): void => {
+  pendingStoreDegradedRecovery = false;
+};
 
 const recentlyRequestedStoreDegradedRecovery = (): boolean => {
   try {
@@ -28,10 +33,11 @@ const markStoreDegradedRecoveryRequested = (): void => {
 };
 
 export const requestStoreDegradedRecoveryReload = (data?: Record<string, unknown>): boolean => {
-  if (recentlyRequestedStoreDegradedRecovery()) {
+  if (pendingStoreDegradedRecovery || recentlyRequestedStoreDegradedRecovery()) {
     return false;
   }
 
+  pendingStoreDegradedRecovery = true;
   markStoreDegradedRecoveryRequested();
   let settled = false;
   let cleanup = noop;

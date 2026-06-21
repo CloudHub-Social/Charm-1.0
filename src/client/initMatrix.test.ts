@@ -11,7 +11,10 @@ import {
   startClient,
   stopClient,
 } from './initMatrix';
-import { requestStoreDegradedRecoveryReload } from './storeDegradedRecovery';
+import {
+  requestStoreDegradedRecoveryReload,
+  resetStoreDegradedRecoveryForTests,
+} from './storeDegradedRecovery';
 
 vi.mock('@sentry/react', () => ({
   addBreadcrumb: vi.fn<(breadcrumb: unknown) => void>(),
@@ -101,6 +104,8 @@ const waitForStopSettlement = async (): Promise<void> => {
 };
 
 afterEach(async () => {
+  vi.useRealTimers();
+  resetStoreDegradedRecoveryForTests();
   const clients = startedClients.splice(0);
   await Promise.all(clients.map((mx) => stopClient(mx)));
 });
@@ -159,6 +164,7 @@ describe('requestStoreDegradedRecoveryReload', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
+    resetStoreDegradedRecoveryForTests();
   });
 
   it('reloads immediately when the document is visible', async () => {
@@ -202,6 +208,27 @@ describe('requestStoreDegradedRecoveryReload', () => {
 
     expect(requestStoreDegradedRecoveryReload()).toBe(false);
     expect(mockReloadWithTelemetry).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('keeps a hidden deferred recovery latched until the reload actually fires', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-21T12:00:00.000Z'));
+    setVisibilityState('hidden');
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'hidden' })).toBe(true);
+
+    vi.setSystemTime(new Date('2026-06-21T12:02:00.000Z'));
+    expect(requestStoreDegradedRecoveryReload({ source: 'duplicate' })).toBe(false);
+
+    setVisibilityState('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushMicrotasks();
+
+    expect(mockReloadWithTelemetry).toHaveBeenCalledTimes(1);
+    expect(mockReloadWithTelemetry).toHaveBeenCalledWith('sync_store_degraded_recovery', {
+      source: 'hidden',
+    });
     vi.useRealTimers();
   });
 });
