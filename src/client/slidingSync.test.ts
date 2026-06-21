@@ -58,6 +58,7 @@ function installConnectionMock(): { fireConnectionChange: () => void } {
 // (vi.mock calls are hoisted above all imports by vitest's transformer).
 const mocks = vi.hoisted(() => ({
   slidingSyncConstructor: vi.fn<(...args: unknown[]) => void>(),
+  requestStoreDegradedRecoveryReload: vi.fn<() => boolean>().mockReturnValue(true),
   slidingSyncInstance: {
     on: vi.fn<() => void>(),
     off: vi.fn<() => void>(),
@@ -91,6 +92,10 @@ vi.mock('@sentry/react', () => ({
 
 vi.mock('$utils/perfTelemetry', () => ({
   completeRoomNavigation: vi.fn<(roomId: string, reason: string, eventCount: number) => void>(),
+}));
+
+vi.mock('./storeDegradedRecovery', () => ({
+  requestStoreDegradedRecoveryReload: mocks.requestStoreDegradedRecoveryReload,
 }));
 
 // ── SlidingSync SDK mock ─────────────────────────────────────────────────────
@@ -220,6 +225,18 @@ describe('SlidingSyncManager.hasWarmCache()', () => {
     );
 
     expect(manager.hasWarmCache()).toBe(true);
+  });
+});
+
+describe('SlidingSyncManager error recovery guards', () => {
+  it('does not request degraded-store reloads after the manager is disposed', async () => {
+    const manager = makeManager(makeMockMx());
+
+    manager.attach();
+    manager.dispose();
+    fireLifecycle(SlidingSyncState.Complete, {}, new Error('IndexedDB transaction aborted'));
+
+    expect(mocks.requestStoreDegradedRecoveryReload).not.toHaveBeenCalled();
   });
 });
 

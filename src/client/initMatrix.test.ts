@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/react';
 import type { MatrixClient } from '$types/matrix-sdk';
-import { MatrixEvent } from '$types/matrix-sdk';
+import { ClientEvent, MatrixEvent, SyncState } from '$types/matrix-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearSentryMatrixDeviceContext,
@@ -11,6 +11,11 @@ import {
   startClient,
   stopClient,
 } from './initMatrix';
+import {
+  clearStoreDegradedRecoveryThrottle,
+  requestStoreDegradedRecoveryReload,
+  resetStoreDegradedRecoveryForTests,
+} from './storeDegradedRecovery';
 
 vi.mock('@sentry/react', () => ({
   addBreadcrumb: vi.fn<(breadcrumb: unknown) => void>(),
@@ -28,6 +33,14 @@ vi.mock('@sentry/react', () => ({
   setTag: vi.fn<(key: string, value: string) => void>(),
 }));
 
+const { mockReloadWithTelemetry } = vi.hoisted(() => ({
+  mockReloadWithTelemetry: vi.fn<(reason: string, data?: Record<string, unknown>) => void>(),
+}));
+
+vi.mock('$utils/reloadWithTelemetry', () => ({
+  reloadWithTelemetry: mockReloadWithTelemetry,
+}));
+
 type MockMatrixClient = MatrixClient & {
   retryImmediately: ReturnType<typeof vi.fn<() => boolean>>;
   startClient: ReturnType<typeof vi.fn<() => Promise<void>>>;
@@ -39,8 +52,8 @@ const startedClients: MockMatrixClient[] = [];
 const makeClient = (
   userId: string,
   startPromise: Promise<void> = Promise.resolve()
-): MockMatrixClient =>
-  ({
+): MockMatrixClient => {
+  const client = {
     clientRunning: false,
     fetchRoomEvent: vi.fn<() => Promise<unknown>>(),
     getDeviceId: vi.fn<() => string>(() => `${userId}:DEVICE`),
@@ -53,9 +66,17 @@ const makeClient = (
     removeAllListeners: vi.fn<() => void>(),
     removeListener: vi.fn<(...args: unknown[]) => void>(),
     retryImmediately: vi.fn<() => boolean>(() => true),
-    startClient: vi.fn<() => Promise<void>>(() => startPromise),
-    stopClient: vi.fn<() => void>(),
-  }) as unknown as MockMatrixClient;
+    startClient: vi.fn<() => Promise<void>>(() => {
+      client.clientRunning = true;
+      return startPromise;
+    }),
+    stopClient: vi.fn<() => void>(() => {
+      client.clientRunning = false;
+    }),
+  };
+
+  return client as unknown as MockMatrixClient;
+};
 
 const makeDeferred = (): { promise: Promise<void>; resolve: () => void } => {
   let resolve!: () => void;
@@ -77,6 +98,13 @@ const flushMicrotasks = async (): Promise<void> => {
   await Promise.resolve();
 };
 
+const setVisibilityState = (visibilityState: DocumentVisibilityState): void => {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    value: visibilityState,
+  });
+};
+
 const waitForStopSettlement = async (): Promise<void> => {
   await new Promise<void>((resolve) => {
     window.setTimeout(resolve, 0);
@@ -85,6 +113,9 @@ const waitForStopSettlement = async (): Promise<void> => {
 };
 
 afterEach(async () => {
+  vi.useRealTimers();
+  window.sessionStorage.clear();
+  resetStoreDegradedRecoveryForTests();
   const clients = startedClients.splice(0);
   await Promise.all(clients.map((mx) => stopClient(mx)));
 });
@@ -111,6 +142,7 @@ describe('normalizeMatrixEventType', () => {
 describe('setSentryMatrixDeviceContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
   });
 
   it('sets matrix.device_id from the Matrix client', () => {
@@ -135,6 +167,122 @@ describe('setSentryMatrixDeviceContext', () => {
     clearSentryMatrixDeviceContext();
 
     expect(Sentry.setTag).toHaveBeenCalledWith('matrix.device_id', 'none');
+  });
+});
+
+describe('requestStoreDegradedRecoveryReload', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.sessionStorage.clear();
+    resetStoreDegradedRecoveryForTests();
+  });
+
+  it('reloads immediately when the document is visible', async () => {
+    vi.useFakeTimers();
+    setVisibilityState('visible');
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'test' })).toBe(true);
+    expect(mockReloadWithTelemetry).not.toHaveBeenCalled();
+
+    await vi.runAllTimersAsync();
+
+    expect(mockReloadWithTelemetry).toHaveBeenCalledWith('sync_store_degraded_recovery', {
+      source: 'test',
+    });
+    vi.useRealTimers();
+  });
+
+  it('waits for visible resume when the document is hidden', async () => {
+    setVisibilityState('hidden');
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'hidden' })).toBe(true);
+    expect(mockReloadWithTelemetry).not.toHaveBeenCalled();
+
+    setVisibilityState('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushMicrotasks();
+
+    expect(mockReloadWithTelemetry).toHaveBeenCalledWith('sync_store_degraded_recovery', {
+      source: 'hidden',
+    });
+  });
+
+  it('suppresses duplicate recovery requests inside the throttle window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-21T12:00:00.000Z'));
+    setVisibilityState('visible');
+
+    expect(requestStoreDegradedRecoveryReload()).toBe(true);
+    await vi.runAllTimersAsync();
+    expect(mockReloadWithTelemetry).toHaveBeenCalledTimes(1);
+
+    expect(requestStoreDegradedRecoveryReload()).toBe(false);
+    expect(mockReloadWithTelemetry).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('keeps a hidden deferred recovery latched until the reload actually fires', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-21T12:00:00.000Z'));
+    setVisibilityState('hidden');
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'hidden' })).toBe(true);
+
+    vi.setSystemTime(new Date('2026-06-21T12:02:00.000Z'));
+    expect(requestStoreDegradedRecoveryReload({ source: 'duplicate' })).toBe(false);
+
+    setVisibilityState('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushMicrotasks();
+
+    expect(mockReloadWithTelemetry).toHaveBeenCalledTimes(1);
+    expect(mockReloadWithTelemetry).toHaveBeenCalledWith('sync_store_degraded_recovery', {
+      source: 'hidden',
+    });
+    vi.useRealTimers();
+  });
+
+  it('expires orphaned pending recovery markers after the throttle window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-21T12:00:00.000Z'));
+    setVisibilityState('hidden');
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'hidden' })).toBe(true);
+
+    resetStoreDegradedRecoveryForTests();
+    vi.setSystemTime(new Date('2026-06-21T12:02:00.000Z'));
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'recovered' })).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('does not reload when the recovery marker cannot be persisted', async () => {
+    vi.useFakeTimers();
+    setVisibilityState('visible');
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage disabled');
+    });
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'storage-failure' })).toBe(false);
+    await vi.runAllTimersAsync();
+
+    expect(mockReloadWithTelemetry).not.toHaveBeenCalled();
+    setItem.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('clears the persisted recovery throttle after the client stabilizes', async () => {
+    vi.useFakeTimers();
+    setVisibilityState('visible');
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'first' })).toBe(true);
+    await vi.runAllTimersAsync();
+    expect(requestStoreDegradedRecoveryReload({ source: 'second' })).toBe(false);
+
+    clearStoreDegradedRecoveryThrottle();
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'third' })).toBe(true);
+    vi.useRealTimers();
   });
 });
 
@@ -234,6 +382,90 @@ describe('startClient app singleton gate', () => {
     window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
 
     expect(mx.retryImmediately).toHaveBeenCalledOnce();
+  });
+
+  it('requests degraded-store recovery when classic sync hits a crypto IndexedDB error', async () => {
+    vi.useFakeTimers();
+    setVisibilityState('visible');
+    const syncListeners: Array<
+      (state: SyncState, prevState: SyncState | null, data?: { error?: Error }) => void
+    > = [];
+    const mx = makeClient('@alice:example.com');
+    mx.on = vi.fn<(...args: unknown[]) => MockMatrixClient>((event, listener) => {
+      if (event === ClientEvent.Sync) {
+        syncListeners.push(
+          listener as (
+            state: SyncState,
+            prevState: SyncState | null,
+            data?: { error?: Error }
+          ) => void
+        );
+      }
+      return mx;
+    });
+
+    await startClassicClient(mx);
+    mx.clientRunning = true;
+    const recoveryListener = syncListeners.find((listener) =>
+      listener.toString().includes('requestStoreDegradedRecoveryReload')
+    );
+
+    expect(recoveryListener).toBeDefined();
+
+    recoveryListener?.(SyncState.Reconnecting, SyncState.Syncing, {
+      error: new Error("InvalidStateError: Failed to execute 'transaction' on 'IDBDatabase'"),
+    });
+    await vi.runAllTimersAsync();
+
+    expect(mockReloadWithTelemetry).toHaveBeenCalledWith(
+      'sync_store_degraded_recovery',
+      expect.objectContaining({
+        errorType: 'invalid_state',
+        syncState: SyncState.Reconnecting,
+        transport: 'classic',
+        userId: '@alice:example.com',
+      })
+    );
+    vi.useRealTimers();
+  });
+
+  it('does not request degraded-store recovery for background-scoped clients', async () => {
+    vi.useFakeTimers();
+    setVisibilityState('visible');
+    const syncListeners: Array<
+      (state: SyncState, prevState: SyncState | null, data?: { error?: Error }) => void
+    > = [];
+    const mx = makeClient('@alice:example.com');
+    mx.on = vi.fn<(...args: unknown[]) => MockMatrixClient>((event, listener) => {
+      if (event === ClientEvent.Sync) {
+        syncListeners.push(
+          listener as (
+            state: SyncState,
+            prevState: SyncState | null,
+            data?: { error?: Error }
+          ) => void
+        );
+      }
+      return mx;
+    });
+
+    startedClients.push(mx);
+    await startClient(mx, {
+      clientScope: 'background',
+      slidingSync: { enabled: false },
+    });
+
+    const recoveryListener = syncListeners.find((listener) =>
+      listener.toString().includes('requestStoreDegradedRecoveryReload')
+    );
+
+    recoveryListener?.(SyncState.Reconnecting, SyncState.Syncing, {
+      error: new Error("InvalidStateError: Failed to execute 'transaction' on 'IDBDatabase'"),
+    });
+    await vi.runAllTimersAsync();
+
+    expect(mockReloadWithTelemetry).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it('does not retry classic sync on non-persisted pageshow', async () => {
