@@ -40,7 +40,6 @@ const recentlyRequestedStoreDegradedRecovery = (): boolean => {
       window.sessionStorage.getItem(STORE_DEGRADED_RECOVERY_AT_KEY)
     );
     if (!marker) return false;
-    if (marker.state === 'pending') return true;
     return Date.now() - marker.requestedAt < STORE_DEGRADED_RECOVERY_THROTTLE_MS;
   } catch {
     return false;

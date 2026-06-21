@@ -242,6 +242,20 @@ describe('requestStoreDegradedRecoveryReload', () => {
     vi.useRealTimers();
   });
 
+  it('expires orphaned pending recovery markers after the throttle window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-21T12:00:00.000Z'));
+    setVisibilityState('hidden');
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'hidden' })).toBe(true);
+
+    resetStoreDegradedRecoveryForTests();
+    vi.setSystemTime(new Date('2026-06-21T12:02:00.000Z'));
+
+    expect(requestStoreDegradedRecoveryReload({ source: 'recovered' })).toBe(true);
+    vi.useRealTimers();
+  });
+
   it('does not reload when the recovery marker cannot be persisted', async () => {
     vi.useFakeTimers();
     setVisibilityState('visible');
@@ -412,6 +426,45 @@ describe('startClient app singleton gate', () => {
         userId: '@alice:example.com',
       })
     );
+    vi.useRealTimers();
+  });
+
+  it('does not request degraded-store recovery for background-scoped clients', async () => {
+    vi.useFakeTimers();
+    setVisibilityState('visible');
+    const syncListeners: Array<
+      (state: SyncState, prevState: SyncState | null, data?: { error?: Error }) => void
+    > = [];
+    const mx = makeClient('@alice:example.com');
+    mx.on = vi.fn<(...args: unknown[]) => MockMatrixClient>((event, listener) => {
+      if (event === ClientEvent.Sync) {
+        syncListeners.push(
+          listener as (
+            state: SyncState,
+            prevState: SyncState | null,
+            data?: { error?: Error }
+          ) => void
+        );
+      }
+      return mx;
+    });
+
+    startedClients.push(mx);
+    await startClient(mx, {
+      clientScope: 'background',
+      slidingSync: { enabled: false },
+    });
+
+    const recoveryListener = syncListeners.find((listener) =>
+      listener.toString().includes('requestStoreDegradedRecoveryReload')
+    );
+
+    recoveryListener?.(SyncState.Reconnecting, SyncState.Syncing, {
+      error: new Error("InvalidStateError: Failed to execute 'transaction' on 'IDBDatabase'"),
+    });
+    await vi.runAllTimersAsync();
+
+    expect(mockReloadWithTelemetry).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 

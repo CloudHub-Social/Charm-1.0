@@ -27,6 +27,7 @@ import * as Sentry from '@sentry/react';
 import { CustomStateEvent } from '$types/matrix/room';
 import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
 import { requestStoreDegradedRecoveryReload } from './storeDegradedRecovery';
+import { canClientRequestStoreDegradedRecovery } from './storeDegradedRecoveryClients';
 
 const log = createLogger('slidingSync');
 const debugLog = createDebugLogger('slidingSync');
@@ -477,7 +478,7 @@ export class SlidingSyncManager {
         });
 
         // Capture crypto store errors to Sentry with additional context
-        if (isCryptoStoreError) {
+        if (isCryptoStoreError && canClientRequestStoreDegradedRecovery(this.mx)) {
           Sentry.captureMessage('Crypto store IndexedDB error during sync', {
             level: 'error',
             tags: {

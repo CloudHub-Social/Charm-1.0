@@ -26,6 +26,11 @@ import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
 import { clearClientCachesAndServiceWorkers } from '$utils/appCacheReset';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 import { requestStoreDegradedRecoveryReload } from './storeDegradedRecovery';
+import {
+  canClientRequestStoreDegradedRecovery,
+  markStoreDegradedRecoveryAppScope,
+  retireStoreDegradedRecoveryClient,
+} from './storeDegradedRecoveryClients';
 
 const log = createLogger('initMatrix');
 const debugLog = createDebugLogger('initMatrix');
@@ -59,7 +64,7 @@ const fetchRoomEventStartupCleanupByClient = new WeakMap<MatrixClient, () => voi
 const classicSyncNetworkCleanupByClient = new WeakMap<MatrixClient, () => void>();
 const stoppingClients = new WeakSet<MatrixClient>();
 const canRequestStoreDegradedRecovery = (mx: MatrixClient): boolean =>
-  !stoppingClients.has(mx) && (activeAppClient === undefined || activeAppClient === mx);
+  !stoppingClients.has(mx) && canClientRequestStoreDegradedRecovery(mx);
 const MATRIX_DEVICE_ID_SENTRY_TAG = 'matrix.device_id';
 type MatrixClientScope = 'app' | 'background';
 const CLASSIC_SYNC_FOREGROUND_RETRY_THROTTLE_MS = 15_000;
@@ -1120,7 +1125,7 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
         });
 
         // Capture crypto store errors to Sentry with additional context
-        if (isCryptoStoreError) {
+        if (isCryptoStoreError && canRequestStoreDegradedRecovery(mx)) {
           Sentry.captureMessage('Crypto store IndexedDB error during sync', {
             level: 'error',
             tags: {
@@ -1404,6 +1409,9 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
 export const startClient = async (mx: MatrixClient, config?: StartClientConfig): Promise<void> => {
   installMatrixEventTypeGuard();
   const clientScope = config?.clientScope ?? 'app';
+  if (clientScope === 'app') {
+    markStoreDegradedRecoveryAppScope(mx);
+  }
   if (clientScope !== 'app') {
     await startClientInternal(mx, config);
     return;
@@ -1466,6 +1474,7 @@ export const stopClient = (mx: MatrixClient): Promise<void> => {
   log.log('stopClient', mx.getUserId());
   debugLog.info('sync', 'Stopping client', { userId: mx.getUserId() });
   stoppingClients.add(mx);
+  retireStoreDegradedRecoveryClient(mx);
   const meta = syncTransportByClient.get(mx);
   Sentry.addBreadcrumb({
     category: 'sync.lifecycle',
@@ -1505,9 +1514,6 @@ export const stopClient = (mx: MatrixClient): Promise<void> => {
   syncTransportByClient.delete(mx);
 
   const stopPromise = settleClientStop();
-  void stopPromise.finally(() => {
-    stoppingClients.delete(mx);
-  });
   if (activeAppClient === mx) {
     activeAppClient = undefined;
     activeAppClientStartPromise = undefined;
