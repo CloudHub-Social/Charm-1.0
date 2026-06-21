@@ -28,7 +28,8 @@ import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 import { requestStoreDegradedRecoveryReload } from './storeDegradedRecovery';
 import {
   canClientRequestStoreDegradedRecovery,
-  markStoreDegradedRecoveryAppScope,
+  markStoreDegradedRecoveryActiveAppClient,
+  markStoreDegradedRecoveryInitializingAppClient,
   retireStoreDegradedRecoveryClient,
 } from './storeDegradedRecoveryClients';
 
@@ -757,6 +758,7 @@ export const initClient = async (
   try {
     const result = await buildClient(session, onTokenRefresh);
     mx = result.mx;
+    markStoreDegradedRecoveryInitializingAppClient(mx);
     storeStartup = result.storeStartup;
   } catch (err) {
     if (!isMismatch(err)) {
@@ -793,6 +795,7 @@ export const initClient = async (
     await wipeAllStores();
     const result = await buildClient(session, onTokenRefresh);
     mx = result.mx;
+    markStoreDegradedRecoveryInitializingAppClient(mx);
     storeStartup = result.storeStartup;
   }
 
@@ -826,10 +829,12 @@ export const initClient = async (
         errorMessage: err instanceof Error ? err.message : String(err),
       },
     });
+    retireStoreDegradedRecoveryClient(mx);
     mx.stopClient();
     await wipeAllStores();
     const result = await buildClient(session, onTokenRefresh);
     mx = result.mx;
+    markStoreDegradedRecoveryInitializingAppClient(mx);
     await Promise.all([
       result.storeStartup,
       mx.initRustCrypto({
@@ -1409,9 +1414,6 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
 export const startClient = async (mx: MatrixClient, config?: StartClientConfig): Promise<void> => {
   installMatrixEventTypeGuard();
   const clientScope = config?.clientScope ?? 'app';
-  if (clientScope === 'app') {
-    markStoreDegradedRecoveryAppScope(mx);
-  }
   if (clientScope !== 'app') {
     await startClientInternal(mx, config);
     return;
@@ -1452,6 +1454,7 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
     await stopClient(activeAppClient);
   }
 
+  markStoreDegradedRecoveryActiveAppClient(mx);
   activeAppClient = mx;
   const startPromise = startClientInternal(mx, config);
   activeAppClientStartPromise = startPromise;

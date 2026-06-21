@@ -15,6 +15,7 @@ export const classifyCryptoStoreIndexedDbError = (
   if (classifierInput.includes('Transaction aborted')) return 'transaction_aborted';
   if (classifierInput.includes('without an in-progress transaction')) return 'transaction_error';
   if (classifierInput.includes('database connection is closed')) return 'connection_closed';
+  if (classifierInput.includes('database connection is closing')) return 'connection_closed';
   if (classifierInput.includes('InvalidStateError')) return 'invalid_state';
   if (classifierInput.includes('UnknownError')) return 'unknown_idb_error';
   if (classifierInput.includes('failed to read or write to the crypto store')) {
