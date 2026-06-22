@@ -136,6 +136,34 @@ export function SyncStatus({ mx }: SyncStatusProps) {
 
       const diagnostics = getClientSyncDiagnostics(mx);
       if (diagnostics.transport === 'sliding' && diagnostics.sliding?.healthy === true) return;
+      if (diagnostics.transport === 'classic') {
+        let retried = false;
+        try {
+          retried = mx.retryImmediately();
+          degradedReportedRef.current = true;
+        } catch (error) {
+          Sentry.captureException(error, {
+            level: 'warning',
+            tags: { feature: 'sync', action: 'retry_immediately' },
+          });
+        }
+        Sentry.addBreadcrumb({
+          category: 'sync',
+          message: 'Requested classic sync retry after persistent degraded state',
+          level: 'warning',
+          data: {
+            syncState,
+            retried,
+          },
+        });
+        Sentry.metrics.count('sable.sync.persistent_retry', 1, {
+          attributes: {
+            transport: 'classic',
+            sync_state: syncState ?? 'unknown',
+            retried: String(retried),
+          },
+        });
+      }
       degradedReportedRef.current = true;
       Sentry.captureMessage('Sync remained degraded', {
         level: 'warning',
