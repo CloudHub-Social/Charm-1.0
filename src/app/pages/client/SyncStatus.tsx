@@ -136,9 +136,18 @@ export function SyncStatus({ mx }: SyncStatusProps) {
 
       const diagnostics = getClientSyncDiagnostics(mx);
       if (diagnostics.transport === 'sliding' && diagnostics.sliding?.healthy === true) return;
-      degradedReportedRef.current = true;
       if (diagnostics.transport === 'classic') {
-        const retried = mx.retryImmediately();
+        let retried = false;
+        try {
+          retried = mx.retryImmediately();
+          degradedReportedRef.current = true;
+        } catch (error) {
+          Sentry.captureException(error, {
+            level: 'warning',
+            tags: { feature: 'sync', action: 'retry_immediately' },
+          });
+          return;
+        }
         Sentry.addBreadcrumb({
           category: 'sync',
           message: 'Requested classic sync retry after persistent degraded state',
