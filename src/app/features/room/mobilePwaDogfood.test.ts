@@ -60,9 +60,11 @@ describe('mobile PWA dogfood contract', () => {
     const roomSettingsRenderer = readWorkspaceFile(
       'src/app/features/room-settings/RoomSettingsRenderer.tsx'
     );
+    const roomSettings = readWorkspaceFile('src/app/features/room-settings/RoomSettings.tsx');
     const spaceSettingsRenderer = readWorkspaceFile(
       'src/app/features/space-settings/SpaceSettingsRenderer.tsx'
     );
+    const spaceSettings = readWorkspaceFile('src/app/features/space-settings/SpaceSettings.tsx');
     const userRoomProfileRenderer = readWorkspaceFile(
       'src/app/components/UserRoomProfileRenderer.tsx'
     );
@@ -72,6 +74,18 @@ describe('mobile PWA dogfood contract', () => {
     );
     expect(spaceSettingsRenderer).toContain(
       '<Modal500 requestClose={closeSettings} fullScreenOnMobile>'
+    );
+    expect(roomSettings).toContain(
+      'const isPhoneLayout = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();'
+    );
+    expect(roomSettings).toContain(
+      'return isPhoneLayout ? undefined : RoomSettingsPage.GeneralPage;'
+    );
+    expect(spaceSettings).toContain(
+      'const isPhoneLayout = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();'
+    );
+    expect(spaceSettings).toContain(
+      'return isPhoneLayout ? undefined : SpaceSettingsPage.GeneralPage;'
     );
     expect(userRoomProfileRenderer).toContain(
       'const isMobile = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();'
