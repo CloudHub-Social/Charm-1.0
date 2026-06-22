@@ -1262,12 +1262,16 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       const invalidate = () =>
         queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
 
+      const clearSentMessageContext = () => {
+        imagePacksUsedRef.current.clear();
+        setReplyDraft(replyDraftBase);
+      };
+
       const resetInput = () => {
         resetEditor(editor);
         resetEditorHistory(editor);
         setInputKey((prev) => prev + 1);
-        imagePacksUsedRef.current.clear();
-        setReplyDraft(replyDraftBase);
+        clearSentMessageContext();
         sendTypingStatus(false);
       };
       if (scheduledTime) {
@@ -1347,6 +1351,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           threadRootId: threadRootId ?? undefined,
         })
           .then((res: { event_id: string }) => {
+            clearSentMessageContext();
             if (JSON.stringify(editor.children) === sentEditorSnapshot) {
               resetInput();
             }
