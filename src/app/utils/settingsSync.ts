@@ -42,10 +42,11 @@ export type SettingsSyncContent = {
 export const serializeForSync = (settings: Settings): SettingsSyncContent => {
   const syncable = { ...settings } as Partial<Settings>;
   NON_SYNCABLE_KEYS.forEach((key) => delete syncable[key]);
-  if (syncable.notificationDeviceScope) {
-    (syncable as Record<string, unknown>).notificationDeviceScope = serializeNotificationDeviceScope(
-      syncable.notificationDeviceScope
-    );
+  if (syncable.notificationDeviceScope === 'desktop_delay') {
+    (syncable as Record<string, unknown>).notificationDeviceScope =
+      serializeNotificationDeviceScope(
+        settings.notificationDesktopDelayMinutes > 0 ? 'desktop_delay' : 'all_clients'
+      );
   }
   return { v: SETTINGS_SYNC_VERSION, settings: syncable };
 };

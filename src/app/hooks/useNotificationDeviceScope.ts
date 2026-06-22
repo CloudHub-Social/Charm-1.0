@@ -103,7 +103,9 @@ export function useNotificationDeviceScope(
 
   const leaseRef = useRef(lease);
   leaseRef.current = lease;
-  const failedLeaseClearDeviceIdRef = useRef<string | null>(null);
+  const failedLeaseClearSignatureRef = useRef<string | null>(null);
+  const getLeaseSignature = (value: NotificationDeviceLease | null): string | null =>
+    value ? `${value.deviceId}:${value.updatedAt}:${value.expiresAt}` : null;
 
   const deviceId =
     mx && typeof mx.getDeviceId === 'function' ? (mx.getDeviceId() ?? undefined) : undefined;
@@ -138,7 +140,7 @@ export function useNotificationDeviceScope(
       broadcastLocalLeaseUpdate(null);
       const clearedLease = {} as never;
       mx.setAccountData(NOTIFICATION_DEVICE_LEASE_EVENT_TYPE, clearedLease).catch(() => {
-        failedLeaseClearDeviceIdRef.current = currentLease?.deviceId ?? deviceId;
+        failedLeaseClearSignatureRef.current = getLeaseSignature(currentLease);
         setLease(currentLease ?? null);
         broadcastLocalLeaseUpdate(currentLease ?? null);
       });
@@ -231,10 +233,11 @@ export function useNotificationDeviceScope(
   }, [canPublishLease, deviceId, leaseDurationMs, mx, shouldPublishLease, shouldHoldLease]);
 
   useEffect(() => {
-    if (lease?.deviceId !== failedLeaseClearDeviceIdRef.current) {
-      failedLeaseClearDeviceIdRef.current = null;
+    const currentSignature = getLeaseSignature(lease);
+    if (currentSignature !== failedLeaseClearSignatureRef.current) {
+      failedLeaseClearSignatureRef.current = null;
     }
-  }, [lease?.deviceId]);
+  }, [lease]);
 
   useEffect(() => {
     if (!shouldPublishLease || !mx || !deviceId || typeof mx.setAccountData !== 'function') {
@@ -243,9 +246,9 @@ export function useNotificationDeviceScope(
     if (desktopDelayEnabled) return;
     const currentLease = leaseRef.current;
     if (currentLease?.deviceId !== deviceId) return;
-    if (failedLeaseClearDeviceIdRef.current === currentLease.deviceId) return;
+    if (failedLeaseClearSignatureRef.current === getLeaseSignature(currentLease)) return;
     clearLease(currentLease);
-  }, [clearLease, desktopDelayEnabled, deviceId, lease?.deviceId, mx, shouldPublishLease]);
+  }, [clearLease, desktopDelayEnabled, deviceId, lease, mx, shouldPublishLease]);
 
   useEffect(() => {
     const handleLocalLeaseUpdate = (event: Event) => {

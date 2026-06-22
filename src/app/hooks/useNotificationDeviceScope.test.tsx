@@ -321,6 +321,44 @@ describe('useNotificationDeviceScope', () => {
     expect(client.setAccountData).toHaveBeenCalledTimes(1);
   });
 
+  it('retries clearing when a newer same-device lease arrives later', async () => {
+    notificationDeviceScope = 'all_clients';
+    const now = Date.now();
+    const { client, setLease, emitAccountData } = createMockMatrixClient({
+      deviceId: 'DEVICE_A',
+      updatedAt: now,
+      expiresAt: now + 120_000,
+    });
+    client.setAccountData = vi.fn(async (_type: string, content: LeaseContent) => {
+      if (Object.keys(content).length === 0) {
+        throw new Error('clear failed');
+      }
+    }) as never;
+
+    renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      setLease({
+        deviceId: 'DEVICE_A',
+        updatedAt: now + 1,
+        expiresAt: now + 120_001,
+      });
+      emitAccountData();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledTimes(2);
+  });
+
   it('does not let mobile clients renew desktop-delay leases', async () => {
     notificationDeviceScope = 'desktop_delay';
     mockMobileOrTablet.mockReturnValue(true);

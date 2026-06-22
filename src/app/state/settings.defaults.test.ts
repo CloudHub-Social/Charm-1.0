@@ -35,9 +35,22 @@ describe('mergePersistedSettings', () => {
   });
 
   it('migrates persisted active-client notification scope values from localStorage', () => {
-    localStorage.setItem('settings', JSON.stringify({ notificationDeviceScope: 'active_client_only' }));
+    localStorage.setItem(
+      'settings',
+      JSON.stringify({ notificationDeviceScope: 'active_client_only' })
+    );
 
     const merged = mergePersistedSettings(localStorage.getItem('settings'), {});
+
+    expect(merged.notificationDeviceScope).toBe('desktop_delay');
+  });
+
+  it('preserves the default scope when localStorage has no persisted scope', () => {
+    localStorage.setItem('settings', JSON.stringify({ twitterEmoji: false }));
+
+    const merged = mergePersistedSettings(localStorage.getItem('settings'), {
+      notificationDeviceScope: 'desktop_delay',
+    });
 
     expect(merged.notificationDeviceScope).toBe('desktop_delay');
   });

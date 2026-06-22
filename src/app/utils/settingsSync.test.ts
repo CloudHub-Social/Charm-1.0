@@ -84,6 +84,16 @@ describe('serializeForSync', () => {
     expect(settings.notificationDeviceScope).toBe('active_client_only');
   });
 
+  it('preserves notify-all semantics for zero-minute desktop delay in v1 sync payloads', () => {
+    const { settings } = serializeForSync({
+      ...base,
+      notificationDeviceScope: 'desktop_delay',
+      notificationDesktopDelayMinutes: 0,
+    });
+
+    expect(settings.notificationDeviceScope).toBe('all_clients');
+  });
+
   it('strips all non-syncable keys from the payload', () => {
     const { settings: s } = serializeForSync(base);
     Array.from(NON_SYNCABLE_KEYS).forEach((key) => {

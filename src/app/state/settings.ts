@@ -487,7 +487,9 @@ function migrateParsedLocalStorage(parsed: Record<string, unknown>): void {
   }
   delete parsed.themeChatPreviewAnyUrl;
   delete parsed.themeChatPreviewApprovedCatalogOnly;
-  parsed.notificationDeviceScope = migrateNotificationDeviceScope(parsed.notificationDeviceScope);
+  if ('notificationDeviceScope' in parsed) {
+    parsed.notificationDeviceScope = migrateNotificationDeviceScope(parsed.notificationDeviceScope);
+  }
 }
 
 export function mergePersistedSettings(
