@@ -89,6 +89,7 @@ import { completeRoomTimelineRender } from '$utils/perfTelemetry';
 import { mobileOrTabletLayout } from '$utils/user-agent';
 import {
   didKeyboardJustClose,
+  isKeyboardBottomSessionScrollKeyTarget,
   shouldRepinBottomAfterKeyboardClose,
   shouldClearKeyboardBottomSessionOnUserIntent,
 } from './keyboardBottomRecovery';
@@ -1808,6 +1809,7 @@ export function RoomTimeline({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isKeyboardBottomSessionScrollKeyTarget(event.target)) return;
       if (
         event.key === 'ArrowUp' ||
         event.key === 'ArrowDown' ||

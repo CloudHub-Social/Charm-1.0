@@ -26,3 +26,9 @@ export const shouldClearKeyboardBottomSessionOnUserIntent = (
   source: 'pointerdown' | 'wheel' | 'touchmove' | 'keyboard',
   isKeyboardVisible: boolean
 ): boolean => isKeyboardVisible && source !== 'pointerdown';
+
+export const isKeyboardBottomSessionScrollKeyTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) return true;
+  if (target.isContentEditable || target.getAttribute('contenteditable') === 'true') return false;
+  return !['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+};

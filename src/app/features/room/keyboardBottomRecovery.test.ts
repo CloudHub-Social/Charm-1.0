@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   didKeyboardJustClose,
+  isKeyboardBottomSessionScrollKeyTarget,
   shouldRepinBottomAfterKeyboardClose,
   shouldClearKeyboardBottomSessionOnUserIntent,
 } from './keyboardBottomRecovery';
@@ -48,5 +49,17 @@ describe('keyboardBottomRecovery', () => {
     expect(shouldClearKeyboardBottomSessionOnUserIntent('touchmove', true)).toBe(true);
     expect(shouldClearKeyboardBottomSessionOnUserIntent('keyboard', true)).toBe(true);
     expect(shouldClearKeyboardBottomSessionOnUserIntent('wheel', false)).toBe(false);
+  });
+
+  it('ignores key presses from editable targets', () => {
+    const editable = document.createElement('div');
+    editable.setAttribute('contenteditable', 'true');
+
+    expect(isKeyboardBottomSessionScrollKeyTarget(editable)).toBe(false);
+    expect(isKeyboardBottomSessionScrollKeyTarget(document.createElement('input'))).toBe(false);
+    expect(isKeyboardBottomSessionScrollKeyTarget(document.createElement('textarea'))).toBe(false);
+    expect(isKeyboardBottomSessionScrollKeyTarget(document.createElement('select'))).toBe(false);
+    expect(isKeyboardBottomSessionScrollKeyTarget(document.createElement('button'))).toBe(true);
+    expect(isKeyboardBottomSessionScrollKeyTarget(window)).toBe(true);
   });
 });
