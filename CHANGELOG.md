@@ -1,5 +1,11 @@
 # Sable Client Changelog
 
+## 1.18.5 (2026-06-22)
+
+### Fixes
+
+* Harden preview observability checks, Playwright coverage, and Sentry workflow safety for pull requests. ([#182](<https://github.com/CloudHub-Social/Charm/pull/182>) by @Just-Insane)
+
 ## 1.18.4 (2026-06-19)
 
 ### Fixes
