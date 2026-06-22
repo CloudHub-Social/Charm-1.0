@@ -384,6 +384,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [editDraft, setEditDraft] = useAtom(roomIdToEditDraftAtomFamily(draftKey));
     const latestReplyDraftRef = useRef(replyDraft);
     const submitInFlightRef = useRef(false);
+    const pendingImmediateSendEditorSnapshotRef = useRef<string | null>(null);
 
     const [uploadBoard, setUploadBoard] = useState(true);
     const [selectedFiles, setSelectedFiles] = useAtom(roomIdToUploadItemsAtomFamily(draftKey));
@@ -596,6 +597,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
     useEffect(
       () => () => {
+        const currentEditorSnapshot = JSON.stringify(editor.children);
+        if (pendingImmediateSendEditorSnapshotRef.current === currentEditorSnapshot) {
+          setMsgDraft([]);
+          return;
+        }
         if (isEmptyEditor(editor)) {
           setMsgDraft([]);
         } else {
@@ -1283,6 +1289,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           sentReplyDraftSnapshot?: string,
           sentImagePacksSnapshot?: string
         ) => {
+          if (sentReplyDraftSnapshot === undefined) {
+            imagePacksUsedRef.current.clear();
+            setReplyDraft(replyDraftBase);
+            return;
+          }
           if (
             sentImagePacksSnapshot === undefined ||
             JSON.stringify(imagePacksUsedRef.current.toJSON()) === sentImagePacksSnapshot
@@ -1367,8 +1378,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         } else {
           const msgSendStart = performance.now();
+          const sentEditorSnapshot = JSON.stringify(editor.children);
           const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
           const sentImagePacksSnapshot = JSON.stringify(imagePacksUsedRef.current.toJSON());
+          pendingImmediateSendEditorSnapshotRef.current = sentEditorSnapshot;
           setSendError(undefined);
           debugLog.info('message', 'Sending message', {
             roomId,
@@ -1383,6 +1396,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               threadRootId: threadRootId ?? undefined,
             });
             resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot);
+            setMsgDraft([]);
             debugLog.info('message', 'Message sent successfully', {
               roomId,
               eventId: res.event_id,
@@ -1393,6 +1407,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               { attributes: { encrypted: String(isEncrypted) } }
             );
           } catch (error: unknown) {
+            pendingImmediateSendEditorSnapshotRef.current = null;
             setSendError('Failed to send message. Please try again.');
             debugLog.error('message', 'Failed to send message', {
               roomId,
@@ -1405,6 +1420,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         }
       } finally {
+        pendingImmediateSendEditorSnapshotRef.current = null;
         submitInFlightRef.current = false;
         setIsSending(false);
       }
@@ -1439,6 +1455,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       setServerMaxDelayMs,
       replyDraftBase,
       emojiAutoExpand,
+      setMsgDraft,
     ]);
 
     const handleKeyDown: KeyboardEventHandler = useCallback(
