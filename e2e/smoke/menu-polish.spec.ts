@@ -35,18 +35,27 @@ test.describe('menu polish smoke', () => {
           ? false
           : ['Default', 'All Messages', 'Mute'].some((label) => button.textContent?.includes(label))
       );
+      const selectorOption = selectorOptions.find((button) =>
+        button.textContent?.includes('Follows your global notification rules')
+      );
+      const selectorOptionGroup = selectorOption?.parentElement;
       const accountMenu = document.querySelector('[data-testid="smoke-account-menu"]');
       const featuresLink = document.querySelector('[data-testid="smoke-features-link"]');
       const accountButtons = accountMenu?.querySelectorAll('button') ?? [];
+      const selectorOptionGroupStyle = selectorOptionGroup
+        ? getComputedStyle(selectorOptionGroup)
+        : undefined;
 
       return {
         selectorOptionCount: selectorOptions.length,
+        selectorOptionGroupBackground: selectorOptionGroupStyle?.backgroundColor,
         accountButtonCount: accountButtons.length,
         featuresHref: featuresLink?.getAttribute('href'),
       };
     });
 
     expect(metrics.selectorOptionCount).toBeGreaterThanOrEqual(3);
+    expect(metrics.selectorOptionGroupBackground).not.toBe('rgba(0, 0, 0, 0)');
     expect(metrics.accountButtonCount).toBeGreaterThanOrEqual(4);
     expect(metrics.featuresHref).toBe('https://github.com/CloudHub-Social/Charm/releases');
 

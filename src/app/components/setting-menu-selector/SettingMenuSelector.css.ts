@@ -10,6 +10,10 @@ export const Options = style({
   display: 'flex',
   flexDirection: 'column',
   gap: config.space.S100,
+  padding: config.space.S100,
+  borderRadius: config.radii.R400,
+  backgroundColor: color.Surface.Container,
+  border: `${config.borderWidth.B300} solid ${color.Surface.ContainerLine}`,
 });
 
 export const OptionContent = style({
