@@ -75,6 +75,15 @@ describe('serializeForSync', () => {
     expect(s.twitterEmoji).toBe(false);
   });
 
+  it('serializes desktop-delay scope in the legacy v1 shape for older clients', () => {
+    const { settings } = serializeForSync({
+      ...base,
+      notificationDeviceScope: 'desktop_delay',
+    });
+
+    expect(settings.notificationDeviceScope).toBe('active_client_only');
+  });
+
   it('strips all non-syncable keys from the payload', () => {
     const { settings: s } = serializeForSync(base);
     Array.from(NON_SYNCABLE_KEYS).forEach((key) => {

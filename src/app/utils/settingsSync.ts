@@ -30,6 +30,8 @@ export const NON_SYNCABLE_KEYS = new Set<keyof Settings>([
 ]);
 
 export const SETTINGS_SYNC_VERSION = 1;
+const serializeNotificationDeviceScope = (value: Settings['notificationDeviceScope']) =>
+  value === 'desktop_delay' ? 'active_client_only' : value;
 
 export type SettingsSyncContent = {
   v: number;
@@ -40,6 +42,11 @@ export type SettingsSyncContent = {
 export const serializeForSync = (settings: Settings): SettingsSyncContent => {
   const syncable = { ...settings } as Partial<Settings>;
   NON_SYNCABLE_KEYS.forEach((key) => delete syncable[key]);
+  if (syncable.notificationDeviceScope) {
+    (syncable as Record<string, unknown>).notificationDeviceScope = serializeNotificationDeviceScope(
+      syncable.notificationDeviceScope
+    );
+  }
   return { v: SETTINGS_SYNC_VERSION, settings: syncable };
 };
 

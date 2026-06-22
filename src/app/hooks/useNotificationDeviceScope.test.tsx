@@ -274,6 +274,31 @@ describe('useNotificationDeviceScope', () => {
     );
   });
 
+  it('clears a later owned lease after desktop delay is disabled', async () => {
+    notificationDeviceScope = 'all_clients';
+    const { client, setLease, emitAccountData } = createMockMatrixClient();
+
+    renderHook(() => useNotificationDeviceScope(client));
+
+    act(() => {
+      setLease({
+        deviceId: 'DEVICE_A',
+        updatedAt: Date.now(),
+        expiresAt: Date.now() + 120_000,
+      });
+      emitAccountData();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledWith(
+      CustomAccountDataEvent.SableNotificationDeviceLease,
+      {}
+    );
+  });
+
   it('does not let mobile clients renew desktop-delay leases', async () => {
     notificationDeviceScope = 'desktop_delay';
     mockMobileOrTablet.mockReturnValue(true);

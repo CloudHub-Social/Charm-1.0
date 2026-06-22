@@ -33,6 +33,14 @@ describe('mergePersistedSettings', () => {
     const merged = mergePersistedSettings(localStorage.getItem('settings'), {});
     expect(merged.saturationLevel).toBe(0);
   });
+
+  it('migrates persisted active-client notification scope values from localStorage', () => {
+    localStorage.setItem('settings', JSON.stringify({ notificationDeviceScope: 'active_client_only' }));
+
+    const merged = mergePersistedSettings(localStorage.getItem('settings'), {});
+
+    expect(merged.notificationDeviceScope).toBe('desktop_delay');
+  });
 });
 
 describe('sanitizeSettingsDefaults', () => {

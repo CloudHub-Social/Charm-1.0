@@ -9,6 +9,8 @@ import type {
 } from '$features/settings/notifications/NotificationTransport';
 
 const STORAGE_KEY = 'settings';
+const migrateNotificationDeviceScope = (value: unknown): unknown =>
+  value === 'active_client_only' ? 'desktop_delay' : value;
 export type DateFormat = 'D MMM YYYY' | 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY/MM/DD' | '';
 export type MessageSpacing = '0' | '100' | '200' | '300' | '400' | '500';
 export enum MessageLayout {
@@ -485,6 +487,7 @@ function migrateParsedLocalStorage(parsed: Record<string, unknown>): void {
   }
   delete parsed.themeChatPreviewAnyUrl;
   delete parsed.themeChatPreviewApprovedCatalogOnly;
+  parsed.notificationDeviceScope = migrateNotificationDeviceScope(parsed.notificationDeviceScope);
 }
 
 export function mergePersistedSettings(

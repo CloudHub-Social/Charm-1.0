@@ -236,7 +236,7 @@ export function useNotificationDeviceScope(
     const currentLease = leaseRef.current;
     if (currentLease?.deviceId !== deviceId) return;
     clearLease(currentLease);
-  }, [clearLease, desktopDelayEnabled, deviceId, mx, shouldPublishLease]);
+  }, [clearLease, desktopDelayEnabled, deviceId, lease?.deviceId, mx, shouldPublishLease]);
 
   useEffect(() => {
     const handleLocalLeaseUpdate = (event: Event) => {
