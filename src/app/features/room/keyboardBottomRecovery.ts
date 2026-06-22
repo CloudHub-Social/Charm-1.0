@@ -21,3 +21,8 @@ export const shouldRepinBottomAfterKeyboardClose = (
   keyboardJustClosed: boolean,
   keyboardSessionWasBottomPinned: boolean
 ): boolean => keyboardJustClosed && keyboardSessionWasBottomPinned;
+
+export const shouldClearKeyboardBottomSessionOnUserIntent = (
+  source: 'pointerdown' | 'wheel' | 'touchmove' | 'keyboard',
+  isKeyboardVisible: boolean
+): boolean => isKeyboardVisible && source !== 'pointerdown';

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   didKeyboardJustClose,
   shouldRepinBottomAfterKeyboardClose,
+  shouldClearKeyboardBottomSessionOnUserIntent,
 } from './keyboardBottomRecovery';
 
 describe('keyboardBottomRecovery', () => {
@@ -39,5 +40,13 @@ describe('keyboardBottomRecovery', () => {
     expect(shouldRepinBottomAfterKeyboardClose(true, true)).toBe(true);
     expect(shouldRepinBottomAfterKeyboardClose(true, false)).toBe(false);
     expect(shouldRepinBottomAfterKeyboardClose(false, true)).toBe(false);
+  });
+
+  it('keeps tap-to-dismiss from clearing the keyboard bottom session', () => {
+    expect(shouldClearKeyboardBottomSessionOnUserIntent('pointerdown', true)).toBe(false);
+    expect(shouldClearKeyboardBottomSessionOnUserIntent('wheel', true)).toBe(true);
+    expect(shouldClearKeyboardBottomSessionOnUserIntent('touchmove', true)).toBe(true);
+    expect(shouldClearKeyboardBottomSessionOnUserIntent('keyboard', true)).toBe(true);
+    expect(shouldClearKeyboardBottomSessionOnUserIntent('wheel', false)).toBe(false);
   });
 });

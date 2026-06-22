@@ -90,6 +90,7 @@ import { mobileOrTabletLayout } from '$utils/user-agent';
 import {
   didKeyboardJustClose,
   shouldRepinBottomAfterKeyboardClose,
+  shouldClearKeyboardBottomSessionOnUserIntent,
 } from './keyboardBottomRecovery';
 import * as css from './RoomTimeline.css';
 
@@ -269,6 +270,10 @@ export function RoomTimeline({
   const { isKeyboardVisible, keyboardHeight } = useKeyboardHeight();
   const prevKeyboardVisibleRef = useRef(false);
   const prevKeyboardHeightRef = useRef(0);
+  const keyboardVisibleRef = useRef(isKeyboardVisible);
+  keyboardVisibleRef.current = isKeyboardVisible;
+  const keyboardHeightRef = useRef(keyboardHeight);
+  keyboardHeightRef.current = keyboardHeight;
   const lastKeyboardCloseTimeRef = useRef(0);
   const keyboardSessionBottomPinnedRef = useRef(false);
   const settingsLinkBaseUrl = useSettingsLinkBaseUrl();
@@ -1143,6 +1148,18 @@ export function RoomTimeline({
   ]);
 
   useEffect(() => {
+    if (eventId) {
+      keyboardSessionBottomPinnedRef.current = false;
+    }
+  }, [eventId, room.roomId]);
+
+  useEffect(() => {
+    if (isKeyboardVisible && !prevKeyboardVisibleRef.current) {
+      keyboardSessionBottomPinnedRef.current = atBottomRef.current;
+    }
+  }, [isKeyboardVisible]);
+
+  useEffect(() => {
     const el = messageListRef.current;
     if (!el) return () => {};
 
@@ -1152,15 +1169,10 @@ export function RoomTimeline({
       const atBottom = atBottomRef.current;
       const changed = newHeight !== prev;
       const heightDelta = newHeight - prev;
-      const keyboardJustOpened = !prevKeyboardVisibleRef.current && isKeyboardVisible;
-
-      if (keyboardJustOpened) {
-        keyboardSessionBottomPinnedRef.current = atBottom;
-      }
 
       const keyboardJustClosed = didKeyboardJustClose({
         heightDelta,
-        isKeyboardVisible,
+        isKeyboardVisible: keyboardVisibleRef.current,
         prevKeyboardHeight: prevKeyboardHeightRef.current,
         prevKeyboardVisible: prevKeyboardVisibleRef.current,
       });
@@ -1196,13 +1208,13 @@ export function RoomTimeline({
         vListRef.current?.scrollTo(vListRef.current.scrollSize);
       }
       prevViewportHeightRef.current = newHeight;
-      prevKeyboardVisibleRef.current = isKeyboardVisible;
-      prevKeyboardHeightRef.current = keyboardHeight;
+      prevKeyboardVisibleRef.current = keyboardVisibleRef.current;
+      prevKeyboardHeightRef.current = keyboardHeightRef.current;
     });
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [isKeyboardVisible, keyboardHeight, setAtBottom]);
+  }, [setAtBottom]);
 
   // When the thread drawer opens/closes on desktop, the main timeline column
   // changes width and Virtua remeasures all item heights.  Save the scroll
@@ -1788,9 +1800,9 @@ export function RoomTimeline({
     const el = messageListRef.current;
     if (!el) return undefined;
 
-    const markUserScrollIntent = () => {
+    const markUserScrollIntent = (source: 'pointerdown' | 'wheel' | 'touchmove' | 'keyboard') => {
       userScrollIntentAtRef.current = Date.now();
-      if (isKeyboardVisible) {
+      if (shouldClearKeyboardBottomSessionOnUserIntent(source, keyboardVisibleRef.current)) {
         keyboardSessionBottomPinnedRef.current = false;
       }
     };
@@ -1805,22 +1817,26 @@ export function RoomTimeline({
         event.key === 'End' ||
         event.key === ' '
       ) {
-        markUserScrollIntent();
+        markUserScrollIntent('keyboard');
       }
     };
 
-    el.addEventListener('wheel', markUserScrollIntent, { passive: true });
-    el.addEventListener('touchmove', markUserScrollIntent, { passive: true });
-    el.addEventListener('pointerdown', markUserScrollIntent, { passive: true });
+    const handleWheel = () => markUserScrollIntent('wheel');
+    const handleTouchMove = () => markUserScrollIntent('touchmove');
+    const handlePointerDown = () => markUserScrollIntent('pointerdown');
+
+    el.addEventListener('wheel', handleWheel, { passive: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: true });
+    el.addEventListener('pointerdown', handlePointerDown, { passive: true });
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      el.removeEventListener('wheel', markUserScrollIntent);
-      el.removeEventListener('touchmove', markUserScrollIntent);
-      el.removeEventListener('pointerdown', markUserScrollIntent);
+      el.removeEventListener('wheel', handleWheel);
+      el.removeEventListener('touchmove', handleTouchMove);
+      el.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isKeyboardVisible]);
+  }, []);
 
   // Recovery: if the 80 ms initial-scroll timer fired while processedEvents was
   // empty (timeline was mid-reset), scroll to bottom and reveal the timeline once
