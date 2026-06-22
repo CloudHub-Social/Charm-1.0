@@ -189,6 +189,7 @@ import type {
 } from './AudioMessageRecorder';
 import { AudioMessageRecorder } from './AudioMessageRecorder';
 import { PollCreator } from './PollCreator';
+import { sendImmediateMessage } from './sendImmediateMessage';
 import * as prefix from '$unstable/prefixes';
 import { LocationDialog } from './location-modal';
 import {
@@ -1328,20 +1329,20 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         }
       } else {
         const msgSendStart = performance.now();
-        resetInput();
+        setSendError(undefined);
         debugLog.info('message', 'Sending message', {
           roomId,
           msgtype: content.msgtype,
         });
-        Sentry.startSpan(
-          {
-            name: 'message.send',
-            op: 'matrix.message',
-            attributes: { encrypted: String(isEncrypted) },
-          },
-          () => mx.sendMessage(roomId, threadRootId ?? null, content as RoomMessageEventContent)
-        )
+        sendImmediateMessage({
+          content: content as RoomMessageEventContent,
+          isEncrypted,
+          mx,
+          roomId,
+          threadRootId: threadRootId ?? undefined,
+        })
           .then((res: { event_id: string }) => {
+            resetInput();
             debugLog.info('message', 'Message sent successfully', {
               roomId,
               eventId: res.event_id,
@@ -1353,6 +1354,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             );
           })
           .catch((error: unknown) => {
+            setSendError('Failed to send message. Please try again.');
             debugLog.error('message', 'Failed to send message', {
               roomId,
               error: error instanceof Error ? error.message : String(error),
@@ -1780,6 +1782,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           onPaste={handlePaste}
           responsiveAfter={audioRecorder}
           forceMultilineLayout={showAudioRecorder}
+          moveAfterToFooter={isMobileLayout}
           top={
             <>
               {scheduledTime && (
@@ -1806,7 +1809,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     </IconButton>
                     <Box direction="Row" gap="200" alignItems="Center">
                       {menuIcon(Clock)}
-                      <Text size="T300">
+                      <Text size="T300" style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
                         Scheduled for {timeDayMonthYear(scheduledTime.getTime())} at{' '}
                         {timeHourMinute(scheduledTime.getTime(), hour24Clock)}
                       </Text>
@@ -1861,7 +1864,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       padding: `${config.space.S200} ${config.space.S300} 0`,
                     }}
                   >
-                    <Text style={{ color: color.Critical.Main }} size="T300">
+                    <Text
+                      style={{ color: color.Critical.Main, minWidth: 0, overflowWrap: 'anywhere' }}
+                      size="T300"
+                    >
                       {sendError}
                     </Text>
                   </Box>

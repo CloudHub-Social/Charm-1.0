@@ -117,6 +117,7 @@ type CustomEditorProps = {
   after?: ReactNode;
   responsiveAfter?: ReactNode;
   forceMultilineLayout?: boolean;
+  moveAfterToFooter?: boolean;
   maxHeight?: string;
   editor: Editor;
   placeholder?: string;
@@ -137,6 +138,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
       after,
       responsiveAfter,
       forceMultilineLayout = false,
+      moveAfterToFooter = false,
       maxHeight = 'min(50vh, calc(var(--sable-visible-height, 100vh) * 0.5))',
       editor,
       placeholder,
@@ -178,8 +180,11 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
     const hasAfter = Boolean(after);
     const hasResponsiveAfter = Boolean(responsiveAfter);
     const layoutIsMultiline = isMultiline || forceMultilineLayout;
+    const showAfterInFooter = hasAfter && layoutIsMultiline && moveAfterToFooter;
+    const showAfterInline = hasAfter && !showAfterInFooter;
     const showResponsiveAfterInFooter = hasResponsiveAfter && layoutIsMultiline;
     const showResponsiveAfterInline = hasResponsiveAfter && !showResponsiveAfterInFooter;
+    const showFooterActions = showResponsiveAfterInFooter || showAfterInFooter;
 
     const setRootRef = useCallback(
       (node: HTMLDivElement | null) => {
@@ -491,7 +496,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
           {top}
           <Box
             ref={rowRef}
-            className={`${css.EditorRow} ${layoutIsMultiline ? css.EditorRowMultiline : ''} ${showResponsiveAfterInFooter ? css.EditorRowMultilineWithResponsiveAfter : ''}`}
+            className={`${css.EditorRow} ${layoutIsMultiline ? css.EditorRowMultiline : ''} ${showFooterActions ? css.EditorRowMultilineWithResponsiveAfter : ''}`}
             alignItems={layoutIsMultiline ? 'Start' : 'Center'}
             style={{ display: after ? 'grid' : 'flex' }}
           >
@@ -550,7 +555,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
                 }}
               />
             </Scroll>
-            {(hasAfter || showResponsiveAfterInline) && (
+            {(showAfterInline || showResponsiveAfterInline) && (
               <Box
                 ref={afterRef}
                 className={`${css.EditorOptions} ${layoutIsMultiline ? css.EditorOptionsMultiline : ''} ${layoutIsMultiline ? css.EditorOptionsAfterMultiline : ''}`}
@@ -559,7 +564,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
                 shrink="No"
               >
                 {showResponsiveAfterInline && responsiveAfter}
-                {after}
+                {showAfterInline && after}
               </Box>
             )}
             {showResponsiveAfterInFooter && (
@@ -570,6 +575,16 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
                 gap="100"
               >
                 {responsiveAfter}
+              </Box>
+            )}
+            {showAfterInFooter && (
+              <Box
+                className={css.EditorFooterAfterMultiline}
+                alignItems="Center"
+                justifyContent="End"
+                gap="100"
+              >
+                {after}
               </Box>
             )}
           </Box>

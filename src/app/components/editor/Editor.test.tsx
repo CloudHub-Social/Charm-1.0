@@ -84,6 +84,7 @@ function ForcedFooterHarness() {
       after={<button type="button">Send</button>}
       responsiveAfter={<div data-testid="forced-footer-recorder">Recorder</div>}
       forceMultilineLayout
+      moveAfterToFooter
     />
   );
 }
@@ -401,6 +402,7 @@ describe('CustomEditor', () => {
     expect(screen.getByTestId('forced-footer-recorder').parentElement).toHaveClass(
       css.EditorResponsiveAfterMultiline
     );
+    expect(screen.getByText('Send').parentElement).toHaveClass(css.EditorFooterAfterMultiline);
   });
 
   it('detects pasted text that exceeds the single-line width after the deferred layout measurement', async () => {
