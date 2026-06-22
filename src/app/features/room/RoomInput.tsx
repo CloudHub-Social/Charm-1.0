@@ -1350,6 +1350,45 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         };
 
+        const restoreFailedImmediateSendContext = (
+          sentMsgDraftSnapshot: typeof editor.children,
+          sentReplyDraftSnapshot: string,
+          sentImagePacksSnapshot: string
+        ) => {
+          if (isEmptyEditor(editor)) {
+            const restoredMsgDraft = structuredClone(sentMsgDraftSnapshot);
+            setMsgDraft(restoredMsgDraft);
+            Transforms.insertFragment(editor, restoredMsgDraft);
+            requestAnimationFrame(() => {
+              try {
+                ReactEditor.focus(editor);
+                moveCursor(editor);
+              } catch {
+                // Ignore focus errors
+              }
+            });
+          }
+
+          if (
+            serializeReplyDraft(latestReplyDraftRef.current) === serializeReplyDraft(replyDraftBase)
+          ) {
+            const restoredReplyDraft = JSON.parse(sentReplyDraftSnapshot) as IReplyDraft | null;
+            setReplyDraft(restoredReplyDraft ?? replyDraftBase);
+          }
+
+          if (imagePacksUsedRef.current.size === 0) {
+            const restoredImagePacks = JSON.parse(sentImagePacksSnapshot) as Record<
+              string,
+              MSC4459ImagePackReference
+            >;
+            Object.entries(restoredImagePacks).forEach(([key, value]) => {
+              imagePacksUsedRef.current.set(key, value);
+            });
+          }
+
+          sendTypingStatus(false);
+        };
+
         const resetInput = (sentReplyDraftSnapshot?: string, sentImagePacksSnapshot?: string) => {
           resetEditor(editor);
           resetEditorHistory(editor);
@@ -1419,6 +1458,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         } else {
           const msgSendStart = performance.now();
+          const sentMsgDraftSnapshot = structuredClone(editor.children);
           const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
           const sentImagePacksSnapshot = JSON.stringify(imagePacksUsedRef.current.toJSON());
           setSendError(undefined);
@@ -1446,6 +1486,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             );
           } catch (error: unknown) {
             setSendError('Failed to send message. Please try again.');
+            restoreFailedImmediateSendContext(
+              sentMsgDraftSnapshot,
+              sentReplyDraftSnapshot,
+              sentImagePacksSnapshot
+            );
             debugLog.error('message', 'Failed to send message', {
               roomId,
               error: error instanceof Error ? error.message : String(error),
@@ -1481,6 +1526,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       sendTypingStatus,
       queryClient,
       threadRootId,
+      setMsgDraft,
       setReplyDraft,
       settingsLinkBaseUrl,
       isEncrypted,

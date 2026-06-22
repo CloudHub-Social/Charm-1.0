@@ -28,6 +28,9 @@ describe('mobile PWA dogfood contract', () => {
     expect(resetIndex).toBeGreaterThan(-1);
     expect(sendIndex).toBeGreaterThan(-1);
     expect(resetIndex).toBeLessThan(sendIndex);
+    expect(roomInput).toContain('const sentMsgDraftSnapshot = structuredClone(editor.children);');
+    expect(roomInput).toContain('const restoreFailedImmediateSendContext = (');
+    expect(roomInput).toContain('restoreFailedImmediateSendContext(');
   });
 
   it('closes the mobile keyboard before opening composer overlays', () => {
