@@ -146,7 +146,6 @@ export function SyncStatus({ mx }: SyncStatusProps) {
             level: 'warning',
             tags: { feature: 'sync', action: 'retry_immediately' },
           });
-          return;
         }
         Sentry.addBreadcrumb({
           category: 'sync',

@@ -281,6 +281,16 @@ describe('SyncStatus', () => {
         }),
       })
     );
+    expect(sentry.captureMessage).toHaveBeenCalledWith(
+      'Sync remained degraded',
+      expect.objectContaining({
+        level: 'warning',
+        tags: expect.objectContaining({
+          sync_state: SyncState.Reconnecting,
+          transport: 'classic',
+        }),
+      })
+    );
   });
 
   it('rearms degraded sync reporting after the tab becomes visible again', () => {
