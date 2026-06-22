@@ -165,6 +165,7 @@ export function SyncStatus({ mx }: SyncStatusProps) {
           },
         });
       }
+      degradedReportedRef.current = true;
       Sentry.captureMessage('Sync remained degraded', {
         level: 'warning',
         tags: {
