@@ -409,9 +409,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
         beforeRef.current,
         afterRef.current,
         footerAfterRef.current,
-      ].filter(
-        (element): element is HTMLDivElement => element !== null
-      );
+      ].filter((element): element is HTMLDivElement => element !== null);
 
       observedElements.forEach((element) => observer.observe(element));
 
