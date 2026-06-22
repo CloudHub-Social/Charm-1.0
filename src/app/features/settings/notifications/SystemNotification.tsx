@@ -21,7 +21,11 @@ import { useAtom } from 'jotai';
 import { SequenceCard } from '$components/sequence-card';
 import { SettingTile } from '$components/setting-tile';
 import { useSetting } from '$state/hooks/settings';
-import { settingsAtom, type NotificationDeviceScope } from '$state/settings';
+import {
+  settingsAtom,
+  type NotificationDesktopDelayMinutes,
+  type NotificationDeviceScope,
+} from '$state/settings';
 import { getNotificationState, usePermissionState } from '$hooks/usePermission';
 import { useEmailNotifications } from '$hooks/useEmailNotifications';
 import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
@@ -75,12 +79,20 @@ type BackgroundPushPlatform = NotificationTransportPlatform;
 
 function labelNotificationDeviceScope(scope: NotificationDeviceScope): string {
   switch (scope) {
-    case 'active_client_only':
-      return 'Active client only';
+    case 'desktop_delay':
+      return 'Desktop delay';
     case 'all_clients':
     default:
       return 'All clients';
   }
+}
+
+function labelNotificationDesktopDelayMinutes(
+  delayMinutes: NotificationDesktopDelayMinutes
+): string {
+  if (delayMinutes === 0) return '0 min (Notify all)';
+  if (delayMinutes === 1) return '1 min';
+  return `${delayMinutes} min`;
 }
 
 function getBackgroundPushPlatform(isTauriRuntime: boolean): BackgroundPushPlatform {
@@ -1055,10 +1067,22 @@ export function SystemNotification() {
     settingsAtom,
     'notificationDeviceScope'
   );
+  const [notificationDesktopDelayMinutes, setNotificationDesktopDelayMinutes] = useSetting(
+    settingsAtom,
+    'notificationDesktopDelayMinutes'
+  );
   const notificationDeviceScopeOptions: SettingMenuOption<NotificationDeviceScope>[] = [
     { value: 'all_clients', label: 'All clients' },
-    { value: 'active_client_only', label: 'Active client only' },
+    { value: 'desktop_delay', label: 'Desktop delay' },
   ];
+  const notificationDesktopDelayOptions: SettingMenuOption<`${NotificationDesktopDelayMinutes}`>[] =
+    [
+      { value: '0', label: '0 min (Notify all)' },
+      { value: '1', label: '1 min' },
+      { value: '2', label: '2 min' },
+      { value: '5', label: '5 min' },
+      { value: '10', label: '10 min' },
+    ];
 
   // Describe what the current badge combo actually does so users aren't left guessing.
   const badgeBehaviourSummary = (): string => {
@@ -1142,7 +1166,7 @@ export function SystemNotification() {
             focusId="notification-device-scope"
             description={`Current behavior: ${labelNotificationDeviceScope(
               notificationDeviceScope
-            )}. "Active client only" keeps notifications on the focused open client and suppresses them on other open clients for about two minutes after activity. Closed clients may still notify until reopened.`}
+            )}. "Desktop delay" temporarily holds notifications on other devices after activity on the focused desktop client, while "All clients" lets every device notify immediately.`}
             after={
               <SettingMenuSelector
                 value={notificationDeviceScope}
@@ -1151,6 +1175,28 @@ export function SystemNotification() {
               />
             }
           />
+          {notificationDeviceScope === 'desktop_delay' && (
+            <SettingTile
+              title="Desktop Notification Delay"
+              focusId="desktop-notification-delay"
+              description={`Delay notifications on other devices for ${labelNotificationDesktopDelayMinutes(
+                notificationDesktopDelayMinutes
+              )} after activity on the focused desktop client.`}
+              after={
+                <SettingMenuSelector
+                  value={
+                    String(notificationDesktopDelayMinutes) as `${NotificationDesktopDelayMinutes}`
+                  }
+                  options={notificationDesktopDelayOptions}
+                  onSelect={(value) =>
+                    setNotificationDesktopDelayMinutes(
+                      Number(value) as NotificationDesktopDelayMinutes
+                    )
+                  }
+                />
+              }
+            />
+          )}
         </SequenceCard>
       )}
       <SequenceCard

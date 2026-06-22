@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MatrixClient, MatrixEvent } from '$types/matrix-sdk';
 import { ClientEvent } from '$types/matrix-sdk';
 import { useSetting } from '$state/hooks/settings';
 import {
   settingsAtom,
+  type NotificationDesktopDelayMinutes,
   type NotificationDeviceScope as NotificationDeviceScopeSetting,
 } from '$state/settings';
 import { CustomAccountDataEvent } from '$types/matrix/accountData';
+import { mobileOrTablet } from '$utils/user-agent';
 
 const NOTIFICATION_DEVICE_LEASE_EVENT_TYPE =
   CustomAccountDataEvent.SableNotificationDeviceLease as never;
@@ -32,6 +34,7 @@ export type NotificationDeviceScopeState = {
   activeReason:
     | 'all_clients'
     | 'missing_device_id'
+    | 'delay_disabled'
     | 'no_fresh_lease'
     | 'lease_holder'
     | 'lease_held_elsewhere';
@@ -45,16 +48,17 @@ export function shouldEnableNotificationPusher(
 ): boolean {
   return isVisible
     ? isMobile || isActiveNotificationClient
-    : notificationDeviceScope !== 'active_client_only' || isActiveNotificationClient;
+    : notificationDeviceScope !== 'desktop_delay' || isActiveNotificationClient;
 }
 
 type UseNotificationDeviceScopeOptions = {
   publishLease?: boolean;
 };
 
-const LEASE_DURATION_MS = 2 * 60_000;
 const LEASE_RENEW_MS = 30_000;
 const LEASE_CLOCK_TICK_MS = 15_000;
+const resolveLeaseDurationMs = (delayMinutes: NotificationDesktopDelayMinutes): number =>
+  delayMinutes * 60_000;
 
 const readLeaseContent = (mx: MatrixClient | undefined): NotificationDeviceLease | null => {
   if (!mx || typeof mx.getAccountData !== 'function') return null;
@@ -87,6 +91,10 @@ export function useNotificationDeviceScope(
 ): NotificationDeviceScopeState {
   const shouldPublishLease = options?.publishLease ?? true;
   const [notificationDeviceScope] = useSetting(settingsAtom, 'notificationDeviceScope');
+  const [notificationDesktopDelayMinutes] = useSetting(
+    settingsAtom,
+    'notificationDesktopDelayMinutes'
+  );
   const [lease, setLease] = useState<NotificationDeviceLease | null>(() => readLeaseContent(mx));
   const [isWindowFocused, setIsWindowFocused] = useState<boolean>(() =>
     typeof document === 'undefined' ? false : document.hasFocus()
@@ -98,22 +106,43 @@ export function useNotificationDeviceScope(
 
   const deviceId =
     mx && typeof mx.getDeviceId === 'function' ? (mx.getDeviceId() ?? undefined) : undefined;
-  const scopeEnabled = notificationDeviceScope === 'active_client_only' && !!deviceId;
+  const leaseDurationMs = resolveLeaseDurationMs(notificationDesktopDelayMinutes);
+  const isMobileClient = mobileOrTablet();
+  const desktopDelayEnabled =
+    notificationDeviceScope === 'desktop_delay' && !!deviceId && leaseDurationMs > 0;
+  const canPublishLease = desktopDelayEnabled && !isMobileClient;
   const isVisible = typeof document !== 'undefined' && document.visibilityState === 'visible';
-  const shouldHoldLease = scopeEnabled && isVisible && isWindowFocused;
+  const shouldHoldLease = canPublishLease && isVisible && isWindowFocused;
   const freshLease = isLeaseFresh(lease, now);
   const isThisClientLeaseHolder = !!deviceId && freshLease && lease?.deviceId === deviceId;
-  const isActiveNotificationClient = !scopeEnabled || !freshLease || isThisClientLeaseHolder;
-  const shouldKeepWebPushEnabled = scopeEnabled && isActiveNotificationClient;
-  const activeReason: NotificationDeviceScopeState['activeReason'] = !scopeEnabled
+  const isActiveNotificationClient = !desktopDelayEnabled || !freshLease || isThisClientLeaseHolder;
+  const shouldKeepWebPushEnabled = desktopDelayEnabled && isActiveNotificationClient;
+  const activeReason: NotificationDeviceScopeState['activeReason'] = !desktopDelayEnabled
     ? deviceId
-      ? 'all_clients'
+      ? notificationDeviceScope === 'desktop_delay' && leaseDurationMs === 0
+        ? 'delay_disabled'
+        : 'all_clients'
       : 'missing_device_id'
     : !freshLease
       ? 'no_fresh_lease'
       : isThisClientLeaseHolder
         ? 'lease_holder'
         : 'lease_held_elsewhere';
+
+  const clearLease = useCallback(
+    (currentLease: NotificationDeviceLease | null): void => {
+      if (!mx || !deviceId || typeof mx.setAccountData !== 'function') return;
+
+      setLease(null);
+      broadcastLocalLeaseUpdate(null);
+      const clearedLease = {} as never;
+      mx.setAccountData(NOTIFICATION_DEVICE_LEASE_EVENT_TYPE, clearedLease).catch(() => {
+        setLease(currentLease ?? null);
+        broadcastLocalLeaseUpdate(currentLease ?? null);
+      });
+    },
+    [deviceId, mx]
+  );
 
   useEffect(() => {
     setLease(readLeaseContent(mx));
@@ -150,7 +179,7 @@ export function useNotificationDeviceScope(
     if (
       !shouldPublishLease ||
       !mx ||
-      !scopeEnabled ||
+      !canPublishLease ||
       !deviceId ||
       typeof mx.setAccountData !== 'function'
     ) {
@@ -164,9 +193,14 @@ export function useNotificationDeviceScope(
       const nextNow = Date.now();
       setNow(nextNow);
       const currentLease = leaseRef.current;
+      const leaseDurationChanged =
+        !!currentLease &&
+        Math.abs(currentLease.expiresAt - currentLease.updatedAt - leaseDurationMs) >
+          LEASE_RENEW_MS / 2;
       if (
         currentLease?.deviceId === deviceId &&
-        currentLease.expiresAt - nextNow > LEASE_RENEW_MS / 2
+        currentLease.expiresAt - nextNow > LEASE_RENEW_MS / 2 &&
+        !leaseDurationChanged
       ) {
         return;
       }
@@ -174,7 +208,7 @@ export function useNotificationDeviceScope(
       const nextLease: NotificationDeviceLease = {
         deviceId,
         updatedAt: nextNow,
-        expiresAt: nextNow + LEASE_DURATION_MS,
+        expiresAt: nextNow + leaseDurationMs,
       };
       setLease(nextLease);
       broadcastLocalLeaseUpdate(nextLease);
@@ -192,7 +226,17 @@ export function useNotificationDeviceScope(
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [mx, deviceId, shouldPublishLease, scopeEnabled, shouldHoldLease]);
+  }, [canPublishLease, deviceId, leaseDurationMs, mx, shouldPublishLease, shouldHoldLease]);
+
+  useEffect(() => {
+    if (!shouldPublishLease || !mx || !deviceId || typeof mx.setAccountData !== 'function') {
+      return;
+    }
+    if (desktopDelayEnabled) return;
+    const currentLease = leaseRef.current;
+    if (currentLease?.deviceId !== deviceId) return;
+    clearLease(currentLease);
+  }, [clearLease, desktopDelayEnabled, deviceId, mx, shouldPublishLease]);
 
   useEffect(() => {
     const handleLocalLeaseUpdate = (event: Event) => {

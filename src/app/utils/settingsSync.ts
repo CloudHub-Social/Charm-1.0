@@ -56,6 +56,12 @@ export const deserializeFromSync = (data: unknown, currentSettings: Settings): S
   if (!remote || typeof remote !== 'object' || Array.isArray(remote)) return null;
 
   const merged = { ...currentSettings, ...(remote as Partial<Settings>) };
+  if (
+    (remote as { notificationDeviceScope?: unknown }).notificationDeviceScope ===
+    'active_client_only'
+  ) {
+    merged.notificationDeviceScope = 'desktop_delay';
+  }
   // Always restore non-syncable keys from local state.
   NON_SYNCABLE_KEYS.forEach((key) => {
     (merged as unknown as Record<string, unknown>)[key] = (
