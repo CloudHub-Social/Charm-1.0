@@ -59,6 +59,19 @@ describe('mergePersistedSettings', () => {
     expect(merged.arboriumLightTheme).toBeUndefined();
     expect(merged.arboriumDarkTheme).toBeUndefined();
   });
+
+  it('keeps deployer theme defaults when untouched optional theme fields stay undefined', () => {
+    primeRuntimeSettingsDefaults({ themeId: 'deployer-theme' });
+
+    setSettings({
+      ...getSettings(),
+      twitterEmoji: false,
+    });
+
+    const merged = mergePersistedSettings(localStorage.getItem('settings'), {});
+
+    expect(merged.themeId).toBe('deployer-theme');
+  });
 });
 
 describe('sanitizeSettingsDefaults', () => {

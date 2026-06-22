@@ -468,6 +468,13 @@ function cloneDefaultSettings(): Settings {
   };
 }
 
+function getStorageDefaults(): Settings {
+  return {
+    ...cloneDefaultSettings(),
+    ...runtimeSettingsDefaults,
+  };
+}
+
 function migrateParsedLocalStorage(parsed: Record<string, unknown>): void {
   if (parsed.monochromeMode === true && parsed.saturationLevel === undefined) {
     parsed.saturationLevel = 0;
@@ -722,9 +729,10 @@ export const getSettings = (): Settings =>
 
 export const setSettings = (settings: Settings) => {
   try {
+    const storageDefaults = getStorageDefaults();
     const serialized = { ...settings } as Record<string, unknown>;
     NULLABLE_STORAGE_KEYS.forEach((key) => {
-      if (serialized[key] === undefined) {
+      if (serialized[key] === undefined && storageDefaults[key] !== undefined) {
         serialized[key] = null;
       }
     });
