@@ -299,6 +299,28 @@ describe('useNotificationDeviceScope', () => {
     );
   });
 
+  it('does not loop forever when lease clearing keeps failing', async () => {
+    notificationDeviceScope = 'all_clients';
+    const now = Date.now();
+    const { client } = createMockMatrixClient({
+      deviceId: 'DEVICE_A',
+      updatedAt: now,
+      expiresAt: now + 120_000,
+    });
+    client.setAccountData = vi.fn(async () => {
+      throw new Error('clear failed');
+    }) as never;
+
+    renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledTimes(1);
+  });
+
   it('does not let mobile clients renew desktop-delay leases', async () => {
     notificationDeviceScope = 'desktop_delay';
     mockMobileOrTablet.mockReturnValue(true);
