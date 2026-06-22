@@ -57,6 +57,7 @@ describe('mobile PWA dogfood contract', () => {
   });
 
   it('uses full-screen mobile presentation for room settings and member profile surfaces', () => {
+    const page = readWorkspaceFile('src/app/components/page/Page.tsx');
     const roomSettingsRenderer = readWorkspaceFile(
       'src/app/features/room-settings/RoomSettingsRenderer.tsx'
     );
@@ -86,6 +87,9 @@ describe('mobile PWA dogfood contract', () => {
     );
     expect(spaceSettings).toContain(
       'return isPhoneLayout ? undefined : SpaceSettingsPage.GeneralPage;'
+    );
+    expect(page).toContain(
+      'const isMobile = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();'
     );
     expect(userRoomProfileRenderer).toContain(
       'const isMobile = screenSize === ScreenSize.Mobile || mobileOrTabletLayout();'
