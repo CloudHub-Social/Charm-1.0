@@ -214,6 +214,7 @@ describe('SyncStatus', () => {
       vi.advanceTimersByTime(30_000);
     });
 
+    expect(mx.retryImmediately).toHaveBeenCalledOnce();
     expect(sentry.captureMessage).toHaveBeenCalledWith(
       'Sync remained degraded',
       expect.objectContaining({
@@ -221,6 +222,32 @@ describe('SyncStatus', () => {
         tags: expect.objectContaining({
           sync_state: SyncState.Reconnecting,
           transport: 'classic',
+        }),
+      })
+    );
+  });
+
+  it('does not auto-retry persistent degraded sliding sync', () => {
+    syncDiagnosticsMock.transport = 'sliding';
+    const mx = makeMx(SyncState.Reconnecting);
+    render(<SyncStatus mx={mx} />);
+
+    act(() => {
+      emitSyncState(SyncState.Reconnecting, SyncState.Syncing);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+
+    expect(mx.retryImmediately).not.toHaveBeenCalled();
+    expect(sentry.captureMessage).toHaveBeenCalledWith(
+      'Sync remained degraded',
+      expect.objectContaining({
+        level: 'warning',
+        tags: expect.objectContaining({
+          sync_state: SyncState.Reconnecting,
+          transport: 'sliding',
         }),
       })
     );
