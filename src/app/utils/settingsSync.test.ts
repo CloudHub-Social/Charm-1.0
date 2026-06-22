@@ -87,6 +87,8 @@ describe('serializeForSync', () => {
       themeRemoteManualKind: undefined,
       themeRemoteLightKind: undefined,
       themeRemoteDarkKind: undefined,
+      arboriumLightTheme: undefined,
+      arboriumDarkTheme: undefined,
     };
     const { settings: s } = serializeForSync(settings);
 
@@ -99,6 +101,8 @@ describe('serializeForSync', () => {
     expect(s.themeRemoteManualKind).toBeNull();
     expect(s.themeRemoteLightKind).toBeNull();
     expect(s.themeRemoteDarkKind).toBeNull();
+    expect(s.arboriumLightTheme).toBeNull();
+    expect(s.arboriumDarkTheme).toBeNull();
   });
 
   it('strips all non-syncable keys from the payload', () => {

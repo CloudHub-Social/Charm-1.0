@@ -39,6 +39,8 @@ const CLEARABLE_SYNC_KEYS = [
   'themeRemoteManualKind',
   'themeRemoteLightKind',
   'themeRemoteDarkKind',
+  'arboriumLightTheme',
+  'arboriumDarkTheme',
 ] as const satisfies readonly (keyof Settings)[];
 
 export const SETTINGS_SYNC_VERSION = 1;
