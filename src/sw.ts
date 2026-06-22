@@ -7,9 +7,17 @@ import { precacheAndRoute, cleanupOutdatedCaches, matchPrecache } from 'workbox-
 import { createPushNotifications } from './sw/pushNotification';
 import {
   buildDeclarativeNotificationOptions,
+  extractPushRoomId,
+  extractPushUserId,
   getEncryptedMinimalPushFocusDecision,
+  isCountOnlyReadStatePush,
+  isForegroundSuppressionExemptPushPayload,
   isDeclarativeWebPushPayload,
   isMinimalPushPayload,
+  nextDelayedPushReleaseAt,
+  resolvePushUnreadCount,
+  type DelayedPushQueueEntry,
+  upsertDelayedPushQueueEntry,
 } from './sw/pushRouting';
 import { persistLaunchContext } from './launch-context-persistence';
 import { readPersistedSession } from './sw-session-persistence';
@@ -27,6 +35,7 @@ import {
   buildNotificationBreadcrumb,
   buildNotificationMetricAttributes,
 } from './app/utils/notificationTelemetry';
+import { CustomAccountDataEvent } from './types/matrix/accountData';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -40,7 +49,29 @@ let showMessageContent = false;
 let showEncryptedMessageContent = false;
 let clearNotificationsOnRead = false;
 let focusMode: 'off' | 'focus' | 'dnd' = 'off';
+type NotificationLeaseState = {
+  deviceId?: string;
+  userId?: string;
+  leaseEnforced: boolean;
+  leaseFetchedAt?: number;
+  lease: {
+    deviceId: string;
+    updatedAt: number;
+    expiresAt: number;
+  } | null;
+};
+let notificationLeaseState: NotificationLeaseState = {
+  leaseEnforced: false,
+  lease: null,
+};
 const APP_VISIBLE_HEARTBEAT_MAX_AGE_MS = 20_000;
+const LEASE_REFRESH_MAX_AGE_MS = 15_000;
+const NOTIFICATION_RECHECK_PAGE_LIMIT = 3;
+const NOTIFICATION_RECHECK_PAGE_SIZE = 50;
+const SW_DELAYED_PUSH_QUEUE_CACHE = 'sable-sw-delayed-push-v1';
+const SW_DELAYED_PUSH_QUEUE_URL = '/sw-delayed-push-queue';
+const SW_DELAYED_PUSH_QUEUE_LIMIT = 50;
+let delayedPushFlushTimeoutId: ReturnType<typeof setTimeout> | undefined;
 const { handlePushNotificationPushData } = createPushNotifications(
   self,
   () => ({
@@ -117,6 +148,7 @@ async function persistSettings() {
           showEncryptedMessageContent,
           clearNotificationsOnRead,
           focusMode,
+          notificationLeaseState,
         }),
         { headers: { 'Content-Type': 'application/json' } }
       )
@@ -142,9 +174,349 @@ async function loadPersistedSettings() {
     if (s.focusMode === 'off' || s.focusMode === 'focus' || s.focusMode === 'dnd') {
       focusMode = s.focusMode;
     }
+    if (typeof s.notificationLeaseState === 'object' && s.notificationLeaseState) {
+      const persistedLeaseState = s.notificationLeaseState as {
+        deviceId?: unknown;
+        userId?: unknown;
+        leaseEnforced?: unknown;
+        leaseFetchedAt?: unknown;
+        lease?: {
+          deviceId?: unknown;
+          updatedAt?: unknown;
+          expiresAt?: unknown;
+        } | null;
+      };
+      notificationLeaseState = {
+        deviceId:
+          typeof persistedLeaseState.deviceId === 'string'
+            ? persistedLeaseState.deviceId
+            : undefined,
+        userId:
+          typeof persistedLeaseState.userId === 'string' ? persistedLeaseState.userId : undefined,
+        leaseEnforced: persistedLeaseState.leaseEnforced === true,
+        leaseFetchedAt:
+          typeof persistedLeaseState.leaseFetchedAt === 'number'
+            ? persistedLeaseState.leaseFetchedAt
+            : undefined,
+        lease:
+          persistedLeaseState.lease &&
+          typeof persistedLeaseState.lease.deviceId === 'string' &&
+          typeof persistedLeaseState.lease.updatedAt === 'number' &&
+          typeof persistedLeaseState.lease.expiresAt === 'number'
+            ? {
+                deviceId: persistedLeaseState.lease.deviceId,
+                updatedAt: persistedLeaseState.lease.updatedAt,
+                expiresAt: persistedLeaseState.lease.expiresAt,
+              }
+            : null,
+      };
+    }
   } catch {
     // Ignore — stale or missing cache is fine; we fall back to defaults.
   }
+}
+
+async function loadDelayedPushQueue(): Promise<DelayedPushQueueEntry[]> {
+  try {
+    const cache = await self.caches.open(SW_DELAYED_PUSH_QUEUE_CACHE);
+    const response = await cache.match(SW_DELAYED_PUSH_QUEUE_URL);
+    if (!response) return [];
+    const payload = await response.json();
+    if (!Array.isArray(payload)) return [];
+    return payload.filter((entry): entry is DelayedPushQueueEntry => {
+      if (!entry || typeof entry !== 'object') return false;
+      const queued = entry as DelayedPushQueueEntry;
+      return (
+        typeof queued.releaseAt === 'number' &&
+        typeof queued.queuedAt === 'number' &&
+        queued.payload !== undefined
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function persistDelayedPushQueue(queue: DelayedPushQueueEntry[]): Promise<void> {
+  try {
+    const cache = await self.caches.open(SW_DELAYED_PUSH_QUEUE_CACHE);
+    if (queue.length === 0) {
+      await cache.delete(SW_DELAYED_PUSH_QUEUE_URL);
+      return;
+    }
+    await cache.put(
+      SW_DELAYED_PUSH_QUEUE_URL,
+      new Response(JSON.stringify(queue), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+  } catch {
+    // Ignore — best effort queue persistence only.
+  }
+}
+
+async function queueDelayedPushPayload(pushData: unknown, releaseAt: number): Promise<void> {
+  const queue = await loadDelayedPushQueue();
+  const nextQueue = upsertDelayedPushQueueEntry(queue, pushData, releaseAt, Date.now());
+  await persistDelayedPushQueue(nextQueue.slice(0, SW_DELAYED_PUSH_QUEUE_LIMIT));
+}
+
+async function removeDelayedPushQueueEntriesForUser(userId: string | undefined): Promise<void> {
+  if (!userId) return;
+  const queue = await loadDelayedPushQueue();
+  const nextQueue = queue.filter((entry) => entry.userId !== userId);
+  if (nextQueue.length === queue.length) return;
+  await persistDelayedPushQueue(nextQueue);
+}
+
+async function fetchNotificationLeaseForSession(
+  session: SessionInfo | undefined
+): Promise<NotificationLeaseState['lease'] | null> {
+  if (!session?.userId) return null;
+  const url = `${session.baseUrl}/_matrix/client/v3/user/${encodeURIComponent(
+    session.userId
+  )}/account_data/${encodeURIComponent(CustomAccountDataEvent.SableNotificationDeviceLease)}`;
+  const response = await fetch(url, fetchConfig(session.accessToken));
+  if (!response.ok) return null;
+  const content = (await response.json()) as {
+    deviceId?: unknown;
+    updatedAt?: unknown;
+    expiresAt?: unknown;
+  };
+  return typeof content.deviceId === 'string' &&
+    typeof content.updatedAt === 'number' &&
+    typeof content.expiresAt === 'number'
+    ? {
+        deviceId: content.deviceId,
+        updatedAt: content.updatedAt,
+        expiresAt: content.expiresAt,
+      }
+    : null;
+}
+
+async function refreshNotificationLeaseStateForUser(pushUserId: string | undefined): Promise<void> {
+  if (!pushUserId || !notificationLeaseState.leaseEnforced) return;
+  const now = Date.now();
+  if (
+    notificationLeaseState.userId === pushUserId &&
+    notificationLeaseState.lease &&
+    notificationLeaseState.lease.expiresAt > now &&
+    notificationLeaseState.leaseFetchedAt !== undefined &&
+    now - notificationLeaseState.leaseFetchedAt < LEASE_REFRESH_MAX_AGE_MS
+  ) {
+    return;
+  }
+
+  const session = await loadPersistedSession();
+  if (!session?.userId || session.userId !== pushUserId) return;
+
+  try {
+    const lease = await fetchNotificationLeaseForSession(session);
+    notificationLeaseState = {
+      ...notificationLeaseState,
+      userId: pushUserId,
+      leaseFetchedAt: now,
+      lease,
+    };
+    await persistSettings();
+  } catch {
+    // Best effort refresh only.
+  }
+}
+
+async function handleReadStateOnlyPush(pushData: unknown): Promise<boolean> {
+  const unreadCount = resolvePushUnreadCount(pushData);
+  if (!isCountOnlyReadStatePush(pushData) || unreadCount === undefined || unreadCount > 0) {
+    return false;
+  }
+
+  try {
+    await (self.navigator as unknown as { clearAppBadge?: () => Promise<void> }).clearAppBadge?.();
+    if (clearNotificationsOnRead) {
+      const notifs = await self.registration.getNotifications();
+      notifs.forEach((n) => n.close());
+    }
+  } catch {
+    // Badging API absent — clearing notifications is best effort only.
+  }
+  return true;
+}
+
+async function applyPushBadgeState(pushData: unknown): Promise<void> {
+  try {
+    const declarativeBadge =
+      isDeclarativeWebPushPayload(pushData) && pushData.notification.app_badge !== undefined
+        ? Number(pushData.notification.app_badge)
+        : undefined;
+    if (typeof declarativeBadge === 'number' && Number.isFinite(declarativeBadge)) {
+      if (declarativeBadge <= 0) {
+        await (
+          self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
+        ).clearAppBadge?.();
+      } else {
+        await (
+          self.navigator as unknown as { setAppBadge?: (count: number) => Promise<void> }
+        ).setAppBadge?.(declarativeBadge);
+      }
+      return;
+    }
+
+    const unreadCount = resolvePushUnreadCount(pushData);
+    if (typeof unreadCount === 'number' && Number.isFinite(unreadCount)) {
+      if (unreadCount <= 0) {
+        await (
+          self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
+        ).clearAppBadge?.();
+      } else {
+        await (
+          self.navigator as unknown as { setAppBadge?: (count: number) => Promise<void> }
+        ).setAppBadge?.(unreadCount);
+      }
+      return;
+    }
+
+    await (self.navigator as unknown as { clearAppBadge?: () => Promise<void> }).clearAppBadge?.();
+  } catch {
+    // Badging API absent (Firefox/Gecko) — continue to show the notification.
+  }
+}
+
+async function fetchNotificationsPage(
+  session: SessionInfo,
+  from?: string
+): Promise<{
+  next_token?: unknown;
+  notifications?: Array<{
+    read?: unknown;
+    room_id?: unknown;
+    event?: { event_id?: unknown };
+  }>;
+} | null> {
+  const url = new URL(`${session.baseUrl}/_matrix/client/v3/notifications`);
+  url.searchParams.set('limit', String(NOTIFICATION_RECHECK_PAGE_SIZE));
+  if (from) url.searchParams.set('from', from);
+  const response = await fetch(url.toString(), fetchConfig(session.accessToken));
+  if (!response.ok) return null;
+  return response.json();
+}
+
+async function isDelayedPushStillUnread(entry: DelayedPushQueueEntry): Promise<boolean> {
+  if (!entry.userId || !entry.eventId) return true;
+  const roomId = extractPushRoomId(entry.payload);
+  if (!roomId) return true;
+
+  const session = await loadPersistedSession();
+  if (!session?.userId || session.userId !== entry.userId) return true;
+
+  try {
+    let from: string | undefined;
+    for (let page = 0; page < NOTIFICATION_RECHECK_PAGE_LIMIT; page += 1) {
+      const response = await fetchNotificationsPage(session, from);
+      if (!response) return true;
+      const notifications = Array.isArray(response.notifications) ? response.notifications : [];
+      const match = notifications.find(
+        (notification) =>
+          notification?.room_id === roomId && notification?.event?.event_id === entry.eventId
+      );
+      if (match) return match.read !== true;
+      if (typeof response.next_token !== 'string' || response.next_token.length === 0) break;
+      from = response.next_token;
+    }
+  } catch {
+    return true;
+  }
+
+  return true;
+}
+
+async function deliverPushPayload(
+  pushData: unknown,
+  clients: readonly WindowClient[]
+): Promise<void> {
+  if (isDeclarativeWebPushPayload(pushData)) {
+    const { title, options } = buildDeclarativeNotificationOptions(pushData);
+    await self.registration.showNotification(title, options);
+    await recordPushTelemetry('shown_os', { payload_type: 'declarative' });
+    return;
+  }
+
+  if (isMinimalPushPayload(pushData)) {
+    await handleMinimalPushPayload(pushData.room_id, pushData.event_id, clients);
+    return;
+  }
+
+  await handlePushNotificationPushData(pushData as never);
+  await recordPushTelemetry('shown_os', { payload_type: 'full' });
+}
+
+async function flushDelayedPushQueue(): Promise<'idle' | 'paused_visible' | 'delivered'> {
+  const queue = await loadDelayedPushQueue();
+  if (queue.length === 0) return 'idle';
+
+  const now = Date.now();
+  const due: DelayedPushQueueEntry[] = [];
+  const remaining: DelayedPushQueueEntry[] = [];
+  queue.forEach((entry) => {
+    if (entry.releaseAt <= now) due.push(entry);
+    else remaining.push(entry);
+  });
+  if (due.length === 0) return 'idle';
+
+  const clients = (await self.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  })) as WindowClient[];
+  const hasVisibleClient =
+    (appIsVisible && Date.now() - appVisibleHeartbeatAt <= APP_VISIBLE_HEARTBEAT_MAX_AGE_MS) ||
+    visibleWindowClientCount(clients) > 0;
+  if (hasVisibleClient) {
+    await persistDelayedPushQueue([...due, ...remaining]);
+    return 'paused_visible';
+  }
+
+  const nextQueue = [...remaining];
+  let deliveredAny = false;
+  for (const entry of due) {
+    try {
+      await refreshNotificationLeaseStateForUser(entry.userId);
+      if (!(await isDelayedPushStillUnread(entry))) continue;
+      if (await handleReadStateOnlyPush(entry.payload)) continue;
+      await applyPushBadgeState(entry.payload);
+      await deliverPushPayload(entry.payload, clients);
+      deliveredAny = true;
+    } catch {
+      nextQueue.push(entry);
+    }
+  }
+
+  await persistDelayedPushQueue(
+    nextQueue.toSorted((left, right) => {
+      if (left.releaseAt !== right.releaseAt) return left.releaseAt - right.releaseAt;
+      return left.queuedAt - right.queuedAt;
+    })
+  );
+  return deliveredAny ? 'delivered' : 'idle';
+}
+
+function scheduleDelayedPushQueueFlush(): void {
+  if (delayedPushFlushTimeoutId) {
+    clearTimeout(delayedPushFlushTimeoutId);
+    delayedPushFlushTimeoutId = undefined;
+  }
+
+  void loadDelayedPushQueue().then((queue) => {
+    const nextReleaseAt = nextDelayedPushReleaseAt(queue);
+    if (nextReleaseAt === undefined) return;
+    delayedPushFlushTimeoutId = setTimeout(
+      () => {
+        delayedPushFlushTimeoutId = undefined;
+        void flushDelayedPushQueue().then((result) => {
+          if (result !== 'paused_visible') scheduleDelayedPushQueueFlush();
+        });
+      },
+      Math.max(nextReleaseAt - Date.now(), 0) + 50
+    );
+  });
 }
 
 async function trimCacheEntries(cacheName: string, maxEntries: number): Promise<void> {
@@ -289,6 +661,7 @@ async function setSession(
     preloadedSession = undefined;
     console.debug('[SW] setSession: removed', clientId);
     syncPersistedSessionFromLiveSessions().catch(() => undefined);
+    removeDelayedPushQueueEntriesForUser(removedSession?.userId).catch(() => undefined);
     if (shouldClearMediaCacheAfterSessionRemoval(removedSession?.accessToken, sessions.values())) {
       self.caches.delete(SW_MEDIA_CACHE).catch(() => undefined);
     }
@@ -1205,6 +1578,20 @@ async function handleMinimalPushPayload(
   }
 }
 
+async function isMinimalForegroundSuppressionExemptPushPayload(
+  pushData: unknown,
+  session: SessionInfo | undefined
+): Promise<boolean> {
+  if (!isMinimalPushPayload(pushData) || !session) return false;
+  const rawEvent = await fetchRawEvent(
+    session.baseUrl,
+    session.accessToken,
+    pushData.room_id,
+    pushData.event_id
+  );
+  return isForegroundSuppressionExemptPushPayload(rawEvent);
+}
+
 self.addEventListener('install', (event: ExtendableEvent) => {
   event.waitUntil(
     Promise.all([
@@ -1317,6 +1704,52 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
       appIsVisible = (data as { visible: boolean }).visible;
       appVisibleHeartbeatAt = appIsVisible ? Date.now() : 0;
     }
+    notificationLeaseState = {
+      deviceId:
+        typeof (data as { deviceId?: unknown }).deviceId === 'string'
+          ? (data as { deviceId: string }).deviceId
+          : notificationLeaseState.deviceId,
+      userId:
+        typeof (data as { userId?: unknown }).userId === 'string'
+          ? (data as { userId: string }).userId
+          : notificationLeaseState.userId,
+      leaseEnforced:
+        typeof (data as { leaseEnforced?: unknown }).leaseEnforced === 'boolean'
+          ? (data as { leaseEnforced: boolean }).leaseEnforced
+          : notificationLeaseState.leaseEnforced,
+      leaseFetchedAt: Date.now(),
+      lease: (() => {
+        const lease = (data as { lease?: unknown }).lease;
+        if (lease === undefined) return notificationLeaseState.lease;
+        if (lease === null) return null;
+        if (!lease || typeof lease !== 'object') return notificationLeaseState.lease;
+        const nextLease = lease as {
+          deviceId?: unknown;
+          updatedAt?: unknown;
+          expiresAt?: unknown;
+        };
+        return typeof nextLease.deviceId === 'string' &&
+          typeof nextLease.updatedAt === 'number' &&
+          typeof nextLease.expiresAt === 'number'
+          ? {
+              deviceId: nextLease.deviceId,
+              updatedAt: nextLease.updatedAt,
+              expiresAt: nextLease.expiresAt,
+            }
+          : notificationLeaseState.lease;
+      })(),
+    };
+    event.waitUntil(
+      (async () => {
+        await persistSettings();
+        if (appIsVisible) {
+          scheduleDelayedPushQueueFlush();
+          return;
+        }
+        await flushDelayedPushQueue();
+        scheduleDelayedPushQueueFlush();
+      })()
+    );
   }
   if (type === 'CLAIM_CLIENTS') {
     // Sent by the page on pageshow[persisted] or visibilitychange→visible when it
@@ -1873,127 +2306,97 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 const onPushNotification = async (event: PushEvent) => {
   if (!event?.data) return;
 
+  const pushData = event.data.json();
+
   // The SW may have been restarted by the OS (iOS is aggressive about this),
   // so in-memory settings would be at their defaults.  Reload from cache and
   // match active clients in parallel — they are independent operations.
-  const [, , clients] = await Promise.all([
+  const [, session, clients] = await Promise.all([
     loadPersistedSettings(),
     loadPersistedSession(),
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }),
   ]);
 
-  const focusedClientCount = focusedWindowClientCount(clients);
-  const browserVisibleClientCount = visibleWindowClientCount(clients);
-  const hasRecentAppVisibilityHeartbeat =
-    appIsVisible && Date.now() - appVisibleHeartbeatAt <= APP_VISIBLE_HEARTBEAT_MAX_AGE_MS;
-  const hasVisibleClient = hasRecentAppVisibilityHeartbeat || browserVisibleClientCount > 0;
-
-  console.debug(
-    '[SW push] appIsVisible:',
-    appIsVisible,
-    '| hasRecentAppVisibilityHeartbeat:',
-    hasRecentAppVisibilityHeartbeat,
-    '| focusedClientCount:',
-    focusedClientCount,
-    '| browserVisibleClientCount:',
-    browserVisibleClientCount,
-    '| clients:',
-    clients.map((c) => ({
-      url: c.url,
-      visibility: c.visibilityState,
-      focused: c.focused,
-    }))
-  );
-  console.debug('[SW push] hasVisibleClient:', hasVisibleClient);
-
-  if (hasVisibleClient) {
-    console.debug('[SW push] suppressing OS notification — app is visible');
-    return;
-  }
-
-  const pushData = event.data.json();
-  const payloadType = pushTelemetryPayloadType(pushData);
-  console.debug('[SW push] raw payload:', JSON.stringify(pushData, null, 2));
-
-  // Track push notification arrival
-  await recordPushTelemetry('received', {
-    has_clients: clients.length > 0,
-    focused_client_count: focusedClientCount,
-    browser_visible_client_count: browserVisibleClientCount,
-    payload_type: payloadType,
-  });
-  postSentryMetric('sable.push.received', 1, {
-    has_clients: clients.length > 0,
-    focused_client_count: focusedClientCount,
-    browser_visible_client_count: browserVisibleClientCount,
-    payload_type: payloadType,
-  }).catch(() => undefined);
-  postSentryBreadcrumb('notification.push', 'Push received by service worker', 'info', {
-    clientCount: clients.length,
-    focusedClientCount,
-    browserVisibleClientCount,
-    payloadType,
-  }).catch(() => undefined);
-
   try {
-    const declarativeBadge =
-      isDeclarativeWebPushPayload(pushData) && pushData.notification.app_badge !== undefined
-        ? Number(pushData.notification.app_badge)
-        : undefined;
-    if (typeof declarativeBadge === 'number' && Number.isFinite(declarativeBadge)) {
-      if (declarativeBadge <= 0) {
-        await (
-          self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
-        ).clearAppBadge?.();
-      } else {
-        await (
-          self.navigator as unknown as { setAppBadge?: (count: number) => Promise<void> }
-        ).setAppBadge?.(declarativeBadge);
-      }
-    } else if (typeof pushData?.unread === 'number') {
-      if (pushData.unread === 0) {
-        // All messages read elsewhere — clear the home-screen badge and,
-        // if the user opted in, dismiss outstanding lock-screen notifications.
-        await (
-          self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
-        ).clearAppBadge?.();
-        if (clearNotificationsOnRead) {
-          const notifs = await self.registration.getNotifications();
-          notifs.forEach((n) => n.close());
-        }
-        return;
-      }
-      // unread > 0: update the PWA badge with the current count.
-      await (
-        self.navigator as unknown as { setAppBadge?: (count: number) => Promise<void> }
-      ).setAppBadge?.(pushData.unread);
-    } else {
-      // No unread field in payload — clear badge to avoid a stale count.
-      await (
-        self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
-      ).clearAppBadge?.();
+    const focusedClientCount = focusedWindowClientCount(clients);
+    const browserVisibleClientCount = visibleWindowClientCount(clients);
+    const hasRecentAppVisibilityHeartbeat =
+      appIsVisible && Date.now() - appVisibleHeartbeatAt <= APP_VISIBLE_HEARTBEAT_MAX_AGE_MS;
+    const hasVisibleClient = hasRecentAppVisibilityHeartbeat || browserVisibleClientCount > 0;
+    const pushUserId = extractPushUserId(pushData) ?? session?.userId;
+    await refreshNotificationLeaseStateForUser(pushUserId);
+    if (await handleReadStateOnlyPush(pushData)) return;
+
+    const hasFreshLeaseElsewhere =
+      notificationLeaseState.leaseEnforced &&
+      notificationLeaseState.userId === pushUserId &&
+      !!notificationLeaseState.deviceId &&
+      !!notificationLeaseState.lease &&
+      notificationLeaseState.lease.expiresAt > Date.now() &&
+      notificationLeaseState.lease.deviceId !== notificationLeaseState.deviceId;
+    const exemptFromDelay =
+      isForegroundSuppressionExemptPushPayload(pushData) ||
+      (await isMinimalForegroundSuppressionExemptPushPayload(pushData, session));
+
+    console.debug(
+      '[SW push] appIsVisible:',
+      appIsVisible,
+      '| hasRecentAppVisibilityHeartbeat:',
+      hasRecentAppVisibilityHeartbeat,
+      '| focusedClientCount:',
+      focusedClientCount,
+      '| browserVisibleClientCount:',
+      browserVisibleClientCount,
+      '| hasFreshLeaseElsewhere:',
+      hasFreshLeaseElsewhere,
+      '| clients:',
+      clients.map((c) => ({
+        url: c.url,
+        visibility: c.visibilityState,
+        focused: c.focused,
+      }))
+    );
+    console.debug('[SW push] hasVisibleClient:', hasVisibleClient);
+
+    if ((hasVisibleClient || hasFreshLeaseElsewhere) && !exemptFromDelay) {
+      await queueDelayedPushPayload(
+        pushData,
+        hasFreshLeaseElsewhere && notificationLeaseState.lease
+          ? notificationLeaseState.lease.expiresAt
+          : Date.now() + APP_VISIBLE_HEARTBEAT_MAX_AGE_MS
+      );
+      scheduleDelayedPushQueueFlush();
+      console.debug('[SW push] queueing notification until suppression clears');
+      return;
     }
-  } catch {
-    // Badging API absent (Firefox/Gecko) — continue to show the notification.
-  }
 
-  if (isDeclarativeWebPushPayload(pushData)) {
-    const { title, options } = buildDeclarativeNotificationOptions(pushData);
-    await self.registration.showNotification(title, options);
-    await recordPushTelemetry('shown_os', { payload_type: 'declarative' });
-    return;
-  }
+    const payloadType = pushTelemetryPayloadType(pushData);
+    console.debug('[SW push] raw payload:', JSON.stringify(pushData, null, 2));
 
-  // event_id_only format: fetch the event ourselves and (for E2EE rooms) try
-  // to relay decryption to an open app tab.
-  if (isMinimalPushPayload(pushData)) {
-    console.debug('[SW push] minimal payload detected — fetching event', pushData.event_id);
-    await handleMinimalPushPayload(pushData.room_id, pushData.event_id, clients);
-    return;
-  }
+    await recordPushTelemetry('received', {
+      has_clients: clients.length > 0,
+      focused_client_count: focusedClientCount,
+      browser_visible_client_count: browserVisibleClientCount,
+      payload_type: payloadType,
+    });
+    postSentryMetric('sable.push.received', 1, {
+      has_clients: clients.length > 0,
+      focused_client_count: focusedClientCount,
+      browser_visible_client_count: browserVisibleClientCount,
+      payload_type: payloadType,
+    }).catch(() => undefined);
+    postSentryBreadcrumb('notification.push', 'Push received by service worker', 'info', {
+      clientCount: clients.length,
+      focusedClientCount,
+      browserVisibleClientCount,
+      payloadType,
+    }).catch(() => undefined);
 
-  await handlePushNotificationPushData(pushData);
-  await recordPushTelemetry('shown_os', { payload_type: 'full' });
+    await applyPushBadgeState(pushData);
+    await deliverPushPayload(pushData, clients);
+  } finally {
+    scheduleDelayedPushQueueFlush();
+  }
 };
 
 // ---------------------------------------------------------------------------

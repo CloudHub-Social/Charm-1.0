@@ -1121,6 +1121,7 @@ export function HandleNotificationClick() {
 }
 
 function SyncNotificationSettingsWithServiceWorker() {
+  const mx = useMatrixClient();
   const [showMessageContent] = useSetting(settingsAtom, 'showMessageContentInNotifications');
   const [showEncryptedMessageContent] = useSetting(
     settingsAtom,
@@ -1128,6 +1129,10 @@ function SyncNotificationSettingsWithServiceWorker() {
   );
   const [clearNotificationsOnRead] = useSetting(settingsAtom, 'clearNotificationsOnRead');
   const [focusMode] = useSetting(settingsAtom, 'focusMode');
+  const [notificationDeviceScope] = useSetting(settingsAtom, 'notificationDeviceScope');
+  const { deviceId, lease } = useNotificationDeviceScope(mx, {
+    publishLease: false,
+  });
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return undefined;
@@ -1136,7 +1141,14 @@ function SyncNotificationSettingsWithServiceWorker() {
 
     const postVisibility = () => {
       const visible = document.visibilityState === 'visible';
-      const payload = { type: 'setAppVisible', visible };
+      const payload = {
+        type: 'setAppVisible',
+        visible,
+        deviceId,
+        userId: mx.getUserId() ?? undefined,
+        leaseEnforced: notificationDeviceScope === 'active_client_only',
+        lease,
+      };
 
       navigator.serviceWorker.controller?.postMessage(payload);
       navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage(payload));
@@ -1182,7 +1194,7 @@ function SyncNotificationSettingsWithServiceWorker() {
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('pageshow', handlePageShow);
     };
-  }, []);
+  }, [deviceId, lease, mx, notificationDeviceScope]);
 
   useEffect(() => {
     if (!('serviceWorker' in navigator) || isTauri()) return;

@@ -37,6 +37,14 @@ export function isDeclarativeWebPushPayload(data: unknown): data is DeclarativeW
 
 export type EncryptedMinimalPushFocusDecision = 'ignore_stale_focus' | 'no_focused_client';
 
+export type DelayedPushQueueEntry = {
+  payload: unknown;
+  releaseAt: number;
+  queuedAt: number;
+  userId?: string;
+  eventId?: string;
+};
+
 export function getEncryptedMinimalPushFocusDecision(
   focusedClientCount: number
 ): EncryptedMinimalPushFocusDecision {
@@ -52,6 +60,122 @@ export function shouldSuppressOsPushForForegroundState(
   state: ForegroundPushState | undefined
 ): boolean {
   return state?.visibilityState === 'visible' && state.focused === true;
+}
+
+export function extractPushEventId(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  const payload = data as {
+    event_id?: unknown;
+    notification?: { event_id?: unknown; data?: { event_id?: unknown } };
+    data?: { event_id?: unknown };
+  };
+  if (typeof payload.event_id === 'string') return payload.event_id;
+  if (typeof payload.notification?.event_id === 'string') return payload.notification.event_id;
+  if (typeof payload.notification?.data?.event_id === 'string') {
+    return payload.notification.data.event_id;
+  }
+  if (typeof payload.data?.event_id === 'string') return payload.data.event_id;
+  return undefined;
+}
+
+export function extractPushUserId(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  const payload = data as {
+    user_id?: unknown;
+    notification?: { user_id?: unknown; data?: { user_id?: unknown } };
+    data?: { user_id?: unknown };
+  };
+  if (typeof payload.user_id === 'string') return payload.user_id;
+  if (typeof payload.notification?.user_id === 'string') return payload.notification.user_id;
+  if (typeof payload.notification?.data?.user_id === 'string')
+    return payload.notification.data.user_id;
+  if (typeof payload.data?.user_id === 'string') return payload.data.user_id;
+  return undefined;
+}
+
+export function extractPushRoomId(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  const payload = data as {
+    room_id?: unknown;
+    notification?: { room_id?: unknown; data?: { room_id?: unknown } };
+    data?: { room_id?: unknown };
+  };
+  if (typeof payload.room_id === 'string') return payload.room_id;
+  if (typeof payload.notification?.room_id === 'string') return payload.notification.room_id;
+  if (typeof payload.notification?.data?.room_id === 'string')
+    return payload.notification.data.room_id;
+  if (typeof payload.data?.room_id === 'string') return payload.data.room_id;
+  return undefined;
+}
+
+export function resolvePushUnreadCount(data: unknown): number | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  const payload = data as {
+    unread?: unknown;
+    counts?: { unread?: unknown };
+    notification?: { app_badge?: unknown; data?: { unread?: unknown } };
+    data?: { unread?: unknown };
+  };
+  if (typeof payload.unread === 'number' && Number.isFinite(payload.unread)) return payload.unread;
+  if (typeof payload.counts?.unread === 'number' && Number.isFinite(payload.counts.unread)) {
+    return payload.counts.unread;
+  }
+  if (
+    typeof payload.notification?.data?.unread === 'number' &&
+    Number.isFinite(payload.notification.data.unread)
+  ) {
+    return payload.notification.data.unread;
+  }
+  if (typeof payload.data?.unread === 'number' && Number.isFinite(payload.data.unread)) {
+    return payload.data.unread;
+  }
+  if (
+    typeof payload.notification?.app_badge === 'number' &&
+    Number.isFinite(payload.notification.app_badge)
+  ) {
+    return payload.notification.app_badge;
+  }
+  return undefined;
+}
+
+export function isCountOnlyReadStatePush(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+  if (isDeclarativeWebPushPayload(data) || isMinimalPushPayload(data)) return false;
+  return extractPushEventId(data) === undefined && !isForegroundSuppressionExemptPushPayload(data);
+}
+
+export function upsertDelayedPushQueueEntry(
+  queue: DelayedPushQueueEntry[],
+  payload: unknown,
+  releaseAt: number,
+  queuedAt: number
+): DelayedPushQueueEntry[] {
+  const eventId = extractPushEventId(payload);
+  const userId = extractPushUserId(payload);
+  const nextQueue = queue.filter(
+    (entry) =>
+      !(eventId && entry.eventId === eventId) &&
+      !(JSON.stringify(entry.payload) === JSON.stringify(payload))
+  );
+  nextQueue.push({
+    payload,
+    releaseAt,
+    queuedAt,
+    userId,
+    eventId,
+  });
+  nextQueue.sort((left, right) => {
+    if (left.releaseAt !== right.releaseAt) return left.releaseAt - right.releaseAt;
+    return left.queuedAt - right.queuedAt;
+  });
+  return nextQueue;
+}
+
+export function nextDelayedPushReleaseAt(queue: DelayedPushQueueEntry[]): number | undefined {
+  return queue.reduce<number | undefined>((earliest, entry) => {
+    if (earliest === undefined || entry.releaseAt < earliest) return entry.releaseAt;
+    return earliest;
+  }, undefined);
 }
 
 function resolvePushNotificationData(data: unknown): Record<string, unknown> | undefined {

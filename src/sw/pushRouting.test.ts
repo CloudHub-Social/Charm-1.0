@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDeclarativeNotificationOptions,
+  extractPushEventId,
+  extractPushRoomId,
+  extractPushUserId,
   getEncryptedMinimalPushFocusDecision,
+  isCountOnlyReadStatePush,
   isForegroundSuppressionExemptPushPayload,
   isDeclarativeWebPushPayload,
   isMinimalPushPayload,
+  nextDelayedPushReleaseAt,
+  resolvePushUnreadCount,
   shouldSuppressOsPushForForegroundState,
+  upsertDelayedPushQueueEntry,
 } from './pushRouting';
 
 describe('service worker push routing helpers', () => {
@@ -92,5 +99,67 @@ describe('service worker push routing helpers', () => {
         content: { body: 'hello' },
       })
     ).toBe(false);
+  });
+
+  it('extracts nested push identifiers across payload shapes', () => {
+    const payload = {
+      web_push: 8030,
+      notification: {
+        title: 'Charm',
+        data: {
+          room_id: '!room:example',
+          event_id: '$event',
+          user_id: '@alice:example',
+        },
+      },
+    } as const;
+
+    expect(extractPushRoomId(payload)).toBe('!room:example');
+    expect(extractPushEventId(payload)).toBe('$event');
+    expect(extractPushUserId(payload)).toBe('@alice:example');
+  });
+
+  it('detects unread-count-only pushes but excludes actionable call/invite payloads', () => {
+    expect(isCountOnlyReadStatePush({ unread: 0, room_id: '!room:example' })).toBe(true);
+    expect(resolvePushUnreadCount({ counts: { unread: 3 } })).toBe(3);
+    expect(
+      isCountOnlyReadStatePush({
+        unread: 1,
+        type: 'org.matrix.msc4075.call.notify',
+        content: { notification_type: 'ring' },
+      })
+    ).toBe(false);
+    expect(
+      isCountOnlyReadStatePush({
+        unread: 1,
+        type: 'm.room.member',
+        content: { membership: 'invite' },
+      })
+    ).toBe(false);
+  });
+
+  it('deduplicates and orders delayed push queue entries deterministically', () => {
+    const queue = upsertDelayedPushQueueEntry([], { event_id: '$late', user_id: '@a:hs' }, 30, 3);
+    const next = upsertDelayedPushQueueEntry(
+      queue,
+      { event_id: '$early', user_id: '@a:hs' },
+      10,
+      1
+    );
+    const deduped = upsertDelayedPushQueueEntry(
+      next,
+      { event_id: '$late', user_id: '@a:hs', room_id: '!room:hs' },
+      20,
+      2
+    );
+
+    expect(deduped.map((entry) => entry.eventId)).toEqual(['$early', '$late']);
+    expect(deduped[1]).toMatchObject({
+      eventId: '$late',
+      releaseAt: 20,
+      queuedAt: 2,
+      userId: '@a:hs',
+    });
+    expect(nextDelayedPushReleaseAt(deduped)).toBe(10);
   });
 });
