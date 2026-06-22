@@ -1422,6 +1422,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
           const sentImagePacksSnapshot = JSON.stringify(imagePacksUsedRef.current.toJSON());
           setSendError(undefined);
+          resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot);
           debugLog.info('message', 'Sending message', {
             roomId,
             msgtype: content.msgtype,
@@ -1434,7 +1435,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               roomId,
               threadRootId: threadRootId ?? undefined,
             });
-            resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot);
             debugLog.info('message', 'Message sent successfully', {
               roomId,
               eventId: res.event_id,

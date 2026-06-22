@@ -17,6 +17,19 @@ describe('mobile PWA dogfood contract', () => {
     expect(roomInput).toContain('onMouseDown={handleMobilePreLift}');
   });
 
+  it('clears the composer before awaiting the immediate send path', () => {
+    const roomInput = readWorkspaceFile('src/app/features/room/RoomInput.tsx');
+
+    const resetIndex = roomInput.indexOf(
+      'resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot);'
+    );
+    const sendIndex = roomInput.indexOf('const res = await sendImmediateMessage({');
+
+    expect(resetIndex).toBeGreaterThan(-1);
+    expect(sendIndex).toBeGreaterThan(-1);
+    expect(resetIndex).toBeLessThan(sendIndex);
+  });
+
   it('closes the mobile keyboard before opening composer overlays', () => {
     const roomInput = readWorkspaceFile('src/app/features/room/RoomInput.tsx');
 
