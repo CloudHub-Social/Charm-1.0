@@ -164,6 +164,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
     const rowRef = useRef<HTMLDivElement>(null);
     const beforeRef = useRef<HTMLDivElement>(null);
     const afterRef = useRef<HTMLDivElement>(null);
+    const footerAfterRef = useRef<HTMLDivElement>(null);
     const textMeasurerRef = useRef<HTMLDivElement | null>(null);
     const measurementCacheRef = useRef<MultilineMeasurementCache | null>(null);
     const multilineMeasureFrameRef = useRef<number | null>(null);
@@ -212,11 +213,17 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
           const computedStyle = getComputedStyle(editable);
           const beforeWidth = beforeRef.current?.offsetWidth ?? 0;
           const inlineAfterWidth = afterRef.current?.offsetWidth ?? 0;
+          const footerAfterWidth = footerAfterRef.current?.offsetWidth ?? 0;
           if (inlineAfterWidth > 0) {
             inlineAfterWidthRef.current = inlineAfterWidth;
           }
+          if (footerAfterWidth > 0) {
+            inlineAfterWidthRef.current = footerAfterWidth;
+          }
           const afterWidth =
-            inlineAfterWidth || (showAfterInFooter ? inlineAfterWidthRef.current : 0);
+            inlineAfterWidth ||
+            footerAfterWidth ||
+            (showAfterInFooter ? inlineAfterWidthRef.current : 0);
           const rowSingleLineWidth = row.offsetWidth - beforeWidth - afterWidth;
           const isRenderedSingleLine = !layoutIsMultiline;
 
@@ -397,7 +404,12 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
       const observer = new ResizeObserver(() => {
         queueMultilineMeasurement();
       });
-      const observedElements = [rowRef.current, beforeRef.current, afterRef.current].filter(
+      const observedElements = [
+        rowRef.current,
+        beforeRef.current,
+        afterRef.current,
+        footerAfterRef.current,
+      ].filter(
         (element): element is HTMLDivElement => element !== null
       );
 
@@ -584,6 +596,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
             )}
             {showAfterInFooter && (
               <Box
+                ref={footerAfterRef}
                 className={css.EditorFooterAfterMultiline}
                 alignItems="Center"
                 justifyContent="End"
