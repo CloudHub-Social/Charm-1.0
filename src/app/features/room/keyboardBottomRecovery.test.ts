@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   didKeyboardJustClose,
+  didKeyboardJustOpen,
   isKeyboardBottomSessionScrollKeyTarget,
   shouldRepinBottomAfterKeyboardClose,
   shouldClearKeyboardBottomSessionOnUserIntent,
@@ -41,6 +42,12 @@ describe('keyboardBottomRecovery', () => {
     expect(shouldRepinBottomAfterKeyboardClose(true, true)).toBe(true);
     expect(shouldRepinBottomAfterKeyboardClose(true, false)).toBe(false);
     expect(shouldRepinBottomAfterKeyboardClose(false, true)).toBe(false);
+  });
+
+  it('detects keyboard-open edges from render-time visibility state', () => {
+    expect(didKeyboardJustOpen(true, false)).toBe(true);
+    expect(didKeyboardJustOpen(true, true)).toBe(false);
+    expect(didKeyboardJustOpen(false, false)).toBe(false);
   });
 
   it('keeps tap-to-dismiss from clearing the keyboard bottom session', () => {

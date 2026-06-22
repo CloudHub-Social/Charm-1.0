@@ -89,6 +89,7 @@ import { completeRoomTimelineRender } from '$utils/perfTelemetry';
 import { mobileOrTabletLayout } from '$utils/user-agent';
 import {
   didKeyboardJustClose,
+  didKeyboardJustOpen,
   isKeyboardBottomSessionScrollKeyTarget,
   shouldRepinBottomAfterKeyboardClose,
   shouldClearKeyboardBottomSessionOnUserIntent,
@@ -273,6 +274,7 @@ export function RoomTimeline({
   const prevKeyboardHeightRef = useRef(0);
   const keyboardVisibleRef = useRef(isKeyboardVisible);
   keyboardVisibleRef.current = isKeyboardVisible;
+  const renderKeyboardVisibleRef = useRef(isKeyboardVisible);
   const keyboardHeightRef = useRef(keyboardHeight);
   keyboardHeightRef.current = keyboardHeight;
   const lastKeyboardCloseTimeRef = useRef(0);
@@ -1155,9 +1157,10 @@ export function RoomTimeline({
   }, [eventId, room.roomId]);
 
   useEffect(() => {
-    if (isKeyboardVisible && !prevKeyboardVisibleRef.current) {
+    if (didKeyboardJustOpen(isKeyboardVisible, renderKeyboardVisibleRef.current)) {
       keyboardSessionBottomPinnedRef.current = atBottomRef.current;
     }
+    renderKeyboardVisibleRef.current = isKeyboardVisible;
   }, [isKeyboardVisible]);
 
   useEffect(() => {
