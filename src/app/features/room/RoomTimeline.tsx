@@ -87,6 +87,10 @@ import {
 import { useTimelineEventRenderer } from '$hooks/timeline/useTimelineEventRenderer';
 import { completeRoomTimelineRender } from '$utils/perfTelemetry';
 import { mobileOrTabletLayout } from '$utils/user-agent';
+import {
+  didKeyboardJustClose,
+  shouldRepinBottomAfterKeyboardClose,
+} from './keyboardBottomRecovery';
 import * as css from './RoomTimeline.css';
 
 const log = createLogger('RoomTimeline');
@@ -266,6 +270,7 @@ export function RoomTimeline({
   const prevKeyboardVisibleRef = useRef(false);
   const prevKeyboardHeightRef = useRef(0);
   const lastKeyboardCloseTimeRef = useRef(0);
+  const keyboardSessionBottomPinnedRef = useRef(false);
   const settingsLinkBaseUrl = useSettingsLinkBaseUrl();
   const openUserRoomProfile = useOpenUserRoomProfile();
   const optionalSpace = useSpaceOptionally();
@@ -1147,21 +1152,39 @@ export function RoomTimeline({
       const atBottom = atBottomRef.current;
       const changed = newHeight !== prev;
       const heightDelta = newHeight - prev;
+      const keyboardJustOpened = !prevKeyboardVisibleRef.current && isKeyboardVisible;
 
-      // Detect if this viewport expansion is from keyboard closing.
-      // If the viewport grew by roughly the keyboard height that just disappeared,
-      // record the time so handleVListScroll can use an extended settle window
-      // (500ms instead of 250ms) to fully suppress the jump button during the
-      // keyboard close animation.
-      const keyboardJustClosed =
-        prevKeyboardVisibleRef.current &&
-        !isKeyboardVisible &&
-        heightDelta > 0 &&
-        prevKeyboardHeightRef.current > 0 &&
-        Math.abs(heightDelta - prevKeyboardHeightRef.current) < 50;
+      if (keyboardJustOpened) {
+        keyboardSessionBottomPinnedRef.current = atBottom;
+      }
+
+      const keyboardJustClosed = didKeyboardJustClose({
+        heightDelta,
+        isKeyboardVisible,
+        prevKeyboardHeight: prevKeyboardHeightRef.current,
+        prevKeyboardVisible: prevKeyboardVisibleRef.current,
+      });
 
       if (keyboardJustClosed) {
         lastKeyboardCloseTimeRef.current = Date.now();
+      }
+
+      if (
+        shouldRepinBottomAfterKeyboardClose(
+          keyboardJustClosed,
+          keyboardSessionBottomPinnedRef.current
+        )
+      ) {
+        keyboardSessionBottomPinnedRef.current = false;
+        setAtBottom(true);
+        requestAnimationFrame(() => {
+          const vl = vListRef.current;
+          if (!vl) return;
+          lastProgrammaticBottomPinAtRef.current = Date.now();
+          vl.scrollTo(vl.scrollSize);
+        });
+      } else if (keyboardJustClosed) {
+        keyboardSessionBottomPinnedRef.current = false;
       }
 
       // Handle both viewport shrinking (keyboard open) and expanding (keyboard close)
@@ -1767,6 +1790,9 @@ export function RoomTimeline({
 
     const markUserScrollIntent = () => {
       userScrollIntentAtRef.current = Date.now();
+      if (isKeyboardVisible) {
+        keyboardSessionBottomPinnedRef.current = false;
+      }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1794,7 +1820,7 @@ export function RoomTimeline({
       el.removeEventListener('pointerdown', markUserScrollIntent);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, []);
+  }, [isKeyboardVisible]);
 
   // Recovery: if the 80 ms initial-scroll timer fired while processedEvents was
   // empty (timeline was mid-reset), scroll to bottom and reveal the timeline once
