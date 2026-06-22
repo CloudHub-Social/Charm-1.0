@@ -499,6 +499,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [hour24Clock] = useSetting(settingsAtom, 'hour24Clock');
     const setServerMaxDelayMs = useSetAtom(serverMaxDelayMsAtom);
     const [sendError, setSendError] = useState<string | undefined>();
+    const [isSending, setIsSending] = useState(false);
     const isEncrypted = room.hasEncryptionStateEvent();
 
     const { triggerPreLift } = useKeyboardHeight();
@@ -907,6 +908,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     );
 
     const submit = useCallback(async () => {
+      if (isSending) return;
+
       uploadBoardHandlers.current?.handleSend();
 
       const commandName = getBeginCommand(editor);
@@ -1329,7 +1332,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         }
       } else {
         const msgSendStart = performance.now();
+        const sentEditorSnapshot = JSON.stringify(editor.children);
         setSendError(undefined);
+        setIsSending(true);
         debugLog.info('message', 'Sending message', {
           roomId,
           msgtype: content.msgtype,
@@ -1342,7 +1347,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           threadRootId: threadRootId ?? undefined,
         })
           .then((res: { event_id: string }) => {
-            resetInput();
+            if (JSON.stringify(editor.children) === sentEditorSnapshot) {
+              resetInput();
+            }
             debugLog.info('message', 'Message sent successfully', {
               roomId,
               eventId: res.event_id,
@@ -1363,9 +1370,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               attributes: { encrypted: String(isEncrypted) },
             });
             log.error('failed to send message', { roomId }, error);
+          })
+          .finally(() => {
+            setIsSending(false);
           });
       }
     }, [
+      isSending,
       editor,
       replyEvent,
       mx,
@@ -2193,6 +2204,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 <IconButton
                   title="Send Message"
                   aria-label="Send your composed Message"
+                  disabled={isSending}
                   onClick={() => {
                     clearLongPressTimer();
                     if (

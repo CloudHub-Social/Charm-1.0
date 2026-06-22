@@ -169,6 +169,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
     const multilineMeasureFrameRef = useRef<number | null>(null);
     const multilineMeasureRetryRef = useRef(0);
     const singleLineWidthOffsetRef = useRef(0);
+    const inlineAfterWidthRef = useRef(0);
     const latestValueRef = useRef<Descendant[]>(editor.children);
     const isMultilineRef = useRef(false);
     // Tracks whether a triggerAutoCapitalize rAF is already queued to avoid stacking
@@ -184,7 +185,6 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
     const showAfterInline = hasAfter && !showAfterInFooter;
     const showResponsiveAfterInFooter = hasResponsiveAfter && layoutIsMultiline;
     const showResponsiveAfterInline = hasResponsiveAfter && !showResponsiveAfterInFooter;
-    const showFooterActions = showResponsiveAfterInFooter || showAfterInFooter;
 
     const setRootRef = useCallback(
       (node: HTMLDivElement | null) => {
@@ -211,7 +211,12 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
           const scroll = editable.parentElement as HTMLDivElement | null;
           const computedStyle = getComputedStyle(editable);
           const beforeWidth = beforeRef.current?.offsetWidth ?? 0;
-          const afterWidth = afterRef.current?.offsetWidth ?? 0;
+          const inlineAfterWidth = afterRef.current?.offsetWidth ?? 0;
+          if (inlineAfterWidth > 0) {
+            inlineAfterWidthRef.current = inlineAfterWidth;
+          }
+          const afterWidth =
+            inlineAfterWidth || (showAfterInFooter ? inlineAfterWidthRef.current : 0);
           const rowSingleLineWidth = row.offsetWidth - beforeWidth - afterWidth;
           const isRenderedSingleLine = !layoutIsMultiline;
 
@@ -311,7 +316,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
           setIsMultiline(nextMultiline);
         }
       },
-      [editor, layoutIsMultiline]
+      [editor, layoutIsMultiline, showAfterInFooter]
     );
 
     useEffect(() => {
@@ -496,7 +501,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
           {top}
           <Box
             ref={rowRef}
-            className={`${css.EditorRow} ${layoutIsMultiline ? css.EditorRowMultiline : ''} ${showFooterActions ? css.EditorRowMultilineWithResponsiveAfter : ''}`}
+            className={`${css.EditorRow} ${layoutIsMultiline ? css.EditorRowMultiline : ''} ${showResponsiveAfterInFooter ? css.EditorRowMultilineWithResponsiveAfter : ''}`}
             alignItems={layoutIsMultiline ? 'Start' : 'Center'}
             style={{ display: after ? 'grid' : 'flex' }}
           >

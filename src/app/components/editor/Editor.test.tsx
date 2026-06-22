@@ -89,6 +89,44 @@ function ForcedFooterHarness() {
   );
 }
 
+function FooterOnlyHarness() {
+  const editor = useEditor();
+
+  return (
+    <CustomEditor
+      editableName="FooterOnlyHarness"
+      editor={editor}
+      before={<button type="button">Attach</button>}
+      after={<button type="button">Send</button>}
+      forceMultilineLayout
+      moveAfterToFooter
+    />
+  );
+}
+
+function FooterAfterNearThresholdHarness() {
+  const editor = useEditor();
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          Transforms.insertText(editor, 'footer threshold wrap text');
+        }}
+      >
+        Paste footer near-threshold wrap
+      </button>
+      <CustomEditor
+        editableName="FooterAfterNearThresholdHarness"
+        editor={editor}
+        after={<button type="button">Send</button>}
+        moveAfterToFooter
+      />
+    </>
+  );
+}
+
 function PasteWrapHarness() {
   const editor = useEditor();
 
@@ -272,6 +310,11 @@ beforeEach(() => {
           return this.style.width === '319px' ? 29 : 20;
         }
 
+        if (measurerName === 'FooterAfterNearThresholdHarness') {
+          if (!hasMeasuredText || isSingleLineProbe) return 20;
+          return this.style.width === '280px' ? 29 : 20;
+        }
+
         if (measurerName === 'TrailingSpacesWrapHarness') {
           if (!hasMeasuredText || isSingleLineProbe) return 20;
           return measuredText.endsWith('\u200B') ? 29 : 20;
@@ -304,6 +347,9 @@ beforeEach(() => {
       if (this instanceof HTMLElement && this.classList.contains(css.EditorRow)) {
         return 320;
       }
+      if (this instanceof HTMLElement && this.textContent === 'Send') {
+        return 40;
+      }
       return nativeOffsetWidth?.get?.call(this) ?? 0;
     },
   });
@@ -314,6 +360,10 @@ beforeEach(() => {
       if (this instanceof HTMLElement && this.classList.contains(css.EditorTextareaScroll)) {
         if (this.querySelector('[data-editable-name="NearThresholdWrapHarness"]')) {
           return 319;
+        }
+
+        if (this.querySelector('[data-editable-name="FooterAfterNearThresholdHarness"]')) {
+          return 280;
         }
 
         return 320;
@@ -405,6 +455,15 @@ describe('CustomEditor', () => {
     expect(screen.getByText('Send').parentElement).toHaveClass(css.EditorFooterAfterMultiline);
   });
 
+  it('uses the two-column multiline footer when only the send action moves below the editor', () => {
+    render(<FooterOnlyHarness />);
+
+    const row = screen.getByText('Send').closest(`.${css.EditorRow}`);
+
+    expect(row).not.toHaveClass(css.EditorRowMultilineWithResponsiveAfter);
+    expect(screen.getByText('Send').parentElement).toHaveClass(css.EditorFooterAfterMultiline);
+  });
+
   it('detects pasted text that exceeds the single-line width after the deferred layout measurement', async () => {
     render(<PasteWrapHarness />);
     const editable = document.querySelector('[data-editable-name="PasteWrapHarness"]');
@@ -459,6 +518,71 @@ describe('CustomEditor', () => {
     expect(scroll).not.toHaveClass(css.EditorTextareaScrollMultiline);
 
     fireEvent.click(screen.getByRole('button', { name: 'Paste near-threshold wrap' }));
+
+    await waitFor(() => {
+      expect(scroll).toHaveClass(css.EditorTextareaScrollMultiline);
+    });
+    expect(resizeObserverCallback).toBeDefined();
+
+    act(() => {
+      resizeObserverCallback?.(
+        Array.from(observedElements).map((target) => ({ target }) as ResizeObserverEntry),
+        {} as ResizeObserver
+      );
+    });
+
+    act(() => {
+      flushQueuedFrames();
+    });
+
+    expect(scroll).toHaveClass(css.EditorTextareaScrollMultiline);
+  });
+
+  it('keeps the inline action width in multiline measurements after moving the action into the footer', async () => {
+    const queuedFrames = new Map<number, FrameRequestCallback>();
+    let nextFrameId = 1;
+    let resizeObserverCallback: ResizeObserverCallback | undefined;
+    const observedElements = new Set<Element>();
+    const flushQueuedFrames = () => {
+      let safetyCounter = 0;
+      while (queuedFrames.size > 0 && safetyCounter < 10) {
+        const pendingFrames = Array.from(queuedFrames.entries());
+        queuedFrames.clear();
+        pendingFrames.forEach(([, callback]) => {
+          callback(performance.now());
+        });
+        safetyCounter += 1;
+      }
+    };
+
+    const requestAnimationFrameStub = ((callback: FrameRequestCallback) => {
+      const frameId = nextFrameId;
+      nextFrameId += 1;
+      queuedFrames.set(frameId, callback);
+      return frameId;
+    }) as typeof window.requestAnimationFrame;
+    const cancelAnimationFrameStub = ((frameId: number) => {
+      queuedFrames.delete(frameId);
+    }) as typeof window.cancelAnimationFrame;
+
+    window.requestAnimationFrame = requestAnimationFrameStub;
+    window.cancelAnimationFrame = cancelAnimationFrameStub;
+    globalThis.requestAnimationFrame = requestAnimationFrameStub;
+    globalThis.cancelAnimationFrame = cancelAnimationFrameStub;
+    globalThis.ResizeObserver = createResizeObserverStub(observedElements, (callback) => {
+      resizeObserverCallback = callback;
+    });
+
+    render(<FooterAfterNearThresholdHarness />);
+    const editable = document.querySelector(
+      '[data-editable-name="FooterAfterNearThresholdHarness"]'
+    );
+    const scroll = editable?.parentElement as HTMLElement | null;
+
+    expect(scroll).not.toBeNull();
+    expect(scroll).not.toHaveClass(css.EditorTextareaScrollMultiline);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Paste footer near-threshold wrap' }));
 
     await waitFor(() => {
       expect(scroll).toHaveClass(css.EditorTextareaScrollMultiline);
