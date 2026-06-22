@@ -17,6 +17,7 @@ const syncDiagnosticsMock = vi.hoisted(() => ({
 }));
 const sentry = vi.hoisted(() => ({
   addBreadcrumb: vi.fn<() => void>(),
+  captureException: vi.fn<() => void>(),
   captureMessage: vi.fn<() => void>(),
   metrics: {
     count: vi.fn<() => void>(),
@@ -89,6 +90,7 @@ describe('SyncStatus', () => {
     syncDiagnosticsMock.slidingHealthy = undefined;
     syncStateSubscribers.clear();
     sentry.addBreadcrumb.mockClear();
+    sentry.captureException.mockClear();
     sentry.captureMessage.mockClear();
     sentry.metrics.count.mockClear();
     setVisibilityState('visible');
@@ -214,6 +216,71 @@ describe('SyncStatus', () => {
       vi.advanceTimersByTime(30_000);
     });
 
+    expect(mx.retryImmediately).toHaveBeenCalledOnce();
+    expect(sentry.captureMessage).toHaveBeenCalledWith(
+      'Sync remained degraded',
+      expect.objectContaining({
+        level: 'warning',
+        tags: expect.objectContaining({
+          sync_state: SyncState.Reconnecting,
+          transport: 'classic',
+        }),
+      })
+    );
+  });
+
+  it('does not auto-retry persistent degraded sliding sync', () => {
+    syncDiagnosticsMock.transport = 'sliding';
+    const mx = makeMx(SyncState.Reconnecting);
+    render(<SyncStatus mx={mx} />);
+
+    act(() => {
+      emitSyncState(SyncState.Reconnecting, SyncState.Syncing);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+
+    expect(mx.retryImmediately).not.toHaveBeenCalled();
+    expect(sentry.captureMessage).toHaveBeenCalledWith(
+      'Sync remained degraded',
+      expect.objectContaining({
+        level: 'warning',
+        tags: expect.objectContaining({
+          sync_state: SyncState.Reconnecting,
+          transport: 'sliding',
+        }),
+      })
+    );
+  });
+
+  it('retries degraded classic sync again if retryImmediately throws', () => {
+    const mx = makeMx(SyncState.Reconnecting);
+    mx.retryImmediately.mockImplementation(() => {
+      throw new Error('retry failed');
+    });
+    render(<SyncStatus mx={mx} />);
+
+    act(() => {
+      emitSyncState(SyncState.Reconnecting, SyncState.Syncing);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+
+    expect(mx.retryImmediately).toHaveBeenCalledOnce();
+    expect(sentry.captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        level: 'warning',
+        tags: expect.objectContaining({
+          feature: 'sync',
+          action: 'retry_immediately',
+        }),
+      })
+    );
     expect(sentry.captureMessage).toHaveBeenCalledWith(
       'Sync remained degraded',
       expect.objectContaining({
