@@ -51,6 +51,9 @@ const persistLocalSettingsSyncUpdatedAt = (storageKey: string, updatedAt: number
   }
 };
 
+const getNextLocalSettingsSyncUpdatedAt = (previousUpdatedAt: number): number =>
+  Math.max(Date.now(), previousUpdatedAt + 1);
+
 /**
  * Side-effect hook that:
  *  - loads settings from account data when sync is first enabled
@@ -121,7 +124,7 @@ export function useSettingsSyncEffect(): void {
       return;
     }
 
-    const updatedAt = Date.now();
+    const updatedAt = getNextLocalSettingsSyncUpdatedAt(localUpdatedAtRef.current);
     localUpdatedAtRef.current = updatedAt;
     persistLocalSettingsSyncUpdatedAt(localUpdatedAtStorageKey, updatedAt);
   }, [localUpdatedAtStorageKey, settings]);
@@ -216,24 +219,28 @@ export function useSettingsSyncEffect(): void {
 
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      const localUpdatedAt = localUpdatedAtRef.current > 0 ? localUpdatedAtRef.current : Date.now();
-      if (localUpdatedAtRef.current === 0) {
+      const remoteEvent = mx.getAccountData(CustomAccountDataEvent.SableSettings);
+      const remoteContent = remoteEvent?.getContent() as Record<string, unknown> | undefined;
+      const remoteUpdatedAt = getSettingsSyncUpdatedAt(remoteContent);
+      const hasLocalUpdatedAt = localUpdatedAtRef.current > 0;
+      if (remoteContent && remoteUpdatedAt === null && !hasLocalUpdatedAt) {
+        applyRemoteContent(remoteContent);
+        setSyncStatus('idle');
+        return;
+      }
+
+      const localUpdatedAt = hasLocalUpdatedAt
+        ? localUpdatedAtRef.current
+        : getNextLocalSettingsSyncUpdatedAt(localUpdatedAtRef.current);
+      if (!hasLocalUpdatedAt) {
         localUpdatedAtRef.current = localUpdatedAt;
         persistLocalSettingsSyncUpdatedAt(localUpdatedAtStorageKey, localUpdatedAt);
       }
 
-      const remoteEvent = mx.getAccountData(CustomAccountDataEvent.SableSettings);
-      const remoteContent = remoteEvent?.getContent() as Record<string, unknown> | undefined;
-      const remoteUpdatedAt = getSettingsSyncUpdatedAt(remoteContent);
       if (remoteContent && remoteUpdatedAt !== null && remoteUpdatedAt >= localUpdatedAt) {
         if (remoteUpdatedAt > localUpdatedAt) {
           applyRemoteContent(remoteContent);
         }
-        setSyncStatus('idle');
-        return;
-      }
-      if (remoteContent && remoteUpdatedAt === null && localUpdatedAtRef.current === 0) {
-        applyRemoteContent(remoteContent);
         setSyncStatus('idle');
         return;
       }

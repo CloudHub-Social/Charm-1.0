@@ -316,7 +316,7 @@ describe('useSettingsSyncEffect — echo-token loop prevention', () => {
   });
 
   it('pulls newer remote settings instead of overwriting them with stale local state', () => {
-    localStorage.setItem('settings-sync-updated-at', '100');
+    localStorage.setItem('settings-sync-updated-at:@alice:example.com', '100');
     mockMx.getAccountData.mockReturnValue({
       getContent: () => ({
         v: SETTINGS_SYNC_VERSION,
