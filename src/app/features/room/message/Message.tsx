@@ -101,6 +101,11 @@ import {
 } from '$utils/addStickerToDefaultStickerPack';
 import type { PerMessageProfileBeeperFormat } from '$hooks/usePerMessageProfile';
 import { convertBeeperFormatToOurPerMessageProfile } from '$hooks/usePerMessageProfile';
+import {
+  getPendingSendDimDelayMs,
+  isPendingSendStatus,
+  shouldDimPendingSend,
+} from './pendingSendDisplay';
 import { MessageEditor } from './MessageEditor';
 import { MobileMessageMenu } from './MobileMessageMenu';
 import * as css from './styles.css';
@@ -894,10 +899,10 @@ function MessageInternal(
     () => mEvent.getContent().body || mEvent.getContent()['org.matrix.msc3381.poll.start'] || '',
     [mEvent]
   );
-  const isPendingSend =
-    sendStatus === EventStatus.ENCRYPTING ||
-    sendStatus === EventStatus.QUEUED ||
-    sendStatus === EventStatus.SENDING;
+  const isPendingSend = isPendingSendStatus(sendStatus);
+  const [showPendingSendDim, setShowPendingSendDim] = useState(() =>
+    shouldDimPendingSend(sendStatus, mEvent.getTs())
+  );
   const isFailedSend = sendStatus === EventStatus.NOT_SENT;
   const canResend = isFailedSend && senderId === mx.getUserId() && !!onResend;
   const canDeleteFailedSend = isFailedSend && senderId === mx.getUserId() && !!onDeleteFailedSend;
@@ -960,13 +965,30 @@ function MessageInternal(
   const MSG_CONTENT_STYLE = { maxWidth: '100%' };
   const isSableFeedback = mEvent.getId()?.startsWith('~sable-feedback-');
 
+  useEffect(() => {
+    if (!isPendingSend) {
+      setShowPendingSendDim(false);
+      return undefined;
+    }
+
+    const delayMs = getPendingSendDimDelayMs(mEvent.getTs());
+    if (delayMs === 0) {
+      setShowPendingSendDim(true);
+      return undefined;
+    }
+
+    setShowPendingSendDim(false);
+    const timerId = window.setTimeout(() => setShowPendingSendDim(true), delayMs);
+    return () => window.clearTimeout(timerId);
+  }, [isPendingSend, mEvent, sendStatus]);
+
   const msgContentJSX = (
     <Box
       direction="Column"
       alignSelf="Start"
       style={MSG_CONTENT_STYLE}
       className={classNames({
-        [css.MessagePending]: isPendingSend,
+        [css.MessagePending]: showPendingSendDim,
         [css.MessageFailed]: isFailedSend,
       })}
     >
