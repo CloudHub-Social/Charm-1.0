@@ -2,13 +2,17 @@ import { EventStatus } from '$types/matrix-sdk';
 
 export const PENDING_SEND_DIM_DELAY_MS = 2000;
 
+const normalizePendingSentAt = (sentAt: number, now: number): number =>
+  Number.isFinite(sentAt) && sentAt > 0 ? sentAt : now;
+
 export const isPendingSendStatus = (sendStatus: EventStatus | null | undefined): boolean =>
   sendStatus === EventStatus.ENCRYPTING ||
   sendStatus === EventStatus.QUEUED ||
   sendStatus === EventStatus.SENDING;
 
 export const getPendingSendDimDelayMs = (sentAt: number, now: number = Date.now()): number => {
-  const elapsed = Math.max(0, now - sentAt);
+  const normalizedSentAt = normalizePendingSentAt(sentAt, now);
+  const elapsed = Math.max(0, now - normalizedSentAt);
   return Math.max(0, PENDING_SEND_DIM_DELAY_MS - elapsed);
 };
 
