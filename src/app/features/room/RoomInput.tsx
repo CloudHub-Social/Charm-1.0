@@ -1358,7 +1358,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           if (isEmptyEditor(editor)) {
             const restoredMsgDraft = structuredClone(sentMsgDraftSnapshot);
             setMsgDraft(restoredMsgDraft);
-            Transforms.insertFragment(editor, restoredMsgDraft);
             requestAnimationFrame(() => {
               try {
                 ReactEditor.focus(editor);
@@ -1369,12 +1368,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             });
           }
 
-          if (
-            serializeReplyDraft(latestReplyDraftRef.current) === serializeReplyDraft(replyDraftBase)
-          ) {
-            const restoredReplyDraft = JSON.parse(sentReplyDraftSnapshot) as IReplyDraft | null;
-            setReplyDraft(restoredReplyDraft ?? replyDraftBase);
-          }
+          const restoredReplyDraft = JSON.parse(sentReplyDraftSnapshot) as IReplyDraft | null;
+          setReplyDraft(restoredReplyDraft ?? replyDraftBase);
 
           if (imagePacksUsedRef.current.size === 0) {
             const restoredImagePacks = JSON.parse(sentImagePacksSnapshot) as Record<
