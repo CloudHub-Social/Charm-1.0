@@ -8,9 +8,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import type { Editor } from 'slate';
-import { useAtomValue, useAtom, useSetAtom } from 'jotai';
+import { useAtomValue, useSetAtom } from 'jotai';
 import type { Room } from '$types/matrix-sdk';
 import { PushProcessor, Direction } from '$types/matrix-sdk';
 import classNames from 'classnames';
@@ -18,12 +17,10 @@ import type { VListHandle } from 'virtua';
 import { VList } from 'virtua';
 import type { ContainerColor } from 'folds';
 import { as, Box, Chip, Line, Text, Badge, color, config, toRem, Spinner } from 'folds';
-import * as Sentry from '@sentry/react';
 import { ArrowDown, ChatTeardropDots, Checks, chipIcon } from '$components/icons/phosphor';
 import { MessageBase, CompactPlaceholder, DefaultPlaceholder } from '$components/message';
 import { RoomIntro } from '$components/room-intro';
 import { useMatrixClient } from '$hooks/useMatrixClient';
-import { createLogger } from '$utils/debug';
 import { useAlive } from '$hooks/useAlive';
 import { useMessageEdit } from '$hooks/useMessageEdit';
 import { useDocumentFocusChange } from '$hooks/useDocumentFocusChange';
@@ -36,7 +33,7 @@ import {
   factoryRenderLinkifyWithMention,
 } from '$plugins/react-custom-html-parser';
 import { today, yesterday, timeDayMonthYear } from '$utils/time';
-import { unwrapRelationJumpTarget, canEditEvent } from '$utils/room';
+import { unwrapRelationJumpTarget } from '$utils/room';
 import { useMemberEventParser } from '$hooks/useMemberEventParser';
 import { usePowerLevelsContext } from '$hooks/usePowerLevels';
 import { useRoomCreators } from '$hooks/useRoomCreators';
@@ -51,7 +48,6 @@ import { useSpaceOptionally } from '$hooks/useSpace';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { useIgnoredUsers } from '$hooks/useIgnoredUsers';
 import { useImagePackRooms } from '$hooks/useImagePackRooms';
-import { useKeyboardHeight } from '$hooks/ios-keyboard-fix';
 import { settingsAtom, MessageLayout } from '$state/settings';
 import { useHiddenEventSettings, useSetting } from '$state/hooks/settings';
 import { nicknamesAtom } from '$state/nicknames';
@@ -59,67 +55,24 @@ import { useRoomAbbreviationsContext } from '$hooks/useRoomAbbreviations';
 import { buildAbbrReplaceTextNode } from '$components/message/RenderBody';
 import { profilesCacheAtom } from '$state/userRoomProfile';
 import { roomToParentsAtom } from '$state/room/roomToParents';
-import { roomToUnreadAtom } from '$state/room/roomToUnread';
-import {
-  roomIdToReplyDraftAtomFamily,
-  roomIdToEditDraftAtomFamily,
-  roomIdToEditNavRequestAtomFamily,
-} from '$state/room/roomInputDrafts';
+import { roomIdToReplyDraftAtomFamily } from '$state/room/roomInputDrafts';
 import { roomIdToOpenThreadAtomFamily } from '$state/room/roomToOpenThread';
-import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import {
   getRoomUnreadInfo,
-  getUnreadInfoAfterJumpToLatest,
   getEventTimeline,
   getFirstLinkedTimeline,
-  getEmptyTimeline,
+  getInitialTimeline,
   getEventIdAbsoluteIndex,
 } from '$utils/timeline';
-import { useTimelineSync, type TimelineJumpMode } from '$hooks/timeline/useTimelineSync';
+import { useTimelineSync } from '$hooks/timeline/useTimelineSync';
 import { useTimelineActions } from '$hooks/timeline/useTimelineActions';
 import {
   useProcessedTimeline,
   getProcessedRowIndexForRawTimelineIndex,
-  getProcessedRowIndexForRawTimelineIndexForward,
   type ProcessedEvent,
 } from '$hooks/timeline/useProcessedTimeline';
 import { useTimelineEventRenderer } from '$hooks/timeline/useTimelineEventRenderer';
-import { completeRoomTimelineRender } from '$utils/perfTelemetry';
-import { isPhoneLayoutDevice } from '$utils/user-agent';
-import {
-  didKeyboardJustClose,
-  didKeyboardJustOpen,
-  isKeyboardBottomSessionScrollKeyTarget,
-  shouldRepinBottomAfterKeyboardClose,
-  shouldClearKeyboardBottomSessionOnUserIntent,
-} from './keyboardBottomRecovery';
-import {
-  buildNotificationJumpCleanupTarget,
-  getNotificationJumpCleanupEventId,
-  shouldClearNotificationJumpRoute,
-  shouldClearNotificationJumpRouteURLOnly,
-} from './notificationJumpCleanup';
 import * as css from './RoomTimeline.css';
-
-const log = createLogger('RoomTimeline');
-
-function findLastOwnEditableProcessedEvent(
-  events: ProcessedEvent[],
-  myUserId: string | null | undefined
-): ProcessedEvent | undefined {
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const event = events[i];
-    if (!event) continue;
-    if (
-      event.mEvent.getSender() === myUserId &&
-      event.mEvent.getEffectiveEvent()?.type === 'm.room.message' &&
-      !event.mEvent.isRedacted()
-    ) {
-      return event;
-    }
-  }
-  return undefined;
-}
 
 const TimelineFloat = as<'div', css.TimelineFloatVariants>(
   ({ position, className, ...props }, ref) => (
@@ -150,14 +103,9 @@ const getDayDividerText = (ts: number) => {
   return timeDayMonthYear(ts);
 };
 
-const SCROLL_SETTLE_MS = 250;
-
 export type RoomTimelineProps = {
   room: Room;
   eventId?: string;
-  jumpMode?: TimelineJumpMode;
-  hasDesktopRightDrawer?: boolean;
-  hasTypingIndicator?: boolean;
   editor: Editor;
   onEditorReset?: () => void;
   onEditLastMessageRef?: React.MutableRefObject<(() => void) | undefined>;
@@ -166,37 +114,15 @@ export type RoomTimelineProps = {
 export function RoomTimeline({
   room,
   eventId,
-  jumpMode,
-  hasDesktopRightDrawer = false,
-  hasTypingIndicator = false,
   editor,
   onEditorReset,
   onEditLastMessageRef,
 }: Readonly<RoomTimelineProps>) {
   const mx = useMatrixClient();
-  const navigate = useNavigate();
-  const location = useLocation();
   const alive = useAlive();
-  const screenSize = useScreenSizeContext();
 
-  const { editId, handleEdit } = useMessageEdit(editor, {
-    onReset: onEditorReset,
-    alive,
-  });
+  const { editId, handleEdit } = useMessageEdit(editor, { onReset: onEditorReset, alive });
   const { navigateRoom } = useRoomNavigate();
-
-  const [editInInput] = useSetting(settingsAtom, 'editInInput');
-  const setEditDraft = useSetAtom(roomIdToEditDraftAtomFamily(room.roomId));
-  const handleEditCallback = useCallback(
-    (id?: string) => {
-      if (editInInput) {
-        setEditDraft(id ? { eventId: id } : undefined);
-        return;
-      }
-      handleEdit(id);
-    },
-    [editInInput, handleEdit, setEditDraft]
-  );
 
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
   const [messageLayout] = useSetting(settingsAtom, 'messageLayout');
@@ -222,7 +148,6 @@ export function RoomTimeline({
   );
   const [incomingInlineImagesMaxHeight] = useSetting(settingsAtom, 'incomingInlineImagesMaxHeight');
   const [hideMemberInReadOnly] = useSetting(settingsAtom, 'hideMembershipInReadOnly');
-  const [messageGroupingThreshold] = useSetting(settingsAtom, 'messageGroupingThreshold');
 
   const [showInteractiveMap] = useSetting(settingsAtom, 'showInteractiveMap');
   const [showEncInteractiveMap] = useSetting(settingsAtom, 'showEncInteractiveMap');
@@ -249,8 +174,6 @@ export function RoomTimeline({
   }, [powerLevels, mx]);
 
   const [unreadInfo, setUnreadInfo] = useState(() => getRoomUnreadInfo(room, true));
-  const roomToUnread = useAtomValue(roomToUnreadAtom);
-  const roomUnread = roomToUnread.get(room.roomId);
 
   const readUptoEventIdRef = useRef<string | undefined>(undefined);
   if (unreadInfo) readUptoEventIdRef.current = unreadInfo.readUptoEventId;
@@ -258,43 +181,15 @@ export function RoomTimeline({
   hideReadsRef.current = hideReads;
 
   const prevViewportHeightRef = useRef(0);
-  const prevScrollSizeRef = useRef(0);
-  // Tracks the VList-reported viewport size (as opposed to prevViewportHeightRef
-  // which tracks the DOM element height via ResizeObserver). Used in
-  // handleVListScroll to detect viewport size changes (keyboard opens OR closes)
-  // without a ResizeObserver race: when VList fires onScroll with a different
-  // viewportSize, we chase the bottom immediately instead of letting
-  // setAtBottom(false) fire.
-  const prevVListViewportRef = useRef(0);
-  // Track when viewport last changed (keyboard open/close) to suppress
-  // setAtBottom(false) during the settle window.
-  const lastViewportChangeTimeRef = useRef(0);
   const messageListRef = useRef<HTMLDivElement>(null);
 
   const mediaAuthentication = useMediaAuthentication();
   const spoilerClickHandler = useSpoilerClickHandler();
   const mentionClickHandler = useMentionClickHandler(room.roomId);
-  const { isKeyboardVisible, keyboardHeight } = useKeyboardHeight();
-  const prevKeyboardVisibleRef = useRef(false);
-  const prevKeyboardHeightRef = useRef(0);
-  const keyboardVisibleRef = useRef(isKeyboardVisible);
-  keyboardVisibleRef.current = isKeyboardVisible;
-  const renderKeyboardVisibleRef = useRef(isKeyboardVisible);
-  const keyboardHeightRef = useRef(keyboardHeight);
-  keyboardHeightRef.current = keyboardHeight;
-  const lastKeyboardCloseTimeRef = useRef(0);
-  const keyboardSessionBottomPinnedRef = useRef(false);
   const settingsLinkBaseUrl = useSettingsLinkBaseUrl();
   const openUserRoomProfile = useOpenUserRoomProfile();
   const optionalSpace = useSpaceOptionally();
   const roomParents = useAtomValue(roomToParentsAtom);
-  const isMobileScreen = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
-  const timelineBottomSpacing = hasTypingIndicator ? config.space.S700 : config.space.S600;
-  const timelineRightSpacing = isMobileScreen
-    ? config.space.S100
-    : hasDesktopRightDrawer
-      ? config.space.S0
-      : config.space.S0;
   const imagePackRooms = useImagePackRooms(room.roomId, roomParents);
   const pushProcessor = useMemo(() => new PushProcessor(mx), [mx]);
   const parseMemberEvent = useMemberEventParser();
@@ -307,13 +202,6 @@ export function RoomTimeline({
   const openThreadAtom = useMemo(() => roomIdToOpenThreadAtomFamily(room.roomId), [room.roomId]);
   const openThreadId = useAtomValue(openThreadAtom);
   const setOpenThread = useSetAtom(openThreadAtom);
-
-  // Preserved scroll offset from just before the thread drawer was opened, so
-  // we can restore position when the drawer closes and the main column reflows
-  // to a wider width (remeasured items would otherwise leave the VList at an
-  // unexpected position).
-  const scrollOffsetBeforeThreadRef = useRef<number | undefined>(undefined);
-  const wasAtBottomBeforeThreadRef = useRef(false);
 
   const vListRef = useRef<VListHandle>(null);
   const [atBottomState, setAtBottomState] = useState(true);
@@ -329,11 +217,6 @@ export function RoomTimeline({
   const topSpacerHeightRef = useRef(0);
   const mountScrollWindowRef = useRef<number>(Date.now() + 3000);
   const hasInitialScrolledRef = useRef(false);
-  // Short-lived guard set for ~350 ms after a jump scrollToIndex so that
-  // intermediate scroll events from the animation don't flip atBottom prematurely.
-  const jumpScrollBlockRef = useRef(false);
-  const jumpReanchorScrollUntilRef = useRef(0);
-  const jumpScrollBlockTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Stored in a ref so eventsLength fluctuations (e.g. onLifecycle timeline reset
   // firing within the window) cannot cancel it via useLayoutEffect cleanup.
   const initialScrollTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -343,65 +226,23 @@ export function RoomTimeline({
   // and performs the final scroll + setIsReady when this flag is set.
   const pendingReadyRef = useRef(false);
   const currentRoomIdRef = useRef(room.roomId);
-  const lastRenderedTailRef = useRef<string | undefined>(undefined);
 
   const [isReady, setIsReady] = useState(false);
-  const isReadyRef = useRef(isReady);
-  isReadyRef.current = isReady;
-  const jumpRetryIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-  const jumpRecenterTimeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const jumpRouteCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const jumpURLOnlyCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const jumpHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const jumpAnchorKeyRef = useRef<string | undefined>(undefined);
-  const jumpLayoutReanchorRafRef = useRef<number | undefined>(undefined);
-  const lastJumpLayoutReanchorAtRef = useRef(0);
-  const jumpLockEventIdRef = useRef<string | undefined>(undefined);
-  const jumpLockActiveRef = useRef(false);
-  const userScrollIntentAtRef = useRef(0);
-  const jumpLockReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  // Track whether the initial eventId load is in progress. Used to prevent the
-  // recovery scroll from firing prematurely when the live timeline loads before
-  // the target event context finishes loading (which causes the blank → bottom jump).
-  const eventIdLoadInProgressRef = useRef(false);
-  // Track which eventId is currently being loaded to prevent duplicate loads when
-  // the user clicks the jump button repeatedly before the first load completes.
-  const loadingEventIdRef = useRef<string | null>(null);
-  // AbortController to cancel in-flight jump operations when a new jump starts.
-  // This prevents multiple concurrent jumps from interfering with each other.
-  const jumpAbortControllerRef = useRef<AbortController | null>(null);
-  // Track whether the permalink jump succeeded (focusItem was set). Once set,
-  // recovery scroll should never fire for this eventId, even after focusItem
-  // is cleared (highlight ends). Reset only when eventId or room changes.
-  const jumpSucceededRef = useRef(false);
-
-  const lastProgrammaticBottomPinAtRef = useRef(0);
 
   if (currentRoomIdRef.current !== room.roomId) {
     hasInitialScrolledRef.current = false;
     mountScrollWindowRef.current = Date.now() + 3000;
     currentRoomIdRef.current = room.roomId;
     pendingReadyRef.current = false;
-    jumpSucceededRef.current = false;
     if (initialScrollTimerRef.current !== undefined) {
       clearTimeout(initialScrollTimerRef.current);
       initialScrollTimerRef.current = undefined;
-    }
-    if (jumpLayoutReanchorRafRef.current !== undefined) {
-      cancelAnimationFrame(jumpLayoutReanchorRafRef.current);
-      jumpLayoutReanchorRafRef.current = undefined;
     }
     setIsReady(false);
   }
 
   const processedEventsRef = useRef<ProcessedEvent[]>([]);
   const timelineSyncRef = useRef<typeof timelineSync>(null as unknown as typeof timelineSync);
-  const timelineRenderMetricRoomRef = useRef<string | undefined>(undefined);
-
-  useEffect(() => {
-    timelineRenderMetricRoomRef.current = undefined;
-  }, [room.roomId, eventId]);
 
   const scrollToBottom = useCallback(() => {
     if (!vListRef.current) return;
@@ -410,130 +251,10 @@ export function RoomTimeline({
     vListRef.current.scrollTo(vListRef.current.scrollSize);
   }, []);
 
-  const handleMarkAsRead = useCallback(() => {
-    setUnreadInfo((prev) =>
-      prev
-        ? {
-            ...prev,
-            inLiveTimeline: true,
-            scrollTo: false,
-          }
-        : undefined
-    );
-    void markAsRead(mx, room.roomId, hideReads).finally(() => {
-      requestAnimationFrame(() => {
-        setUnreadInfo(getRoomUnreadInfo(room));
-      });
-    });
-  }, [hideReads, mx, room]);
-
-  // Start a short scroll-settle block after a programmatic jump scrollToIndex.
-  // After 350 ms the block lifts and atBottom is recomputed from the actual
-  // VList position so "Jump to Latest" appears correctly.
-  const startJumpScrollBlock = useCallback(() => {
-    jumpScrollBlockRef.current = true;
-    if (jumpScrollBlockTimerRef.current !== undefined)
-      clearTimeout(jumpScrollBlockTimerRef.current);
-    jumpScrollBlockTimerRef.current = setTimeout(() => {
-      jumpScrollBlockRef.current = false;
-      jumpScrollBlockTimerRef.current = undefined;
-      const v = vListRef.current;
-      if (v) {
-        const dist = v.scrollSize - v.scrollOffset - v.viewportSize;
-        setAtBottom(dist < 100);
-      }
-    }, 350);
-  }, [setAtBottom]);
-
-  const reanchorJumpTarget = useCallback(
-    (
-      reason: 'delayed_settle' | 'content_growth' | 'timeline_remeasure' | 'loaded_history_jump',
-      options?: {
-        eventId?: string;
-        align?: 'center' | 'end';
-        scrollDelta?: number;
-        delayMs?: number;
-      }
-    ): boolean => {
-      const targetEventId = options?.eventId ?? jumpLockEventIdRef.current;
-      if (!targetEventId || !vListRef.current) return false;
-
-      const targetIndex = processedEventsRef.current.findIndex(
-        (event) => event.mEvent.getId() === targetEventId
-      );
-      if (targetIndex < 0) return false;
-
-      setAtBottom(false);
-      jumpReanchorScrollUntilRef.current = Date.now() + 150;
-      startJumpScrollBlock();
-      vListRef.current.scrollToIndex(targetIndex, {
-        align: options?.align ?? 'center',
-      });
-      log.log(
-        `[PermalinkJump] Re-anchored target after ${reason}: eventId=${targetEventId}, processedIndex=${targetIndex}, scrollDelta=${options?.scrollDelta ?? 0}, delay=${options?.delayMs ?? 0}`
-      );
-      Sentry.addBreadcrumb({
-        category: 'timeline.permalink',
-        message: 'Re-anchored jump target',
-        level: 'info',
-        data: {
-          reason,
-          eventId: targetEventId,
-          processedIndex: targetIndex,
-          scrollDelta: options?.scrollDelta,
-          delayMs: options?.delayMs,
-          roomId: room.roomId,
-        },
-      });
-      return true;
-    },
-    [room.roomId, setAtBottom, startJumpScrollBlock]
-  );
-
-  const releaseJumpLock = useCallback(
-    (reason: 'missing_target' | 'user_scroll' | 'route_change' | 'jump_to_latest') => {
-      if (!jumpLockActiveRef.current && !jumpLockEventIdRef.current) return;
-      jumpLockActiveRef.current = false;
-      jumpLockEventIdRef.current = undefined;
-      if (jumpLockReleaseTimerRef.current !== undefined) {
-        clearTimeout(jumpLockReleaseTimerRef.current);
-        jumpLockReleaseTimerRef.current = undefined;
-      }
-      Sentry.addBreadcrumb({
-        category: 'timeline.permalink',
-        message: 'Released jump lock',
-        level: 'info',
-        data: { reason, roomId: room.roomId },
-      });
-    },
-    [room.roomId]
-  );
-
-  const activateJumpLock = useCallback(
-    (targetEventId?: string) => {
-      if (!targetEventId) return;
-      jumpLockEventIdRef.current = targetEventId;
-      jumpLockActiveRef.current = true;
-      if (jumpLockReleaseTimerRef.current !== undefined) {
-        clearTimeout(jumpLockReleaseTimerRef.current);
-        jumpLockReleaseTimerRef.current = undefined;
-      }
-      setAtBottom(false);
-      Sentry.addBreadcrumb({
-        category: 'timeline.permalink',
-        message: 'Activated jump lock',
-        level: 'info',
-        data: { targetEventId, roomId: room.roomId },
-      });
-    },
-    [room.roomId, setAtBottom]
-  );
-
   const timelineSync = useTimelineSync({
     room,
     mx,
     eventId,
-    jumpMode,
     isAtBottom: atBottomState,
     isAtBottomRef: atBottomRef,
     scrollToBottom,
@@ -544,30 +265,6 @@ export function RoomTimeline({
   });
 
   timelineSyncRef.current = timelineSync;
-  const { setFocusItem } = timelineSync;
-  const liveTimelineLinked = timelineSync.liveTimelineLinked;
-
-  useEffect(() => {
-    const nextUnreadInfo = getRoomUnreadInfo(room);
-    setUnreadInfo((prev) => {
-      if (!nextUnreadInfo) return undefined;
-
-      const next = {
-        ...nextUnreadInfo,
-        scrollTo: prev?.scrollTo ?? nextUnreadInfo.scrollTo,
-      };
-
-      if (
-        prev?.readUptoEventId === next.readUptoEventId &&
-        prev?.inLiveTimeline === next.inLiveTimeline &&
-        prev?.scrollTo === next.scrollTo
-      ) {
-        return prev;
-      }
-
-      return next;
-    });
-  }, [room, roomUnread?.highlight, roomUnread?.total]);
 
   const eventsLengthRef = useRef(timelineSync.eventsLength);
   eventsLengthRef.current = timelineSync.eventsLength;
@@ -583,10 +280,6 @@ export function RoomTimeline({
 
   const forwardStatusRef = useRef(timelineSync.forwardStatus);
   forwardStatusRef.current = timelineSync.forwardStatus;
-
-  // Caps consecutive auto-pagination calls so a sparse timeline that never fills
-  // the viewport cannot loop indefinitely. Reset on every timeline clear/room jump.
-  const autopagAttemptsRef = useRef(0);
 
   const getRawIndexToProcessedIndex = useCallback((rawIndex: number): number | undefined => {
     const events = processedEventsRef.current;
@@ -608,14 +301,14 @@ export function RoomTimeline({
       timelineSync.liveTimelineLinked &&
       vListRef.current
     ) {
-      scrollToBottom();
+      vListRef.current.scrollToIndex(processedEventsRef.current.length - 1, { align: 'end' });
       // Store in a ref rather than a local so subsequent eventsLength changes
       // (e.g. the onLifecycle timeline reset firing within 80 ms) do NOT
       // cancel this timer through the useLayoutEffect cleanup.
       initialScrollTimerRef.current = setTimeout(() => {
         initialScrollTimerRef.current = undefined;
         if (processedEventsRef.current.length > 0) {
-          scrollToBottom();
+          vListRef.current?.scrollToIndex(processedEventsRef.current.length - 1, { align: 'end' });
           // Only mark ready once we've successfully scrolled.  If processedEvents
           // was empty when the timer fired (e.g. the onLifecycle reset cleared the
           // timeline within the 80 ms window), defer setIsReady until the recovery
@@ -629,40 +322,16 @@ export function RoomTimeline({
     }
     // No cleanup return — the timer must survive eventsLength fluctuations.
     // It is cancelled on unmount by the dedicated effect below.
-  }, [
-    timelineSync.eventsLength,
-    timelineSync.liveTimelineLinked,
-    eventId,
-    room.roomId,
-    scrollToBottom,
-  ]);
+  }, [timelineSync.eventsLength, timelineSync.liveTimelineLinked, eventId, room.roomId]);
 
   // Cancel the initial-scroll timer on unmount (the useLayoutEffect above
   // intentionally does not cancel it when deps change).
   useEffect(
     () => () => {
       if (initialScrollTimerRef.current !== undefined) clearTimeout(initialScrollTimerRef.current);
-      if (jumpScrollBlockTimerRef.current !== undefined)
-        clearTimeout(jumpScrollBlockTimerRef.current);
-      if (jumpRetryIntervalRef.current !== undefined) clearInterval(jumpRetryIntervalRef.current);
-      jumpRecenterTimeoutIdsRef.current.forEach((id) => clearTimeout(id));
-      if (jumpHighlightTimeoutRef.current !== undefined)
-        clearTimeout(jumpHighlightTimeoutRef.current);
-      if (jumpLockReleaseTimerRef.current !== undefined)
-        clearTimeout(jumpLockReleaseTimerRef.current);
-      if (jumpRouteCleanupTimerRef.current !== undefined)
-        clearTimeout(jumpRouteCleanupTimerRef.current);
     },
     []
   );
-
-  useEffect(() => {
-    if (jumpRouteCleanupTimerRef.current !== undefined) {
-      clearTimeout(jumpRouteCleanupTimerRef.current);
-      jumpRouteCleanupTimerRef.current = undefined;
-    }
-    releaseJumpLock('route_change');
-  }, [eventId, location.pathname, location.search, room.roomId, releaseJumpLock]);
 
   // If the timeline was blanked while content was already visible — e.g. a
   // TimelineReset fired by mx.retryImmediately() when the app comes back from
@@ -673,7 +342,6 @@ export function RoomTimeline({
     if (timelineSync.eventsLength > 0) return;
     setIsReady(false);
     hasInitialScrolledRef.current = false;
-    autopagAttemptsRef.current = 0;
   }, [isReady, timelineSync.eventsLength]);
 
   const recalcTopSpacer = useCallback(() => {
@@ -687,11 +355,11 @@ export function RoomTimeline({
       setTopSpacerHeight(newH);
       if (prev > 0 && newH === 0 && processedEventsRef.current.length > 0) {
         requestAnimationFrame(() => {
-          scrollToBottom();
+          vListRef.current?.scrollToIndex(processedEventsRef.current.length - 1, { align: 'end' });
         });
       }
     }
-  }, [scrollToBottom]);
+  }, []);
 
   useLayoutEffect(() => {
     const id = requestAnimationFrame(recalcTopSpacer);
@@ -709,390 +377,30 @@ export function RoomTimeline({
       if (!atBottomRef.current) setShift(true);
     } else if (prev === 'loading' && timelineSync.backwardStatus === 'idle') {
       setShift(false);
-      if (wasAtBottomBeforePaginationRef.current && !jumpLockActiveRef.current) {
-        vListRef.current?.scrollToIndex(processedEventsRef.current.length - 1, {
-          align: 'end',
-        });
+      if (wasAtBottomBeforePaginationRef.current) {
+        vListRef.current?.scrollToIndex(processedEventsRef.current.length - 1, { align: 'end' });
       }
     }
   }, [timelineSync.backwardStatus]);
 
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     if (timelineSync.focusItem) {
-      // Mark that the jump succeeded (focusItem was set). This prevents recovery
-      // scroll from firing even after focusItem is cleared (highlight ends).
-      jumpSucceededRef.current = true;
-
-      const {
-        index,
-        eventId: focusEventId,
-        scrollTo,
-        align,
-        jumpMode: focusJumpMode,
-      } = timelineSync.focusItem;
-      log.log(
-        `[PermalinkJump] focusItem set: eventId=${focusEventId}, index=${index}, scrollTo=${scrollTo}, align=${align ?? 'center'}, jumpMode=${focusJumpMode ?? jumpMode ?? 'history_context'}`
-      );
-      Sentry.addBreadcrumb({
-        category: 'timeline.permalink',
-        message: 'focusItem set',
-        level: 'info',
-        data: {
-          eventId: focusEventId,
-          index,
-          scrollTo,
-          align: align ?? 'center',
-          jumpMode: focusJumpMode ?? jumpMode ?? 'history_context',
-          roomId: room.roomId,
-        },
-      });
-
-      const anchorKey = `${focusEventId ?? 'no-event'}:${index}`;
-      const isNewAnchor = jumpAnchorKeyRef.current !== anchorKey;
-      if (isNewAnchor) {
-        jumpAnchorKeyRef.current = anchorKey;
-        if (jumpRetryIntervalRef.current !== undefined) {
-          clearInterval(jumpRetryIntervalRef.current);
-          jumpRetryIntervalRef.current = undefined;
-        }
-        jumpRecenterTimeoutIdsRef.current.forEach((id) => clearTimeout(id));
-        jumpRecenterTimeoutIdsRef.current = [];
-        if (jumpHighlightTimeoutRef.current !== undefined) {
-          clearTimeout(jumpHighlightTimeoutRef.current);
-          jumpHighlightTimeoutRef.current = undefined;
-        }
-        if (jumpRouteCleanupTimerRef.current !== undefined) {
-          clearTimeout(jumpRouteCleanupTimerRef.current);
-          jumpRouteCleanupTimerRef.current = undefined;
+      if (timelineSync.focusItem.scrollTo && vListRef.current) {
+        const processedIndex = getRawIndexToProcessedIndex(timelineSync.focusItem.index);
+        if (processedIndex !== undefined) {
+          vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
+          timelineSync.setFocusItem((prev) => (prev ? { ...prev, scrollTo: false } : undefined));
         }
       }
-
-      let scrollSucceeded = false;
-      const resolveProcessedIndex = () => {
-        const currentFocusItem = timelineSyncRef.current.focusItem;
-        if (!currentFocusItem) return undefined;
-        if (currentFocusItem.tail === 'live') {
-          const lastRowIndex = processedEventsRef.current.length - 1;
-          if (lastRowIndex < 0) return undefined;
-          return {
-            processedIndex: lastRowIndex,
-            lockEventId: processedEventsRef.current[lastRowIndex]?.mEvent.getId(),
-          };
-        }
-
-        let nextProcessedIndex = getRawIndexToProcessedIndex(currentFocusItem.index);
-        let resolvedEventId =
-          nextProcessedIndex !== undefined
-            ? processedEventsRef.current[nextProcessedIndex]?.mEvent.getId()
-            : undefined;
-        if (nextProcessedIndex === undefined && currentFocusItem.eventId) {
-          const found = processedEventsRef.current.findIndex(
-            (e) => e.mEvent.getId() === currentFocusItem.eventId
-          );
-          if (found >= 0) {
-            nextProcessedIndex = found;
-            resolvedEventId = processedEventsRef.current[found]?.mEvent.getId();
-          }
-        }
-
-        if (nextProcessedIndex !== undefined) {
-          return {
-            processedIndex: nextProcessedIndex,
-            lockEventId: resolvedEventId,
-          };
-        }
-
-        const nearest =
-          (currentFocusItem.align === 'end'
-            ? getProcessedRowIndexForRawTimelineIndex(
-                processedEventsRef.current,
-                currentFocusItem.index
-              )
-            : getProcessedRowIndexForRawTimelineIndexForward(
-                processedEventsRef.current,
-                currentFocusItem.index
-              )) ??
-          getProcessedRowIndexForRawTimelineIndex(
-            processedEventsRef.current,
-            currentFocusItem.index
-          );
-
-        if (!nearest) return undefined;
-
-        return {
-          processedIndex: nearest.rowIndex,
-          lockEventId: processedEventsRef.current[nearest.rowIndex]?.mEvent.getId(),
-        };
-      };
-
-      const attemptScroll = () => {
-        if (!timelineSync.focusItem?.scrollTo || !vListRef.current || scrollSucceeded) return false;
-
-        const resolvedTarget = resolveProcessedIndex();
-
-        if (!resolvedTarget) {
-          if (timelineSync.focusItem.eventId) {
-            log.log(
-              `[PermalinkJump] Event not found in processedEvents yet: eventId=${timelineSync.focusItem.eventId}, processedEvents.length=${processedEventsRef.current.length}`
-            );
-          }
-          return false;
-        }
-
-        log.log(
-          `[PermalinkJump] Scroll succeeded: processedIndex=${resolvedTarget.processedIndex}, eventId=${timelineSync.focusItem.eventId}`
-        );
-        Sentry.addBreadcrumb({
-          category: 'timeline.permalink',
-          message: 'Scroll succeeded',
-          level: 'info',
-          data: {
-            processedIndex: resolvedTarget.processedIndex,
-            eventId: timelineSync.focusItem.eventId,
-            roomId: room.roomId,
-          },
-        });
-
-        // An event-targeted jump should no longer be treated as bottom-pinned.
-        // If we leave atBottom=true from the room's previous state, the scroll
-        // handler can immediately "chase" the live bottom after this jump.
-        setAtBottom(false);
-        startJumpScrollBlock();
-        if (timelineSync.focusItem.tail !== 'live') {
-          activateJumpLock(resolvedTarget.lockEventId ?? focusEventId);
-        }
-
-        // Reveal timeline and scroll in the same frame to avoid flash
-        setIsReady(true);
-        vListRef.current.scrollToIndex(resolvedTarget.processedIndex, {
-          align: timelineSync.focusItem.align ?? 'center',
-        });
-        timelineSync.setFocusItem((prev) => (prev ? { ...prev, scrollTo: false } : undefined));
-
-        scrollSucceeded = true;
-
-        // Stop retry loop now that scroll succeeded
-        if (jumpRetryIntervalRef.current !== undefined) {
-          clearInterval(jumpRetryIntervalRef.current);
-          jumpRetryIntervalRef.current = undefined;
-        }
-
-        // Media loads and preview expansion can keep shifting layout after the
-        // first successful jump. Re-center a few bounded times and resolve the
-        // target row fresh each time so the event stays anchored while history
-        // and measured heights settle.
-        if (jumpRecenterTimeoutIdsRef.current.length === 0) {
-          [150, 600, 1500, 3000].forEach((delay) => {
-            const recenterTimeoutId = setTimeout(() => {
-              const delayedProcessedIndex = resolveProcessedIndex();
-              if (vListRef.current && delayedProcessedIndex !== undefined) {
-                reanchorJumpTarget('delayed_settle', {
-                  eventId: timelineSyncRef.current.focusItem?.eventId,
-                  align: timelineSyncRef.current.focusItem?.align ?? 'center',
-                  delayMs: delay,
-                });
-              }
-            }, delay);
-            jumpRecenterTimeoutIdsRef.current.push(recenterTimeoutId);
-          });
-        }
-
-        return true;
-      };
-
-      // Try immediate scroll
-      if (!attemptScroll()) {
-        // If immediate scroll failed (event not in processedEvents yet), retry periodically.
-        // This handles the case where pagination just loaded the event but React hasn't
-        // finished processing/rendering it yet.
-        if (jumpRetryIntervalRef.current !== undefined) {
-          clearInterval(jumpRetryIntervalRef.current);
-        }
-        jumpRetryIntervalRef.current = setInterval(() => {
-          if (attemptScroll()) {
-            if (jumpRetryIntervalRef.current !== undefined) {
-              clearInterval(jumpRetryIntervalRef.current);
-              jumpRetryIntervalRef.current = undefined;
-            }
-          }
-        }, 200);
-      }
-    } else {
-      jumpAnchorKeyRef.current = undefined;
-      if (jumpRetryIntervalRef.current !== undefined) {
-        clearInterval(jumpRetryIntervalRef.current);
-        jumpRetryIntervalRef.current = undefined;
-      }
-      jumpRecenterTimeoutIdsRef.current.forEach((id) => clearTimeout(id));
-      jumpRecenterTimeoutIdsRef.current = [];
-      if (jumpLayoutReanchorRafRef.current !== undefined) {
-        cancelAnimationFrame(jumpLayoutReanchorRafRef.current);
-        jumpLayoutReanchorRafRef.current = undefined;
-      }
-      if (jumpHighlightTimeoutRef.current !== undefined) {
-        clearTimeout(jumpHighlightTimeoutRef.current);
-        jumpHighlightTimeoutRef.current = undefined;
-      }
-      if (jumpRouteCleanupTimerRef.current !== undefined) {
-        clearTimeout(jumpRouteCleanupTimerRef.current);
-        jumpRouteCleanupTimerRef.current = undefined;
-      }
+      timeoutId = setTimeout(() => {
+        timelineSync.setFocusItem(undefined);
+      }, 2000);
     }
-  }, [
-    timelineSync.focusItem,
-    timelineSync,
-    reducedMotion,
-    getRawIndexToProcessedIndex,
-    setAtBottom,
-    startJumpScrollBlock,
-    activateJumpLock,
-    reanchorJumpTarget,
-    room.roomId,
-    jumpMode,
-    eventId,
-    location.pathname,
-    location.search,
-    navigate,
-  ]);
-
-  useEffect(() => {
-    const cleanupEventId = getNotificationJumpCleanupEventId({
-      eventId,
-      jumpMode,
-      atBottom: atBottomState,
-      liveTimelineLinked,
-    });
-
-    if (jumpRouteCleanupTimerRef.current !== undefined) {
-      clearTimeout(jumpRouteCleanupTimerRef.current);
-      jumpRouteCleanupTimerRef.current = undefined;
-    }
-
-    if (!cleanupEventId) {
-      return undefined;
-    }
-
-    jumpRouteCleanupTimerRef.current = setTimeout(() => {
-      if (
-        !shouldClearNotificationJumpRoute({
-          eventId,
-          jumpMode,
-          atBottom: atBottomRef.current,
-          liveTimelineLinked: liveTimelineLinkedRef.current,
-        })
-      ) {
-        return;
-      }
-
-      jumpRecenterTimeoutIdsRef.current.forEach((id) => clearTimeout(id));
-      jumpRecenterTimeoutIdsRef.current = [];
-      if (jumpLayoutReanchorRafRef.current !== undefined) {
-        cancelAnimationFrame(jumpLayoutReanchorRafRef.current);
-        jumpLayoutReanchorRafRef.current = undefined;
-      }
-      releaseJumpLock('route_change');
-      setFocusItem(undefined);
-
-      navigate(
-        buildNotificationJumpCleanupTarget(location.pathname, location.search, cleanupEventId),
-        {
-          replace: true,
-        }
-      );
-      jumpRouteCleanupTimerRef.current = undefined;
-    }, 250);
-
     return () => {
-      if (jumpRouteCleanupTimerRef.current !== undefined) {
-        clearTimeout(jumpRouteCleanupTimerRef.current);
-        jumpRouteCleanupTimerRef.current = undefined;
-      }
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
     };
-  }, [
-    atBottomState,
-    eventId,
-    jumpMode,
-    location.pathname,
-    location.search,
-    navigate,
-    releaseJumpLock,
-    setFocusItem,
-    liveTimelineLinked,
-  ]);
-
-  // URL-only cleanup for notification jumps that land in history context
-  // (event too far from live to trigger the full scroll-to-bottom cleanup).
-  // Without this, ?jumpMode&eventId stay in the history entry indefinitely,
-  // causing the room to re-fire the notification jump if the user swipes back
-  // to that entry via the native gesture. Does NOT remove the visual highlight.
-  useEffect(() => {
-    if (jumpURLOnlyCleanupTimerRef.current !== undefined) {
-      clearTimeout(jumpURLOnlyCleanupTimerRef.current);
-      jumpURLOnlyCleanupTimerRef.current = undefined;
-    }
-
-    if (!shouldClearNotificationJumpRouteURLOnly({ eventId, jumpMode, liveTimelineLinked })) {
-      return undefined;
-    }
-
-    jumpURLOnlyCleanupTimerRef.current = setTimeout(() => {
-      jumpURLOnlyCleanupTimerRef.current = undefined;
-      if (
-        !shouldClearNotificationJumpRouteURLOnly({
-          eventId,
-          jumpMode,
-          liveTimelineLinked: liveTimelineLinkedRef.current,
-        })
-      ) {
-        return;
-      }
-      navigate(buildNotificationJumpCleanupTarget(location.pathname, location.search, eventId!), {
-        replace: true,
-      });
-    }, 2000);
-
-    return () => {
-      if (jumpURLOnlyCleanupTimerRef.current !== undefined) {
-        clearTimeout(jumpURLOnlyCleanupTimerRef.current);
-        jumpURLOnlyCleanupTimerRef.current = undefined;
-      }
-    };
-  }, [eventId, jumpMode, liveTimelineLinked, location.pathname, location.search, navigate]);
-
-  useEffect(() => {
-    const focusItem = timelineSync.focusItem;
-    if (!focusItem) {
-      if (jumpHighlightTimeoutRef.current !== undefined) {
-        clearTimeout(jumpHighlightTimeoutRef.current);
-        jumpHighlightTimeoutRef.current = undefined;
-      }
-      return;
-    }
-
-    const paginationLoading =
-      timelineSync.backwardStatus === 'loading' || timelineSync.forwardStatus === 'loading';
-
-    if (jumpHighlightTimeoutRef.current !== undefined) {
-      clearTimeout(jumpHighlightTimeoutRef.current);
-      jumpHighlightTimeoutRef.current = undefined;
-    }
-
-    // Keep the highlight alive while surrounding context is still loading. Once
-    // pagination settles, leave the highlight around a bit longer so the target
-    // remains easy to re-find after previews/images finish reflowing.
-    if (paginationLoading) return;
-
-    const highlightDuration = focusItem.highlight ? 8000 : 4000;
-    jumpHighlightTimeoutRef.current = setTimeout(() => {
-      setFocusItem(undefined);
-      jumpHighlightTimeoutRef.current = undefined;
-    }, highlightDuration);
-  }, [
-    timelineSync.focusItem,
-    timelineSync.backwardStatus,
-    timelineSync.forwardStatus,
-    setFocusItem,
-  ]);
+  }, [timelineSync.focusItem, timelineSync, reducedMotion, getRawIndexToProcessedIndex]);
 
   useEffect(() => {
     if (timelineSync.focusItem) {
@@ -1102,151 +410,9 @@ export function RoomTimeline({
 
   useEffect(() => {
     if (!eventId) return;
-    log.log(`[PermalinkJump] Starting load: eventId=${eventId}, roomId=${room.roomId}`);
-    Sentry.addBreadcrumb({
-      category: 'timeline.permalink',
-      message: 'Starting permalink load',
-      level: 'info',
-      data: {
-        eventId,
-        jumpMode: jumpMode ?? 'history_context',
-        roomId: room.roomId,
-      },
-    });
-
     setIsReady(false);
-    // Re-arm the initial-scroll guard so that if the jump fails and falls back
-    // to the live timeline, the useLayoutEffect can fire via the normal path.
-    hasInitialScrolledRef.current = false;
-    // Reset auto-pagination cap so the new timeline can fill the viewport.
-    autopagAttemptsRef.current = 0;
-    // Reset jump success tracking for this new eventId.
-    jumpSucceededRef.current = false;
-    // Reset "was at bottom" flag so pagination after the jump doesn't scroll to bottom.
-    wasAtBottomBeforePaginationRef.current = false;
-    // Cancel any pending error-recovery scroll timer from a previous eventId load
-    // so it cannot reveal the timeline mid-flight of a new load.
-    if (initialScrollTimerRef.current !== undefined) {
-      clearTimeout(initialScrollTimerRef.current);
-      initialScrollTimerRef.current = undefined;
-    }
-    // Clear the stale live-timeline content immediately so loading placeholders
-    // are shown while the event-context API call is in flight, rather than
-    // having the entire message area go invisible (opacity:0) with no feedback.
-    timelineSyncRef.current.setTimeline(getEmptyTimeline());
-    // Mark the eventId load as in-progress to prevent premature recovery scroll
-    eventIdLoadInProgressRef.current = true;
-    loadingEventIdRef.current = eventId;
-    void timelineSyncRef.current
-      .loadEventTimeline(eventId, undefined, { jumpMode })
-      .then(() => {
-        log.log(
-          `[PermalinkJump] loadEventTimeline succeeded: eventId=${eventId}, eventsLength=${timelineSyncRef.current.eventsLength}`
-        );
-        Sentry.addBreadcrumb({
-          category: 'timeline.permalink',
-          message: 'loadEventTimeline succeeded',
-          level: 'info',
-          data: {
-            eventId,
-            eventsLength: timelineSyncRef.current.eventsLength,
-            jumpMode: jumpMode ?? 'history_context',
-            roomId: room.roomId,
-          },
-        });
-      })
-      .catch((err) => {
-        log.warn(`[PermalinkJump] loadEventTimeline failed: eventId=${eventId}`, err);
-        Sentry.addBreadcrumb({
-          category: 'timeline.permalink',
-          message: 'loadEventTimeline failed',
-          level: 'error',
-          data: {
-            eventId,
-            error: String(err),
-            jumpMode: jumpMode ?? 'history_context',
-            roomId: room.roomId,
-          },
-        });
-      })
-      .finally(() => {
-        // Clear the flag whether the load succeeded or failed. If it succeeded,
-        // focusItem will be set and the focus scroll will handle it. If it failed,
-        // the recovery scroll can now safely fire.
-        eventIdLoadInProgressRef.current = false;
-        loadingEventIdRef.current = null;
-      });
-  }, [eventId, jumpMode, room.roomId]);
-
-  // Recovery: loadEventTimeline's onError callback restores the live timeline but
-  // scrollToBottom fires before the VList has rendered the new events (the list is
-  // still empty at that point), so it returns early and no scroll happens.
-  // Detect the "eventId load failed, fell back to live" state and reveal the
-  // timeline scrolled to the bottom so the room is usable rather than stuck at
-  // opacity-0 or stranded at the top of history.
-  useEffect(() => {
-    if (!eventId) return;
-    if (isReady) return;
-    if (timelineSync.eventsLength === 0) return;
-    // Do NOT fire recovery scroll if the jump already succeeded. Once focusItem
-    // was set (even if later cleared after highlight), the jump worked correctly.
-    if (jumpSucceededRef.current) return;
-    // Do NOT fire recovery scroll while the eventId load is still in progress.
-    // The live timeline may receive events from sliding sync before the target
-    // event context finishes loading, which would cause a premature scroll to bottom.
-    if (eventIdLoadInProgressRef.current) return;
-    // If focusItem is set or scrollTo is still pending, the focus scroll will handle it.
-    // Wait for it to complete before falling back to recovery scroll.
-    if (timelineSync.focusItem?.scrollTo) return;
-    if (!timelineSync.liveTimelineLinked) return;
-    // Guard: don't start a second timer if one is already in flight.
-    if (initialScrollTimerRef.current !== undefined) return;
-
-    // Delay recovery scroll to give the focusItem scroll enough time to succeed.
-    // If the permalink jump is working, focusItem will be active for 2-4s (highlight duration).
-    // Only fall back to recovery if focusItem doesn't exist or was never set.
-    initialScrollTimerRef.current = setTimeout(() => {
-      log.log(
-        `[PermalinkJump] Recovery scroll 1s timer fired: focusItem=${!!timelineSyncRef.current.focusItem}, isReady=${isReadyRef.current}, eventsLength=${timelineSyncRef.current.eventsLength}`
-      );
-      initialScrollTimerRef.current = undefined;
-
-      // Don't fire recovery if focusItem exists at all - that means the permalink scroll
-      // is active (even if scrollTo is false, which happens after successful scroll).
-      // Only recover when focusItem is completely undefined (scroll never started or failed).
-      if (timelineSyncRef.current.focusItem) return;
-      if (isReadyRef.current) return;
-      if (timelineSyncRef.current.eventsLength === 0) return;
-      if (!timelineSyncRef.current.liveTimelineLinked) return;
-
-      // Virtua has no measured item heights yet when data first populates
-      // (transition from 0 → N items).  A single scrollToIndex call lands at the
-      // estimated position (often 0) because every item is still at its default
-      // height.  Scroll once immediately to warm up virtua's layout pass, then
-      // schedule a second scroll after 80ms when heights are measured.
-      scrollToBottom();
-
-      initialScrollTimerRef.current = setTimeout(() => {
-        initialScrollTimerRef.current = undefined;
-        // Final bail-out checks before revealing
-        if (isReadyRef.current) return;
-        if (timelineSyncRef.current.focusItem) return;
-        if (timelineSyncRef.current.eventsLength === 0) return;
-        if (!timelineSyncRef.current.liveTimelineLinked) return;
-
-        scrollToBottom();
-        setIsReady(true);
-      }, 80);
-    }, 1000);
-  }, [
-    eventId,
-    isReady,
-    scrollToBottom,
-    timelineSync.eventsLength,
-    timelineSync.focusItem,
-    timelineSync.liveTimelineLinked,
-    room.roomId,
-  ]);
+    void timelineSyncRef.current.loadEventTimeline(eventId);
+  }, [eventId, room.roomId]);
 
   useEffect(() => {
     if (eventId) return;
@@ -1288,19 +454,6 @@ export function RoomTimeline({
   ]);
 
   useEffect(() => {
-    if (eventId) {
-      keyboardSessionBottomPinnedRef.current = false;
-    }
-  }, [eventId, room.roomId]);
-
-  useEffect(() => {
-    if (didKeyboardJustOpen(isKeyboardVisible, renderKeyboardVisibleRef.current)) {
-      keyboardSessionBottomPinnedRef.current = atBottomRef.current;
-    }
-    renderKeyboardVisibleRef.current = isKeyboardVisible;
-  }, [isKeyboardVisible]);
-
-  useEffect(() => {
     const el = messageListRef.current;
     if (!el) return () => {};
 
@@ -1308,85 +461,17 @@ export function RoomTimeline({
       const newHeight = entries[0]!.contentRect.height;
       const prev = prevViewportHeightRef.current;
       const atBottom = atBottomRef.current;
-      const changed = newHeight !== prev;
-      const heightDelta = newHeight - prev;
+      const shrank = newHeight < prev;
 
-      // Detect if this viewport expansion is from keyboard closing.
-      // If the viewport grew by roughly the keyboard height that just disappeared,
-      // record the time so handleVListScroll can use an extended settle window
-      // (500ms instead of 250ms) to fully suppress the jump button during the
-      // keyboard close animation.
-      const keyboardJustClosed = didKeyboardJustClose({
-        heightDelta,
-        isKeyboardVisible: keyboardVisibleRef.current,
-        prevKeyboardHeight: prevKeyboardHeightRef.current,
-        prevKeyboardVisible: prevKeyboardVisibleRef.current,
-      });
-
-      if (keyboardJustClosed) {
-        lastKeyboardCloseTimeRef.current = Date.now();
-      }
-
-      if (
-        shouldRepinBottomAfterKeyboardClose(
-          keyboardJustClosed,
-          keyboardSessionBottomPinnedRef.current,
-          atBottom
-        )
-      ) {
-        keyboardSessionBottomPinnedRef.current = false;
-        setAtBottom(true);
-        requestAnimationFrame(() => {
-          const vl = vListRef.current;
-          if (!vl) return;
-          lastProgrammaticBottomPinAtRef.current = Date.now();
-          vl.scrollTo(vl.scrollSize);
-        });
-      } else if (keyboardJustClosed) {
-        keyboardSessionBottomPinnedRef.current = false;
-      }
-
-      // Handle both viewport shrinking (keyboard open) and expanding (keyboard close)
-      // to prevent the "Jump to Present" button from flashing during these transitions.
-      if (changed && atBottom) {
-        // Record the programmatic pin so handleVListScroll sees withinSettleWindow=true
-        // and doesn't flip atBottom to false while VList commits the new scroll position.
-        lastProgrammaticBottomPinAtRef.current = Date.now();
+      if (shrank && atBottom) {
         vListRef.current?.scrollTo(vListRef.current.scrollSize);
       }
       prevViewportHeightRef.current = newHeight;
-      prevKeyboardVisibleRef.current = keyboardVisibleRef.current;
-      prevKeyboardHeightRef.current = keyboardHeightRef.current;
     });
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [setAtBottom]);
-
-  // When the thread drawer opens/closes on desktop, the main timeline column
-  // changes width and Virtua remeasures all item heights.  Save the scroll
-  // offset just before the open so we can restore it after the close once
-  // layout has settled (two RAFs to let Virtua finish its resize cycle).
-  useEffect(() => {
-    if (openThreadId) {
-      scrollOffsetBeforeThreadRef.current = vListRef.current?.scrollOffset;
-      wasAtBottomBeforeThreadRef.current = atBottomRef.current;
-    } else if (scrollOffsetBeforeThreadRef.current !== undefined) {
-      const savedOffset = scrollOffsetBeforeThreadRef.current;
-      scrollOffsetBeforeThreadRef.current = undefined;
-      const shouldSnapToBottom = wasAtBottomBeforeThreadRef.current;
-      wasAtBottomBeforeThreadRef.current = false;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (shouldSnapToBottom) {
-            scrollToBottom();
-            return;
-          }
-          vListRef.current?.scrollTo(savedOffset);
-        });
-      });
-    }
-  }, [openThreadId, scrollToBottom]);
+  }, []);
 
   const actions = useTimelineActions({
     room,
@@ -1438,70 +523,11 @@ export function RoomTimeline({
           }
         }
         if (vListRef.current && processedIndex !== undefined) {
-          // A direct jump into already-loaded history should no longer be treated
-          // as bottom-pinned, otherwise the bottom-follow recovery paths can pull
-          // the timeline straight back to latest while this jump is settling.
-          setAtBottom(false);
           vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
-          startJumpScrollBlock();
-          activateJumpLock(anchorId);
         }
-        timelineSync.setFocusItem({
-          index: focusRawIndex,
-          eventId: anchorId,
-          scrollTo: false,
-          highlight: true,
-          align: 'center',
-          jumpMode: 'history_context',
-        });
+        timelineSync.setFocusItem({ index: focusRawIndex, scrollTo: false, highlight: true });
       } else {
-        // Cancel any in-flight jump operation to prevent concurrent jumps
-        if (jumpAbortControllerRef.current) {
-          log.log(
-            `[PermalinkJump] Cancelling previous jump for ${loadingEventIdRef.current || 'unknown'}`
-          );
-          jumpAbortControllerRef.current.abort();
-        }
-
-        // Create new AbortController for this jump
-        jumpAbortControllerRef.current = new AbortController();
-        const currentAbortController = jumpAbortControllerRef.current;
-
-        // Prepare for loading: hide timeline and show skeletons
-        setIsReady(false);
-        timelineSync.setTimeline(getEmptyTimeline());
-        eventIdLoadInProgressRef.current = true;
-        loadingEventIdRef.current = anchorId;
-
-        log.log(`[PermalinkJump] Starting load for ${anchorId} from handleOpenEvent`);
-        Sentry.addBreadcrumb({
-          category: 'timeline.permalink',
-          message: 'handleOpenEvent initiating load',
-          level: 'info',
-          data: { eventId: anchorId, roomId: room.roomId },
-        });
-
-        void timelineSync
-          .loadEventTimeline(anchorId, currentAbortController.signal, {
-            jumpMode: 'history_context',
-          })
-          .catch((err) => {
-            // Ignore aborted operations
-            if (err?.name === 'AbortError' || currentAbortController.signal.aborted) {
-              log.log(`[PermalinkJump] Jump to ${anchorId} was cancelled`);
-              return;
-            }
-            // Let other errors propagate to the error handler in useEventTimelineLoader
-            throw err;
-          })
-          .finally(() => {
-            // Only clean up if this is still the active controller
-            if (jumpAbortControllerRef.current === currentAbortController) {
-              eventIdLoadInProgressRef.current = false;
-              loadingEventIdRef.current = null;
-              jumpAbortControllerRef.current = null;
-            }
-          });
+        void timelineSync.loadEventTimeline(anchorId);
       }
     },
   });
@@ -1582,12 +608,7 @@ export function RoomTimeline({
       hideNickAvatarEvents,
       hiddenEvents,
     },
-    state: {
-      focusItem: timelineSync.focusItem,
-      editId: editInInput ? undefined : editId,
-      activeReplyId,
-      openThreadId,
-    },
+    state: { focusItem: timelineSync.focusItem, editId, activeReplyId, openThreadId },
     permissions: {
       canRedact: permissions.action('redact', mx.getSafeUserId()),
       canDeleteOwn: permissions.event('m.room.redaction', mx.getSafeUserId()),
@@ -1599,18 +620,13 @@ export function RoomTimeline({
       onUsernameClick: actions.handleUsernameClick,
       onReplyClick: actions.handleReplyClick,
       onReactionToggle: actions.handleReactionToggle,
-      onEditId: handleEditCallback,
+      onEditId: actions.handleEdit,
       onResend: actions.handleResend,
       onDeleteFailedSend: actions.handleDeleteFailedSend,
       setOpenThread: actions.setOpenThread,
       handleOpenReply: actions.handleOpenReply,
     },
-    utils: {
-      htmlReactParserOptions,
-      linkifyOpts,
-      getMemberPowerTag,
-      parseMemberEvent,
-    },
+    utils: { htmlReactParserOptions, linkifyOpts, getMemberPowerTag, parseMemberEvent },
   });
 
   const tryAutoMarkAsRead = useCallback(() => {
@@ -1651,105 +667,7 @@ export function RoomTimeline({
 
       const distanceFromBottom = v.scrollSize - offset - v.viewportSize;
       const isNowAtBottom = distanceFromBottom < 100;
-
-      // Use extended settle window (500ms) when keyboard just closed to fully
-      // suppress the jump button during the close animation. Otherwise use the
-      // standard 250ms window.
-      const keyboardCloseRecent = Date.now() - lastKeyboardCloseTimeRef.current < 500;
-      const settleMs = keyboardCloseRecent ? 500 : SCROLL_SETTLE_MS;
-      const withinSettleWindow = Date.now() - lastProgrammaticBottomPinAtRef.current < settleMs;
-
-      // When the user is pinned to the bottom and content grows (images, embeds,
-      // video thumbnails loading), scrollSize increases while offset stays put,
-      // pushing distanceFromBottom above the threshold. Instead of flipping
-      // atBottom to false (which shows the "Jump to Latest" button), chase the
-      // bottom so the user stays pinned.
-      const previousScrollSize = prevScrollSizeRef.current;
-      const contentGrew = v.scrollSize > previousScrollSize;
-      const scrollSizeDelta = v.scrollSize - previousScrollSize;
-      prevScrollSizeRef.current = v.scrollSize;
-
-      // When the keyboard opens/closes the VList viewportSize changes. The
-      // scrollOffset doesn't immediately follow, so distanceFromBottom spikes
-      // and isNowAtBottom becomes false — flashing the "Jump to Present" button.
-      // This is especially common when the keyboard opens/closes quickly before
-      // the chase RAF from a previous event has had a chance to execute.
-      // Detect the change here (inside onScroll, race-free) and chase the
-      // bottom before setAtBottom(false) is called.
-      const viewportChanged =
-        prevVListViewportRef.current > 0 && v.viewportSize !== prevVListViewportRef.current;
-      if (viewportChanged) {
-        lastViewportChangeTimeRef.current = Date.now();
-      }
-      prevVListViewportRef.current = v.viewportSize;
-
-      // Skip content-chase and cache saves during init: the timeline is hidden
-      // (opacity 0) while VList measures items and fires intermediate scroll
-      // events.  Chasing the bottom here causes cascading scrollTo calls that
-      // upstream doesn't have, producing visible layout churn after isReady.
-      if (!isReadyRef.current) return;
-
-      // While a jump scroll is settling (briefly after scrollToIndex), VList
-      // fires intermediate scroll events that can incorrectly flip atBottom.
-      // Use a short-lived block instead of the full focusItem lifetime so that
-      // normal scrolling resumes quickly and atBottom is recomputed correctly.
-      if (jumpScrollBlockRef.current) return;
-
-      if (
-        jumpLockActiveRef.current &&
-        contentGrew &&
-        Date.now() - userScrollIntentAtRef.current >= 250 &&
-        Date.now() - lastJumpLayoutReanchorAtRef.current >= 120 &&
-        jumpLayoutReanchorRafRef.current === undefined
-      ) {
-        jumpLayoutReanchorRafRef.current = requestAnimationFrame(() => {
-          jumpLayoutReanchorRafRef.current = undefined;
-          lastJumpLayoutReanchorAtRef.current = Date.now();
-          reanchorJumpTarget('content_growth', {
-            scrollDelta: scrollSizeDelta,
-            align: timelineSyncRef.current.focusItem?.align ?? 'center',
-          });
-        });
-      }
-
-      if (
-        jumpLockActiveRef.current &&
-        Date.now() >= jumpReanchorScrollUntilRef.current &&
-        Date.now() - userScrollIntentAtRef.current < 400
-      ) {
-        if (jumpLockReleaseTimerRef.current !== undefined) {
-          clearTimeout(jumpLockReleaseTimerRef.current);
-        }
-        jumpLockReleaseTimerRef.current = setTimeout(() => {
-          jumpLockReleaseTimerRef.current = undefined;
-          releaseJumpLock('user_scroll');
-        }, 120);
-      }
-
-      if (
-        atBottomRef.current &&
-        !isNowAtBottom &&
-        (contentGrew || viewportChanged || withinSettleWindow)
-      ) {
-        // Defer the chase to the next animation frame so VList finishes its
-        // current layout pass. Synchronous scrollTo causes cascading scroll
-        // events that produce visible jumps when images/embeds load.
-        requestAnimationFrame(() => {
-          const vl = vListRef.current;
-          if (vl && atBottomRef.current) {
-            lastProgrammaticBottomPinAtRef.current = Date.now();
-            vl.scrollTo(vl.scrollSize);
-          }
-        });
-        return;
-      }
-      // Don't flip atBottom to false while viewport change is settling (keyboard
-      // open/close). Wait for the chase RAF to complete and subsequent scroll
-      // events to stabilize before re-evaluating atBottom. 500ms window allows
-      // for slower devices and multiple rapid viewport changes (keyboard animations,
-      // address bar hiding, etc.) to complete before checking scroll position.
-      const withinViewportChangeWindow = Date.now() - lastViewportChangeTimeRef.current < 500;
-      if (isNowAtBottom !== atBottomRef.current && !withinViewportChangeWindow) {
+      if (isNowAtBottom !== atBottomRef.current) {
         setAtBottom(isNowAtBottom);
       }
 
@@ -1764,28 +682,12 @@ export function RoomTimeline({
         void timelineSyncRef.current.handleTimelinePagination(false);
       }
     },
-    [reanchorJumpTarget, releaseJumpLock, setAtBottom]
+    [setAtBottom]
   );
 
   const showLoadingPlaceholders =
     timelineSync.eventsLength === 0 &&
-    !isReady &&
-    (eventIdLoadInProgressRef.current ||
-      timelineSync.canPaginateBack ||
-      timelineSync.backwardStatus === 'loading');
-
-  // Log skeleton visibility for debugging
-  useEffect(() => {
-    if (eventId && showLoadingPlaceholders) {
-      log.log(
-        `[PermalinkJump] Showing loading skeletons: eventsLength=${timelineSync.eventsLength}, isReady=${isReady}, eventIdLoadInProgress=${eventIdLoadInProgressRef.current}`
-      );
-    }
-  }, [eventId, showLoadingPlaceholders, timelineSync.eventsLength, isReady]);
-
-  // When showing loading placeholders, provide dummy data so VList renders items.
-  // Without this, VList receives an empty array and renders nothing, causing a blank timeline.
-  const placeholderDummyData = useMemo(() => Array(5).fill(null) as ProcessedEvent[], []);
+    (!isReady || timelineSync.canPaginateBack || timelineSync.backwardStatus === 'loading');
 
   let backPaginationJSX: ReactNode | undefined;
   if (timelineSync.canPaginateBack || timelineSync.backwardStatus !== 'idle') {
@@ -1872,122 +774,9 @@ export function RoomTimeline({
     hideNickAvatarEvents,
     isReadOnly,
     hideMemberInReadOnly,
-    messageGroupingThreshold,
   });
 
   processedEventsRef.current = processedEvents;
-
-  useLayoutEffect(() => {
-    if (!jumpLockActiveRef.current) return;
-    const targetEventId = jumpLockEventIdRef.current;
-    if (!targetEventId) return;
-    if (jumpScrollBlockRef.current) return;
-    if (Date.now() - userScrollIntentAtRef.current < 250) return;
-
-    const targetIndex = processedEventsRef.current.findIndex(
-      (e) => e.mEvent.getId() === targetEventId
-    );
-    if (targetIndex < 0) {
-      // Keep the lock alive while the initial jump retry loop is still trying to
-      // surface the target row. Releasing here would disable later re-anchors
-      // during decrypt/reflow churn even though the target may still appear.
-      if (jumpRetryIntervalRef.current !== undefined || timelineSync.focusItem?.scrollTo) {
-        return;
-      }
-      releaseJumpLock('missing_target');
-      return;
-    }
-
-    if (jumpLockReleaseTimerRef.current !== undefined) {
-      clearTimeout(jumpLockReleaseTimerRef.current);
-      jumpLockReleaseTimerRef.current = undefined;
-    }
-
-    setAtBottom(false);
-    reanchorJumpTarget('timeline_remeasure', {
-      eventId: targetEventId,
-      align: 'center',
-    });
-  }, [
-    processedEvents,
-    timelineSync.eventsLength,
-    timelineSync.backwardStatus,
-    timelineSync.forwardStatus,
-    timelineSync.focusItem,
-    reanchorJumpTarget,
-    releaseJumpLock,
-    setAtBottom,
-  ]);
-
-  useLayoutEffect(() => {
-    const lastEventId = processedEvents.at(-1)?.id;
-    const prevLastEventId = lastRenderedTailRef.current;
-    lastRenderedTailRef.current = lastEventId;
-
-    if (!isReady) return;
-    if (!timelineSync.liveTimelineLinked) return;
-    if (!atBottomRef.current) return;
-    if (jumpLockActiveRef.current) return;
-    if (jumpScrollBlockRef.current) return;
-    if (!lastEventId || lastEventId === prevLastEventId) return;
-
-    lastProgrammaticBottomPinAtRef.current = Date.now();
-    scrollToBottom();
-
-    requestAnimationFrame(() => {
-      if (!atBottomRef.current) return;
-      const v = vListRef.current;
-      if (!v) return;
-      lastProgrammaticBottomPinAtRef.current = Date.now();
-      v.scrollTo(v.scrollSize);
-    });
-  }, [processedEvents, isReady, timelineSync.liveTimelineLinked, scrollToBottom]);
-
-  // Use dummy data for VList when showing loading placeholders, otherwise use actual events.
-  const vListData = showLoadingPlaceholders ? placeholderDummyData : processedEvents;
-
-  useEffect(() => {
-    const el = messageListRef.current;
-    if (!el) return undefined;
-
-    const markUserScrollIntent = (source: 'pointerdown' | 'wheel' | 'touchmove' | 'keyboard') => {
-      userScrollIntentAtRef.current = Date.now();
-      if (shouldClearKeyboardBottomSessionOnUserIntent(source, keyboardVisibleRef.current)) {
-        keyboardSessionBottomPinnedRef.current = false;
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!isKeyboardBottomSessionScrollKeyTarget(event.target)) return;
-      if (
-        event.key === 'ArrowUp' ||
-        event.key === 'ArrowDown' ||
-        event.key === 'PageUp' ||
-        event.key === 'PageDown' ||
-        event.key === 'Home' ||
-        event.key === 'End' ||
-        event.key === ' '
-      ) {
-        markUserScrollIntent('keyboard');
-      }
-    };
-
-    const handleWheel = () => markUserScrollIntent('wheel');
-    const handleTouchMove = () => markUserScrollIntent('touchmove');
-    const handlePointerDown = () => markUserScrollIntent('pointerdown');
-
-    el.addEventListener('wheel', handleWheel, { passive: true });
-    el.addEventListener('touchmove', handleTouchMove, { passive: true });
-    el.addEventListener('pointerdown', handlePointerDown, { passive: true });
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      el.removeEventListener('wheel', handleWheel);
-      el.removeEventListener('touchmove', handleTouchMove);
-      el.removeEventListener('pointerdown', handlePointerDown);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, []);
 
   // Recovery: if the 80 ms initial-scroll timer fired while processedEvents was
   // empty (timeline was mid-reset), scroll to bottom and reveal the timeline once
@@ -1997,74 +786,26 @@ export function RoomTimeline({
     if (!pendingReadyRef.current) return;
     if (processedEvents.length === 0) return;
     pendingReadyRef.current = false;
-    scrollToBottom();
+    vListRef.current?.scrollToIndex(processedEvents.length - 1, { align: 'end' });
     setIsReady(true);
-  }, [processedEvents.length, scrollToBottom]);
-
-  useEffect(() => {
-    if (!isReady || processedEvents.length === 0) return;
-    const renderKey = `${room.roomId}:${eventId ?? 'live'}`;
-    if (timelineRenderMetricRoomRef.current === renderKey) return;
-    timelineRenderMetricRoomRef.current = renderKey;
-    completeRoomTimelineRender(
-      room.roomId,
-      eventId ? 'permalink_context' : 'live_timeline',
-      processedEvents.length
-    );
-  }, [eventId, isReady, processedEvents.length, room.roomId]);
+  }, [processedEvents.length]);
 
   useEffect(() => {
     if (!onEditLastMessageRef) return;
     const ref = onEditLastMessageRef;
     ref.current = () => {
       const myUserId = mx.getUserId();
-      const found = findLastOwnEditableProcessedEvent(processedEventsRef.current, myUserId);
-      if (found?.mEvent.getId()) handleEditCallback(found.mEvent.getId());
+      const found = [...processedEventsRef.current]
+        .toReversed()
+        .find(
+          (e) =>
+            e.mEvent.getSender() === myUserId &&
+            e.mEvent.getType() === 'm.room.message' &&
+            !e.mEvent.isRedacted()
+        );
+      if (found?.mEvent.getId()) actions.handleEdit(found.mEvent.getId());
     };
-  }, [onEditLastMessageRef, mx, handleEditCallback]);
-
-  // Keep stable refs so the edit-nav effect below doesn't stale-close over them.
-  const editIdRef = useRef(editId);
-  editIdRef.current = editId;
-  const handleEditRef = useRef(handleEdit);
-  handleEditRef.current = handleEdit;
-
-  const [editNavRequest, setEditNavRequest] = useAtom(
-    roomIdToEditNavRequestAtomFamily(room.roomId)
-  );
-
-  useEffect(() => {
-    if (!editNavRequest) return;
-    const editableEvents = processedEventsRef.current.filter(
-      (e) => !e.mEvent.isRedacted() && canEditEvent(mx, e.mEvent)
-    );
-    if (editableEvents.length === 0) {
-      setEditNavRequest(undefined);
-      return;
-    }
-
-    const currentEditId = editIdRef.current;
-    const doHandleEdit = handleEditRef.current;
-
-    if (currentEditId === undefined) {
-      // No active edit — start at the most recent editable message.
-      const latest = editableEvents.at(-1)!;
-      const id = latest.mEvent.getId();
-      if (id) doHandleEdit(id);
-      setEditNavRequest(undefined);
-      return;
-    }
-
-    const currentIdx = editableEvents.findIndex((e) => e.mEvent.getId() === currentEditId);
-    const next =
-      editNavRequest.dir === 'prev'
-        ? editableEvents[currentIdx - 1]
-        : editableEvents[currentIdx + 1];
-    setEditNavRequest(undefined);
-    if (!next) return;
-    const id = next.mEvent.getId();
-    if (id) doHandleEdit(id);
-  }, [editNavRequest, mx, setEditNavRequest]);
+  }, [onEditLastMessageRef, mx, actions]);
 
   useEffect(() => {
     const v = vListRef.current;
@@ -2104,10 +845,7 @@ export function RoomTimeline({
       const hasRealScrollRoom = v.scrollSize > v.viewportSize + 300;
 
       if (!hasRealScrollRoom || (atTop && noVisibleGrowth)) {
-        if (autopagAttemptsRef.current < 20) {
-          autopagAttemptsRef.current += 1;
-          void timelineSyncRef.current.handleTimelinePagination(true);
-        }
+        void timelineSyncRef.current.handleTimelinePagination(true);
       }
     };
 
@@ -2122,13 +860,9 @@ export function RoomTimeline({
           <Chip
             variant="Primary"
             radii="Pill"
+            outlined
             before={chipIcon(ChatTeardropDots)}
-            onClick={() =>
-              timelineSync.loadEventTimeline(unreadInfo.readUptoEventId, undefined, {
-                jumpMode: 'history_context',
-                target: 'next',
-              })
-            }
+            onClick={() => timelineSync.loadEventTimeline(unreadInfo.readUptoEventId)}
           >
             <Text size="L400">Jump to Unread</Text>
           </Chip>
@@ -2137,7 +871,7 @@ export function RoomTimeline({
             radii="Pill"
             outlined
             before={chipIcon(Checks)}
-            onClick={handleMarkAsRead}
+            onClick={() => markAsRead(mx, room.roomId, hideReads)}
           >
             <Text size="L400">Mark as Read</Text>
           </Chip>
@@ -2155,9 +889,8 @@ export function RoomTimeline({
         }}
       >
         <VList<ProcessedEvent>
-          key={`${room.roomId}:${messageLayout}:${messageSpacing}`}
           ref={vListRef}
-          data={vListData}
+          data={processedEvents}
           shift={shift}
           className={css.messageList}
           style={{
@@ -2165,10 +898,8 @@ export function RoomTimeline({
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
-            paddingLeft: config.space.S200,
-            paddingRight: timelineRightSpacing,
             paddingTop: topSpacerHeight > 0 ? topSpacerHeight : config.space.S600,
-            paddingBottom: timelineBottomSpacing,
+            paddingBottom: config.space.S600,
           }}
           onScroll={handleVListScroll}
         >
@@ -2192,10 +923,7 @@ export function RoomTimeline({
                     {backPaginationJSX}
                     <div
                       style={{
-                        paddingTop: config.space.S700,
-                        paddingBottom: config.space.S600,
-                        paddingInlineStart:
-                          messageLayout === MessageLayout.Compact ? config.space.S0 : toRem(64),
+                        padding: `${config.space.S700} ${config.space.S400} ${config.space.S600} ${messageLayout === MessageLayout.Compact ? config.space.S400 : toRem(64)}`,
                       }}
                     >
                       <RoomIntro room={room} />
@@ -2224,22 +952,18 @@ export function RoomTimeline({
                 {eventData.willRenderDayDivider && (
                   <MessageBase space={messageSpacing}>
                     <TimelineDivider variant="Surface">
-                      <div className={css.dividerInset}>
-                        <Badge as="span" size="500" variant="Secondary" fill="None" radii="300">
-                          <Text size="L400">{getDayDividerText(eventData.mEvent.getTs())}</Text>
-                        </Badge>
-                      </div>
+                      <Badge as="span" size="500" variant="Secondary" fill="None" radii="300">
+                        <Text size="L400">{getDayDividerText(eventData.mEvent.getTs())}</Text>
+                      </Badge>
                     </TimelineDivider>
                   </MessageBase>
                 )}
                 {eventData.willRenderNewDivider && (
                   <MessageBase space={messageSpacing}>
                     <TimelineDivider style={{ color: color.Success.Main }} variant="Inherit">
-                      <div className={css.dividerInset}>
-                        <Badge as="span" size="500" variant="Success" fill="Solid" radii="300">
-                          <Text size="L400">New Messages</Text>
-                        </Badge>
-                      </div>
+                      <Badge as="span" size="500" variant="Success" fill="Solid" radii="300">
+                        <Text size="L400">New Messages</Text>
+                      </Badge>
                     </TimelineDivider>
                   </MessageBase>
                 )}
@@ -2252,10 +976,7 @@ export function RoomTimeline({
                   {!timelineSync.canPaginateBack && (
                     <div
                       style={{
-                        paddingTop: config.space.S700,
-                        paddingBottom: config.space.S600,
-                        paddingInlineStart:
-                          messageLayout === MessageLayout.Compact ? config.space.S0 : toRem(64),
+                        padding: `${config.space.S700} ${config.space.S400} ${config.space.S600} ${messageLayout === MessageLayout.Compact ? config.space.S400 : toRem(64)}`,
                       }}
                     >
                       <RoomIntro room={room} />
@@ -2290,62 +1011,34 @@ export function RoomTimeline({
         </TimelineFloat>
       )}
 
-      {(!atBottomState || !timelineSync.liveTimelineLinked) && isReady && (
-        <TimelineFloat position="Bottom">
+      {frontPaginationJSX && (
+        <TimelineFloat position="Bottom" style={timelineBottomFloatLift}>
           {frontPaginationJSX}
-          {!frontPaginationJSX && (
-            <Chip
-              variant="SurfaceVariant"
-              radii="Pill"
-              outlined
-              before={chipIcon(ArrowDown)}
-              onClick={() => {
-                if (eventId) navigateRoom(room.roomId, undefined, { replace: true });
-                releaseJumpLock('jump_to_latest');
-                setUnreadInfo((prev) => getUnreadInfoAfterJumpToLatest(prev));
-                timelineSync.jumpToLatest();
-              }}
-            >
-              <Text size="L400">Jump to Latest</Text>
-            </Chip>
-          )}
         </TimelineFloat>
       )}
-      {!isReady && !showLoadingPlaceholders && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-end',
-            padding: `0 0 ${config.space.S600} 0`,
-            overflow: 'hidden',
-            pointerEvents: 'none',
-          }}
-        >
-          <MessageBase space={messageSpacing}>
-            {messageLayout === MessageLayout.Compact ? (
-              <CompactPlaceholder />
-            ) : (
-              <DefaultPlaceholder />
-            )}
-          </MessageBase>
-          <MessageBase space={messageSpacing}>
-            {messageLayout === MessageLayout.Compact ? (
-              <CompactPlaceholder />
-            ) : (
-              <DefaultPlaceholder />
-            )}
-          </MessageBase>
-          <MessageBase space={messageSpacing}>
-            {messageLayout === MessageLayout.Compact ? (
-              <CompactPlaceholder />
-            ) : (
-              <DefaultPlaceholder />
-            )}
-          </MessageBase>
-        </div>
+
+      {!atBottomState && isReady && (
+        <TimelineFloat position="Bottom">
+          <Chip
+            variant="SurfaceVariant"
+            radii="Pill"
+            outlined
+            before={chipIcon(ArrowDown)}
+            onClick={() => {
+              if (eventId) navigateRoom(room.roomId, undefined, { replace: true });
+              timelineSync.setTimeline(getInitialTimeline(room));
+              scrollToBottom();
+            }}
+            style={{
+              WebkitUserSelect: 'none',
+              msUserSelect: 'none',
+              userSelect: 'none',
+              MozUserSelect: 'none',
+            }}
+          >
+            <Text size="L400">Jump to Latest</Text>
+          </Chip>
+        </TimelineFloat>
       )}
     </Box>
   );

@@ -93,7 +93,7 @@ export function SwipeableMessageWrapper({
   onReply,
 }: {
   children: ReactNode;
-  onReply: () => void;
+  onReply?: () => void;
 }) {
   const settings = useAtomValue(settingsAtom);
 
@@ -105,7 +105,7 @@ export function SwipeableMessageWrapper({
     [settings.mobileGestures, settings.rightSwipeAction]
   );
 
-  if (!isSwipeToReplyEnabled) {
+  if (!isSwipeToReplyEnabled || !onReply) {
     return children;
   }
 
