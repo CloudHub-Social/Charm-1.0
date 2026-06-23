@@ -50,17 +50,36 @@ const getCurrentAppUrl = (): URL | undefined => {
   }
 };
 
-const isRegistrationInCurrentAppScope = (
-  registration: ServiceWorkerRegistration,
+const getWinningScopeRegistrations = (
+  registrations: ServiceWorkerRegistration[],
   currentAppUrl: URL | undefined
-): boolean => {
-  if (!currentAppUrl) return true;
+): ServiceWorkerRegistration[] => {
+  if (!currentAppUrl) return registrations;
 
-  try {
-    return currentAppUrl.href.startsWith(new URL(registration.scope).href);
-  } catch {
-    return true;
-  }
+  const matchingRegistrations = registrations
+    .map((registration) => {
+      try {
+        const scopeUrl = new URL(registration.scope, currentAppUrl);
+        return currentAppUrl.href.startsWith(scopeUrl.href)
+          ? { registration, scopeLength: scopeUrl.href.length }
+          : undefined;
+      } catch {
+        return undefined;
+      }
+    })
+    .filter(
+      (candidate): candidate is { registration: ServiceWorkerRegistration; scopeLength: number } =>
+        candidate !== undefined
+    );
+
+  if (matchingRegistrations.length === 0) return [];
+
+  const longestScopeLength = Math.max(
+    ...matchingRegistrations.map((candidate) => candidate.scopeLength)
+  );
+  return matchingRegistrations
+    .filter((candidate) => candidate.scopeLength === longestScopeLength)
+    .map((candidate) => candidate.registration);
 };
 
 const getAppServiceWorkerRegistrations = async (): Promise<ServiceWorkerRegistration[]> => {
@@ -82,8 +101,9 @@ const getAppServiceWorkerRegistrations = async (): Promise<ServiceWorkerRegistra
 
   const currentAppUrl = getCurrentAppUrl();
   const directRegistrations = getUniqueRegistrations(registrations);
-  const scopedDirectRegistrations = directRegistrations.filter((registration) =>
-    isRegistrationInCurrentAppScope(registration, currentAppUrl)
+  const scopedDirectRegistrations = getWinningScopeRegistrations(
+    directRegistrations,
+    currentAppUrl
   );
   if (scopedDirectRegistrations.length > 0) {
     return scopedDirectRegistrations;
@@ -99,9 +119,9 @@ const getAppServiceWorkerRegistrations = async (): Promise<ServiceWorkerRegistra
     // No ready registration to add.
   }
 
-  return getUniqueRegistrations(registrations).filter((registration) =>
-    isRegistrationInCurrentAppScope(registration, currentAppUrl)
-  );
+  const readyRegistrations = getUniqueRegistrations(registrations);
+  const scopedReadyRegistrations = getWinningScopeRegistrations(readyRegistrations, currentAppUrl);
+  return scopedReadyRegistrations.length > 0 ? scopedReadyRegistrations : readyRegistrations;
 };
 
 const getPendingAppUpdateRegistration = (

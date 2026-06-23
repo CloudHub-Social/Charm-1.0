@@ -226,6 +226,36 @@ describe('appUpdates', () => {
     expect(unrelatedRegistration.update).not.toHaveBeenCalled();
   });
 
+  it('uses the longest matching scope when multiple registrations match the current url', async () => {
+    const currentRegistration = createRegistration('https://charm.local/app/');
+    const broaderRegistration = createRegistration('https://charm.local/');
+    broaderRegistration.waiting = { postMessage: vi.fn() };
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        serviceWorker: {
+          controller: { postMessage: vi.fn() },
+          getRegistration: vi.fn().mockResolvedValue(currentRegistration),
+          getRegistrations: vi.fn().mockResolvedValue([currentRegistration, broaderRegistration]),
+          ready: Promise.resolve(currentRegistration),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        },
+      },
+    });
+
+    const resultPromise = checkForAppUpdates();
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual({
+      kind: 'up-to-date',
+      message: 'You are already on the latest available web app version.',
+      canApply: false,
+    });
+    expect(broaderRegistration.update).not.toHaveBeenCalled();
+  });
+
   it('does not wait for serviceWorker.ready once direct registrations are available', async () => {
     const ready = new Promise<ServiceWorkerRegistration>(() => undefined);
 
@@ -282,8 +312,8 @@ describe('appUpdates', () => {
   });
 
   it('fails when any update probe errors and no update is found', async () => {
-    const currentRegistration = createRegistration('https://charm.local/app/');
-    const secondaryRegistration = createRegistration('https://charm.local/');
+    const currentRegistration = createRegistration('/current');
+    const secondaryRegistration = createRegistration('/secondary');
     secondaryRegistration.update.mockRejectedValueOnce(new TypeError('network failed'));
 
     Object.defineProperty(window, 'navigator', {
@@ -310,8 +340,8 @@ describe('appUpdates', () => {
   });
 
   it('returns once any registration confirms an update', async () => {
-    const currentRegistration = createRegistration('https://charm.local/app/');
-    const secondaryRegistration = createRegistration('https://charm.local/');
+    const currentRegistration = createRegistration('/current');
+    const secondaryRegistration = createRegistration('/secondary');
     secondaryRegistration.update.mockImplementation(async () => {
       secondaryRegistration.waiting = { postMessage: vi.fn() };
     });
