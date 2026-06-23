@@ -83,6 +83,11 @@ export function useSettingsSyncEffect(): void {
   const applyingRemoteTimestampRef = useRef<number | null>(null);
   const previousSyncableSettingsJsonRef = useRef(JSON.stringify(serializeForSync(settings)));
 
+  const getFreshnessFloor = useCallback(
+    (): number => Math.max(localUpdatedAtRef.current, applyingRemoteTimestampRef.current ?? 0),
+    []
+  );
+
   useEffect(() => {
     localUpdatedAtRef.current = readLocalSettingsSyncUpdatedAt(localUpdatedAtStorageKey);
     applyingRemoteTimestampRef.current = null;
@@ -114,6 +119,12 @@ export function useSettingsSyncEffect(): void {
   useEffect(() => {
     const currentSyncableSettingsJson = JSON.stringify(serializeForSync(settings));
     if (currentSyncableSettingsJson === previousSyncableSettingsJsonRef.current) return;
+
+    if (!syncEnabled) {
+      previousSyncableSettingsJsonRef.current = currentSyncableSettingsJson;
+      return;
+    }
+
     previousSyncableSettingsJsonRef.current = currentSyncableSettingsJson;
 
     const appliedRemoteTimestamp = applyingRemoteTimestampRef.current;
@@ -127,7 +138,7 @@ export function useSettingsSyncEffect(): void {
     const updatedAt = getNextLocalSettingsSyncUpdatedAt(localUpdatedAtRef.current);
     localUpdatedAtRef.current = updatedAt;
     persistLocalSettingsSyncUpdatedAt(localUpdatedAtStorageKey, updatedAt);
-  }, [localUpdatedAtStorageKey, settings]);
+  }, [localUpdatedAtStorageKey, settings, syncEnabled]);
 
   // On mount / when sync is first enabled: load from account data
   // Also marks settings as initialized after checking or timeout
@@ -195,20 +206,14 @@ export function useSettingsSyncEffect(): void {
       }
 
       const remoteUpdatedAt = getSettingsSyncUpdatedAt(rawContent);
-      if (remoteUpdatedAt === null && localUpdatedAtRef.current > 0) {
-        return;
-      }
-      if (
-        remoteUpdatedAt !== null &&
-        localUpdatedAtRef.current > 0 &&
-        remoteUpdatedAt < localUpdatedAtRef.current
-      ) {
+      const freshnessFloor = getFreshnessFloor();
+      if (remoteUpdatedAt !== null && freshnessFloor > 0 && remoteUpdatedAt < freshnessFloor) {
         return;
       }
 
       applyRemoteContent(rawContent as Record<string, unknown>);
     },
-    [applyRemoteContent, localUpdatedAtStorageKey, setLastSynced, setSyncStatus]
+    [applyRemoteContent, getFreshnessFloor, localUpdatedAtStorageKey, setLastSynced, setSyncStatus]
   );
   useAccountDataCallback(mx, onAccountData);
 
@@ -237,10 +242,12 @@ export function useSettingsSyncEffect(): void {
         persistLocalSettingsSyncUpdatedAt(localUpdatedAtStorageKey, localUpdatedAt);
       }
 
-      if (remoteContent && remoteUpdatedAt !== null && remoteUpdatedAt >= localUpdatedAt) {
-        if (remoteUpdatedAt > localUpdatedAt) {
-          applyRemoteContent(remoteContent);
-        }
+      if (
+        remoteContent &&
+        remoteUpdatedAt !== null &&
+        remoteUpdatedAt >= localUpdatedAt &&
+        applyRemoteContent(remoteContent)
+      ) {
         setSyncStatus('idle');
         return;
       }

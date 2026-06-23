@@ -406,6 +406,40 @@ describe('useSettingsSyncEffect — echo-token loop prevention', () => {
     expect(mockMx.setAccountData).not.toHaveBeenCalled();
   });
 
+  it('does not treat sync-disabled local edits as fresher than remote settings when sync is re-enabled', () => {
+    localStorage.setItem('settings-sync-updated-at:@alice:example.com', '100');
+    mockMx.getAccountData.mockReturnValue({
+      getContent: () => ({
+        v: SETTINGS_SYNC_VERSION,
+        updatedAt: 200,
+        settings: { twitterEmoji: false },
+      }),
+    });
+
+    const store = makeStore({ settingsSyncEnabled: false, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      store.set(settingsAtom, {
+        ...store.get(settingsAtom),
+        twitterEmoji: false,
+      });
+    });
+
+    act(() => {
+      store.set(settingsAtom, {
+        ...store.get(settingsAtom),
+        settingsSyncEnabled: true,
+      });
+    });
+
+    expect(store.get(settingsAtom).twitterEmoji).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(mockMx.setAccountData).not.toHaveBeenCalled();
+  });
+
   it('keeps a newer local timestamp when an older upload echo arrives', () => {
     const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true, urlPreview: true });
     renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
@@ -500,6 +534,74 @@ describe('useSettingsSyncEffect — echo-token loop prevention', () => {
     expect(store.get(settingsAtom).themeId).toBeUndefined();
     expect(store.get(settingsAtom).themeRemoteManualFullUrl).toBeUndefined();
     expect(store.get(settingsAtom).themeRemoteManualKind).toBeUndefined();
+  });
+
+  it('applies live legacy remote settings updates even after local freshness exists', () => {
+    localStorage.setItem('settings-sync-updated-at:@alice:example.com', '300');
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      callbackHolder.current?.(
+        makeSableSettingsEvent({
+          v: SETTINGS_SYNC_VERSION,
+          settings: { twitterEmoji: false },
+        })
+      );
+    });
+
+    expect(store.get(settingsAtom).twitterEmoji).toBe(false);
+  });
+
+  it('ignores an older remote event while a newer remote apply is still in flight', () => {
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true, urlPreview: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      callbackHolder.current?.(
+        makeSableSettingsEvent({
+          v: SETTINGS_SYNC_VERSION,
+          updatedAt: 300,
+          settings: { twitterEmoji: false, urlPreview: false },
+        })
+      );
+
+      callbackHolder.current?.(
+        makeSableSettingsEvent({
+          v: SETTINGS_SYNC_VERSION,
+          updatedAt: 250,
+          settings: { twitterEmoji: true, urlPreview: false },
+        })
+      );
+    });
+
+    expect(store.get(settingsAtom)).toMatchObject({
+      twitterEmoji: false,
+      urlPreview: false,
+    });
+  });
+
+  it('uploads a valid payload when fresher cached account data is malformed', () => {
+    localStorage.setItem('settings-sync-updated-at:@alice:example.com', '100');
+    mockMx.getAccountData.mockReturnValue({
+      getContent: () => ({
+        v: SETTINGS_SYNC_VERSION,
+        updatedAt: 200,
+        settings: null,
+      }),
+    });
+
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(mockMx.setAccountData).toHaveBeenCalledOnce();
+    expect(mockMx.setAccountData.mock.calls[0]?.[1]?.settings).toMatchObject({
+      twitterEmoji: true,
+    });
   });
 
   it('preserves remote clear markers for later uploads even when visible settings do not change', () => {
