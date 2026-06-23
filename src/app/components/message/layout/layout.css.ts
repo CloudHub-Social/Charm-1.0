@@ -9,6 +9,7 @@ export const StickySection = style({
 });
 
 const SpacingVar = createVar();
+const JumboEmojiHeaderSpacingVar = createVar();
 const SpacingVariant = styleVariants({
   '0': {
     vars: {
@@ -286,6 +287,13 @@ export const MessageTextBody = recipe({
         whiteSpace: 'pre-wrap',
       },
     },
+    headerSpacing: {
+      true: {
+        vars: {
+          [JumboEmojiHeaderSpacingVar]: '0.1em',
+        },
+      },
+    },
     jumboEmoji: {
       none: {
         fontSize: '1rem !important',
@@ -294,7 +302,7 @@ export const MessageTextBody = recipe({
       extraSmall: {
         fontSize: '1.25rem !important',
         lineHeight: '1.4em',
-        marginTop: '0.1em',
+        marginTop: `var(${JumboEmojiHeaderSpacingVar}, 0)`,
         vars: {
           '--sable-system-emoji-top-offset': '-0.2em',
           '--sable-custom-emoji-top-offset': '-0.2em',
@@ -303,7 +311,7 @@ export const MessageTextBody = recipe({
       small: {
         fontSize: '1.5rem !important',
         lineHeight: '1.5em',
-        marginTop: '0.1em',
+        marginTop: `var(${JumboEmojiHeaderSpacingVar}, 0)`,
         vars: {
           '--sable-system-emoji-top-offset': '-0.2em',
           '--sable-custom-emoji-top-offset': '-0.2em',
@@ -312,7 +320,7 @@ export const MessageTextBody = recipe({
       normal: {
         fontSize: '1.805rem !important',
         lineHeight: '1.625em',
-        marginTop: '0.1em',
+        marginTop: `var(${JumboEmojiHeaderSpacingVar}, 0)`,
         vars: {
           '--sable-system-emoji-top-offset': '-0.2em',
           '--sable-custom-emoji-top-offset': '-0.2em',
@@ -321,7 +329,7 @@ export const MessageTextBody = recipe({
       large: {
         fontSize: '2.1rem !important',
         lineHeight: '1.675em',
-        marginTop: '0.1em',
+        marginTop: `var(${JumboEmojiHeaderSpacingVar}, 0)`,
         vars: {
           '--sable-system-emoji-top-offset': '-0.2em',
           '--sable-custom-emoji-top-offset': '-0.2em',
@@ -330,7 +338,7 @@ export const MessageTextBody = recipe({
       extraLarge: {
         fontSize: '2.4rem !important',
         lineHeight: '1.7em',
-        marginTop: '0.1em',
+        marginTop: `var(${JumboEmojiHeaderSpacingVar}, 0)`,
         vars: {
           '--sable-system-emoji-top-offset': '-0.2em',
           '--sable-custom-emoji-top-offset': '-0.2em',

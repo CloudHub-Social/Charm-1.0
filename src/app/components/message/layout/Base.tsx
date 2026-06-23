@@ -54,16 +54,32 @@ export const PronounPill = as<'span'>(
   )
 );
 
-export const MessageTextBody = as<'div', css.MessageTextBodyVariants & { notice?: boolean }>(
+export const MessageTextBody = as<
+  'div',
+  css.MessageTextBodyVariants & { notice?: boolean; headerSpacing?: boolean }
+>(
   (
-    { as: asComp = 'div', children, className, preWrap, jumboEmoji, emote, notice, ...props },
+    {
+      as: asComp = 'div',
+      children,
+      className,
+      preWrap,
+      jumboEmoji,
+      emote,
+      notice,
+      headerSpacing,
+      ...props
+    },
     ref
   ) => (
     <Text
       as={asComp}
       size="T400"
       priority={notice ? '300' : '400'}
-      className={classNames(css.MessageTextBody({ preWrap, jumboEmoji, emote }), className)}
+      className={classNames(
+        css.MessageTextBody({ preWrap, jumboEmoji, emote, headerSpacing }),
+        className
+      )}
       {...props}
       ref={ref}
       dir="auto"

@@ -638,6 +638,7 @@ export function useTimelineEventRenderer({
                 htmlReactParserOptions={htmlReactParserOptions}
                 linkifyOpts={linkifyOpts}
                 outlineAttachment={messageLayout === MessageLayout.Bubble}
+                headerSpacing={!collapse}
                 mx={mx}
                 room={room}
               />
@@ -826,6 +827,7 @@ export function useTimelineEventRenderer({
                       htmlReactParserOptions={htmlReactParserOptions}
                       linkifyOpts={linkifyOpts}
                       outlineAttachment={messageLayout === MessageLayout.Bubble}
+                      headerSpacing={!collapse}
                       mx={mx}
                       room={room}
                     />

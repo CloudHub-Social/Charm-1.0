@@ -319,7 +319,11 @@ function SmokeEmojiPolish() {
             <Text size="T300" data-testid="smoke-jumbo-emoji-header">
               Alice
             </Text>
-            <MessageTextBody jumboEmoji="normal" data-testid="smoke-jumbo-emoji-header-line">
+            <MessageTextBody
+              jumboEmoji="normal"
+              headerSpacing
+              data-testid="smoke-jumbo-emoji-header-line"
+            >
               {scaleSystemEmoji('❤️')}
             </MessageTextBody>
           </Box>

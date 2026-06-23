@@ -67,6 +67,7 @@ type RenderMessageContentProps = {
   linkifyOpts: Opts;
   outlineAttachment?: boolean;
   hideCaption?: boolean;
+  headerSpacing?: boolean;
   mEvent?: MatrixEvent;
   mx?: MatrixClient;
   room?: Room;
@@ -108,6 +109,7 @@ function RenderMessageContentInternal({
   linkifyOpts,
   outlineAttachment,
   hideCaption,
+  headerSpacing,
   mEvent,
   mx,
   room,
@@ -296,6 +298,7 @@ function RenderMessageContentInternal({
             renderUrlsPreview={messageUrlsPreview}
             renderBundledPreviews={messageBundlePreview}
             composeBundledPreviewsWithUrls={composeBundledPreviewsWithUrls}
+            headerSpacing={headerSpacing}
           />
         );
       return (
@@ -318,6 +321,7 @@ function RenderMessageContentInternal({
             renderUrlsPreview={messageUrlsPreview}
             renderBundledPreviews={messageBundlePreview}
             composeBundledPreviewsWithUrls={composeBundledPreviewsWithUrls}
+            headerSpacing={headerSpacing}
             style={TEXT_STYLE}
           />
         </Box>
@@ -383,6 +387,7 @@ function RenderMessageContentInternal({
         renderUrlsPreview={messageUrlsPreview}
         renderBundledPreviews={messageBundlePreview}
         composeBundledPreviewsWithUrls={composeBundledPreviewsWithUrls}
+        headerSpacing={headerSpacing}
         style={TEXT_STYLE}
       />
     );
@@ -409,6 +414,7 @@ function RenderMessageContentInternal({
         renderUrlsPreview={messageUrlsPreview}
         renderBundledPreviews={messageBundlePreview}
         composeBundledPreviewsWithUrls={composeBundledPreviewsWithUrls}
+        headerSpacing={headerSpacing}
       />
     );
   }
@@ -422,6 +428,7 @@ function RenderMessageContentInternal({
         renderUrlsPreview={messageUrlsPreview}
         renderBundledPreviews={messageBundlePreview}
         composeBundledPreviewsWithUrls={composeBundledPreviewsWithUrls}
+        headerSpacing={headerSpacing}
       />
     );
   }

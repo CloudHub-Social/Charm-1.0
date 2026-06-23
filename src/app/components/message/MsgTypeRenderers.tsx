@@ -212,6 +212,7 @@ type MTextProps = {
   renderUrlsPreview?: (urls: string[]) => ReactNode;
   renderBundledPreviews?: (bundles: IPreviewUrlResponse[]) => ReactNode;
   composeBundledPreviewsWithUrls?: boolean;
+  headerSpacing?: boolean;
   style?: CSSProperties;
 };
 
@@ -343,6 +344,7 @@ export function MText({
   renderUrlsPreview,
   renderBundledPreviews,
   composeBundledPreviewsWithUrls,
+  headerSpacing,
   style,
 }: MTextProps) {
   const [jumboEmojiSize] = useSetting(settingsAtom, 'jumboEmojiSize');
@@ -444,6 +446,7 @@ export function MText({
         <MessageTextBody
           preWrap={shouldPreWrapUnwrappedPerMessageProfileMessage}
           style={style}
+          headerSpacing={headerSpacing}
           jumboEmoji={isJumbo ? jumboEmojiSize : 'none'}
         >
           {renderBody({
@@ -474,6 +477,7 @@ export function MText({
     <>
       <MessageTextBody
         preWrap={shouldPreWrapCleanedMessage}
+        headerSpacing={headerSpacing}
         jumboEmoji={isJumbo ? jumboEmojiSize : 'none'}
         style={style}
       >
@@ -496,6 +500,7 @@ type MEmoteProps = {
   renderUrlsPreview?: (urls: string[]) => ReactNode;
   renderBundledPreviews?: (bundles: IPreviewUrlResponse[]) => ReactNode;
   composeBundledPreviewsWithUrls?: boolean;
+  headerSpacing?: boolean;
 };
 export function MEmote({
   displayName,
@@ -505,6 +510,7 @@ export function MEmote({
   renderUrlsPreview,
   renderBundledPreviews,
   composeBundledPreviewsWithUrls,
+  headerSpacing,
 }: MEmoteProps) {
   const { body, formatted_body: customBody } = content;
   const cleanedMessage = useMemo(
@@ -557,6 +563,7 @@ export function MEmote({
       <MessageTextBody
         emote
         preWrap={typeof cleanedMessage !== 'string'}
+        headerSpacing={headerSpacing}
         jumboEmoji={isJumbo ? jumboEmojiSize : 'none'}
       >
         <b>{`${displayName} `}</b>
@@ -578,6 +585,7 @@ type MNoticeProps = {
   renderUrlsPreview?: (urls: string[]) => ReactNode;
   renderBundledPreviews?: (bundles: IPreviewUrlResponse[]) => ReactNode;
   composeBundledPreviewsWithUrls?: boolean;
+  headerSpacing?: boolean;
 };
 export function MNotice({
   edited,
@@ -586,6 +594,7 @@ export function MNotice({
   renderUrlsPreview,
   renderBundledPreviews,
   composeBundledPreviewsWithUrls,
+  headerSpacing,
 }: MNoticeProps) {
   const { body, formatted_body: customBody } = content;
   const cleanedMessage = useMemo(
@@ -638,6 +647,7 @@ export function MNotice({
       <MessageTextBody
         notice
         preWrap={typeof cleanedMessage !== 'string'}
+        headerSpacing={headerSpacing}
         jumboEmoji={isJumbo ? jumboEmojiSize : 'none'}
       >
         {renderBody({
