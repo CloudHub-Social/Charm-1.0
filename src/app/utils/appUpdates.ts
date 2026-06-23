@@ -31,24 +31,47 @@ export const hasPendingAppUpdate = (registration: ServiceWorkerRegistration | un
       (registration.active && registration.active !== navigator.serviceWorker.controller))
   );
 
-const getAppServiceWorkerRegistration = async (): Promise<
-  ServiceWorkerRegistration | undefined
-> => {
-  if (!hasServiceWorker()) return undefined;
-
-  try {
-    const registration = await navigator.serviceWorker.getRegistration();
-    if (registration) return registration;
-  } catch {
-    // Fall back to ready below.
-  }
-
-  try {
-    return await navigator.serviceWorker.ready;
-  } catch {
-    return undefined;
-  }
+const getUniqueRegistrations = (
+  registrations: Array<ServiceWorkerRegistration | undefined>
+): ServiceWorkerRegistration[] => {
+  const uniqueRegistrations = new Map<string, ServiceWorkerRegistration>();
+  registrations.forEach((registration) => {
+    if (!registration) return;
+    uniqueRegistrations.set(registration.scope, registration);
+  });
+  return [...uniqueRegistrations.values()];
 };
+
+const getAppServiceWorkerRegistrations = async (): Promise<ServiceWorkerRegistration[]> => {
+  if (!hasServiceWorker()) return [];
+
+  const registrations: Array<ServiceWorkerRegistration | undefined> = [];
+
+  try {
+    registrations.push(await navigator.serviceWorker.getRegistration());
+  } catch {
+    // Continue with the other registration sources below.
+  }
+
+  try {
+    registrations.push(...(await navigator.serviceWorker.getRegistrations()));
+  } catch {
+    // Some environments only expose getRegistration/ready.
+  }
+
+  try {
+    registrations.push(await navigator.serviceWorker.ready);
+  } catch {
+    // No ready registration to add.
+  }
+
+  return getUniqueRegistrations(registrations);
+};
+
+const getPendingAppUpdateRegistration = (
+  registrations: ServiceWorkerRegistration[]
+): ServiceWorkerRegistration | undefined =>
+  registrations.find((registration) => hasPendingAppUpdate(registration));
 
 const waitForWaitingServiceWorker = async (
   registration: ServiceWorkerRegistration
@@ -164,8 +187,8 @@ const waitForUpdatedActiveServiceWorker = async (
   });
 
 export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
-  const registration = await getAppServiceWorkerRegistration();
-  if (!registration) {
+  const registrations = await getAppServiceWorkerRegistrations();
+  if (registrations.length === 0) {
     return {
       kind: 'native-unsupported',
       message: 'Native binary update checking is not configured in this build.',
@@ -173,7 +196,7 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
     };
   }
 
-  if (hasPendingAppUpdate(registration)) {
+  if (getPendingAppUpdateRegistration(registrations)) {
     return {
       kind: 'update-available',
       message: 'An update is ready to apply.',
@@ -181,16 +204,29 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
     };
   }
 
-  try {
-    await registration.update();
-  } catch (error) {
-    throw error instanceof Error
-      ? new Error(UPDATE_CHECK_FAILURE_MESSAGE, { cause: error })
+  const updateResults = await Promise.allSettled(
+    registrations.map(async (registration) => {
+      await registration.update();
+      return registration;
+    })
+  );
+  const successfulUpdates = updateResults.filter(
+    (result): result is PromiseFulfilledResult<ServiceWorkerRegistration> =>
+      result.status === 'fulfilled'
+  );
+  if (successfulUpdates.length === 0) {
+    const firstError = updateResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    )?.reason;
+    throw firstError instanceof Error
+      ? new Error(UPDATE_CHECK_FAILURE_MESSAGE, { cause: firstError })
       : new Error(UPDATE_CHECK_FAILURE_MESSAGE);
   }
 
-  const waiting = await waitForWaitingServiceWorker(registration);
-  if (waiting) {
+  const waitingStates = await Promise.all(
+    successfulUpdates.map(({ value: registration }) => waitForWaitingServiceWorker(registration))
+  );
+  if (waitingStates.some(Boolean)) {
     return {
       kind: 'update-available',
       message: 'An update is ready to apply.',
@@ -206,8 +242,9 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
 }
 
 export async function applyPendingAppUpdate(): Promise<void> {
-  const registration = await getAppServiceWorkerRegistration();
-  if (!registration || !hasPendingAppUpdate(registration)) return;
+  const registrations = await getAppServiceWorkerRegistrations();
+  const registration = getPendingAppUpdateRegistration(registrations);
+  if (!registration) return;
 
   const currentController = navigator.serviceWorker.controller;
 
