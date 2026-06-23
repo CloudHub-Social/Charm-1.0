@@ -36,7 +36,7 @@ export const mobileOrTablet = () => isMobileOrTablet;
  * so they always get the full desktop two-panel layout.
  * Use `mobileOrTablet` for touch/keyboard/scroll-lock behaviour instead.
  */
-export const mobileOrTabletLayout = () => isPhoneDevice;
+export const isPhoneLayoutDevice = () => isPhoneDevice;
 /** True only for phones; returns false for tablets (e.g. iPad with external keyboard). */
 export const isPhone = () => isPhoneDevice;
 
