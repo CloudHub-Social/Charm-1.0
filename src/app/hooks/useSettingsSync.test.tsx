@@ -351,6 +351,31 @@ describe('useSettingsSyncEffect — echo-token loop prevention', () => {
     expect(store.get(settingsAtom).twitterEmoji).toBe(true);
   });
 
+  it('uploads newer local changes when legacy remote sync data lacks updatedAt', () => {
+    localStorage.setItem('settings-sync-updated-at', '300');
+    mockMx.getAccountData.mockReturnValue({
+      getContent: () => ({
+        v: SETTINGS_SYNC_VERSION,
+        settings: { twitterEmoji: false },
+      }),
+    });
+
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(store.get(settingsAtom).twitterEmoji).toBe(true);
+    expect(mockMx.setAccountData).toHaveBeenCalledOnce();
+    const uploadedContent = mockMx.setAccountData.mock.calls[0]?.[1];
+    expect(uploadedContent?.settings).toMatchObject({
+      twitterEmoji: true,
+    });
+    expect(typeof uploadedContent?.updatedAt).toBe('number');
+  });
+
   it('applies explicit remote theme clears from another device', () => {
     const store = makeStore({
       settingsSyncEnabled: true,
