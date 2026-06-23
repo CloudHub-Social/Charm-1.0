@@ -1,5 +1,28 @@
 # Sable Client Changelog
 
+## 1.19.0 (2026-06-23)
+
+### Features
+
+* Change profile handle part to a button that copies it (`c0f9baf`)
+* Add option for showing icons only when available and changed default to it (`acf4939`)
+
+### Fixes
+
+* Fix cat status not being present on its own. (`67057bc`)
+* Use the Git commit SHA as the Cloudflare Worker version and deployment metadata so dashboard entries match GitHub Actions and the app About build hash. ([#277](<https://github.com/CloudHub-Social/Charm/pull/277>) by @Just-Insane)
+* Fix encrypted thread messages not appearing until reopened. (`603b112`)
+* Fix timeline message search to default to the global timeline view and interleave cross-room results in recent order. ([#293](<https://github.com/CloudHub-Social/Charm/pull/293>) by @Just-Insane)
+* Fix crash when opening pins with stickers. (`63de084`)
+* Reverse the order of message header elements in the right aligned bubbles layout. (`c99d0f9`)
+* Fix timeline sorting order regression when "show hidden events" is enabled. (`4ba6bba`)
+* Fix the upstream sync workflow so scheduled and manual sync runs can fetch upstream tags without clobbering fork tags, and correctly resolve annotated upstream tags to their underlying commits. ([#279](<https://github.com/CloudHub-Social/Charm/pull/279>) by @Just-Insane)
+* Fix Collapsed mode showing the wrong icon (`acf4939`)
+* Fix poll crashing sable if interacted with different clients (`f2bf961`)
+* Harden preview observability checks, Playwright coverage, and Sentry workflow safety for pull requests. ([#182](<https://github.com/CloudHub-Social/Charm/pull/182>) by @Just-Insane)
+* Keep upstream sync automation on one reusable sync branch per upstream/base pair so each new sync run updates the existing draft PR instead of opening a new dated PR, while still surfacing conflict details when manual resolution is needed. ([#280](<https://github.com/CloudHub-Social/Charm/pull/280>) by @Just-Insane)
+* Update `@sableclient/twemoji-font` to fix missing Twemoji emoji coverage. (`e6f5f64`)
+
 ## 1.18.4 (2026-06-19)
 
 ### Fixes
