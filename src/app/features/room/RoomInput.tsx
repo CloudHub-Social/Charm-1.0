@@ -411,6 +411,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [replyDraft, setReplyDraft] = useAtom(roomIdToReplyDraftAtomFamily(draftKey));
     const [editDraft, setEditDraft] = useAtom(roomIdToEditDraftAtomFamily(draftKey));
     const latestReplyDraftRef = useRef(replyDraft);
+    const restoredSilentReplyRef = useRef<boolean | null>(null);
 
     const [uploadBoard, setUploadBoard] = useState(true);
     const [selectedFiles, setSelectedFiles] = useAtom(roomIdToUploadItemsAtomFamily(draftKey));
@@ -659,7 +660,12 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
     useEffect(() => {
       if (replyDraft !== undefined) {
-        setSilentReply(replyDraft.userId === mx.getUserId() || !mentionInReplies);
+        if (restoredSilentReplyRef.current !== null) {
+          setSilentReply(restoredSilentReplyRef.current);
+          restoredSilentReplyRef.current = null;
+        } else {
+          setSilentReply(replyDraft.userId === mx.getUserId() || !mentionInReplies);
+        }
       }
     }, [mentionInReplies, mx, replyDraft]);
 
@@ -1353,7 +1359,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         const restoreFailedImmediateSendContext = (
           sentMsgDraftSnapshot: typeof editor.children,
           sentReplyDraftSnapshot: string,
-          sentImagePacksSnapshot: string
+          sentImagePacksSnapshot: string,
+          sentSilentReplySnapshot: boolean
         ) => {
           if (isEmptyEditor(editor)) {
             const restoredMsgDraft = structuredClone(sentMsgDraftSnapshot);
@@ -1374,6 +1381,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             currentReplyDraftSnapshot === sentReplyDraftSnapshot
           ) {
             const restoredReplyDraft = JSON.parse(sentReplyDraftSnapshot) as IReplyDraft | null;
+            restoredSilentReplyRef.current = restoredReplyDraft ? sentSilentReplySnapshot : null;
             setReplyDraft(restoredReplyDraft ?? replyDraftBase);
           }
 
@@ -1462,6 +1470,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           const sentMsgDraftSnapshot = structuredClone(editor.children);
           const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
           const sentImagePacksSnapshot = JSON.stringify(imagePacksUsedRef.current.toJSON());
+          const sentSilentReplySnapshot = silentReply;
           setSendError(undefined);
           resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot);
           debugLog.info('message', 'Sending message', {
@@ -1490,7 +1499,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             restoreFailedImmediateSendContext(
               sentMsgDraftSnapshot,
               sentReplyDraftSnapshot,
-              sentImagePacksSnapshot
+              sentImagePacksSnapshot,
+              sentSilentReplySnapshot
             );
             debugLog.error('message', 'Failed to send message', {
               roomId,

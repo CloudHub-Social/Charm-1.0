@@ -39,6 +39,11 @@ describe('mobile PWA dogfood contract', () => {
       'currentReplyDraftSnapshot === serializeReplyDraft(replyDraftBase) ||'
     );
     expect(roomInput).toContain('currentReplyDraftSnapshot === sentReplyDraftSnapshot');
+    expect(roomInput).toContain('const restoredSilentReplyRef = useRef<boolean | null>(null);');
+    expect(roomInput).toContain('const sentSilentReplySnapshot = silentReply;');
+    expect(roomInput).toContain(
+      'restoredSilentReplyRef.current = restoredReplyDraft ? sentSilentReplySnapshot : null;'
+    );
   });
 
   it('closes the mobile keyboard before opening composer overlays', () => {
