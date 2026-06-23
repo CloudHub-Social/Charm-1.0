@@ -121,6 +121,17 @@ describe('room read markers', () => {
     expect(isNotificationEvent(reaction, room, USER_ID)).toBe(true);
   });
 
+  it('does not treat reactions to other users messages as notification events', () => {
+    const root = makeEvent('$event1', '@carol:example.com');
+    const reaction = makeReactionEvent('$event2', '$event1');
+    const room = makeRoom({
+      fullyReadId: '$event1',
+      events: [root, reaction],
+    });
+
+    expect(isNotificationEvent(reaction, room, USER_ID)).toBe(false);
+  });
+
   it('falls back to m.fully_read when a receipt is not available', () => {
     const room = makeRoom({ fullyReadId: '$event1', events: [makeEvent('$event1')] });
 
