@@ -228,13 +228,17 @@ export function useSettingsSyncEffect(): void {
       const remoteContent = remoteEvent?.getContent() as Record<string, unknown> | undefined;
       const remoteUpdatedAt = getSettingsSyncUpdatedAt(remoteContent);
       const hasLocalUpdatedAt = localUpdatedAtRef.current > 0;
-      if (remoteContent && remoteUpdatedAt === null && !hasLocalUpdatedAt) {
-        applyRemoteContent(remoteContent);
+      if (
+        remoteContent &&
+        remoteUpdatedAt === null &&
+        !hasLocalUpdatedAt &&
+        applyRemoteContent(remoteContent)
+      ) {
         setSyncStatus('idle');
         return;
       }
 
-      const localUpdatedAt = hasLocalUpdatedAt
+      let localUpdatedAt = hasLocalUpdatedAt
         ? localUpdatedAtRef.current
         : getNextLocalSettingsSyncUpdatedAt(localUpdatedAtRef.current);
       if (!hasLocalUpdatedAt) {
@@ -250,6 +254,12 @@ export function useSettingsSyncEffect(): void {
       ) {
         setSyncStatus('idle');
         return;
+      }
+
+      if (remoteUpdatedAt !== null && remoteUpdatedAt > localUpdatedAt) {
+        localUpdatedAt = remoteUpdatedAt;
+        localUpdatedAtRef.current = remoteUpdatedAt;
+        persistLocalSettingsSyncUpdatedAt(localUpdatedAtStorageKey, remoteUpdatedAt);
       }
 
       setSyncStatus('syncing');

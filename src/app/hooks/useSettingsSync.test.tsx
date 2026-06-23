@@ -599,6 +599,28 @@ describe('useSettingsSyncEffect — echo-token loop prevention', () => {
     });
 
     expect(mockMx.setAccountData).toHaveBeenCalledOnce();
+    expect(mockMx.setAccountData.mock.calls[0]?.[1]?.updatedAt).toBe(200);
+    expect(mockMx.setAccountData.mock.calls[0]?.[1]?.settings).toMatchObject({
+      twitterEmoji: true,
+    });
+  });
+
+  it('uploads local settings when legacy cached account data cannot be applied', () => {
+    mockMx.getAccountData.mockReturnValue({
+      getContent: () => ({
+        v: SETTINGS_SYNC_VERSION,
+        settings: null,
+      }),
+    });
+
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(mockMx.setAccountData).toHaveBeenCalledOnce();
     expect(mockMx.setAccountData.mock.calls[0]?.[1]?.settings).toMatchObject({
       twitterEmoji: true,
     });
