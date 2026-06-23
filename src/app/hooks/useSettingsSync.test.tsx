@@ -22,6 +22,7 @@ const { callbackHolder, mockMx } = vi.hoisted(() => {
     current: ((event: { getType: () => string; getContent: () => unknown }) => void) | null;
   } = { current: null };
   const mx = {
+    getUserId: vi.fn<() => string | undefined>().mockReturnValue('@alice:example.com'),
     getAccountData: vi.fn<() => unknown>().mockReturnValue(null),
     setAccountData: vi
       .fn<(type: string, content: Record<string, unknown>) => Promise<void>>()
@@ -68,6 +69,8 @@ function makeSableSettingsEvent(content: unknown) {
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  mockMx.getUserId.mockReset().mockReturnValue('@alice:example.com');
   mockMx.getAccountData.mockReset().mockReturnValue(null);
   mockMx.setAccountData.mockReset().mockResolvedValue(undefined);
 });
@@ -334,7 +337,7 @@ describe('useSettingsSyncEffect — echo-token loop prevention', () => {
   });
 
   it('ignores stale remote events that arrive after a newer local change timestamp', () => {
-    localStorage.setItem('settings-sync-updated-at', '300');
+    localStorage.setItem('settings-sync-updated-at:@alice:example.com', '300');
     const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
     renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
 
@@ -352,7 +355,7 @@ describe('useSettingsSyncEffect — echo-token loop prevention', () => {
   });
 
   it('uploads newer local changes when legacy remote sync data lacks updatedAt', () => {
-    localStorage.setItem('settings-sync-updated-at', '300');
+    localStorage.setItem('settings-sync-updated-at:@alice:example.com', '300');
     mockMx.getAccountData.mockReturnValue({
       getContent: () => ({
         v: SETTINGS_SYNC_VERSION,
@@ -374,6 +377,102 @@ describe('useSettingsSyncEffect — echo-token loop prevention', () => {
       twitterEmoji: true,
     });
     expect(typeof uploadedContent?.updatedAt).toBe('number');
+  });
+
+  it('does not treat enabling sync as a fresh syncable settings edit', () => {
+    localStorage.setItem('settings-sync-updated-at:@alice:example.com', '100');
+    mockMx.getAccountData.mockReturnValue({
+      getContent: () => ({
+        v: SETTINGS_SYNC_VERSION,
+        updatedAt: 200,
+        settings: { twitterEmoji: false },
+      }),
+    });
+
+    const store = makeStore({ settingsSyncEnabled: false, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      store.set(settingsAtom, {
+        ...store.get(settingsAtom),
+        settingsSyncEnabled: true,
+      });
+    });
+
+    expect(store.get(settingsAtom).twitterEmoji).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(mockMx.setAccountData).not.toHaveBeenCalled();
+  });
+
+  it('keeps a newer local timestamp when an older upload echo arrives', () => {
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true, urlPreview: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    const firstUpload = mockMx.setAccountData.mock.calls[0]?.[1];
+    const firstEchoToken = firstUpload?.synctoken as string;
+    const firstUpdatedAt = firstUpload?.updatedAt as number;
+
+    mockMx.getAccountData.mockReturnValue({
+      getContent: () => ({
+        v: SETTINGS_SYNC_VERSION,
+        updatedAt: firstUpdatedAt,
+        settings: { twitterEmoji: true, urlPreview: true },
+      }),
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    act(() => {
+      store.set(settingsAtom, {
+        ...store.get(settingsAtom),
+        urlPreview: false,
+      });
+    });
+
+    act(() => {
+      callbackHolder.current?.(
+        makeSableSettingsEvent({
+          v: SETTINGS_SYNC_VERSION,
+          updatedAt: firstUpdatedAt,
+          synctoken: firstEchoToken,
+          settings: { twitterEmoji: true, urlPreview: true },
+        })
+      );
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(mockMx.setAccountData).toHaveBeenCalledTimes(2);
+    expect(mockMx.setAccountData.mock.calls[1]?.[1]?.settings).toMatchObject({
+      urlPreview: false,
+    });
+  });
+
+  it('reads freshness markers per account instead of reusing another account timestamp', () => {
+    localStorage.setItem('settings-sync-updated-at:@alice:example.com', '300');
+    mockMx.getUserId.mockReturnValue('@bob:example.com');
+    mockMx.getAccountData.mockReturnValue({
+      getContent: () => ({
+        v: SETTINGS_SYNC_VERSION,
+        updatedAt: 200,
+        settings: { twitterEmoji: false },
+      }),
+    });
+
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    expect(store.get(settingsAtom).twitterEmoji).toBe(false);
   });
 
   it('applies explicit remote theme clears from another device', () => {
