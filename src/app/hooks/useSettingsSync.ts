@@ -11,6 +11,7 @@ import {
 } from '$state/settings';
 import {
   deserializeFromSync,
+  getSettingsSyncUpdatedAt,
   getExplicitlyClearedSettingsKeysFromSync,
   serializeForSync,
 } from '$utils/settingsSync';
@@ -20,12 +21,32 @@ export type SyncStatus = 'idle' | 'syncing' | 'error';
 
 /** Milliseconds to wait after a local settings change before uploading. */
 const DEBOUNCE_MS = 2000;
+const LOCAL_SETTINGS_SYNC_UPDATED_AT_KEY = 'settings-sync-updated-at';
 
 /** Unix timestamp (ms) of the last confirmed sync, or null if never synced this session. */
 export const settingsSyncLastSyncedAtom = atom<number | null>(null);
 
 /** Current upload state for UI feedback. */
 export const settingsSyncStatusAtom = atom<SyncStatus>('idle');
+
+const readLocalSettingsSyncUpdatedAt = (): number => {
+  try {
+    const raw = localStorage.getItem(LOCAL_SETTINGS_SYNC_UPDATED_AT_KEY);
+    if (!raw) return 0;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+};
+
+const persistLocalSettingsSyncUpdatedAt = (updatedAt: number): void => {
+  try {
+    localStorage.setItem(LOCAL_SETTINGS_SYNC_UPDATED_AT_KEY, String(updatedAt));
+  } catch {
+    // Best-effort metadata write; settings themselves remain the source of truth.
+  }
+};
 
 /**
  * Side-effect hook that:
@@ -48,6 +69,49 @@ export function useSettingsSyncEffect(): void {
   settingsRef.current = settings;
 
   const syncEnabled = settings.settingsSyncEnabled;
+  const localUpdatedAtRef = useRef<number>(readLocalSettingsSyncUpdatedAt());
+  const applyingRemoteTimestampRef = useRef<number | null>(null);
+  const previousSettingsJsonRef = useRef(JSON.stringify(settings));
+
+  const applyRemoteContent = useCallback(
+    (rawContent: Record<string, unknown>): boolean => {
+      const { synctoken: _echoField, ...content } = rawContent;
+      const remoteUpdatedAt = getSettingsSyncUpdatedAt(content);
+      persistExplicitlyClearedSettingsKeys(getExplicitlyClearedSettingsKeysFromSync(content));
+      const merged = deserializeFromSync(content, settingsRef.current);
+      if (!merged) return false;
+
+      if (JSON.stringify(merged) !== JSON.stringify(settingsRef.current)) {
+        applyingRemoteTimestampRef.current = remoteUpdatedAt ?? Date.now();
+        setSettings(merged);
+      } else if (remoteUpdatedAt !== null) {
+        localUpdatedAtRef.current = remoteUpdatedAt;
+        persistLocalSettingsSyncUpdatedAt(remoteUpdatedAt);
+      }
+
+      setLastSynced(Date.now());
+      return true;
+    },
+    [setLastSynced, setSettings]
+  );
+
+  useEffect(() => {
+    const currentSettingsJson = JSON.stringify(settings);
+    if (currentSettingsJson === previousSettingsJsonRef.current) return;
+    previousSettingsJsonRef.current = currentSettingsJson;
+
+    const appliedRemoteTimestamp = applyingRemoteTimestampRef.current;
+    if (appliedRemoteTimestamp !== null) {
+      localUpdatedAtRef.current = appliedRemoteTimestamp;
+      persistLocalSettingsSyncUpdatedAt(appliedRemoteTimestamp);
+      applyingRemoteTimestampRef.current = null;
+      return;
+    }
+
+    const updatedAt = Date.now();
+    localUpdatedAtRef.current = updatedAt;
+    persistLocalSettingsSyncUpdatedAt(updatedAt);
+  }, [settings]);
 
   // On mount / when sync is first enabled: load from account data
   // Also marks settings as initialized after checking or timeout
@@ -67,16 +131,10 @@ export function useSettingsSyncEffect(): void {
       return undefined;
     }
 
-    // Strip synctoken so a stored sync token from a previous session doesn't get treated
-    // as an incoming change from another device.
-    const { synctoken: echoField, ...content } = event.getContent();
-    persistExplicitlyClearedSettingsKeys(getExplicitlyClearedSettingsKeysFromSync(content));
-    const merged = deserializeFromSync(content, settingsRef.current);
-    if (merged) {
-      if (JSON.stringify(merged) !== JSON.stringify(settingsRef.current)) {
-        setSettings(merged);
-      }
-      setLastSynced(Date.now());
+    const rawContent = event.getContent() as Record<string, unknown>;
+    const remoteUpdatedAt = getSettingsSyncUpdatedAt(rawContent);
+    if (remoteUpdatedAt === null || remoteUpdatedAt >= localUpdatedAtRef.current) {
+      applyRemoteContent(rawContent);
     }
 
     // Mark as initialized after a short delay to allow account data to load
@@ -86,7 +144,7 @@ export function useSettingsSyncEffect(): void {
     }, 100);
 
     return () => clearTimeout(timeoutId);
-  }, [mx, syncEnabled, setSettings, setLastSynced, setInitialized]);
+  }, [applyRemoteContent, mx, syncEnabled, setInitialized]);
 
   // Echo-detection: track the token of our last upload
   // When our upload echoes back via ClientEvent.AccountData we skip applying it
@@ -107,30 +165,28 @@ export function useSettingsSyncEffect(): void {
         rawContent.synctoken === pendingEchoTokenRef.current
       ) {
         pendingEchoTokenRef.current = null;
+        const echoedUpdatedAt = getSettingsSyncUpdatedAt(rawContent);
+        if (echoedUpdatedAt !== null) {
+          localUpdatedAtRef.current = echoedUpdatedAt;
+          persistLocalSettingsSyncUpdatedAt(echoedUpdatedAt);
+        }
         setLastSynced(Date.now());
         setSyncStatus('idle');
         return;
       }
 
-      // Strip internal synctoken field before deserializing so stale tokens from
-      // previous sessions (stored on the homeserver) don't bypass the check above
-      // and don't leak into the settings object.
-      const { synctoken: echoField, ...content } = rawContent;
-      persistExplicitlyClearedSettingsKeys(getExplicitlyClearedSettingsKeysFromSync(content));
-
-      // Otherwise it came from another device — apply it.
-      const merged = deserializeFromSync(content, settingsRef.current);
-      // Skip if nothing actually changed (deserializeFromSync always returns a
-      // new object, so compare values to avoid a spurious settings → upload loop).
-      if (merged && JSON.stringify(merged) !== JSON.stringify(settingsRef.current)) {
-        setSettings(merged);
-        setLastSynced(Date.now());
-      } else if (merged) {
-        // Same values — just update the last-synced timestamp without re-uploading.
-        setLastSynced(Date.now());
+      const remoteUpdatedAt = getSettingsSyncUpdatedAt(rawContent);
+      if (
+        remoteUpdatedAt !== null &&
+        localUpdatedAtRef.current > 0 &&
+        remoteUpdatedAt < localUpdatedAtRef.current
+      ) {
+        return;
       }
+
+      applyRemoteContent(rawContent as Record<string, unknown>);
     },
-    [setSettings, setLastSynced, setSyncStatus]
+    [applyRemoteContent, setLastSynced, setSyncStatus]
   );
   useAccountDataCallback(mx, onAccountData);
 
@@ -141,10 +197,35 @@ export function useSettingsSyncEffect(): void {
 
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
+      const localUpdatedAt = localUpdatedAtRef.current > 0 ? localUpdatedAtRef.current : Date.now();
+      if (localUpdatedAtRef.current === 0) {
+        localUpdatedAtRef.current = localUpdatedAt;
+        persistLocalSettingsSyncUpdatedAt(localUpdatedAt);
+      }
+
+      const remoteEvent = mx.getAccountData(CustomAccountDataEvent.SableSettings);
+      const remoteContent = remoteEvent?.getContent() as Record<string, unknown> | undefined;
+      const remoteUpdatedAt = getSettingsSyncUpdatedAt(remoteContent);
+      if (remoteContent && remoteUpdatedAt !== null && remoteUpdatedAt >= localUpdatedAt) {
+        if (remoteUpdatedAt > localUpdatedAt) {
+          applyRemoteContent(remoteContent);
+        }
+        setSyncStatus('idle');
+        return;
+      }
+      if (remoteContent && remoteUpdatedAt === null) {
+        applyRemoteContent(remoteContent);
+        setSyncStatus('idle');
+        return;
+      }
+
       setSyncStatus('syncing');
       const token = Math.random().toString(36).slice(2, 10);
       pendingEchoTokenRef.current = token;
-      const content = { ...serializeForSync(settingsRef.current), synctoken: token };
+      const content = {
+        ...serializeForSync(settingsRef.current, localUpdatedAt),
+        synctoken: token,
+      };
       mx.setAccountData(
         CustomAccountDataEvent.SableSettings,
         content as Record<string, unknown>
@@ -155,5 +236,5 @@ export function useSettingsSyncEffect(): void {
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timerRef.current);
-  }, [mx, settings, syncEnabled, setSyncStatus]);
+  }, [applyRemoteContent, mx, settings, syncEnabled, setSyncStatus]);
 }

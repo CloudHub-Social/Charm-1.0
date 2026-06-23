@@ -67,6 +67,11 @@ function makeSableSettingsEvent(content: unknown) {
   };
 }
 
+beforeEach(() => {
+  mockMx.getAccountData.mockReset().mockReturnValue(null);
+  mockMx.setAccountData.mockReset().mockResolvedValue(undefined);
+});
+
 // Atom initial values
 
 describe('atom initial values', () => {
@@ -187,6 +192,7 @@ describe('useSettingsSyncEffect — debounced upload', () => {
     ];
     expect(type).toBe(CustomAccountDataEvent.SableSettings);
     expect(content.v).toBe(SETTINGS_SYNC_VERSION);
+    expect(typeof content.updatedAt).toBe('number');
     expect(typeof content.synctoken).toBe('string');
   });
 
@@ -304,6 +310,45 @@ describe('useSettingsSyncEffect — echo-token loop prevention', () => {
     });
 
     expect(store.get(settingsAtom).twitterEmoji).toBe(false);
+  });
+
+  it('pulls newer remote settings instead of overwriting them with stale local state', () => {
+    localStorage.setItem('settings-sync-updated-at', '100');
+    mockMx.getAccountData.mockReturnValue({
+      getContent: () => ({
+        v: SETTINGS_SYNC_VERSION,
+        updatedAt: 200,
+        settings: { twitterEmoji: false },
+      }),
+    });
+
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(store.get(settingsAtom).twitterEmoji).toBe(false);
+    expect(mockMx.setAccountData).not.toHaveBeenCalled();
+  });
+
+  it('ignores stale remote events that arrive after a newer local change timestamp', () => {
+    localStorage.setItem('settings-sync-updated-at', '300');
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      callbackHolder.current?.(
+        makeSableSettingsEvent({
+          v: SETTINGS_SYNC_VERSION,
+          updatedAt: 200,
+          settings: { twitterEmoji: false },
+        })
+      );
+    });
+
+    expect(store.get(settingsAtom).twitterEmoji).toBe(true);
   });
 
   it('applies explicit remote theme clears from another device', () => {
