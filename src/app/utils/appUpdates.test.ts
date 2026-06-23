@@ -88,6 +88,9 @@ describe('appUpdates', () => {
     Object.defineProperty(window, 'location', {
       configurable: true,
       value: {
+        href: 'https://charm.local/app/room',
+        origin: 'https://charm.local',
+        pathname: '/app/room',
         reload: mockReload,
       },
     });
@@ -191,6 +194,122 @@ describe('appUpdates', () => {
     });
     expect(currentRegistration.update).toHaveBeenCalledTimes(1);
     expect(staleRegistration.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores registrations outside the current app scope', async () => {
+    const currentRegistration = createRegistration('https://charm.local/app/');
+    const unrelatedRegistration = createRegistration('https://charm.local/legacy/');
+    unrelatedRegistration.waiting = { postMessage: vi.fn() };
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        serviceWorker: {
+          controller: { postMessage: vi.fn() },
+          getRegistration: vi.fn().mockResolvedValue(currentRegistration),
+          getRegistrations: vi.fn().mockResolvedValue([currentRegistration, unrelatedRegistration]),
+          ready: Promise.resolve(currentRegistration),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        },
+      },
+    });
+
+    const resultPromise = checkForAppUpdates();
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual({
+      kind: 'up-to-date',
+      message: 'You are already on the latest available web app version.',
+      canApply: false,
+    });
+    expect(unrelatedRegistration.update).not.toHaveBeenCalled();
+  });
+
+  it('does not wait for serviceWorker.ready once direct registrations are available', async () => {
+    const ready = new Promise<ServiceWorkerRegistration>(() => undefined);
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        serviceWorker: {
+          controller: { postMessage: vi.fn() },
+          getRegistration: vi.fn().mockResolvedValue(mockRegistration),
+          getRegistrations: vi.fn().mockResolvedValue([mockRegistration]),
+          ready,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        },
+      },
+    });
+
+    const resultPromise = checkForAppUpdates();
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual({
+      kind: 'up-to-date',
+      message: 'You are already on the latest available web app version.',
+      canApply: false,
+    });
+  });
+
+  it('fails when any update probe errors and no update is found', async () => {
+    const currentRegistration = createRegistration('https://charm.local/app/');
+    const secondaryRegistration = createRegistration('https://charm.local/');
+    secondaryRegistration.update.mockRejectedValueOnce(new TypeError('network failed'));
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        serviceWorker: {
+          controller: { postMessage: vi.fn() },
+          getRegistration: vi.fn().mockResolvedValue(currentRegistration),
+          getRegistrations: vi.fn().mockResolvedValue([currentRegistration, secondaryRegistration]),
+          ready: Promise.resolve(currentRegistration),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        },
+      },
+    });
+
+    const resultPromise = checkForAppUpdates().catch((error: unknown) => error);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+    expect(result).toBeInstanceOf(Error);
+    expect((result as Error).message).toBe(
+      'Failed to check for updates. Reload the app and try again.'
+    );
+  });
+
+  it('returns once any registration confirms an update', async () => {
+    const currentRegistration = createRegistration('https://charm.local/app/');
+    const secondaryRegistration = createRegistration('https://charm.local/');
+    secondaryRegistration.update.mockImplementation(async () => {
+      secondaryRegistration.waiting = { postMessage: vi.fn() };
+    });
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        serviceWorker: {
+          controller: { postMessage: vi.fn() },
+          getRegistration: vi.fn().mockResolvedValue(currentRegistration),
+          getRegistrations: vi.fn().mockResolvedValue([currentRegistration, secondaryRegistration]),
+          ready: Promise.resolve(currentRegistration),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        },
+      },
+    });
+
+    const resultPromise = checkForAppUpdates();
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(resultPromise).resolves.toEqual({
+      kind: 'update-available',
+      message: 'An update is ready to apply.',
+      canApply: true,
+    });
   });
 
   it('surfaces a friendly error when the service worker update check fails', async () => {

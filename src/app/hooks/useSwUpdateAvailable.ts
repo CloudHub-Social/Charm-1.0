@@ -39,10 +39,17 @@ export function useSwUpdateAvailable(): boolean {
 
       updateCheckInFlight = true;
       void checkForAppUpdates()
+        .then((result) => {
+          if (disposed) return;
+          if (result.kind === 'update-available') {
+            setUpdateAvailable(true);
+            return;
+          }
+          syncUpdateAvailable();
+        })
         .catch(() => undefined)
         .finally(() => {
           updateCheckInFlight = false;
-          syncUpdateAvailable();
         });
     };
 
