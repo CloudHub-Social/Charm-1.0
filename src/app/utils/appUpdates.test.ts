@@ -253,6 +253,34 @@ describe('appUpdates', () => {
     });
   });
 
+  it('falls back to serviceWorker.ready when direct lookups produce no registration', async () => {
+    const readyRegistration = createRegistration('https://charm.local/app/');
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        serviceWorker: {
+          controller: { postMessage: vi.fn() },
+          getRegistration: vi.fn().mockResolvedValue(undefined),
+          getRegistrations: vi.fn().mockResolvedValue([]),
+          ready: Promise.resolve(readyRegistration),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        },
+      },
+    });
+
+    const resultPromise = checkForAppUpdates();
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual({
+      kind: 'up-to-date',
+      message: 'You are already on the latest available web app version.',
+      canApply: false,
+    });
+    expect(readyRegistration.update).toHaveBeenCalledTimes(1);
+  });
+
   it('fails when any update probe errors and no update is found', async () => {
     const currentRegistration = createRegistration('https://charm.local/app/');
     const secondaryRegistration = createRegistration('https://charm.local/');

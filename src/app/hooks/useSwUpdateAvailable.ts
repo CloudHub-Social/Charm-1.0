@@ -47,7 +47,10 @@ export function useSwUpdateAvailable(): boolean {
           }
           syncUpdateAvailable();
         })
-        .catch(() => undefined)
+        .catch(() => {
+          if (disposed) return;
+          syncUpdateAvailable();
+        })
         .finally(() => {
           updateCheckInFlight = false;
         });

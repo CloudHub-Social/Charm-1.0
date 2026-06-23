@@ -81,15 +81,16 @@ const getAppServiceWorkerRegistrations = async (): Promise<ServiceWorkerRegistra
   }
 
   const currentAppUrl = getCurrentAppUrl();
-  const directRegistrations = getUniqueRegistrations(registrations).filter((registration) =>
+  const directRegistrations = getUniqueRegistrations(registrations);
+  const scopedDirectRegistrations = directRegistrations.filter((registration) =>
     isRegistrationInCurrentAppScope(registration, currentAppUrl)
   );
-  if (directRegistrations.length > 0) {
-    return directRegistrations;
+  if (scopedDirectRegistrations.length > 0) {
+    return scopedDirectRegistrations;
   }
 
-  if (registrations.length > 0) {
-    return getUniqueRegistrations(registrations);
+  if (directRegistrations.length > 0) {
+    return directRegistrations;
   }
 
   try {

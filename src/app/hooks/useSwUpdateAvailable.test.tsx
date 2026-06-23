@@ -171,4 +171,19 @@ describe('useSwUpdateAvailable', () => {
       expect(result.current).toBe(true);
     });
   });
+
+  it('re-syncs local update state when the update probe fails', async () => {
+    controller = { postMessage: vi.fn<() => void>() } as unknown as ServiceWorker;
+    registration = {
+      waiting: { postMessage: vi.fn<() => void>() },
+      active: controller,
+    } as unknown as ServiceWorkerRegistration;
+    appUpdatesMocks.checkForAppUpdates.mockRejectedValue(new Error('network failed'));
+
+    const { result } = renderHook(() => useSwUpdateAvailable());
+
+    await waitFor(() => {
+      expect(result.current).toBe(true);
+    });
+  });
 });
