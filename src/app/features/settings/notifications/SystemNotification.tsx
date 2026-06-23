@@ -333,9 +333,6 @@ function SettingMenuSelector<T extends string>({
                 gap="100"
                 style={{
                   padding: config.space.S100,
-                  borderRadius: config.radii.R400,
-                  backgroundColor: color.Surface.Container,
-                  border: `${config.borderWidth.B300} solid ${color.Surface.ContainerLine}`,
                 }}
               >
                 {options.map((option) => (
