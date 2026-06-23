@@ -185,6 +185,7 @@ test.describe('emoji polish smoke', () => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto('/__smoke/mobile-shell/emoji-polish');
 
+    await expect(page.getByTestId('smoke-jumbo-emoji-header')).toBeVisible();
     await expect(page.getByTestId('smoke-jumbo-emoji-line')).toBeVisible();
     await expect(page.getByTestId('smoke-emoji-inline-line')).toBeVisible();
 
@@ -201,16 +202,19 @@ test.describe('emoji polish smoke', () => {
       };
 
       return {
-        jumboLine: measure('[data-testid="smoke-jumbo-emoji-line"]'),
-        jumboEmoji: measure('[data-testid="smoke-jumbo-emoji-line"] span[title]'),
+        jumboHeader: measure('[data-testid="smoke-jumbo-emoji-header"]'),
+        jumboLine: measure('[data-testid="smoke-jumbo-emoji-header-line"]'),
+        jumboEmoji: measure('[data-testid="smoke-jumbo-emoji-header-line"] span[title]'),
         nextLine: measure('[data-testid="smoke-emoji-inline-line"]'),
       };
     });
 
+    expect(metrics.jumboHeader).not.toBeNull();
     expect(metrics.jumboLine).not.toBeNull();
     expect(metrics.jumboEmoji).not.toBeNull();
     expect(metrics.nextLine).not.toBeNull();
 
+    expect(metrics.jumboLine!.top - metrics.jumboHeader!.bottom).toBeGreaterThanOrEqual(2);
     expect(metrics.jumboEmoji!.top).toBeGreaterThanOrEqual(metrics.jumboLine!.top - 2);
     expect(metrics.jumboEmoji!.bottom).toBeLessThanOrEqual(metrics.jumboLine!.bottom + 2);
     expect(metrics.nextLine!.top - metrics.jumboLine!.bottom).toBeGreaterThanOrEqual(4);

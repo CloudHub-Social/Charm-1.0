@@ -315,6 +315,14 @@ function SmokeEmojiPolish() {
           }}
         >
           <Text size="H4">Timeline emoji scaling</Text>
+          <Box data-testid="smoke-jumbo-emoji-message" direction="Column" gap="0">
+            <Text size="T300" data-testid="smoke-jumbo-emoji-header">
+              Alice
+            </Text>
+            <MessageTextBody jumboEmoji="normal" data-testid="smoke-jumbo-emoji-header-line">
+              {scaleSystemEmoji('❤️')}
+            </MessageTextBody>
+          </Box>
           <MessageTextBody jumboEmoji="normal" data-testid="smoke-jumbo-emoji-line">
             {scaleSystemEmoji('❤️')}
           </MessageTextBody>
