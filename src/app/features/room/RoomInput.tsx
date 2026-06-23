@@ -1368,8 +1368,14 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             });
           }
 
-          const restoredReplyDraft = JSON.parse(sentReplyDraftSnapshot) as IReplyDraft | null;
-          setReplyDraft(restoredReplyDraft ?? replyDraftBase);
+          const currentReplyDraftSnapshot = serializeReplyDraft(latestReplyDraftRef.current);
+          if (
+            currentReplyDraftSnapshot === serializeReplyDraft(replyDraftBase) ||
+            currentReplyDraftSnapshot === sentReplyDraftSnapshot
+          ) {
+            const restoredReplyDraft = JSON.parse(sentReplyDraftSnapshot) as IReplyDraft | null;
+            setReplyDraft(restoredReplyDraft ?? replyDraftBase);
+          }
 
           if (imagePacksUsedRef.current.size === 0) {
             const restoredImagePacks = JSON.parse(sentImagePacksSnapshot) as Record<
