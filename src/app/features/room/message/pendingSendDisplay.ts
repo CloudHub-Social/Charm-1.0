@@ -2,8 +2,14 @@ import { EventStatus } from '$types/matrix-sdk';
 
 export const PENDING_SEND_DIM_DELAY_MS = 2000;
 
-const normalizePendingSentAt = (sentAt: number, now: number): number =>
-  Number.isFinite(sentAt) && sentAt > 0 ? sentAt : now;
+export const resolvePendingSentAt = (
+  sentAt: number,
+  fallbackSentAt: number,
+  now: number = Date.now()
+): number => {
+  if (Number.isFinite(sentAt) && sentAt > 0) return sentAt;
+  return Number.isFinite(fallbackSentAt) && fallbackSentAt > 0 ? fallbackSentAt : now;
+};
 
 export const isPendingSendStatus = (sendStatus: EventStatus | null | undefined): boolean =>
   sendStatus === EventStatus.ENCRYPTING ||
@@ -11,7 +17,7 @@ export const isPendingSendStatus = (sendStatus: EventStatus | null | undefined):
   sendStatus === EventStatus.SENDING;
 
 export const getPendingSendDimDelayMs = (sentAt: number, now: number = Date.now()): number => {
-  const normalizedSentAt = normalizePendingSentAt(sentAt, now);
+  const normalizedSentAt = resolvePendingSentAt(sentAt, now, now);
   const elapsed = Math.max(0, now - normalizedSentAt);
   return Math.max(0, PENDING_SEND_DIM_DELAY_MS - elapsed);
 };

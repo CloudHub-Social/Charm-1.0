@@ -104,6 +104,7 @@ import { convertBeeperFormatToOurPerMessageProfile } from '$hooks/usePerMessageP
 import {
   getPendingSendDimDelayMs,
   isPendingSendStatus,
+  resolvePendingSentAt,
   shouldDimPendingSend,
 } from './pendingSendDisplay';
 import { MessageEditor } from './MessageEditor';
@@ -900,8 +901,21 @@ function MessageInternal(
     [mEvent]
   );
   const isPendingSend = isPendingSendStatus(sendStatus);
+  const pendingSendFallbackSentAtRef = useRef<number>();
+  const pendingSendEventRef = useRef<MatrixEvent>();
+  if (pendingSendEventRef.current !== mEvent) {
+    pendingSendEventRef.current = mEvent;
+    pendingSendFallbackSentAtRef.current = undefined;
+  }
+  const pendingSendSentAt = resolvePendingSentAt(
+    mEvent.getTs(),
+    pendingSendFallbackSentAtRef.current ?? 0
+  );
+  if (pendingSendFallbackSentAtRef.current !== pendingSendSentAt && mEvent.getTs() <= 0) {
+    pendingSendFallbackSentAtRef.current = pendingSendSentAt;
+  }
   const [showPendingSendDim, setShowPendingSendDim] = useState(() =>
-    shouldDimPendingSend(sendStatus, mEvent.getTs())
+    shouldDimPendingSend(sendStatus, pendingSendSentAt)
   );
   const isFailedSend = sendStatus === EventStatus.NOT_SENT;
   const canResend = isFailedSend && senderId === mx.getUserId() && !!onResend;
@@ -971,7 +985,7 @@ function MessageInternal(
       return undefined;
     }
 
-    const delayMs = getPendingSendDimDelayMs(mEvent.getTs());
+    const delayMs = getPendingSendDimDelayMs(pendingSendSentAt);
     if (delayMs === 0) {
       setShowPendingSendDim(true);
       return undefined;
@@ -980,7 +994,7 @@ function MessageInternal(
     setShowPendingSendDim(false);
     const timerId = window.setTimeout(() => setShowPendingSendDim(true), delayMs);
     return () => window.clearTimeout(timerId);
-  }, [isPendingSend, mEvent, sendStatus]);
+  }, [isPendingSend, pendingSendSentAt]);
 
   const msgContentJSX = (
     <Box

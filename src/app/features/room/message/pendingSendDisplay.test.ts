@@ -6,6 +6,7 @@ import {
   PENDING_SEND_DIM_DELAY_MS,
   getPendingSendDimDelayMs,
   isPendingSendStatus,
+  resolvePendingSentAt,
   shouldDimPendingSend,
 } from './pendingSendDisplay';
 
@@ -32,6 +33,11 @@ describe('pendingSendDisplay', () => {
     expect(getPendingSendDimDelayMs(0, 14_500)).toBe(PENDING_SEND_DIM_DELAY_MS);
     expect(getPendingSendDimDelayMs(Number.NaN, 14_500)).toBe(PENDING_SEND_DIM_DELAY_MS);
     expect(shouldDimPendingSend(EventStatus.SENDING, 0, 14_500)).toBe(false);
+  });
+
+  it('prefers a stable fallback timestamp when the event timestamp is missing', () => {
+    expect(resolvePendingSentAt(0, 12_000, 14_500)).toBe(12_000);
+    expect(resolvePendingSentAt(Number.NaN, 12_000, 14_500)).toBe(12_000);
   });
 
   it('never dims non-pending send states', () => {
