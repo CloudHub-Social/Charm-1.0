@@ -33,6 +33,7 @@ export function useSwUpdateAvailable(): boolean {
     };
 
     const requestAutomaticUpdateCheck = () => {
+      if (disposed) return;
       if (!('serviceWorker' in navigator)) return;
       if (document.visibilityState === 'hidden' || updateCheckInFlight) return;
 
@@ -55,11 +56,15 @@ export function useSwUpdateAvailable(): boolean {
     const handleUpdate = () => syncUpdateAvailable();
     const handleControllerChange = () => syncUpdateAvailable();
     const handleVisibilityChange = () => {
+      if (disposed) return;
       if (document.visibilityState === 'visible') {
         requestAutomaticUpdateCheck();
       }
     };
-    const handleWindowFocus = () => requestAutomaticUpdateCheck();
+    const handleWindowFocus = () => {
+      if (disposed) return;
+      requestAutomaticUpdateCheck();
+    };
     const intervalId = window.setInterval(
       requestAutomaticUpdateCheck,
       AUTO_UPDATE_CHECK_INTERVAL_MS
