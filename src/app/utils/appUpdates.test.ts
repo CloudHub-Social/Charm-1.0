@@ -211,13 +211,7 @@ describe('appUpdates', () => {
   });
 
   it('ignores extra runtime-loaded assets when the hosted shell already matches', async () => {
-    const baselinePromise = checkForAppUpdates();
-    await vi.runAllTimersAsync();
-    await expect(baselinePromise).resolves.toEqual({
-      kind: 'up-to-date',
-      message: 'You are already on the latest available web app version.',
-      canApply: false,
-    });
+    const { checkForAppUpdates: checkForAppUpdatesAfterBootstrap } = await import('./appUpdates');
 
     document.head.innerHTML = `
       <link rel="stylesheet" href="/assets/index-current.css">
@@ -225,7 +219,7 @@ describe('appUpdates', () => {
     `;
     document.body.innerHTML = '<script type="module" src="/assets/index-current.js"></script>';
 
-    const resultPromise = checkForAppUpdates();
+    const resultPromise = checkForAppUpdatesAfterBootstrap();
     await vi.runAllTimersAsync();
 
     await expect(resultPromise).resolves.toEqual({
@@ -236,6 +230,7 @@ describe('appUpdates', () => {
   });
 
   it('detects hosted shell updates when an initial shell asset was removed', async () => {
+    const { checkForAppUpdates: checkForAppUpdatesAfterBootstrap } = await import('./appUpdates');
     fetchMock.mockResolvedValueOnce(
       new Response(
         `
@@ -251,7 +246,7 @@ describe('appUpdates', () => {
       )
     );
 
-    const resultPromise = checkForAppUpdates();
+    const resultPromise = checkForAppUpdatesAfterBootstrap();
     await vi.runAllTimersAsync();
 
     await expect(resultPromise).resolves.toEqual({

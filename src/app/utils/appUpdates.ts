@@ -97,6 +97,10 @@ const getBaselineDocumentAppShellAssetPaths = (): string[] | undefined => {
   return assetPaths;
 };
 
+// Capture the initial shell asset set as early as this module loads so later
+// route- or runtime-injected assets do not become part of the hosted-shell baseline.
+baselineDocumentAppShellAssetPaths = getCurrentDocumentAppShellAssetPaths();
+
 const getHostedAppShellUrl = (): URL | undefined => {
   try {
     return new URL(document.baseURI);
