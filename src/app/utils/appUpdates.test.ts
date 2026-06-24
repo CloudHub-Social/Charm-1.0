@@ -120,6 +120,7 @@ describe('appUpdates', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.resetModules();
   });
 
   it('reports an available update when a waiting service worker already exists', async () => {
@@ -210,6 +211,14 @@ describe('appUpdates', () => {
   });
 
   it('ignores extra runtime-loaded assets when the hosted shell already matches', async () => {
+    const baselinePromise = checkForAppUpdates();
+    await vi.runAllTimersAsync();
+    await expect(baselinePromise).resolves.toEqual({
+      kind: 'up-to-date',
+      message: 'You are already on the latest available web app version.',
+      canApply: false,
+    });
+
     document.head.innerHTML = `
       <link rel="stylesheet" href="/assets/index-current.css">
       <link rel="stylesheet" href="/assets/katex-extra.css">
@@ -223,6 +232,32 @@ describe('appUpdates', () => {
       kind: 'up-to-date',
       message: 'You are already on the latest available web app version.',
       canApply: false,
+    });
+  });
+
+  it('detects hosted shell updates when an initial shell asset was removed', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        `
+          <!doctype html>
+          <html>
+            <head>
+              <link rel="stylesheet" href="/assets/index-current.css" />
+            </head>
+            <body></body>
+          </html>
+        `,
+        { status: 200, headers: { 'Content-Type': 'text/html' } }
+      )
+    );
+
+    const resultPromise = checkForAppUpdates();
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual({
+      kind: 'update-available',
+      message: 'A newer hosted app version is ready to apply.',
+      canApply: true,
     });
   });
 

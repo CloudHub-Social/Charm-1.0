@@ -8,6 +8,7 @@ const UPDATE_CHECK_FAILURE_MESSAGE = 'Failed to check for updates. Reload the ap
 const HOSTED_SHELL_CHECK_TIMEOUT_MS = 5000;
 const APP_SHELL_ASSET_PATHNAME = /^\/assets\/.+\.(?:css|js|mjs)$/;
 let hostedAppShellUpdateDetected = false;
+let baselineDocumentAppShellAssetPaths: string[] | undefined;
 
 export type AppUpdateCheckResult =
   | {
@@ -84,6 +85,18 @@ const getCurrentDocumentAppShellAssetPaths = (): string[] | undefined => {
   return assetPaths.length > 0 ? assetPaths : undefined;
 };
 
+const getBaselineDocumentAppShellAssetPaths = (): string[] | undefined => {
+  if (baselineDocumentAppShellAssetPaths) {
+    return baselineDocumentAppShellAssetPaths;
+  }
+
+  const assetPaths = getCurrentDocumentAppShellAssetPaths();
+  if (assetPaths) {
+    baselineDocumentAppShellAssetPaths = assetPaths;
+  }
+  return assetPaths;
+};
+
 const getHostedAppShellUrl = (): URL | undefined => {
   try {
     return new URL(document.baseURI);
@@ -126,14 +139,15 @@ const fetchHostedAppShellAssetPaths = async (): Promise<string[] | undefined> =>
 const getHostedAppShellUpdateStatus = async (): Promise<
   'update-available' | 'up-to-date' | 'unknown'
 > => {
-  const currentAssetPaths = getCurrentDocumentAppShellAssetPaths();
-  if (!currentAssetPaths) return 'unknown';
+  const baselineAssetPaths = getBaselineDocumentAppShellAssetPaths();
+  if (!baselineAssetPaths) return 'unknown';
 
   const hostedAssetPaths = await fetchHostedAppShellAssetPaths();
   if (!hostedAssetPaths) return 'unknown';
 
-  const currentAssetSet = new Set(currentAssetPaths);
-  return hostedAssetPaths.every((assetPath) => currentAssetSet.has(assetPath))
+  const baselineAssetSet = new Set(baselineAssetPaths);
+  return hostedAssetPaths.length === baselineAssetSet.size &&
+    hostedAssetPaths.every((assetPath) => baselineAssetSet.has(assetPath))
     ? 'up-to-date'
     : 'update-available';
 };
