@@ -67,19 +67,21 @@ const normalizeAssetUrlPath = (value: string): string | undefined => {
   }
 };
 
-const getCurrentDocumentAppShellAssetSignature = (): string | undefined => {
-  if (typeof document === 'undefined') return undefined;
-
-  const assetPaths = Array.from(
-    document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>('script[src], link[href]')
+const getDocumentAppShellAssetPaths = (root: ParentNode): string[] => {
+  return Array.from(
+    root.querySelectorAll<HTMLScriptElement | HTMLLinkElement>('script[src], link[href]')
   )
     .map((element) =>
       normalizeAssetUrlPath(element instanceof HTMLScriptElement ? element.src : element.href)
     )
     .filter((assetPath): assetPath is string => assetPath !== undefined)
     .toSorted();
+};
 
-  return assetPaths.length > 0 ? assetPaths.join('|') : undefined;
+const getCurrentDocumentAppShellAssetPaths = (): string[] | undefined => {
+  if (typeof document === 'undefined') return undefined;
+  const assetPaths = getDocumentAppShellAssetPaths(document);
+  return assetPaths.length > 0 ? assetPaths : undefined;
 };
 
 const getHostedAppShellUrl = (): URL | undefined => {
@@ -90,27 +92,15 @@ const getHostedAppShellUrl = (): URL | undefined => {
   }
 };
 
-const getHostedDocumentAppShellAssetSignature = (html: string): string | undefined => {
+const getHostedDocumentAppShellAssetPaths = (html: string): string[] | undefined => {
   if (typeof DOMParser === 'undefined') return undefined;
 
   const parsedDocument = new DOMParser().parseFromString(html, 'text/html');
-  const assetPaths = Array.from(
-    parsedDocument.querySelectorAll<HTMLScriptElement | HTMLLinkElement>('script[src], link[href]')
-  )
-    .map((element) => {
-      const rawValue =
-        element instanceof HTMLScriptElement
-          ? element.getAttribute('src')
-          : element.getAttribute('href');
-      return rawValue ? normalizeAssetUrlPath(rawValue) : undefined;
-    })
-    .filter((assetPath): assetPath is string => assetPath !== undefined)
-    .toSorted();
-
-  return assetPaths.length > 0 ? assetPaths.join('|') : undefined;
+  const assetPaths = getDocumentAppShellAssetPaths(parsedDocument);
+  return assetPaths.length > 0 ? assetPaths : undefined;
 };
 
-const fetchHostedAppShellAssetSignature = async (): Promise<string | undefined> => {
+const fetchHostedAppShellAssetPaths = async (): Promise<string[] | undefined> => {
   const hostedShellUrl = getHostedAppShellUrl();
   if (!hostedShellUrl) return undefined;
 
@@ -125,7 +115,7 @@ const fetchHostedAppShellAssetSignature = async (): Promise<string | undefined> 
       signal: abortController.signal,
     });
     if (!response.ok) return undefined;
-    return getHostedDocumentAppShellAssetSignature(await response.text());
+    return getHostedDocumentAppShellAssetPaths(await response.text());
   } catch {
     return undefined;
   } finally {
@@ -136,12 +126,16 @@ const fetchHostedAppShellAssetSignature = async (): Promise<string | undefined> 
 const getHostedAppShellUpdateStatus = async (): Promise<
   'update-available' | 'up-to-date' | 'unknown'
 > => {
-  const currentSignature = getCurrentDocumentAppShellAssetSignature();
-  if (!currentSignature) return 'unknown';
+  const currentAssetPaths = getCurrentDocumentAppShellAssetPaths();
+  if (!currentAssetPaths) return 'unknown';
 
-  const hostedSignature = await fetchHostedAppShellAssetSignature();
-  if (!hostedSignature) return 'unknown';
-  return hostedSignature !== currentSignature ? 'update-available' : 'up-to-date';
+  const hostedAssetPaths = await fetchHostedAppShellAssetPaths();
+  if (!hostedAssetPaths) return 'unknown';
+
+  const currentAssetSet = new Set(currentAssetPaths);
+  return hostedAssetPaths.every((assetPath) => currentAssetSet.has(assetPath))
+    ? 'up-to-date'
+    : 'update-available';
 };
 
 const getWinningScopeRegistrations = (

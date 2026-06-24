@@ -209,6 +209,23 @@ describe('appUpdates', () => {
     });
   });
 
+  it('ignores extra runtime-loaded assets when the hosted shell already matches', async () => {
+    document.head.innerHTML = `
+      <link rel="stylesheet" href="/assets/index-current.css">
+      <link rel="stylesheet" href="/assets/katex-extra.css">
+    `;
+    document.body.innerHTML = '<script type="module" src="/assets/index-current.js"></script>';
+
+    const resultPromise = checkForAppUpdates();
+    await vi.runAllTimersAsync();
+
+    await expect(resultPromise).resolves.toEqual({
+      kind: 'up-to-date',
+      message: 'You are already on the latest available web app version.',
+      canApply: false,
+    });
+  });
+
   it('checks all known registrations before reporting up to date', async () => {
     const currentRegistration = createRegistration('/current');
     const staleRegistration = createRegistration('/stale');
