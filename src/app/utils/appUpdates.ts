@@ -94,12 +94,7 @@ const getBaselineDocumentAppShellAssetPaths = (): string[] | undefined => {
   if (baselineDocumentAppShellAssetPaths) {
     return baselineDocumentAppShellAssetPaths;
   }
-
-  const assetPaths = getCurrentDocumentAppShellAssetPaths();
-  if (assetPaths) {
-    baselineDocumentAppShellAssetPaths = assetPaths;
-  }
-  return assetPaths;
+  return getCurrentDocumentAppShellAssetPaths();
 };
 
 const getHostedAppShellUrl = (): URL | undefined => {
