@@ -40,6 +40,11 @@ export const hasPendingScopedAppUpdate = async (): Promise<boolean> => {
   return getPendingAppUpdateRegistration(registrations) !== undefined;
 };
 
+export const primeAppShellAssetBaseline = (): void => {
+  if (baselineDocumentAppShellAssetPaths) return;
+  baselineDocumentAppShellAssetPaths = getCurrentDocumentAppShellAssetPaths();
+};
+
 const getUniqueRegistrations = (
   registrations: Array<ServiceWorkerRegistration | undefined>
 ): ServiceWorkerRegistration[] => {
@@ -96,10 +101,6 @@ const getBaselineDocumentAppShellAssetPaths = (): string[] | undefined => {
   }
   return assetPaths;
 };
-
-// Capture the initial shell asset set as early as this module loads so later
-// route- or runtime-injected assets do not become part of the hosted-shell baseline.
-baselineDocumentAppShellAssetPaths = getCurrentDocumentAppShellAssetPaths();
 
 const getHostedAppShellUrl = (): URL | undefined => {
   try {

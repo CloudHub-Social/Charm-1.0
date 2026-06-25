@@ -1,6 +1,10 @@
 /* oxlint-disable vitest/require-mock-type-parameters */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyPendingAppUpdate, checkForAppUpdates } from './appUpdates';
+import {
+  applyPendingAppUpdate,
+  checkForAppUpdates,
+  primeAppShellAssetBaseline,
+} from './appUpdates';
 
 const { mockHasServiceWorker } = vi.hoisted(() => ({
   mockHasServiceWorker: vi.fn(),
@@ -211,7 +215,7 @@ describe('appUpdates', () => {
   });
 
   it('ignores extra runtime-loaded assets when the hosted shell already matches', async () => {
-    const { checkForAppUpdates: checkForAppUpdatesAfterBootstrap } = await import('./appUpdates');
+    primeAppShellAssetBaseline();
 
     document.head.innerHTML = `
       <link rel="stylesheet" href="/assets/index-current.css">
@@ -219,7 +223,7 @@ describe('appUpdates', () => {
     `;
     document.body.innerHTML = '<script type="module" src="/assets/index-current.js"></script>';
 
-    const resultPromise = checkForAppUpdatesAfterBootstrap();
+    const resultPromise = checkForAppUpdates();
     await vi.runAllTimersAsync();
 
     await expect(resultPromise).resolves.toEqual({
@@ -230,7 +234,7 @@ describe('appUpdates', () => {
   });
 
   it('detects hosted shell updates when an initial shell asset was removed', async () => {
-    const { checkForAppUpdates: checkForAppUpdatesAfterBootstrap } = await import('./appUpdates');
+    primeAppShellAssetBaseline();
     fetchMock.mockResolvedValueOnce(
       new Response(
         `
@@ -246,7 +250,7 @@ describe('appUpdates', () => {
       )
     );
 
-    const resultPromise = checkForAppUpdatesAfterBootstrap();
+    const resultPromise = checkForAppUpdates();
     await vi.runAllTimersAsync();
 
     await expect(resultPromise).resolves.toEqual({
