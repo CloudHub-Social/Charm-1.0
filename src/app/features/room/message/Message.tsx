@@ -1,15 +1,16 @@
+// oxlint-disable no-console
 import type { RectCords } from 'folds';
 import {
   Avatar,
   Box,
   Chip,
+  PopOut,
+  Text,
   Tooltip,
   TooltipProvider,
   as,
   config,
   toRem,
-  Text,
-  PopOut,
 } from 'folds';
 import type { KeyboardEventHandler, MouseEventHandler, MouseEvent, ReactNode } from 'react';
 import { memo, useCallback, useRef, useState, useEffect, useMemo } from 'react';
@@ -17,6 +18,7 @@ import { useHover, useFocusWithin } from 'react-aria';
 import type { MatrixEvent, Room, Relations } from '$types/matrix-sdk';
 import { EventStatus, MatrixEventEvent, RoomEvent } from '$types/matrix-sdk';
 import classNames from 'classnames';
+import { useSetAtom } from 'jotai';
 import {
   AvatarBase,
   BubbleLayout,
@@ -28,55 +30,38 @@ import {
   Username,
   UsernameBold,
 } from '$components/message';
-import {
-  getEditedEvent,
-  getEventEdits,
-  getMemberAvatarMxc,
-  isThreadRelationEvent,
-} from '$utils/room';
+import { getEditedEvent, getMemberAvatarMxc } from '$utils/room';
+import { mxcUrlToHttp } from '$utils/matrix';
 import type { MessageSpacing } from '$state/settings';
 import { getSettings, MessageLayout, settingsAtom } from '$state/settings';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { UserAvatar } from '$components/user-avatar';
+import { getMatrixToRoomEvent } from '$plugins/matrix-to';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import type { MemberPowerTag } from '$types/matrix/room';
 
 import { PowerIcon } from '$components/power';
 import { Info, menuIcon, userFallbackIcon } from '$components/icons/phosphor';
-import { getMatrixToRoomEvent } from '$plugins/matrix-to';
 import { getPowerTagIconSrc } from '$hooks/useMemberPowerTag';
 import { useSableCosmetics } from '$hooks/useSableCosmetics';
 import { SwipeableMessageWrapper } from '$components/SwipeableMessageWrapper';
 import { mobileOrTablet } from '$utils/user-agent';
 import { useUserProfile } from '$hooks/useUserProfile';
 import { useSetting } from '$state/hooks/settings';
-import { useRenderableMediaUrl } from '$hooks/useRenderableMediaUrl';
+import { useBlobCache } from '$hooks/useBlobCache';
 import { filterPronounsByLanguage, getParsedPronouns } from '$utils/pronouns';
 import type { PronounSet } from '$utils/pronouns';
 import { useMentionClickHandler } from '$hooks/useMentionClickHandler';
-import { useCachedMxcConverter } from '$hooks/useCachedMxcConverter';
 import type { PerMessageProfileBeeperFormat } from '$hooks/usePerMessageProfile';
 import { convertBeeperFormatToOurPerMessageProfile } from '$hooks/usePerMessageProfile';
-import {
-  getPendingSendDimDelayMs,
-  isPendingSendStatus,
-  resolvePendingSentAt,
-  shouldDimPendingSend,
-} from './pendingSendDisplay';
 import { MessageEditor } from './MessageEditor';
-import { MobileMessageMenu } from './MobileMessageMenu';
-import { MessageOptionsBar, EventOptionsBar } from './MessageOptionsMenu';
-export type { ReactionHandler } from './MessageOptionsMenu';
-export {
-  MessageQuickReactions,
-  MessageCopyLinkItem,
-  MessageCopyTextItem,
-  MessagePinItem,
-  MessageBookmarkItem,
-} from './MessageOptionsMenu';
 import * as css from './styles.css';
+import { modalAtom, ModalType } from '$state/modal';
+import { OptionQuickMenu } from '$components/message/modals/Options';
 
-const MemoizedBody = memo(({ children }: { children: ReactNode }) => children);
+export type ReactionHandler = (keyOrMxc: string, shortcode: string) => void;
+
+export const MemoizedBody = memo(({ children }: { children: ReactNode }) => children);
 
 export type ForwardedMessageProps = {
   originalTimestamp: number;
@@ -106,7 +91,7 @@ export type MessageProps = {
   canPinEvent?: boolean;
   imagePackRooms?: Room[];
   relations?: Relations;
-  messageLayout: MessageLayout;
+  messageLayout?: MessageLayout;
   messageSpacing: MessageSpacing;
   onUserClick: MouseEventHandler<HTMLButtonElement>;
   onUsernameClick: MouseEventHandler<HTMLButtonElement>;
@@ -136,113 +121,33 @@ export type MessageProps = {
 
 function useMobileLongPress(callback: () => void, delay = 500) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const startPosRef = useRef<{ x: number; y: number } | null>(null);
-  const selectionTargetRef = useRef<{
-    element: HTMLElement;
-    userSelect: string;
-    webkitUserSelect: string;
-    webkitTouchCallout: string;
-  } | null>(null);
+  const firedRef = useRef(false);
 
-  const restoreSelectionStyles = useCallback(() => {
-    const selectionTarget = selectionTargetRef.current;
-    if (!selectionTarget) return;
-
-    selectionTarget.element.style.userSelect = selectionTarget.userSelect;
-    selectionTarget.element.style.setProperty(
-      '-webkit-user-select',
-      selectionTarget.webkitUserSelect
-    );
-    selectionTarget.element.style.setProperty(
-      '-webkit-touch-callout',
-      selectionTarget.webkitTouchCallout
-    );
-    selectionTargetRef.current = null;
-  }, []);
-
-  const shouldIgnoreLongPress = useCallback((target: EventTarget | null) => {
-    if (!(target instanceof Element)) return false;
-
-    return !!target.closest('input, textarea, select, [contenteditable="true"]');
-  }, []);
-
-  const suppressSelection = useCallback(
-    (target: EventTarget | null) => {
-      if (!(target instanceof HTMLElement)) return;
-      if (selectionTargetRef.current?.element === target) return;
-
-      restoreSelectionStyles();
-      selectionTargetRef.current = {
-        element: target,
-        userSelect: target.style.userSelect,
-        webkitUserSelect: target.style.getPropertyValue('-webkit-user-select'),
-        webkitTouchCallout: target.style.getPropertyValue('-webkit-touch-callout'),
-      };
-      target.style.userSelect = 'none';
-      target.style.setProperty('-webkit-user-select', 'none');
-      target.style.setProperty('-webkit-touch-callout', 'none');
-    },
-    [restoreSelectionStyles]
-  );
-
-  const cancel = useCallback(() => {
+  const clear = useCallback(() => {
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    startPosRef.current = null;
-    restoreSelectionStyles();
-  }, [restoreSelectionStyles]);
+  }, []);
 
-  const onTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      if (!mobileOrTablet()) return;
-      if (shouldIgnoreLongPress(e.target)) return;
-      const touch = e.touches[0];
-      if (!touch) return;
-      suppressSelection(e.currentTarget);
-      startPosRef.current = { x: touch.clientX, y: touch.clientY };
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null;
-        requestAnimationFrame(() => {
-          const selection = window.getSelection();
-          if (selection && !selection.isCollapsed) selection.removeAllRanges();
-          callback();
-        });
-      }, delay);
-    },
-    [callback, delay, shouldIgnoreLongPress, suppressSelection]
-  );
-
-  const onTouchMove = useCallback(
-    (e: React.TouchEvent) => {
-      if (!startPosRef.current) return;
-      const touch = e.touches[0];
-      if (!touch) return;
-      const dx = touch.clientX - startPosRef.current.x;
-      const dy = touch.clientY - startPosRef.current.y;
-      if (Math.sqrt(dx * dx + dy * dy) > 10) cancel();
-    },
-    [cancel]
-  );
+  const onTouchStart = useCallback(() => {
+    if (!mobileOrTablet()) return;
+    firedRef.current = false;
+    timerRef.current = setTimeout(() => {
+      firedRef.current = true;
+      callback();
+    }, delay);
+  }, [callback, delay]);
 
   const onTouchEnd = useCallback(() => {
-    cancel();
-  }, [cancel]);
+    clear();
+  }, [clear]);
 
-  useEffect(
-    () => () => {
-      cancel();
-    },
-    [cancel]
-  );
+  const onTouchMove = useCallback(() => {
+    clear();
+  }, [clear]);
 
-  return {
-    onTouchStart,
-    onTouchMove,
-    onTouchEnd,
-    onTouchCancel: onTouchEnd,
-  };
+  return { onTouchStart, onTouchEnd, onTouchMove, firedRef };
 }
 
 const clamp = (str: string, len: number) => (str.length > len ? `${str.slice(0, len)}...` : str);
@@ -371,6 +276,56 @@ const Pronouns = as<
     </AsPronouns>
   );
 });
+type WrappedMessageProps = {
+  headerJSX: JSX.Element;
+  avatarJSX: JSX.Element;
+  msgContentJSX: JSX.Element;
+  messageLayout?: MessageLayout;
+  handleSwipeReply?: () => void;
+  handleContextMenu: MouseEventHandler<HTMLDivElement>;
+  align?: 'left' | 'right';
+};
+function WrappedMessage({
+  headerJSX,
+  avatarJSX,
+  msgContentJSX,
+  messageLayout,
+  handleSwipeReply,
+  handleContextMenu,
+  align,
+}: WrappedMessageProps) {
+  if (messageLayout === undefined) return <>{msgContentJSX}</>;
+
+  if (messageLayout === MessageLayout.Compact)
+    return (
+      <SwipeableMessageWrapper onReply={handleSwipeReply}>
+        <CompactLayout before={headerJSX} onContextMenu={handleContextMenu}>
+          {msgContentJSX}
+        </CompactLayout>
+      </SwipeableMessageWrapper>
+    );
+  if (messageLayout === MessageLayout.Bubble)
+    return (
+      <SwipeableMessageWrapper onReply={handleSwipeReply}>
+        <BubbleLayout
+          before={avatarJSX}
+          header={headerJSX}
+          onContextMenu={handleContextMenu}
+          align={align}
+        >
+          {msgContentJSX}
+        </BubbleLayout>
+      </SwipeableMessageWrapper>
+    );
+  return (
+    <SwipeableMessageWrapper onReply={handleSwipeReply}>
+      <ModernLayout before={avatarJSX} onContextMenu={handleContextMenu}>
+        {headerJSX}
+        {msgContentJSX}
+      </ModernLayout>
+    </SwipeableMessageWrapper>
+  );
+}
 
 function MessageInternal(
   {
@@ -420,8 +375,10 @@ function MessageInternal(
 ) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
-  const convertMxc = useCachedMxcConverter();
 
+  const [isEmoji, setIsEmoji] = useState(false);
+
+  const setModal = useSetAtom(modalAtom);
   const [contentVersion, setContentVersion] = useState(0);
 
   useEffect(() => {
@@ -504,12 +461,11 @@ function MessageInternal(
   // avatar so per-room avatar overrides are respected in the timeline.
   const memberAvatarMxc = getMemberAvatarMxc(room, senderId);
   const avatarUrl = useMemo(() => {
-    if (collapse) return undefined;
     const mxc = pmp?.avatar_url || memberAvatarMxc || profile.avatarUrl;
-    return mxc ? convertMxc(mx, mxc, useAuthentication, 48, 48, 'crop') : undefined;
-  }, [pmp, collapse, memberAvatarMxc, profile.avatarUrl, mx, useAuthentication, convertMxc]);
+    return mxc ? mxcUrlToHttp(mx, mxc, useAuthentication, 48, 48, 'crop') : undefined;
+  }, [pmp, memberAvatarMxc, profile.avatarUrl, mx, useAuthentication]);
 
-  const cachedAvatar = useRenderableMediaUrl(avatarUrl ?? undefined);
+  const cachedAvatar = useBlobCache(avatarUrl ?? undefined);
 
   // UI State
   const [isDesktopHover, setIsDesktopHover] = useState(false);
@@ -525,12 +481,13 @@ function MessageInternal(
   });
 
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
-  const [emojiBoardAnchor, setEmojiBoardAnchor] = useState<RectCords>();
+
   const tagIconSrc = memberPowerTag?.icon
     ? getPowerTagIconSrc(mx, useAuthentication, memberPowerTag.icon)
     : undefined;
 
-  const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
+  const optionsRef = useRef<HTMLDivElement>(null);
+
   const [showPronouns] = useSetting(settingsAtom, 'showPronouns');
   const [parsePronouns] = useSetting(settingsAtom, 'parsePronouns');
 
@@ -557,135 +514,138 @@ function MessageInternal(
     return existing;
   }, [pronouns, inlinePronoun]);
 
-  const headerJSX = !collapse && (
-    <Box
-      gap="300"
-      direction={
-        messageLayout === MessageLayout.Compact ||
-        (messageLayout === MessageLayout.Bubble && useRightBubbles && senderId === mx.getUserId())
-          ? 'RowReverse'
-          : 'Row'
-      }
-      justifyContent="SpaceBetween"
-      alignItems="Baseline"
-      grow="Yes"
-    >
-      <Box
-        alignItems="Center"
-        gap="100"
-        direction={
-          messageLayout === MessageLayout.Bubble && useRightBubbles && senderId === mx.getUserId()
-            ? 'RowReverse'
-            : undefined
-        }
-      >
-        <Username
-          as="button"
-          style={{
-            color: usernameColor,
-            fontFamily: usernameFont,
-          }}
-          data-user-id={senderId}
-          onContextMenu={onUserClick}
-          onClick={onUsernameClick}
+  const headerJSX = (collapsed?: boolean) => {
+    if (!collapsed)
+      return (
+        <Box
+          gap="300"
+          direction={
+            messageLayout === MessageLayout.Compact ||
+            (messageLayout === MessageLayout.Bubble &&
+              useRightBubbles &&
+              senderId === mx.getUserId())
+              ? 'RowReverse'
+              : 'Row'
+          }
+          justifyContent="SpaceBetween"
+          alignItems="Baseline"
+          grow="Yes"
         >
-          <Text as="span" size={messageLayout === MessageLayout.Bubble ? 'T300' : 'T400'} truncate>
-            <UsernameBold>{cleanedDisplayName}</UsernameBold>
-          </Text>
-        </Username>
-        {showPronouns && mergedPronouns.length > 0 && (
-          <Pronouns pronouns={mergedPronouns} tagColor={usernameColor ?? 'currentColor'} />
-        )}
-        {showPmPInfo && (
-          <Box>
-            <Text as="span">
-              <Text
-                as="span"
-                style={{
-                  paddingLeft: 0,
-                  paddingRight: 5,
-                  fontWeight: 100,
-                  fontSize: 11,
-                }}
-              >
-                via
-              </Text>
+          <Box
+            alignItems="Center"
+            gap="100"
+            direction={
+              messageLayout === MessageLayout.Bubble &&
+              useRightBubbles &&
+              senderId === mx.getUserId()
+                ? 'RowReverse'
+                : undefined
+            }
+          >
+            <Username
+              as="button"
+              style={{
+                color: usernameColor,
+                fontFamily: usernameFont,
+              }}
+              data-user-id={senderId}
+              onContextMenu={onUserClick}
+              onClick={onUsernameClick}
+            >
               <Text
                 as="span"
                 size={messageLayout === MessageLayout.Bubble ? 'T300' : 'T400'}
-                style={{ fontSize: 11 }}
                 truncate
               >
-                <UsernameBold>{senderDisplayName}</UsernameBold>
+                <UsernameBold>{cleanedDisplayName}</UsernameBold>
               </Text>
-            </Text>
+            </Username>
+            {showPronouns && (
+              <Pronouns pronouns={mergedPronouns} tagColor={usernameColor ?? 'currentColor'} />
+            )}
+            {showPmPInfo && (
+              <Box>
+                <Text as="span">
+                  <Text
+                    as="span"
+                    style={{
+                      paddingLeft: 0,
+                      paddingRight: 5,
+                      fontWeight: 100,
+                      fontSize: 11,
+                    }}
+                  >
+                    via
+                  </Text>
+                  <Text
+                    as="span"
+                    size={messageLayout === MessageLayout.Bubble ? 'T300' : 'T400'}
+                    style={{ fontSize: 11 }}
+                    truncate
+                  >
+                    <UsernameBold>{senderDisplayName}</UsernameBold>
+                  </Text>
+                </Text>
+              </Box>
+            )}
+            {tagIconSrc && <PowerIcon size="100" iconSrc={tagIconSrc} />}
           </Box>
-        )}
-        {tagIconSrc && <PowerIcon size="100" iconSrc={tagIconSrc} />}
-      </Box>
-      <Box shrink="No" gap="100">
-        {messageLayout === MessageLayout.Modern && isDesktopHover && (
-          <>
-            <Text as="span" size="T200" priority="300">
-              {senderId}
-            </Text>
-            <Text as="span" size="T200" priority="300">
-              |
-            </Text>
-          </>
-        )}
-        <Time
-          ts={mEvent.getTs()}
-          compact={messageLayout === MessageLayout.Compact}
-          hour24Clock={hour24Clock}
-          dateFormatString={dateFormatString}
-        />
-      </Box>
-    </Box>
-  );
+          <Box shrink="No" gap="100">
+            {messageLayout === MessageLayout.Modern && isDesktopHover && (
+              <>
+                <Text as="span" size="T200" priority="300">
+                  {senderId}
+                </Text>
+                <Text as="span" size="T200" priority="300">
+                  |
+                </Text>
+              </>
+            )}
+            <Time
+              ts={mEvent.getTs()}
+              compact={messageLayout === MessageLayout.Compact}
+              hour24Clock={hour24Clock}
+              dateFormatString={dateFormatString}
+            />
+          </Box>
+        </Box>
+      );
+    return <></>;
+  };
 
-  const avatarJSX = !collapse && messageLayout !== MessageLayout.Compact && (
-    <AvatarBase
-      className={messageLayout === MessageLayout.Bubble ? css.BubbleAvatarBase : undefined}
-    >
-      <Avatar
-        className={css.MessageAvatar}
-        as="button"
-        size="300"
-        data-user-id={senderId}
-        onClick={onUserClick}
-      >
-        <UserAvatar
-          userId={senderId}
-          src={cachedAvatar}
-          alt={cleanedDisplayName}
-          renderFallback={() => userFallbackIcon('md')}
-        />
-      </Avatar>
-    </AvatarBase>
-  );
+  const avatarJSX = (collapsed?: boolean) => {
+    if (!collapsed && messageLayout !== MessageLayout.Compact)
+      return (
+        <AvatarBase
+          className={messageLayout === MessageLayout.Bubble ? css.BubbleAvatarBase : undefined}
+        >
+          <Avatar
+            className={css.MessageAvatar}
+            as="button"
+            size="300"
+            data-user-id={senderId}
+            onClick={onUserClick}
+          >
+            <UserAvatar
+              userId={senderId}
+              src={cachedAvatar}
+              alt={cleanedDisplayName}
+              renderFallback={() => userFallbackIcon('md')}
+            />
+          </Avatar>
+        </AvatarBase>
+      );
+    return <></>;
+  };
 
   const stableContent = useMemo(
     () => mEvent.getContent().body || mEvent.getContent()['org.matrix.msc3381.poll.start'] || '',
     [mEvent]
   );
-  const isPendingSend = isPendingSendStatus(sendStatus);
-  const pendingSendFallbackSentAtRef = useRef<number>();
-  const pendingSendEventRef = useRef<MatrixEvent>();
-  if (pendingSendEventRef.current !== mEvent) {
-    pendingSendEventRef.current = mEvent;
-    pendingSendFallbackSentAtRef.current = undefined;
-  }
-  const pendingSendSentAt = resolvePendingSentAt(
-    mEvent.getTs(),
-    pendingSendFallbackSentAtRef.current ?? 0
-  );
-  if (pendingSendFallbackSentAtRef.current !== pendingSendSentAt && mEvent.getTs() <= 0) {
-    pendingSendFallbackSentAtRef.current = pendingSendSentAt;
-  }
-  const [showPendingSendDim, setShowPendingSendDim] = useState(() =>
-    shouldDimPendingSend(sendStatus, pendingSendSentAt)
-  );
+  const isPendingSend =
+    sendStatus === EventStatus.ENCRYPTING ||
+    sendStatus === EventStatus.QUEUED ||
+    sendStatus === EventStatus.SENDING;
   const isFailedSend = sendStatus === EventStatus.NOT_SENT;
   const canResend = isFailedSend && senderId === mx.getUserId() && !!onResend;
   const canDeleteFailedSend = isFailedSend && senderId === mx.getUserId() && !!onDeleteFailedSend;
@@ -745,25 +705,8 @@ function MessageInternal(
     [mEvent, onDeleteFailedSend]
   );
 
-  const MSG_CONTENT_STYLE = { maxWidth: '100%' };
+  const MSG_CONTENT_STYLE = { width: '100%' };
   const isSableFeedback = mEvent.getId()?.startsWith('~sable-feedback-');
-
-  useEffect(() => {
-    if (!isPendingSend) {
-      setShowPendingSendDim(false);
-      return undefined;
-    }
-
-    const delayMs = getPendingSendDimDelayMs(pendingSendSentAt);
-    if (delayMs === 0) {
-      setShowPendingSendDim(true);
-      return undefined;
-    }
-
-    setShowPendingSendDim(false);
-    const timerId = window.setTimeout(() => setShowPendingSendDim(true), delayMs);
-    return () => window.clearTimeout(timerId);
-  }, [isPendingSend, pendingSendSentAt]);
 
   const msgContentJSX = (
     <Box
@@ -771,7 +714,7 @@ function MessageInternal(
       alignSelf="Start"
       style={MSG_CONTENT_STYLE}
       className={classNames({
-        [css.MessagePending]: showPendingSendDim,
+        [css.MessagePending]: isPendingSend,
         [css.MessageFailed]: isFailedSend,
       })}
     >
@@ -870,22 +813,86 @@ function MessageInternal(
     </Box>
   );
 
-  const handleContextMenu: MouseEventHandler<HTMLDivElement> = (evt) => {
-    if (mobileOrTablet()) {
-      evt.preventDefault();
-      setMobileOptionsOpen(true);
-      return;
-    }
+  const closeMenu = () => {
+    setMenuAnchor(undefined);
+    setIsDesktopHover(false);
+    setIsEmoji(false);
+  };
 
+  const openMobileOptions = () => {
+    setModal({
+      type: ModalType.MobileOptions,
+      options: {
+        mEvent: mEvent,
+        room: room,
+        closeMenu: closeMenu,
+        onReactionToggle: onReactionToggle,
+        relations: relations,
+        onReplyClick: onReplyClick,
+        onEditId: onEditId,
+        hideReadReceipts: hideReadReceipts,
+        showDeveloperTools: showDeveloperTools,
+        canPinEvent: canPinEvent,
+        cleanedDisplayName: cleanedDisplayName,
+        canDelete: canDelete,
+        setIsEmoji: setIsEmoji,
+        ActualMessage: (
+          <div style={{ width: '100%' }}>
+            <WrappedMessage
+              headerJSX={headerJSX()}
+              avatarJSX={avatarJSX()}
+              msgContentJSX={msgContentJSX}
+              messageLayout={messageLayout}
+              handleContextMenu={() => {}}
+              align={useRightBubbles && senderId === mx.getUserId() ? 'right' : 'left'}
+            />
+          </div>
+        ),
+        canSendReaction: canSendReaction,
+      },
+    });
+  };
+
+  const {
+    onTouchStart,
+    onTouchEnd,
+    onTouchMove,
+    firedRef: longPressFiredRef,
+  } = useMobileLongPress(() => {
+    if (!edit) openMobileOptions();
+  });
+
+  const handleContextMenu: MouseEventHandler<HTMLDivElement> = (evt) => {
     if (evt.altKey || !window.getSelection()?.isCollapsed || edit) return;
     const tag = (evt.target as HTMLElement).tagName;
     if (typeof tag === 'string' && tag.toLowerCase() === 'a') return;
+    if (mobileOrTablet()) {
+      // If our long-press handler already fired (iOS), suppress the native contextmenu
+      if (longPressFiredRef.current) {
+        evt.preventDefault();
+        longPressFiredRef.current = false;
+        return;
+      }
+      evt.preventDefault();
+      openMobileOptions();
+      return;
+    }
+
     evt.preventDefault();
     setMenuAnchor({
       x: evt.clientX,
       y: evt.clientY,
       width: 0,
       height: 0,
+    });
+  };
+
+  const handleOpenMenu: MouseEventHandler<HTMLButtonElement> = (evt) => {
+    const target = evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
+    const rect = target.getBoundingClientRect();
+
+    window.requestAnimationFrame(() => {
+      setMenuAnchor(rect);
     });
   };
 
@@ -901,20 +908,6 @@ function MessageInternal(
     onReplyClick(mockEvent);
   };
 
-  const longPress = useMobileLongPress(() => {
-    setMobileOptionsOpen(true);
-  });
-
-  const isThreadedMessage = isThreadRelationEvent(mEvent, mEvent.threadRootId);
-  const isStickerMessage = mEvent.getType() === 'm.sticker';
-
-  const evtId = mEvent.getId()!;
-  const evtTimeline = room.getTimelineForEvent(evtId);
-  const edits =
-    evtTimeline &&
-    getEventEdits(evtTimeline.getTimelineSet(), evtId, mEvent.getType())?.getRelations();
-  const isEdited = !!edits?.length;
-
   return (
     <MessageBase
       className={classNames(css.MessageBase, className, {
@@ -922,230 +915,61 @@ function MessageInternal(
       })}
       tabIndex={0}
       space={messageSpacing}
-      contentSpacing={messageSpacing}
       collapse={collapse}
       highlight={highlight}
       notifyHighlight={highlightMentions ? notifyHighlight : undefined}
-      selected={!!menuAnchor || !!emojiBoardAnchor}
+      selected={!!menuAnchor || isEmoji}
       isMarked={isMarked}
+      mobile={mobileOrTablet()}
       {...props}
       {...hoverProps}
       {...focusWithinProps}
       ref={ref}
     >
-      <MessageOptionsBar
-        show={!edit && isDesktopHover}
-        edit={edit}
-        menuAnchor={menuAnchor}
-        setMenuAnchor={setMenuAnchor}
-        emojiBoardAnchor={emojiBoardAnchor}
-        setEmojiBoardAnchor={setEmojiBoardAnchor}
-        onCloseExtra={() => setMobileOptionsOpen(false)}
-        room={room}
-        mEvent={mEvent}
-        relations={relations}
-        canSendReaction={canSendReaction}
-        canDelete={canDelete}
-        canPinEvent={canPinEvent}
-        imagePackRooms={imagePackRooms}
-        hideReadReceipts={hideReadReceipts}
-        showDeveloperTools={showDeveloperTools}
-        isThreadedMessage={isThreadedMessage}
-        isStickerMessage={isStickerMessage}
-        isEdited={isEdited}
-        senderId={senderId}
-        cleanedDisplayName={cleanedDisplayName}
-        activeReplyId={activeReplyId}
-        onReplyClick={onReplyClick}
-        onEditId={onEditId}
-        onReactionToggle={onReactionToggle}
-      />
-      {messageLayout === MessageLayout.Compact && (
-        <SwipeableMessageWrapper onReply={handleSwipeReply}>
-          <CompactLayout before={headerJSX} onContextMenu={handleContextMenu}>
-            <div {...longPress}>{msgContentJSX}</div>
-          </CompactLayout>
-        </SwipeableMessageWrapper>
+      {!edit && (isDesktopHover || !!menuAnchor || isEmoji) && (
+        <div className={css.MessageOptionsBase} ref={optionsRef}>
+          <OptionQuickMenu
+            mEvent={mEvent}
+            room={room}
+            closeMenu={closeMenu}
+            onReactionToggle={onReactionToggle}
+            relations={relations}
+            onReplyClick={onReplyClick}
+            onEditId={onEditId}
+            hideReadReceipts={hideReadReceipts}
+            showDeveloperTools={showDeveloperTools}
+            canPinEvent={canPinEvent}
+            cleanedDisplayName={cleanedDisplayName}
+            canDelete={canDelete}
+            handleOpenMenu={handleOpenMenu}
+            menuAnchor={menuAnchor}
+            imagePackRooms={imagePackRooms}
+            setIsEmoji={setIsEmoji}
+            canSendReaction={canSendReaction}
+          />
+        </div>
       )}
-      {messageLayout === MessageLayout.Bubble && (
-        <SwipeableMessageWrapper onReply={handleSwipeReply}>
-          <BubbleLayout
-            before={avatarJSX}
-            header={headerJSX}
-            onContextMenu={handleContextMenu}
-            align={useRightBubbles && senderId === mx.getUserId() ? 'right' : 'left'}
-          >
-            <div {...longPress}>{msgContentJSX}</div>
-          </BubbleLayout>
-        </SwipeableMessageWrapper>
-      )}
-      {messageLayout !== MessageLayout.Compact && messageLayout !== MessageLayout.Bubble && (
-        <SwipeableMessageWrapper onReply={handleSwipeReply}>
-          <ModernLayout before={avatarJSX} onContextMenu={handleContextMenu}>
-            <div {...longPress}>
-              {headerJSX}
-              {msgContentJSX}
-            </div>
-          </ModernLayout>
-        </SwipeableMessageWrapper>
-      )}
-      {mobileOptionsOpen && (
-        <MobileMessageMenu
-          room={room}
-          mEvent={mEvent}
-          canDelete={canDelete}
-          canSendReaction={canSendReaction}
-          canPinEvent={canPinEvent}
-          relations={relations}
-          isThreadedMessage={isThreadedMessage}
-          hideReadReceipts={hideReadReceipts}
-          showDeveloperTools={showDeveloperTools}
-          onReplyClick={onReplyClick}
-          onEditId={onEditId}
-          onReactionToggle={onReactionToggle}
-          imagePackRooms={imagePackRooms ?? []}
-          messagePreview={<MemoizedBody>{msgContentJSX}</MemoizedBody>}
-          onClose={() => setMobileOptionsOpen(false)}
+
+      <div
+        style={{ width: '100%' }}
+        onContextMenu={handleContextMenu}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onTouchMove={onTouchMove}
+      >
+        <WrappedMessage
+          headerJSX={headerJSX(collapse)}
+          avatarJSX={avatarJSX(collapse)}
+          msgContentJSX={msgContentJSX}
+          messageLayout={messageLayout}
+          handleSwipeReply={handleSwipeReply}
+          handleContextMenu={handleContextMenu}
+          align={useRightBubbles && senderId === mx.getUserId() ? 'right' : 'left'}
         />
-      )}
+      </div>
     </MessageBase>
   );
 }
 
 const MessageAs = as<'div', MessageProps>(MessageInternal);
 export const Message = memo(MessageAs);
-
-export type EventProps = {
-  room: Room;
-  mEvent: MatrixEvent;
-  highlight: boolean;
-  notifyHighlight?: 'silent' | 'loud';
-  isMarked?: boolean;
-  canDelete?: boolean;
-  onReplyClick: (
-    ev: Parameters<MouseEventHandler<HTMLButtonElement>>[0],
-    startThread?: boolean
-  ) => void;
-  messageSpacing: MessageSpacing;
-  hideReadReceipts?: boolean;
-  showDeveloperTools?: boolean;
-  collapse?: boolean;
-};
-export const Event = as<'div', EventProps>(
-  (
-    {
-      className,
-      room,
-      mEvent,
-      highlight,
-      notifyHighlight,
-      isMarked,
-      collapse,
-      canDelete,
-      onReplyClick,
-      messageSpacing,
-      hideReadReceipts,
-      showDeveloperTools,
-      children,
-      ...props
-    },
-    ref
-  ) => {
-    const stateEvent = typeof mEvent.getStateKey() === 'string';
-
-    const [menuAnchor, setMenuAnchor] = useState<RectCords>();
-    const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
-    const [highlightMentions] = useSetting(settingsAtom, 'highlightMentions');
-
-    const handleContextMenu: MouseEventHandler<HTMLDivElement> = (evt) => {
-      if (mobileOrTablet()) {
-        evt.preventDefault();
-        setMobileOptionsOpen(true);
-        return;
-      }
-
-      if (evt.altKey || !window.getSelection()?.isCollapsed) return;
-      const tag = (evt.target as HTMLElement).tagName;
-      if (typeof tag === 'string' && tag.toLowerCase() === 'a') return;
-      evt.preventDefault();
-      setMenuAnchor({
-        x: evt.clientX,
-        y: evt.clientY,
-        width: 0,
-        height: 0,
-      });
-    };
-
-    const [isDesktopHover, setIsDesktopHover] = useState(false);
-    const { hoverProps } = useHover({
-      onHoverChange: (h) => {
-        if (!mobileOrTablet()) setIsDesktopHover(h);
-      },
-    });
-    const { focusWithinProps } = useFocusWithin({
-      onFocusWithinChange: (f) => {
-        if (!mobileOrTablet()) setIsDesktopHover(f);
-      },
-    });
-
-    const longPress = useMobileLongPress(() => {
-      setMobileOptionsOpen(true);
-    });
-
-    const evtId = mEvent.getId()!;
-    const evtTimeline = room.getTimelineForEvent(evtId);
-    const edits =
-      evtTimeline &&
-      getEventEdits(evtTimeline.getTimelineSet(), evtId, mEvent.getType())?.getRelations();
-    const isEdited = !!edits?.length;
-
-    return (
-      <MessageBase
-        className={classNames(css.MessageBase, className)}
-        tabIndex={0}
-        space={messageSpacing}
-        contentSpacing={messageSpacing}
-        collapse={collapse}
-        highlight={highlight}
-        notifyHighlight={highlightMentions ? notifyHighlight : undefined}
-        selected={!!menuAnchor}
-        isMarked={isMarked}
-        {...props}
-        {...hoverProps}
-        {...focusWithinProps}
-        ref={ref}
-      >
-        <EventOptionsBar
-          show={isDesktopHover && !mobileOrTablet()}
-          menuAnchor={menuAnchor}
-          setMenuAnchor={setMenuAnchor}
-          onCloseExtra={() => setMobileOptionsOpen(false)}
-          room={room}
-          mEvent={mEvent}
-          canDelete={canDelete}
-          hideReadReceipts={hideReadReceipts}
-          showDeveloperTools={showDeveloperTools}
-          isEdited={isEdited}
-          stateEvent={stateEvent}
-          onReplyClick={onReplyClick}
-        />
-        <div onContextMenu={handleContextMenu} {...longPress}>
-          {children}
-        </div>
-        {mobileOptionsOpen && (
-          <MobileMessageMenu
-            room={room}
-            mEvent={mEvent}
-            canDelete={canDelete}
-            hideReadReceipts={hideReadReceipts}
-            showDeveloperTools={showDeveloperTools}
-            onReplyClick={onReplyClick}
-            onReactionToggle={() => {}}
-            imagePackRooms={[]}
-            onClose={() => setMobileOptionsOpen(false)}
-          />
-        )}
-      </MessageBase>
-    );
-  }
-);

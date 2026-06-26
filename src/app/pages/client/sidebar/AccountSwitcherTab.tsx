@@ -1,30 +1,27 @@
-import type { MouseEvent, MouseEventHandler, ReactNode } from 'react';
+import type { MouseEvent, MouseEventHandler } from 'react';
 import { useCallback, useState } from 'react';
 import type { RectCords } from 'folds';
 import {
-  Badge,
   Box,
   Button,
   Dialog,
   Header,
-  Icon,
-  Icons,
   Menu,
   MenuItem,
-  Overlay,
-  OverlayBackdrop,
-  OverlayCenter,
   PopOut,
   Text,
   config,
   toRem,
   Chip,
   Spinner,
+  Overlay,
+  OverlayBackdrop,
+  OverlayCenter,
+  Line,
 } from 'folds';
 import FocusTrap from 'focus-trap-react';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { useNavigate } from 'react-router-dom';
-import * as Sentry from '@sentry/react';
 import type { Session } from '$state/sessions';
 import { sessionsAtom, activeSessionIdAtom, backgroundUnreadCountsAtom } from '$state/sessions';
 import {
@@ -37,41 +34,21 @@ import { UserAvatar } from '$components/user-avatar';
 import { nameInitials } from '$utils/common';
 import { getMxIdLocalPart, mxcUrlToHttp } from '$utils/matrix';
 import { stopPropagation } from '$utils/keyboard';
-import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 import { getHomePath, getLoginPath, withSearchParam } from '$pages/pathUtils';
 import { logoutClient, initClient, stopClient } from '$client/initMatrix';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useUserProfile } from '$hooks/useUserProfile';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { useSessionProfiles } from '$hooks/useSessionProfiles';
-import { useOpenSettings } from '$features/settings/useOpenSettings';
+import { useOpenSettings } from '$features/settings';
 import { createLogger } from '$utils/debug';
-import { createDebugLogger } from '$utils/debugLogger';
 import { useClientConfig } from '$hooks/useClientConfig';
 import { UnreadBadge, UnreadBadgeCenter } from '$components/unread-badge';
-import type { Presence } from '$hooks/useUserPresence';
-import { AvatarPresence, PresenceBadge } from '$components/presence';
-import { useSetting } from '$state/hooks/settings';
-import { settingsAtom, presenceAutoIdledAtom } from '$state/settings';
 import { Check, chipIcon, GearSix, menuIcon, Plus } from '$components/icons/phosphor';
+import { useSetting } from '$state/hooks/settings';
+import { settingsAtom } from '$state/settings';
 
 const log = createLogger('AccountSwitcherTab');
-const debugLog = createDebugLogger('AccountSwitcherTab');
-
-const sectionHeaderStyle = {
-  padding: `${config.space.S100} ${config.space.S200}`,
-};
-
-const sectionMenuStyle = {
-  minWidth: toRem(256),
-  padding: config.space.S100,
-};
-
-const sectionListStyle = {
-  padding: config.space.S100,
-  borderRadius: config.radii.R400,
-  background: 'var(--sable-surface-container)',
-};
 
 function AccountRow({
   session,
@@ -172,6 +149,7 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
   const backgroundUnreads = useAtomValue(backgroundUnreadCountsAtom);
   const setBackgroundUnreads = useSetAtom(backgroundUnreadCountsAtom);
   const openSettings = useOpenSettings();
+  const [oldSidebar] = useSetting(settingsAtom, 'oldSidebar');
 
   // Total unread count across all background sessions (for the sidebar badge).
   const totalBackgroundUnread = Object.entries(backgroundUnreads)
@@ -196,27 +174,6 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
     ? (mxcUrlToHttp(mx, activeProfile.avatarUrl, useAuthentication, 96, 96, 'crop') ?? undefined)
     : undefined;
   const activeDisplayName = activeProfile.displayName;
-
-  // Own presence badge is driven from settings state rather than the SDK's User object.
-  // The SDK won't echo your own presence back on MSC4186 sliding sync, so reading
-  // user.presence would leave the badge stuck at the SDK default forever.
-  const [sendPresence, setSendPresence] = useSetting(settingsAtom, 'sendPresence');
-  const [presenceMode, setPresenceMode] = useSetting(settingsAtom, 'presenceMode');
-  const [focusMode, setFocusMode] = useSetting(settingsAtom, 'focusMode');
-  const autoIdled = useAtomValue(presenceAutoIdledAtom);
-  const setAutoIdled = useSetAtom(presenceAutoIdledAtom);
-  // The effective mode for badge display: if auto-idled, show unavailable regardless of selected mode.
-  const effectiveDisplayMode = autoIdled ? 'unavailable' : (presenceMode ?? 'online');
-  let myOwnPresenceBadge: ReactNode;
-  if (sendPresence) {
-    myOwnPresenceBadge = (
-      <PresenceBadge
-        key={effectiveDisplayMode}
-        presence={effectiveDisplayMode as Presence}
-        size="200"
-      />
-    );
-  }
 
   const sessionProfiles = useSessionProfiles(sessions);
 
@@ -259,27 +216,13 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
           setActiveSessionId(
             sessions.find((s) => s.userId !== session.userId)?.userId ?? undefined
           );
-          reloadWithTelemetry('logout_from_account_switcher', {
-            userId: session.userId,
-          });
+          window.location.reload();
         } else {
           try {
             const tempMx = await initClient(session);
             await logoutClient(tempMx, session);
           } catch (err) {
             log.error('failed to logout background session, IndexedDB may remain', err);
-            debugLog.error('general', 'Failed to logout background session', {
-              userId: session.userId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-            Sentry.captureException(err, {
-              tags: { operation: 'logout_background_session' },
-              contexts: {
-                account: {
-                  userId: session.userId,
-                },
-              },
-            });
           }
           setSessions({ type: 'DELETE', session });
           if (activeSessionId === session.userId) {
@@ -290,20 +233,6 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
         }
       } catch (err) {
         log.error('Logout failed', err);
-        debugLog.error('general', 'Account logout failed', {
-          userId: session.userId,
-          isActiveSession: activeSessionId === session.userId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        Sentry.captureException(err, {
-          tags: { operation: 'logout' },
-          contexts: {
-            account: {
-              userId: session.userId,
-              isActiveSession: activeSessionId === session.userId,
-            },
-          },
-        });
       } finally {
         setBusyUserIds((prev) => {
           const next = new Set(prev);
@@ -318,9 +247,8 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
   const handleAddAccount = () => {
     const url = withSearchParam(getLoginPath(), { addAccount: '1' });
     setMenuAnchor(undefined);
-    void stopClient(mx).finally(() => {
-      window.location.assign(url);
-    });
+    stopClient(mx);
+    setTimeout(() => window.location.assign(url), 100);
   };
 
   const handleOpenSettings = () => {
@@ -338,21 +266,19 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
     <SidebarItem active={!!menuAnchor} isBottom={isBottom}>
       <SidebarItemTooltip tooltip={label} position={isBottom ? 'Top' : 'Right'}>
         {(triggerRef) => (
-          <AvatarPresence badge={myOwnPresenceBadge}>
-            <SidebarAvatar
-              as="button"
-              ref={triggerRef}
-              onClick={handleToggle}
-              outlined={sessions.length > 1}
-            >
-              <UserAvatar
-                userId={activeSession.userId}
-                src={activeAvatarUrl}
-                alt={label}
-                renderFallback={() => <Text size="H4">{nameInitials(label)}</Text>}
-              />
-            </SidebarAvatar>
-          </AvatarPresence>
+          <SidebarAvatar
+            as="button"
+            ref={triggerRef}
+            onClick={handleToggle}
+            outlined={sessions.length > 1}
+          >
+            <UserAvatar
+              userId={activeSession.userId}
+              src={activeAvatarUrl}
+              alt={label}
+              renderFallback={() => <Text size="H4">{nameInitials(label)}</Text>}
+            />
+          </SidebarAvatar>
         )}
       </SidebarItemTooltip>
       {(totalBackgroundUnread > 0 || anyBackgroundHighlight) && (
@@ -365,7 +291,7 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
       <PopOut
         anchor={menuAnchor}
         position={isBottom ? 'Top' : 'Right'}
-        align={isBottom ? 'Start' : 'End'}
+        align="End"
         offset={6}
         content={
           <FocusTrap
@@ -379,161 +305,61 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
               escapeDeactivates: stopPropagation,
             }}
           >
-            <Menu style={sectionMenuStyle}>
+            <Menu style={{ minWidth: toRem(240) }}>
               <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
-                <Text size="L400" priority="300" style={sectionHeaderStyle}>
+                <Text size="L400" style={{ padding: `${config.space.S100} ${config.space.S200}` }}>
                   Accounts
                 </Text>
-                <Box direction="Column" gap="100" style={sectionListStyle}>
-                  {sessions.map((session) => {
-                    const isActive = session.userId === (activeSessionId ?? sessions[0]?.userId);
-                    let rowDisplayName: string | undefined;
-                    let rowAvatarUrl: string | undefined;
-                    if (isActive) {
-                      rowDisplayName = activeDisplayName;
-                      rowAvatarUrl = activeAvatarUrl;
-                    } else {
-                      const prof = sessionProfiles[session.userId];
-                      rowDisplayName = prof?.displayName;
-                      rowAvatarUrl = prof?.avatarHttpUrl;
-                    }
-                    return (
-                      <AccountRow
-                        key={session.userId}
-                        session={session}
-                        isActive={isActive}
-                        displayName={rowDisplayName}
-                        avatarUrl={rowAvatarUrl}
-                        isBusy={busyUserIds.has(session.userId)}
-                        unread={!isActive ? backgroundUnreads[session.userId] : undefined}
-                        onSwitch={handleSwitch}
-                        onSignOut={(pendingSession) => {
-                          setMenuAnchor(undefined);
-                          setConfirmSignOutSession(pendingSession);
-                        }}
-                      />
-                    );
-                  })}
-                  <MenuItem
-                    size="300"
-                    radii="300"
-                    before={chipIcon(Plus)}
-                    onClick={handleAddAccount}
-                  >
-                    <Text size="T300">Add Account</Text>
-                  </MenuItem>
-                </Box>
-                <Text size="L400" priority="300" style={sectionHeaderStyle}>
-                  Status
-                </Text>
-                <Box direction="Column" gap="100" style={sectionListStyle}>
-                  {(
-                    [
-                      { label: 'Online', desc: undefined, mode: 'online' as const },
-                      { label: 'Idle', desc: undefined, mode: 'unavailable' as const },
-                      { label: 'Do Not Disturb', desc: undefined, mode: 'dnd' as const },
-                      {
-                        label: 'Invisible',
-                        desc: 'You will appear offline',
-                        mode: 'offline' as const,
-                      },
-                    ] as const
-                  ).map(({ label: statusLabel, desc, mode }) => {
-                    const isSelected = sendPresence && (presenceMode ?? 'online') === mode;
-                    const badge =
-                      mode === 'dnd' ? (
-                        <Badge size="300" variant="Critical" fill="Solid" radii="Pill" />
-                      ) : (
-                        <PresenceBadge presence={mode as Presence} size="300" />
-                      );
-                    return (
-                      <MenuItem
-                        key={mode}
-                        size="300"
-                        radii="300"
-                        before={badge}
-                        after={
-                          isSelected ? (
-                            <Icon
-                              size="200"
-                              src={Icons.Check}
-                              style={{ color: 'var(--mx-c-success)' }}
-                            />
-                          ) : undefined
-                        }
-                        onClick={() => {
-                          setPresenceMode(mode);
-                          setAutoIdled(false);
-                          if (!sendPresence) setSendPresence(true);
-                        }}
-                      >
-                        <Box direction="Column">
-                          <Text size="T300">{statusLabel}</Text>
-                          {desc && (
-                            <Text size="T200" priority="300">
-                              {desc}
-                            </Text>
-                          )}
-                        </Box>
-                      </MenuItem>
-                    );
-                  })}
-                </Box>
-                <Box gap="100" direction="Column" style={{ marginTop: config.space.S100 }}>
-                  <Text size="O400" priority="300" style={sectionHeaderStyle}>
-                    Focus Mode
-                  </Text>
-                  <Box direction="Column" gap="100" style={sectionListStyle}>
-                    {[
-                      { mode: 'off' as const, label: 'Off', description: 'All notifications' },
-                      {
-                        mode: 'focus' as const,
-                        label: 'Focus',
-                        description: 'DMs and mentions only',
-                      },
-                      {
-                        mode: 'dnd' as const,
-                        label: 'Do Not Disturb',
-                        description: 'Critical messages only',
-                      },
-                    ].map(({ mode, label: modeLabel, description }) => {
-                      const isSelected = focusMode === mode;
-                      return (
-                        <MenuItem
-                          key={mode}
-                          size="300"
-                          radii="300"
-                          after={isSelected ? <Icon size="200" src={Icons.Check} /> : undefined}
-                          aria-pressed={isSelected}
-                          onClick={() => {
-                            setFocusMode(mode);
-                          }}
-                        >
-                          <Box direction="Column" gap="100">
-                            <Text size="T300">{modeLabel}</Text>
-                            <Text size="T200" priority="300">
-                              {description}
-                            </Text>
-                          </Box>
-                        </MenuItem>
-                      );
-                    })}
-                  </Box>
-                </Box>
-                <Box
-                  direction="Column"
-                  gap="100"
-                  style={{ ...sectionListStyle, marginTop: config.space.S100 }}
-                >
-                  <MenuItem
-                    size="300"
-                    radii="300"
-                    before={menuIcon(GearSix)}
-                    onClick={handleOpenSettings}
-                  >
-                    <Text size="T300">Settings</Text>
-                  </MenuItem>
-                </Box>
+                {sessions.map((session) => {
+                  const isActive = session.userId === (activeSessionId ?? sessions[0]?.userId);
+                  let rowDisplayName: string | undefined;
+                  let rowAvatarUrl: string | undefined;
+                  if (isActive) {
+                    rowDisplayName = activeDisplayName;
+                    rowAvatarUrl = activeAvatarUrl;
+                  } else {
+                    const prof = sessionProfiles[session.userId];
+                    rowDisplayName = prof?.displayName;
+                    rowAvatarUrl = prof?.avatarHttpUrl;
+                  }
+                  return (
+                    <AccountRow
+                      key={session.userId}
+                      session={session}
+                      isActive={isActive}
+                      displayName={rowDisplayName}
+                      avatarUrl={rowAvatarUrl}
+                      isBusy={busyUserIds.has(session.userId)}
+                      unread={!isActive ? backgroundUnreads[session.userId] : undefined}
+                      onSwitch={handleSwitch}
+                      onSignOut={(pendingSession) => {
+                        setMenuAnchor(undefined);
+                        setConfirmSignOutSession(pendingSession);
+                      }}
+                    />
+                  );
+                })}
+                <MenuItem size="300" radii="300" before={chipIcon(Plus)} onClick={handleAddAccount}>
+                  <Text size="T300">Add Account</Text>
+                </MenuItem>
+                {/*This will defo need to be reverted w the new statuses, w the right changes in the SidebarNav to make the cog a permanent fixture but democracy wants old style*/}
+                {oldSidebar && (
+                  <>
+                    <Line
+                      variant="Surface"
+                      size="300"
+                      style={{ margin: `${config.space.S100} 0` }}
+                    />
+                    <MenuItem
+                      size="300"
+                      radii="300"
+                      before={menuIcon(GearSix)}
+                      onClick={handleOpenSettings}
+                    >
+                      <Text size="T300">Settings</Text>
+                    </MenuItem>
+                  </>
+                )}
               </Box>
             </Menu>
           </FocusTrap>

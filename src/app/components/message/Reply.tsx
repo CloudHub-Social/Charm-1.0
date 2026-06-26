@@ -8,7 +8,7 @@ import classNames from 'classnames';
 import parse from 'html-react-parser';
 import { useAtomValue } from 'jotai';
 import {
-  ArrowBendUpLeftIcon,
+  ArrowBendUpRightIcon,
   ArrowsClockwise,
   ChatCircle,
   chipIcon,
@@ -182,7 +182,7 @@ export const ReplyLayout = as<'div', ReplyLayoutProps>(
       ref={ref}
     >
       <Box style={{ color: userColor }} alignItems="Center" shrink="No">
-        {replyIcon ?? menuIcon(ArrowBendUpLeftIcon)}
+        {replyIcon ?? menuIcon(ArrowBendUpRightIcon)}
       </Box>
       {icon}
       <Box style={{ color: userColor, maxWidth: toRem(200) }} alignItems="Center" shrink="No">
@@ -355,9 +355,8 @@ export const Reply = as<'div', ReplyProps>(
         }
       )?.question;
       image = timelineIcon(ListBullets);
-      if (question) {
-        bodyJSX = `'s poll asking ${question[M_TEXT.name] ?? question.body ?? ''}`;
-      }
+      if (question)
+        bodyJSX = `'s poll asking ${(question[M_TEXT.name] as string) ?? question?.body ?? ''}`;
     } else if (isFormattedReply && formattedBody !== '') {
       const sanitizedHtml = sanitizeReplyFormattedPreview(formattedBody);
       if (shouldParseReplyFormattedPreview(sanitizedHtml)) {
