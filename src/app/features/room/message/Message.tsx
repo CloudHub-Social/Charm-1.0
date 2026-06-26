@@ -935,6 +935,7 @@ function MessageInternal(
     >
       <MessageOptionsBar
         show={!edit && isDesktopHover}
+        edit={edit}
         menuAnchor={menuAnchor}
         setMenuAnchor={setMenuAnchor}
         emojiBoardAnchor={emojiBoardAnchor}

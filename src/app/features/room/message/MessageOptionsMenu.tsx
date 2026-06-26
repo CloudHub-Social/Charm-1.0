@@ -228,6 +228,8 @@ export const MessageBookmarkItem = as<
 export type MessageOptionsBarProps = {
   /** Show the bar: true when !edit && isDesktopHover */
   show: boolean;
+  /** Mirror of the parent edit prop — forces the bar to unmount while editing */
+  edit?: boolean;
   menuAnchor: RectCords | undefined;
   setMenuAnchor: Dispatch<SetStateAction<RectCords | undefined>>;
   emojiBoardAnchor: RectCords | undefined;
@@ -259,6 +261,7 @@ export type MessageOptionsBarProps = {
 
 export function MessageOptionsBar({
   show,
+  edit,
   menuAnchor,
   setMenuAnchor,
   emojiBoardAnchor,
@@ -322,7 +325,7 @@ export function MessageOptionsBar({
     }, 100);
   }, [menuAnchor, closeMenu, setEmojiBoardAnchor]);
 
-  if (!show && !menuAnchor && !emojiBoardAnchor) return null;
+  if (edit || (!show && !menuAnchor && !emojiBoardAnchor)) return null;
 
   return (
     <div className={css.MessageOptionsBase}>
