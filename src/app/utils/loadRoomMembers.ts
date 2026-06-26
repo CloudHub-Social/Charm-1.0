@@ -23,23 +23,31 @@ export async function loadRoomMembersOnce(
   const { roomId } = room;
   if (loadedRoomIds.has(roomId)) return;
 
-  let promise = inflightPromises.get(roomId);
-  if (!promise) {
-    const load = () =>
-      room
-        .loadMembersIfNeeded()
-        .then(() => {
-          loadedRoomIds.add(roomId);
-        })
-        .finally(() => {
-          inflightPromises.delete(roomId);
-        });
-
-    promise = options?.foreground ? load() : memberQueue.add(load);
-    inflightPromises.set(roomId, promise);
+  if (options?.foreground) {
+    // Foreground calls bypass the queue. If a background promise is already
+    // cached (waiting for a queue slot), we still fire loadMembersIfNeeded()
+    // directly — the SDK deduplicates concurrent network calls — and replace
+    // the cached promise so any other waiters also get the faster path.
+    // The displaced background callback will run when it gets a slot but
+    // loadMembersIfNeeded() will be a cheap no-op by then.
+    const p: Promise<void> = room
+      .loadMembersIfNeeded()
+      .then(() => { loadedRoomIds.add(roomId); })
+      .finally(() => { if (inflightPromises.get(roomId) === p) inflightPromises.delete(roomId); });
+    inflightPromises.set(roomId, p);
+    await p;
+    return;
   }
 
-  await promise;
+  // Background path: only enqueue if nothing is already inflight for this room.
+  if (!inflightPromises.has(roomId)) {
+    const p: Promise<void> = memberQueue
+      .add(() => room.loadMembersIfNeeded())
+      .then(() => { loadedRoomIds.add(roomId); })
+      .finally(() => { if (inflightPromises.get(roomId) === p) inflightPromises.delete(roomId); });
+    inflightPromises.set(roomId, p);
+  }
+  await inflightPromises.get(roomId)!;
 }
 
 export function isRoomMembersLoaded(roomId: string): boolean {
