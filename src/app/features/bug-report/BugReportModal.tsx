@@ -23,6 +23,7 @@ import * as Sentry from '@sentry/react';
 import { useCloseBugReportModal, useBugReportModalOpen } from '$state/hooks/bugReportModal';
 import { stopPropagation } from '$utils/keyboard';
 import { getDebugLogger } from '$utils/debugLogger';
+import { scrubMatrixUrl } from '$utils/sentryScrubbers';
 import { fetch } from '$utils/fetch';
 import { APP_NAME, APP_SOURCE_URL } from '$app/config/brand';
 
@@ -144,7 +145,10 @@ function BugReportModal() {
     };
   }, [title]);
 
+  const hasDestination = !sentryEnabled || sendToSentry || openOnGitHub;
+
   const canSubmit =
+    hasDestination &&
     title.trim().length > 0 &&
     (type === 'bug'
       ? description.trim().length > 0
@@ -178,7 +182,7 @@ function BugReportModal() {
         `Screen: ${screen.width}×${screen.height} @${window.devicePixelRatio}x`,
         `Online: ${navigator.onLine}`,
         `PWA: ${isPwa}`,
-        `URL: ${window.location.href}`,
+        `URL: ${scrubMatrixUrl(window.location.href)}`,
       ].join('\n');
 
       // Build a fully self-contained message so all fields are visible
@@ -530,6 +534,11 @@ function BugReportModal() {
                           </Text>
                         </Box>
                       </Box>
+                      {!hasDestination && (
+                        <Text size="T200" style={{ opacity: 0.7 }}>
+                          Please select at least one submission method above.
+                        </Text>
+                      )}
                     </Box>
                   )}
 
