@@ -8,10 +8,18 @@ export type CryptoStoreIndexedDbErrorType =
 
 const SW_CONTROLLER_CHANGED_AT_KEY = '__swControllerChangedAt';
 const SW_CONTROLLER_CHANGE_RECOVERY_WINDOW_MS = 2 * 60_000;
+const CRYPTO_STORE_RECOVERY_RELOAD_COUNT_KEY = '__cryptoStoreRecoveryReloadCount';
+
+export type CryptoStoreRecoveryAction = 'reload' | 'clear_cache';
 
 const getWindowRecord = (): Record<string, unknown> | undefined => {
   if (typeof window === 'undefined') return undefined;
   return window as unknown as Record<string, unknown>;
+};
+
+const getSessionStorage = (): Storage | undefined => {
+  if (typeof window === 'undefined') return undefined;
+  return window.sessionStorage;
 };
 
 export const classifyCryptoStoreIndexedDbError = (
@@ -54,4 +62,23 @@ export const hasRecentServiceWorkerControllerChange = (now = Date.now()): boolea
     return false;
   }
   return true;
+};
+
+export const resetCryptoStoreRecoveryReloadCount = (): void => {
+  const sessionStorage = getSessionStorage();
+  if (!sessionStorage) return;
+  sessionStorage.removeItem(CRYPTO_STORE_RECOVERY_RELOAD_COUNT_KEY);
+};
+
+export const getCryptoStoreRecoveryAction = (): CryptoStoreRecoveryAction => {
+  const sessionStorage = getSessionStorage();
+  if (!sessionStorage) return 'reload';
+  const currentCount = Number(
+    sessionStorage.getItem(CRYPTO_STORE_RECOVERY_RELOAD_COUNT_KEY) ?? '0'
+  );
+  if (currentCount >= 1) {
+    return 'clear_cache';
+  }
+  sessionStorage.setItem(CRYPTO_STORE_RECOVERY_RELOAD_COUNT_KEY, String(currentCount + 1));
+  return 'reload';
 };

@@ -2,15 +2,18 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   clearRecentServiceWorkerControllerChange,
   classifyCryptoStoreIndexedDbError,
+  getCryptoStoreRecoveryAction,
   hasRecentServiceWorkerControllerChange,
   isCryptoStoreIndexedDbError,
   markRecentServiceWorkerControllerChange,
+  resetCryptoStoreRecoveryReloadCount,
 } from './cryptoStoreErrors';
 
 const SW_CONTROLLER_CHANGED_AT_KEY = '__swControllerChangedAt';
 
 afterEach(() => {
   clearRecentServiceWorkerControllerChange();
+  resetCryptoStoreRecoveryReloadCount();
 });
 
 describe('crypto store IndexedDB error classification', () => {
@@ -69,5 +72,18 @@ describe('crypto store IndexedDB error classification', () => {
 
     expect(hasRecentServiceWorkerControllerChange(1_000 + 120_001)).toBe(false);
     expect(windowRecord[SW_CONTROLLER_CHANGED_AT_KEY]).toBeUndefined();
+  });
+
+  it('allows one recovery reload before falling back to cache clearing', () => {
+    expect(getCryptoStoreRecoveryAction()).toBe('reload');
+    expect(getCryptoStoreRecoveryAction()).toBe('clear_cache');
+  });
+
+  it('resets the recovery reload cap after a healthy sync', () => {
+    expect(getCryptoStoreRecoveryAction()).toBe('reload');
+
+    resetCryptoStoreRecoveryReloadCount();
+
+    expect(getCryptoStoreRecoveryAction()).toBe('reload');
   });
 });

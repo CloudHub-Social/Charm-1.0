@@ -24,8 +24,9 @@ import { SlidingSyncManager } from './slidingSync';
 import { installThreadEventInstrumentation } from './threadEventPatch';
 import {
   classifyCryptoStoreIndexedDbError,
-  clearRecentServiceWorkerControllerChange,
+  getCryptoStoreRecoveryAction,
   hasRecentServiceWorkerControllerChange,
+  resetCryptoStoreRecoveryReloadCount,
 } from './cryptoStoreErrors';
 import { clearClientCachesAndServiceWorkers } from '$utils/appCacheReset';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
@@ -1127,14 +1128,21 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
             Sentry.metrics.count('sable.sync.crypto_store_reload', 1, {
               attributes: { transport: 'classic', sw_changed: swChanged },
             });
-            reloadWithTelemetry('crypto_store_idb_recovery');
+            const recoveryAction = getCryptoStoreRecoveryAction();
+            if (recoveryAction === 'clear_cache') {
+              void clearCacheAndReload(mx);
+            } else {
+              reloadWithTelemetry('crypto_store_idb_recovery');
+            }
             return;
           }
         }
       } else {
-        // Reset counter on any successful sync cycle
+        // Any non-error state breaks the consecutive run.
         consecutiveCryptoStoreErrors = 0;
-        clearRecentServiceWorkerControllerChange();
+        if (state === SyncState.Syncing || state === SyncState.Prepared) {
+          resetCryptoStoreRecoveryReloadCount();
+        }
       }
       if (
         !classicInitialSyncDone &&
@@ -1327,6 +1335,9 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
     {
       ...slidingConfig,
       includeInviteList: true,
+      onCryptoStoreRecoveryExhausted: () => {
+        void clearCacheAndReload(mx);
+      },
       pollTimeoutMs: slidingConfig?.pollTimeoutMs ?? SLIDING_SYNC_POLL_TIMEOUT_MS,
     },
     slidingWarmCacheAtStart

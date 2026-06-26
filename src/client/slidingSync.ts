@@ -27,8 +27,9 @@ import * as Sentry from '@sentry/react';
 import { CustomStateEvent } from '$types/matrix/room';
 import {
   classifyCryptoStoreIndexedDbError,
-  clearRecentServiceWorkerControllerChange,
+  getCryptoStoreRecoveryAction,
   hasRecentServiceWorkerControllerChange,
+  resetCryptoStoreRecoveryReloadCount,
 } from './cryptoStoreErrors';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 
@@ -102,6 +103,7 @@ export type SlidingSyncConfig = {
   spaceGraphWarmupRooms?: number;
   includeInviteList?: boolean;
   probeTimeoutMs?: number;
+  onCryptoStoreRecoveryExhausted?: () => void;
 };
 
 export type SlidingSyncListDiagnostics = {
@@ -325,6 +327,8 @@ export class SlidingSyncManager {
     member: { userId: string; roomId: string; membership?: string }
   ) => void;
 
+  private readonly onCryptoStoreRecoveryExhausted: () => void;
+
   private presenceExtension!: ExtensionPresence;
 
   private listsFullyLoaded = false;
@@ -393,6 +397,7 @@ export class SlidingSyncManager {
     const listPageSize = clampPositive(config.listPageSize, DEFAULT_LIST_PAGE_SIZE);
     const pollTimeoutMs = clampPositive(config.pollTimeoutMs, DEFAULT_POLL_TIMEOUT_MS);
     this.probeTimeoutMs = clampPositive(config.probeTimeoutMs, 5000);
+    this.onCryptoStoreRecoveryExhausted = config.onCryptoStoreRecoveryExhausted ?? (() => {});
     this.maxRooms = clampPositive(config.maxRooms, DEFAULT_MAX_ROOMS);
     this.spaceGraphWarmupRooms = Math.min(
       this.maxRooms,
@@ -526,7 +531,12 @@ export class SlidingSyncManager {
             Sentry.metrics.count('sable.sync.crypto_store_reload', 1, {
               attributes: { transport: 'sliding', sw_changed: swChanged },
             });
-            reloadWithTelemetry('crypto_store_idb_recovery');
+            const recoveryAction = getCryptoStoreRecoveryAction();
+            if (recoveryAction === 'clear_cache') {
+              this.onCryptoStoreRecoveryExhausted();
+            } else {
+              reloadWithTelemetry('crypto_store_idb_recovery');
+            }
             return;
           }
         }
@@ -569,7 +579,7 @@ export class SlidingSyncManager {
       ) {
         this.lastSuccessfulSyncAt = Date.now();
         this.consecutiveCryptoStoreErrors = 0;
-        clearRecentServiceWorkerControllerChange();
+        resetCryptoStoreRecoveryReloadCount();
       }
 
       // Before room data is processed, reset live timelines for active rooms that
