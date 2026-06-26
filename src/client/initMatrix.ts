@@ -26,6 +26,7 @@ import {
   classifyCryptoStoreIndexedDbError,
   getCryptoStoreRecoveryAction,
   hasRecentServiceWorkerControllerChange,
+  maybeResetCryptoStoreRecoveryReloadCount,
   resetCryptoStoreRecoveryReloadCount,
 } from './cryptoStoreErrors';
 import { clearClientCachesAndServiceWorkers } from '$utils/appCacheReset';
@@ -1027,25 +1028,8 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
       (filterDefinition.room.timeline as { lazy_load_members?: boolean }).lazy_load_members = true;
     }
 
-    installStartupFetchRoomEventPatch(mx, { stubOnCacheMiss: true });
-    installClassicSyncNetworkReconnect(mx);
-
-    let syncStarted: Promise<void>;
-    try {
-      syncStarted = mx.startClient({
-        lazyLoadMembers: true,
-        pollTimeout: effectivePollTimeout,
-        threadSupport: true,
-        filter: classicFilter,
-      });
-    } catch (syncErr) {
-      fetchRoomEventStartupCleanupByClient.get(mx)?.();
-      throw syncErr;
-    }
-
-    await Promise.race([syncStarted, startupTimeout]);
-    // Attach an ongoing classic-sync observer — equivalent to SlidingSyncManager's
-    // onLifecycle listener. Tracks state transitions, initial-sync timing, and errors.
+    // Attach an ongoing classic-sync observer before startClient() so startup
+    // crypto-store failures are observed as well as steady-state ones.
     let classicSyncCount = 0;
     const classicSyncStartMs = performance.now();
     let classicInitialSyncDone = false;
@@ -1175,6 +1159,7 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
         !classicInitialSyncDone &&
         (state === SyncState.Syncing || state === SyncState.Prepared)
       ) {
+        maybeResetCryptoStoreRecoveryReloadCount();
         classicInitialSyncDone = true;
         const elapsed = performance.now() - classicSyncStartMs;
         debugLog.info('sync', 'Classic sync initial ready', {
@@ -1203,6 +1188,26 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
     };
     classicSyncObserverByClient.set(mx, classicSyncListener);
     mx.on(ClientEvent.Sync, classicSyncListener);
+
+    installStartupFetchRoomEventPatch(mx, { stubOnCacheMiss: true });
+    installClassicSyncNetworkReconnect(mx);
+
+    let syncStarted: Promise<void>;
+    try {
+      syncStarted = mx.startClient({
+        lazyLoadMembers: true,
+        pollTimeout: effectivePollTimeout,
+        threadSupport: true,
+        filter: classicFilter,
+      });
+    } catch (syncErr) {
+      fetchRoomEventStartupCleanupByClient.get(mx)?.();
+      mx.removeListener(ClientEvent.Sync, classicSyncListener);
+      classicSyncObserverByClient.delete(mx);
+      throw syncErr;
+    }
+
+    await Promise.race([syncStarted, startupTimeout]);
   };
 
   let slidingWarmCacheAtStart = mx.getRooms().length > 0;

@@ -10,6 +10,8 @@ const SW_CONTROLLER_CHANGED_AT_KEY = '__swControllerChangedAt';
 const SW_CONTROLLER_CHANGE_RECOVERY_WINDOW_MS = 2 * 60_000;
 const CRYPTO_STORE_RECOVERY_RELOAD_COUNT_KEY = '__cryptoStoreRecoveryReloadCount';
 const CRYPTO_STORE_RECOVERY_RELOAD_PENDING_KEY = '__cryptoStoreRecoveryReloadPending';
+const CRYPTO_STORE_RECOVERY_RELOAD_AT_KEY = '__cryptoStoreRecoveryReloadAt';
+const CRYPTO_STORE_RECOVERY_RESET_AFTER_MS = 60_000;
 
 export type CryptoStoreRecoveryAction = 'reload' | 'reload_pending' | 'clear_cache';
 
@@ -69,12 +71,28 @@ export const resetCryptoStoreRecoveryReloadCount = (): void => {
   const sessionStorage = getSessionStorage();
   if (!sessionStorage) return;
   sessionStorage.removeItem(CRYPTO_STORE_RECOVERY_RELOAD_COUNT_KEY);
+  sessionStorage.removeItem(CRYPTO_STORE_RECOVERY_RELOAD_AT_KEY);
   const windowRecord = getWindowRecord();
   if (!windowRecord) return;
   delete windowRecord[CRYPTO_STORE_RECOVERY_RELOAD_PENDING_KEY];
 };
 
-export const getCryptoStoreRecoveryAction = (): CryptoStoreRecoveryAction => {
+export const maybeResetCryptoStoreRecoveryReloadCount = (now = Date.now()): boolean => {
+  const sessionStorage = getSessionStorage();
+  if (!sessionStorage) return false;
+  const currentCount = Number(
+    sessionStorage.getItem(CRYPTO_STORE_RECOVERY_RELOAD_COUNT_KEY) ?? '0'
+  );
+  if (currentCount < 1) return false;
+  const reloadedAt = Number(sessionStorage.getItem(CRYPTO_STORE_RECOVERY_RELOAD_AT_KEY) ?? '0');
+  if (!reloadedAt || now - reloadedAt < CRYPTO_STORE_RECOVERY_RESET_AFTER_MS) {
+    return false;
+  }
+  resetCryptoStoreRecoveryReloadCount();
+  return true;
+};
+
+export const getCryptoStoreRecoveryAction = (now = Date.now()): CryptoStoreRecoveryAction => {
   const sessionStorage = getSessionStorage();
   if (!sessionStorage) return 'reload';
   const windowRecord = getWindowRecord();
@@ -88,6 +106,7 @@ export const getCryptoStoreRecoveryAction = (): CryptoStoreRecoveryAction => {
     return 'clear_cache';
   }
   sessionStorage.setItem(CRYPTO_STORE_RECOVERY_RELOAD_COUNT_KEY, String(currentCount + 1));
+  sessionStorage.setItem(CRYPTO_STORE_RECOVERY_RELOAD_AT_KEY, String(now));
   if (windowRecord) {
     windowRecord[CRYPTO_STORE_RECOVERY_RELOAD_PENDING_KEY] = true;
   }

@@ -29,6 +29,7 @@ import {
   classifyCryptoStoreIndexedDbError,
   getCryptoStoreRecoveryAction,
   hasRecentServiceWorkerControllerChange,
+  maybeResetCryptoStoreRecoveryReloadCount,
 } from './cryptoStoreErrors';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 
@@ -585,6 +586,7 @@ export class SlidingSyncManager {
       ) {
         this.lastSuccessfulSyncAt = Date.now();
         this.consecutiveCryptoStoreErrors = 0;
+        maybeResetCryptoStoreRecoveryReloadCount();
       }
 
       // Before room data is processed, reset live timelines for active rooms that

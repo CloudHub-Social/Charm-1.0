@@ -6,6 +6,7 @@ import {
   hasRecentServiceWorkerControllerChange,
   isCryptoStoreIndexedDbError,
   markRecentServiceWorkerControllerChange,
+  maybeResetCryptoStoreRecoveryReloadCount,
   resetCryptoStoreRecoveryReloadCount,
 } from './cryptoStoreErrors';
 
@@ -93,6 +94,26 @@ describe('crypto store IndexedDB error classification', () => {
 
     resetCryptoStoreRecoveryReloadCount();
 
+    expect(getCryptoStoreRecoveryAction()).toBe('reload');
+  });
+
+  it('does not reset the persisted recovery cap before the healthy window elapses', () => {
+    expect(getCryptoStoreRecoveryAction(1_000)).toBe('reload');
+
+    const windowRecord = window as unknown as Record<string, unknown>;
+    delete windowRecord.__cryptoStoreRecoveryReloadPending;
+
+    expect(maybeResetCryptoStoreRecoveryReloadCount(30_000)).toBe(false);
+    expect(getCryptoStoreRecoveryAction()).toBe('clear_cache');
+  });
+
+  it('resets the persisted recovery cap after a sustained healthy period', () => {
+    expect(getCryptoStoreRecoveryAction(1_000)).toBe('reload');
+
+    const windowRecord = window as unknown as Record<string, unknown>;
+    delete windowRecord.__cryptoStoreRecoveryReloadPending;
+
+    expect(maybeResetCryptoStoreRecoveryReloadCount(61_000)).toBe(true);
     expect(getCryptoStoreRecoveryAction()).toBe('reload');
   });
 });
