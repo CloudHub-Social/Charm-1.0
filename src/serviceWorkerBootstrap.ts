@@ -113,7 +113,11 @@ function createSwWatchdog() {
     recordWatchdogRecoveryAttempt(reason, data);
     const registration = await navigator.serviceWorker.getRegistration().catch(() => undefined);
     registration?.active?.postMessage({ type: 'CLAIM_CLIENTS' });
-    void registration?.update();
+    try {
+      void registration?.update();
+    } catch (err) {
+      Sentry.captureException(err);
+    }
     sendActiveSessionToServiceWorker();
   };
 
