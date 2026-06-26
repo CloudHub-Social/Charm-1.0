@@ -1,18 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Room } from '$types/matrix-sdk';
 
-function makeRoom(roomId: string, loadFn = vi.fn<[], Promise<void>>().mockResolvedValue(undefined)) {
+function makeRoom(
+  roomId: string,
+  loadFn: () => Promise<void> = vi.fn().mockResolvedValue(undefined)
+) {
   return { roomId, loadMembersIfNeeded: loadFn } as unknown as Room;
 }
 
 describe('loadRoomMembersOnce', () => {
   // Each test gets a fresh module so the module-level loadedRoomIds / inflightPromises start empty.
-  beforeEach(() => { vi.resetModules(); });
-  afterEach(() => { vi.restoreAllMocks(); });
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it('calls loadMembersIfNeeded exactly once for repeated background calls', async () => {
     const { loadRoomMembersOnce } = await import('./loadRoomMembers');
-    const load = vi.fn<[], Promise<void>>().mockResolvedValue(undefined);
+    const load = vi.fn().mockResolvedValue(undefined);
     const room = makeRoom('!a:example.org', load);
 
     await Promise.all([loadRoomMembersOnce(room), loadRoomMembersOnce(room)]);
@@ -34,29 +41,32 @@ describe('loadRoomMembersOnce', () => {
     const { loadRoomMembersOnce } = await import('./loadRoomMembers');
 
     let resolveBackground!: () => void;
-    const backgroundLoad = vi.fn<[], Promise<void>>(
-      () => new Promise<void>((res) => { resolveBackground = res; })
+    const backgroundLoad = vi.fn(
+      () =>
+        new Promise<void>((res) => {
+          resolveBackground = res;
+        })
     );
-    const foregroundLoad = vi.fn<[], Promise<void>>().mockResolvedValue(undefined);
+    const foregroundLoad = vi.fn().mockResolvedValue(undefined);
 
     const bgRoom = makeRoom('!c:example.org', backgroundLoad);
     const fgRoom = makeRoom('!c:example.org', foregroundLoad);
 
-    // Background load starts but stays pending — it's waiting for a queue slot or is in-flight.
+    // Background load starts but stays pending.
     const bgPromise = loadRoomMembersOnce(bgRoom);
 
     // Foreground call must resolve immediately via its own direct load.
     await loadRoomMembersOnce(fgRoom, { foreground: true });
     expect(foregroundLoad).toHaveBeenCalledTimes(1);
 
-    // Unblock the background callback (becomes a no-op since room is now loaded).
+    // Unblock the background callback (no-op since room is now loaded).
     resolveBackground();
     await bgPromise;
   });
 
   it('markRoomMembersLoaded prevents any subsequent fetch', async () => {
     const { loadRoomMembersOnce, markRoomMembersLoaded } = await import('./loadRoomMembers');
-    const load = vi.fn<[], Promise<void>>().mockResolvedValue(undefined);
+    const load = vi.fn().mockResolvedValue(undefined);
     const room = makeRoom('!d:example.org', load);
 
     markRoomMembersLoaded('!d:example.org');
