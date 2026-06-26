@@ -26,8 +26,7 @@ const linkStyles = { color: color.Success.Main };
 // Module-level in-flight deduplication: prevents N+1 concurrent requests when a
 // large event batch renders many UrlPreviewCard instances for the same URL.
 // Scoped by MatrixClient to avoid cross-account dedup if multiple clients exist.
-// Inner cache keyed by URL only â€ Ethe same URL shows the same preview
-// regardless of which message referenced it. Promises are evicted after settling
+// Keyed by `${url}:${ts}` — promises are evicted after settling
 // so a later render can retry after network recovery.
 const previewRequestCache = new WeakMap<MatrixClient, Map<string, Promise<IPreviewUrlResponse>>>();
 
@@ -35,9 +34,7 @@ const previewRequestCache = new WeakMap<MatrixClient, Map<string, Promise<IPrevi
 // that `ts` selects the point-in-time snapshot of a URL's Open Graph metadata.
 // Successful entries are stored indefinitely for the session; error entries expire
 // after 60 s to suppress retry storms without masking recovery.
-type SettledEntry =
-  | { ok: true; data: IPreviewUrlResponse }
-  | { ok: false; expiry: number };
+type SettledEntry = { ok: true; data: IPreviewUrlResponse } | { ok: false; expiry: number };
 const previewResultCache = new WeakMap<MatrixClient, Map<string, SettledEntry>>();
 
 const getClientCache = (mx: MatrixClient): Map<string, Promise<IPreviewUrlResponse>> => {
@@ -168,22 +165,22 @@ export const UrlPreviewCard = as<
         }
 
         const clientCache = getClientCache(mx);
-        const cached = clientCache.get(url);
+        const cached = clientCache.get(cacheKey);
         if (cached !== undefined) return cached;
 
         try {
           const previewResult = mx?.getUrlPreview(url, ts);
           if (!previewResult) return null;
-          clientCache.set(url, previewResult);
+          clientCache.set(cacheKey, previewResult);
           const preview = await previewResult;
-          clientCache.delete(url);
+          clientCache.delete(cacheKey);
           resultCache.set(cacheKey, { ok: true, data: preview });
           return preview;
         } catch {
           // Synapse returns 502/404/403 when the external URL is unreachable, forbidden,
           // or the preview service is unavailable. This is expected behaviour — silently
           // suppress and render no preview rather than propagating to error boundary.
-          clientCache.delete(url);
+          clientCache.delete(cacheKey);
           resultCache.set(cacheKey, { ok: false, expiry: Date.now() + 60_000 });
           return null;
         }
