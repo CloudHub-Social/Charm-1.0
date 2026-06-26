@@ -580,8 +580,8 @@ export const useSequentialSpaceHierarchies = (
       processingRef.current = true;
 
       while (pendingRef.current.length > 0) {
-        const roomId = pendingRef.current[0];
-        pendingRef.current = pendingRef.current.slice(1);
+        const roomId = pendingRef.current.shift();
+        if (!roomId) continue;
 
         setResults((prev) => {
           const next = new Map(prev);
