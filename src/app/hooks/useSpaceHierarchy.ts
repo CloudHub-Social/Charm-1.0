@@ -466,11 +466,13 @@ export const useSequentialSpaceHierarchies = (
       return next;
     });
 
-    if (processingRef.current) return;
-
     let cancelled = false;
 
     const processQueue = async () => {
+      // If another instance is running and hasn't been cancelled yet, the new
+      // items we added to pendingRef will be picked up by that queue naturally.
+      // Only skip if an active (non-cancelled) queue is already running.
+      if (processingRef.current) return;
       processingRef.current = true;
 
       while (pendingRef.current.length > 0) {
@@ -549,12 +551,17 @@ export const useSequentialSpaceHierarchies = (
         }
       }
 
-      processingRef.current = false;
+      // Only reset the flag if we weren't cancelled — if we were, the cleanup
+      // already reset it so the next effect's processQueue can start fresh.
+      if (!cancelled) processingRef.current = false;
     };
 
     processQueue();
     return () => {
       cancelled = true;
+      // Reset so the next effect invocation can start a fresh queue for any
+      // items that were added to pendingRef during this run.
+      processingRef.current = false;
     };
     // roomIds identity changes every render; roomIdsKey is the stable
     // serialization used as the effect dependency.
