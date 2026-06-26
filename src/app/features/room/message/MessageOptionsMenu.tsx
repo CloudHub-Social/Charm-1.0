@@ -22,7 +22,7 @@ import { useAtomValue, useSetAtom } from 'jotai';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useRecentEmoji } from '$hooks/useRecentEmoji';
 import { EmojiBoard } from '$components/emoji-board';
-import { canEditEvent, getEventEdits, isThreadRelationEvent } from '$utils/room';
+import { canEditEvent } from '$utils/room';
 import { copyToClipboard } from '$utils/dom';
 import { stopPropagation } from '$utils/keyboard';
 import { getMatrixToRoomEvent } from '$plugins/matrix-to';

@@ -17,7 +17,6 @@ import { useHover, useFocusWithin } from 'react-aria';
 import type { MatrixEvent, Room, Relations } from '$types/matrix-sdk';
 import { EventStatus, MatrixEventEvent, RoomEvent } from '$types/matrix-sdk';
 import classNames from 'classnames';
-import { useAtomValue } from 'jotai';
 import {
   AvatarBase,
   BubbleLayout,
@@ -37,7 +36,6 @@ import {
 } from '$utils/room';
 import type { MessageSpacing } from '$state/settings';
 import { getSettings, MessageLayout, settingsAtom } from '$state/settings';
-import { nicknamesAtom } from '$state/nicknames';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { UserAvatar } from '$components/user-avatar';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
@@ -67,16 +65,15 @@ import {
 } from './pendingSendDisplay';
 import { MessageEditor } from './MessageEditor';
 import { MobileMessageMenu } from './MobileMessageMenu';
-import {
-  MessageOptionsBar,
-  EventOptionsBar,
+import { MessageOptionsBar, EventOptionsBar } from './MessageOptionsMenu';
+export type { ReactionHandler } from './MessageOptionsMenu';
+export {
   MessageQuickReactions,
   MessageCopyLinkItem,
   MessageCopyTextItem,
   MessagePinItem,
   MessageBookmarkItem,
 } from './MessageOptionsMenu';
-export type { ReactionHandler } from './MessageOptionsMenu';
 import * as css from './styles.css';
 
 const MemoizedBody = memo(({ children }: { children: ReactNode }) => children);
@@ -529,14 +526,11 @@ function MessageInternal(
 
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
   const [emojiBoardAnchor, setEmojiBoardAnchor] = useState<RectCords>();
-  const nicknames = useAtomValue(nicknamesAtom);
-
   const tagIconSrc = memberPowerTag?.icon
     ? getPowerTagIconSrc(mx, useAuthentication, memberPowerTag.icon)
     : undefined;
 
   const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
-  const optionsRef = useRef<HTMLDivElement>(null);
   const [showPronouns] = useSetting(settingsAtom, 'showPronouns');
   const [parsePronouns] = useSetting(settingsAtom, 'parsePronouns');
 
@@ -1056,7 +1050,6 @@ export const Event = as<'div', EventProps>(
     },
     ref
   ) => {
-    const mx = useMatrixClient();
     const stateEvent = typeof mEvent.getStateKey() === 'string';
 
     const [menuAnchor, setMenuAnchor] = useState<RectCords>();
@@ -1082,11 +1075,6 @@ export const Event = as<'div', EventProps>(
       });
     };
 
-    const closeMenu = () => {
-      setMenuAnchor(undefined);
-      setMobileOptionsOpen(false);
-    };
-
     const [isDesktopHover, setIsDesktopHover] = useState(false);
     const { hoverProps } = useHover({
       onHoverChange: (h) => {
@@ -1098,8 +1086,6 @@ export const Event = as<'div', EventProps>(
         if (!mobileOrTablet()) setIsDesktopHover(f);
       },
     });
-
-    const optionsRef = useRef<HTMLDivElement>(null);
 
     const longPress = useMobileLongPress(() => {
       setMobileOptionsOpen(true);
