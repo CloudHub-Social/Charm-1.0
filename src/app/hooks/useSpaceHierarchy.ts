@@ -434,7 +434,13 @@ export const useSequentialSpaceHierarchies = (
   roomIds: string[]
 ): Map<string, FetchSpaceHierarchyLevelData> => {
   const mx = useMatrixClient();
-  const [results, setResults] = useState<Map<string, FetchSpaceHierarchyLevelData>>(new Map());
+  // Pre-populate on first render so children immediately see fetching:true
+  // and skip their own useFetchSpaceHierarchyLevel queries.
+  const [results, setResults] = useState<Map<string, FetchSpaceHierarchyLevelData>>(() => {
+    const m = new Map<string, FetchSpaceHierarchyLevelData>();
+    roomIds.forEach((id) => m.set(id, { fetching: true, error: null, rooms: new Map() }));
+    return m;
+  });
   const fetchedRef = useRef<Set<string>>(new Set());
   const pendingRef = useRef<string[]>([]);
   const processingRef = useRef(false);
@@ -443,12 +449,13 @@ export const useSequentialSpaceHierarchies = (
   const roomIdsKey = roomIds.join(',');
 
   useEffect(() => {
-    // Prune IDs that are no longer in roomIds so they can be re-fetched if
-    // they reappear in the hierarchy later.
+    // Prune stale IDs so removed rooms can be re-fetched if they reappear,
+    // and so we don't waste requests on rooms no longer in the hierarchy.
     const currentSet = new Set(roomIds);
     fetchedRef.current.forEach((id) => {
       if (!currentSet.has(id)) fetchedRef.current.delete(id);
     });
+    pendingRef.current = pendingRef.current.filter((id) => currentSet.has(id));
 
     const newIds = roomIds.filter((id) => !fetchedRef.current.has(id));
     if (newIds.length === 0) return;
