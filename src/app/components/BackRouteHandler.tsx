@@ -41,6 +41,18 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
       setLastRoomId(decodeURIComponent(currentRoomIdOrAlias));
     }
 
+    // Use a native history pop when there is prior history. This keeps the
+    // in-app back button and the native iOS swipe-back gesture in sync: both
+    // traverse the same stack, so the room entry is never left "behind" the
+    // section and there are no phantom pushes for swipe-back to stumble into.
+    const historyIdx = (window.history.state as { idx?: number } | null)?.idx;
+    if (historyIdx !== undefined && historyIdx > 0) {
+      navigate(-1);
+      return;
+    }
+
+    // No back history — navigate to the section root and replace the current
+    // entry so the room doesn't linger as a forward entry.
     if (
       matchPath(
         {
@@ -51,7 +63,7 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
         location.pathname
       )
     ) {
-      navigate(getHomePath());
+      navigate(getHomePath(), { replace: true });
       return;
     }
     if (
@@ -64,7 +76,7 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
         location.pathname
       )
     ) {
-      navigate(getDirectPath());
+      navigate(getDirectPath(), { replace: true });
       return;
     }
     const spaceMatch = matchPath(
@@ -80,7 +92,7 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
       encodedSpaceIdOrAlias && decodeURIComponent(encodedSpaceIdOrAlias);
 
     if (decodedSpaceIdOrAlias) {
-      navigate(getSpacePath(decodedSpaceIdOrAlias));
+      navigate(getSpacePath(decodedSpaceIdOrAlias), { replace: true });
       return;
     }
     if (
@@ -93,7 +105,7 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
         location.pathname
       )
     ) {
-      navigate(getExplorePath());
+      navigate(getExplorePath(), { replace: true });
       return;
     }
     if (
@@ -106,7 +118,7 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
         location.pathname
       )
     ) {
-      navigate(getInboxPath());
+      navigate(getInboxPath(), { replace: true });
     }
   }, [navigate, location, setLastRoomId]);
 
