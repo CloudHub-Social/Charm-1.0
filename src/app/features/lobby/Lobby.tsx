@@ -1,80 +1,104 @@
-import type { MouseEventHandler, ReactElement } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Chip, IconButton, Line, Scroll, Spinner, Text, color, config } from 'folds';
-import type { VirtualItem } from '@tanstack/react-virtual';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useAtom, useAtomValue } from 'jotai';
-import { useNavigate } from 'react-router-dom';
+import type { MouseEventHandler, ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Box,
+  Chip,
+  IconButton,
+  Line,
+  Scroll,
+  Spinner,
+  Text,
+  color,
+  config,
+} from "folds";
+import type { VirtualItem } from "@tanstack/react-virtual";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useAtom, useAtomValue } from "jotai";
+import { useNavigate } from "react-router-dom";
 import type {
   Room,
   RoomJoinRulesEventContent,
   IHierarchyRoom,
   StateEvents,
   AccountDataEvents,
-} from '$types/matrix-sdk';
-import { JoinRule, RestrictedAllowType, EventType } from '$types/matrix-sdk';
-import { produce } from 'immer';
-import { useSpace } from '$hooks/useSpace';
-import { Page, PageContent, PageContentCenter, PageHeroSection } from '$components/page';
-import type { HierarchyItem, HierarchyItemSpace } from '$hooks/useSpaceHierarchy';
-import { useSpaceHierarchy, useSequentialSpaceHierarchies } from '$hooks/useSpaceHierarchy';
-import { VirtualTile } from '$components/virtualizer';
-import { spaceRoomsAtom } from '$state/spaceRooms';
-import { useSetting } from '$state/hooks/settings';
-import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
-import { settingsAtom } from '$state/settings';
-import { ScrollTopContainer } from '$components/scroll-top-container';
-import { useElementSizeObserver } from '$hooks/useElementSizeObserver';
-import type { IPowerLevels } from '$hooks/usePowerLevels';
+} from "$types/matrix-sdk";
+import { JoinRule, RestrictedAllowType, EventType } from "$types/matrix-sdk";
+import { produce } from "immer";
+import { useSpace } from "$hooks/useSpace";
+import {
+  Page,
+  PageContent,
+  PageContentCenter,
+  PageHeroSection,
+} from "$components/page";
+import type {
+  HierarchyItem,
+  HierarchyItemSpace,
+} from "$hooks/useSpaceHierarchy";
+import {
+  useSpaceHierarchy,
+  useSequentialSpaceHierarchies,
+} from "$hooks/useSpaceHierarchy";
+import { VirtualTile } from "$components/virtualizer";
+import { spaceRoomsAtom } from "$state/spaceRooms";
+import { useSetting } from "$state/hooks/settings";
+import { ScreenSize, useScreenSizeContext } from "$hooks/useScreenSize";
+import { settingsAtom } from "$state/settings";
+import { ScrollTopContainer } from "$components/scroll-top-container";
+import { useElementSizeObserver } from "$hooks/useElementSizeObserver";
+import type { IPowerLevels } from "$hooks/usePowerLevels";
 import {
   PowerLevelsContextProvider,
   usePowerLevels,
   useRoomsPowerLevels,
-} from '$hooks/usePowerLevels';
-import { mDirectAtom } from '$state/mDirectList';
-import { makeLobbyCategoryId, getLobbyCategoryIdParts } from '$state/closedLobbyCategories';
-import { useCategoryHandler } from '$hooks/useCategoryHandler';
-import { useMatrixClient } from '$hooks/useMatrixClient';
-import { allRoomsAtom } from '$state/room-list/roomList';
-import { getCanonicalAliasOrRoomId, rateLimitedActions } from '$utils/matrix';
-import { getSpaceRoomPath } from '$pages/pathUtils';
+} from "$hooks/usePowerLevels";
+import { mDirectAtom } from "$state/mDirectList";
+import {
+  makeLobbyCategoryId,
+  getLobbyCategoryIdParts,
+} from "$state/closedLobbyCategories";
+import { useCategoryHandler } from "$hooks/useCategoryHandler";
+import { useMatrixClient } from "$hooks/useMatrixClient";
+import { allRoomsAtom } from "$state/room-list/roomList";
+import { getCanonicalAliasOrRoomId, rateLimitedActions } from "$utils/matrix";
+import { getSpaceRoomPath } from "$pages/pathUtils";
 
-import { ASCIILexicalTable, orderKeys } from '$utils/ASCIILexicalTable';
-import { getStateEvent } from '$utils/room';
-import { useClosedLobbyCategoriesAtom } from '$state/hooks/closedLobbyCategories';
+import { ASCIILexicalTable, orderKeys } from "$utils/ASCIILexicalTable";
+import { getStateEvent } from "$utils/room";
+import { useClosedLobbyCategoriesAtom } from "$state/hooks/closedLobbyCategories";
 import {
   makeCinnySpacesContent,
   sidebarItemWithout,
   useSidebarItems,
-} from '$hooks/useSidebarItems';
-import { useOrphanSpaces } from '$state/hooks/roomList';
-import { roomToParentsAtom } from '$state/room/roomToParents';
+} from "$hooks/useSidebarItems";
+import { useOrphanSpaces } from "$state/hooks/roomList";
+import { roomToParentsAtom } from "$state/room/roomToParents";
 
-import { useRoomMembers } from '$hooks/useRoomMembers';
-import { useGetRoom } from '$hooks/useGetRoom';
-import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
-import { getRoomPermissionsAPI } from '$hooks/useRoomPermissions';
-import { CaretUp, composerIcon } from '$components/icons/phosphor';
-import { getRoomCreatorsForRoomId } from '$hooks/useRoomCreators';
-import { MembersDrawer } from '$features/room/MembersDrawer';
-import { SpaceHierarchyItem } from './SpaceHierarchyItem';
-import type { CanDropCallback } from './DnD';
-import { useDnDMonitor } from './DnD';
-import { LobbyHero } from './LobbyHero';
-import { LobbyHeader } from './LobbyHeader';
-import { SpaceHierarchyNavItem } from './SpaceHierarchyNavItem';
-import { CustomAccountDataEvent } from '$types/matrix/accountData';
+import { useRoomMembers } from "$hooks/useRoomMembers";
+import { useGetRoom } from "$hooks/useGetRoom";
+import { AsyncStatus, useAsyncCallback } from "$hooks/useAsyncCallback";
+import { getRoomPermissionsAPI } from "$hooks/useRoomPermissions";
+import { CaretUp, composerIcon } from "$components/icons/phosphor";
+import { getRoomCreatorsForRoomId } from "$hooks/useRoomCreators";
+import { MembersDrawer } from "$features/room/MembersDrawer";
+import { SpaceHierarchyItem } from "./SpaceHierarchyItem";
+import type { CanDropCallback } from "./DnD";
+import { useDnDMonitor } from "./DnD";
+import { LobbyHero } from "./LobbyHero";
+import { LobbyHeader } from "./LobbyHeader";
+import { SpaceHierarchyNavItem } from "./SpaceHierarchyNavItem";
+import { CustomAccountDataEvent } from "$types/matrix/accountData";
 
 const useCanDropLobbyItem = (
   space: Room,
   roomsPowerLevels: Map<string, IPowerLevels>,
-  getRoom: (roomId: string) => Room | undefined
+  getRoom: (roomId: string) => Room | undefined,
 ): CanDropCallback => {
   const mx = useMatrixClient();
 
   const canDropSpace: CanDropCallback = useCallback(
     (item, container) => {
-      if (!('space' in container.item)) {
+      if (!("space" in container.item)) {
         // can not drop around rooms.
         // space can only be drop around other spaces
         return false;
@@ -83,7 +107,10 @@ const useCanDropLobbyItem = (
       const containerSpaceId = space.roomId;
 
       // only allow to be dropped in parent space
-      if (item.parentId !== container.item.roomId && item.parentId !== container.item.parentId) {
+      if (
+        item.parentId !== container.item.roomId &&
+        item.parentId !== container.item.parentId
+      ) {
         return false;
       }
 
@@ -100,27 +127,33 @@ const useCanDropLobbyItem = (
 
       return true;
     },
-    [space, roomsPowerLevels, getRoom, mx]
+    [space, roomsPowerLevels, getRoom, mx],
   );
 
   const canDropRoom: CanDropCallback = useCallback(
     (item, container) => {
       const containerSpaceId =
-        'space' in container.item ? container.item.roomId : container.item.parentId;
+        "space" in container.item
+          ? container.item.roomId
+          : container.item.parentId;
 
       const draggingOutsideSpace = item.parentId !== containerSpaceId;
-      const restrictedItem = mx.getRoom(item.roomId)?.getJoinRule() === JoinRule.Restricted;
+      const restrictedItem =
+        mx.getRoom(item.roomId)?.getJoinRule() === JoinRule.Restricted;
 
       // check and do not allow restricted room to be dragged outside
       // current space if can't change `m.room.join_rules` `content.allow`
       if (draggingOutsideSpace && restrictedItem) {
         const itemPowerLevels = roomsPowerLevels.get(item.roomId) ?? {};
         const itemCreators = getRoomCreatorsForRoomId(mx, item.roomId);
-        const itemPermissions = getRoomPermissionsAPI(itemCreators, itemPowerLevels);
+        const itemPermissions = getRoomPermissionsAPI(
+          itemCreators,
+          itemPowerLevels,
+        );
 
         const canChangeJoinRuleAllow = itemPermissions.stateEvent(
           EventType.RoomJoinRules,
-          mx.getSafeUserId()
+          mx.getSafeUserId(),
         );
         if (!canChangeJoinRuleAllow) {
           return false;
@@ -138,24 +171,27 @@ const useCanDropLobbyItem = (
       }
       return true;
     },
-    [mx, getRoom, roomsPowerLevels]
+    [mx, getRoom, roomsPowerLevels],
   );
 
   const canDrop: CanDropCallback = useCallback(
     (item, container): boolean => {
-      if (item.roomId === container.item.roomId || item.roomId === container.nextRoomId) {
+      if (
+        item.roomId === container.item.roomId ||
+        item.roomId === container.nextRoomId
+      ) {
         // can not drop before or after itself
         return false;
       }
 
       // if we are dragging a space
-      if ('space' in item) {
+      if ("space" in item) {
         return canDropSpace(item, container);
       }
 
       return canDropRoom(item, container);
     },
-    [canDropSpace, canDropRoom]
+    [canDropSpace, canDropRoom],
   );
 
   return canDrop;
@@ -169,35 +205,42 @@ export function Lobby() {
   const allJoinedRooms = useMemo(() => new Set(allRooms), [allRooms]);
   const space = useSpace();
   const spacePowerLevels = usePowerLevels(space);
-  const lex = useMemo(() => new ASCIILexicalTable(' '.charCodeAt(0), '~'.charCodeAt(0), 6), []);
+  const lex = useMemo(
+    () => new ASCIILexicalTable(" ".charCodeAt(0), "~".charCodeAt(0), 6),
+    [],
+  );
   const members = useRoomMembers(mx, space.roomId);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const heroSectionRef = useRef<HTMLDivElement>(null);
   const [heroSectionHeight, setHeroSectionHeight] = useState<number>();
   const [spaceRooms, setSpaceRooms] = useAtom(spaceRoomsAtom);
-  const [isDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
+  const [isDrawer] = useSetting(settingsAtom, "isPeopleDrawer");
   const screenSize = useScreenSizeContext();
   const [onTop, setOnTop] = useState(true);
-  const [closedCategories, setClosedCategories] = useAtom(useClosedLobbyCategoriesAtom());
+  const [closedCategories, setClosedCategories] = useAtom(
+    useClosedLobbyCategoriesAtom(),
+  );
   const roomToParents = useAtomValue(roomToParentsAtom);
   const [sidebarItems] = useSidebarItems(
-    useOrphanSpaces(mx, allRoomsAtom, useAtomValue(roomToParentsAtom))
+    useOrphanSpaces(mx, allRoomsAtom, useAtomValue(roomToParentsAtom)),
   );
   const sidebarSpaces = useMemo(() => {
     const sideSpaces = sidebarItems.flatMap((item) => {
-      if (typeof item === 'string') return item;
+      if (typeof item === "string") return item;
       return item.content;
     });
 
     return new Set(sideSpaces);
   }, [sidebarItems]);
 
-  const [spacesItems, setSpacesItems] = useState<Map<string, IHierarchyRoom>>(() => new Map());
+  const [spacesItems, setSpacesItems] = useState<Map<string, IHierarchyRoom>>(
+    () => new Map(),
+  );
 
   useElementSizeObserver(
     useCallback(() => heroSectionRef.current, []),
-    useCallback((w, height) => setHeroSectionHeight(height), [])
+    useCallback((w, height) => setHeroSectionHeight(height), []),
   );
 
   const getRoom = useGetRoom(allJoinedRooms);
@@ -221,7 +264,7 @@ export function Lobby() {
       spaceId: string,
       parentId: string,
       previousId?: string,
-      visited: Set<string> = new Set()
+      visited: Set<string> = new Set(),
     ): boolean => {
       // Ignore root space being collapsed if in a subspace,
       // this is due to many spaces dumping all rooms in the top-level space.
@@ -255,13 +298,13 @@ export function Lobby() {
       // As a subspace can be in multiple spaces,
       // only return true if all parent spaces are closed.
       const allClosed = !Array.from(parentParentIds).some(
-        (id) => !getInClosedCategories(spaceId, id, parentId, visited)
+        (id) => !getInClosedCategories(spaceId, id, parentId, visited),
       );
       visited.delete(categoryId);
       closedCategoriesCache.current.set(categoryId, allClosed);
       return allClosed;
     },
-    [closedCategories, getRoom, roomToParents, spaceRooms]
+    [closedCategories, getRoom, roomToParents, spaceRooms],
   );
 
   /**
@@ -271,17 +314,25 @@ export function Lobby() {
    * @param roomId - The room ID to start the check from.
    * @returns True if every parent category is collapsed; false otherwise.
    */
-  const getAllAncestorsCollapsed = (spaceId: string, roomId: string): boolean => {
+  const getAllAncestorsCollapsed = (
+    spaceId: string,
+    roomId: string,
+  ): boolean => {
     const parentIds = roomToParents.get(roomId);
 
     if (!parentIds || parentIds.size === 0) {
       return false;
     }
 
-    return !Array.from(parentIds).some((id) => !getInClosedCategories(spaceId, id, roomId));
+    return !Array.from(parentIds).some(
+      (id) => !getInClosedCategories(spaceId, id, roomId),
+    );
   };
 
-  const [subspaceHierarchyLimit] = useSetting(settingsAtom, 'subspaceHierarchyLimit');
+  const [subspaceHierarchyLimit] = useSetting(
+    settingsAtom,
+    "subspaceHierarchyLimit",
+  );
   const [draggingItem, setDraggingItem] = useState<HierarchyItem>();
   const hierarchy = useSpaceHierarchy(
     space.roomId,
@@ -289,20 +340,20 @@ export function Lobby() {
     getRoom,
     useCallback(
       (_childId, _spaceId, depth) => depth >= subspaceHierarchyLimit,
-      [subspaceHierarchyLimit]
+      [subspaceHierarchyLimit],
     ),
     useCallback(
       (childId) =>
         getInClosedCategories(space.roomId, childId) ||
-        (draggingItem ? 'space' in draggingItem : false),
-      [draggingItem, getInClosedCategories, space.roomId]
-    )
+        (draggingItem ? "space" in draggingItem : false),
+      [draggingItem, getInClosedCategories, space.roomId],
+    ),
   );
 
   // Collect space room IDs for sequential pre-fetching to prevent N+1 API calls.
   const spaceRoomIds = useMemo(
     () => hierarchy.map((i) => i.space.roomId),
-    [hierarchy]
+    [hierarchy],
   );
   const spaceHierarchies = useSequentialSpaceHierarchies(spaceRoomIds);
 
@@ -320,16 +371,22 @@ export function Lobby() {
       () =>
         hierarchy
           .flatMap((i) => {
-            const childRooms = Array.isArray(i.rooms) ? i.rooms.map((r) => getRoom(r.roomId)) : [];
+            const childRooms = Array.isArray(i.rooms)
+              ? i.rooms.map((r) => getRoom(r.roomId))
+              : [];
 
             return [getRoom(i.space.roomId), ...childRooms];
           })
           .filter((r) => !!r),
-      [hierarchy, getRoom]
-    )
+      [hierarchy, getRoom],
+    ),
   );
 
-  const canDrop: CanDropCallback = useCanDropLobbyItem(space, roomsPowerLevels, getRoom);
+  const canDrop: CanDropCallback = useCanDropLobbyItem(
+    space,
+    roomsPowerLevels,
+    getRoom,
+  );
 
   const [reorderSpaceState, reorderSpace] = useAsyncCallback(
     useCallback(
@@ -340,7 +397,9 @@ export function Lobby() {
           .map((i) => i.space)
           .filter((i) => i.roomId !== item.roomId);
 
-        const beforeIndex = itemSpaces.findIndex((i) => i.roomId === containerItem.roomId);
+        const beforeIndex = itemSpaces.findIndex(
+          (i) => i.roomId === containerItem.roomId,
+        );
         const insertIndex = beforeIndex + 1;
 
         itemSpaces.splice(insertIndex, 0, {
@@ -349,7 +408,7 @@ export function Lobby() {
         });
 
         const currentOrders = itemSpaces.map((i) => {
-          if (typeof i.content.order === 'string' && lex.has(i.content.order)) {
+          if (typeof i.content.order === "string" && lex.has(i.content.order)) {
             return i.content.order;
           }
           return undefined;
@@ -367,9 +426,15 @@ export function Lobby() {
             const parentPL = roomsPowerLevels.get(reorder.item.parentId);
             if (!parentPL) return false;
 
-            const creators = getRoomCreatorsForRoomId(mx, reorder.item.parentId);
+            const creators = getRoomCreatorsForRoomId(
+              mx,
+              reorder.item.parentId,
+            );
             const permissions = getRoomPermissionsAPI(creators, parentPL);
-            const canEdit = permissions.stateEvent(EventType.SpaceChild, mx.getSafeUserId());
+            const canEdit = permissions.stateEvent(
+              EventType.SpaceChild,
+              mx.getSafeUserId(),
+            );
             return canEdit && reorder.orderKey !== currentOrders[index];
           });
 
@@ -380,13 +445,13 @@ export function Lobby() {
               reorder.item.parentId,
               EventType.SpaceChild as keyof StateEvents,
               { ...reorder.item.content, order: reorder.orderKey },
-              reorder.item.roomId
+              reorder.item.roomId,
             );
           });
         }
       },
-      [mx, hierarchy, lex, roomsPowerLevels]
-    )
+      [mx, hierarchy, lex, roomsPowerLevels],
+    ),
   );
   const reorderingSpace = reorderSpaceState.status === AsyncStatus.Loading;
 
@@ -398,7 +463,9 @@ export function Lobby() {
           return;
         }
         const containerParentId: string =
-          'space' in containerItem ? containerItem.roomId : containerItem.parentId;
+          "space" in containerItem
+            ? containerItem.roomId
+            : containerItem.parentId;
         const itemContent = item.content;
 
         // remove from current space
@@ -407,7 +474,7 @@ export function Lobby() {
             item.parentId,
             EventType.SpaceChild as keyof StateEvents,
             {},
-            item.roomId
+            item.roomId,
           );
         }
 
@@ -419,31 +486,39 @@ export function Lobby() {
           // restricted room from one space to another
           const joinRuleContent = getStateEvent(
             itemRoom,
-            EventType.RoomJoinRules
+            EventType.RoomJoinRules,
           )?.getContent<RoomJoinRulesEventContent>();
 
           if (joinRuleContent) {
             const allow =
-              joinRuleContent.allow?.filter((allowRule) => allowRule.room_id !== item.parentId) ??
-              [];
+              joinRuleContent.allow?.filter(
+                (allowRule) => allowRule.room_id !== item.parentId,
+              ) ?? [];
             allow.push({
               type: RestrictedAllowType.RoomMembership,
               room_id: containerParentId,
             });
-            await mx.sendStateEvent(itemRoom.roomId, EventType.RoomJoinRules as keyof StateEvents, {
-              ...joinRuleContent,
-              allow,
-            });
+            await mx.sendStateEvent(
+              itemRoom.roomId,
+              EventType.RoomJoinRules as keyof StateEvents,
+              {
+                ...joinRuleContent,
+                allow,
+              },
+            );
           }
         }
 
         const itemSpaces = Array.from(
-          hierarchy?.find((i) => i.space.roomId === containerParentId)?.rooms ?? []
+          hierarchy?.find((i) => i.space.roomId === containerParentId)?.rooms ??
+            [],
         );
 
         const beforeItem: HierarchyItem | undefined =
-          'space' in containerItem ? undefined : containerItem;
-        const beforeIndex = itemSpaces.findIndex((i) => i.roomId === beforeItem?.roomId);
+          "space" in containerItem ? undefined : containerItem;
+        const beforeIndex = itemSpaces.findIndex(
+          (i) => i.roomId === beforeItem?.roomId,
+        );
         const insertIndex = beforeIndex + 1;
 
         itemSpaces.splice(insertIndex, 0, {
@@ -453,7 +528,7 @@ export function Lobby() {
         });
 
         const currentOrders = itemSpaces.map((i) => {
-          if (typeof i.content.order === 'string' && lex.has(i.content.order)) {
+          if (typeof i.content.order === "string" && lex.has(i.content.order)) {
             return i.content.order;
           }
           return undefined;
@@ -466,7 +541,10 @@ export function Lobby() {
             item: itemSpaces[index],
             orderKey,
           }))
-          .filter((reorder, index) => reorder.item && reorder.orderKey !== currentOrders[index]);
+          .filter(
+            (reorder, index) =>
+              reorder.item && reorder.orderKey !== currentOrders[index],
+          );
 
         if (reorders) {
           await rateLimitedActions(reorders, async (reorder) => {
@@ -475,13 +553,13 @@ export function Lobby() {
               containerParentId,
               EventType.SpaceChild as keyof StateEvents,
               { ...reorder.item.content, order: reorder.orderKey },
-              reorder.item.roomId
+              reorder.item.roomId,
             );
           });
         }
       },
-      [mx, hierarchy, lex]
-    )
+      [mx, hierarchy, lex],
+    ),
   );
   const reorderingRoom = reorderRoomState.status === AsyncStatus.Loading;
   const reordering = reorderingRoom || reorderingSpace;
@@ -494,19 +572,19 @@ export function Lobby() {
         if (!canDrop(item, container)) {
           return;
         }
-        if ('space' in item) {
+        if ("space" in item) {
           reorderSpace(item, container.item);
         } else {
           reorderRoom(item, container.item);
         }
       },
-      [reorderRoom, reorderSpace, canDrop]
-    )
+      [reorderRoom, reorderSpace, canDrop],
+    ),
   );
 
   const handleSpacesFound = useCallback(
     (sItems: IHierarchyRoom[]) => {
-      setSpaceRooms({ type: 'PUT', roomIds: sItems.map((i) => i.room_id) });
+      setSpaceRooms({ type: "PUT", roomIds: sItems.map((i) => i.room_id) });
       setSpacesItems((current) => {
         const newItems = produce(current, (draft) => {
           sItems.forEach((item) => draft.set(item.room_id, item));
@@ -514,27 +592,32 @@ export function Lobby() {
         return current.size === newItems.size ? current : newItems;
       });
     },
-    [setSpaceRooms]
+    [setSpaceRooms],
   );
 
-  const handleCategoryClick = useCategoryHandler(setClosedCategories, (categoryId) => {
-    const collapsed = closedCategories.has(categoryId);
-    const [spaceId, roomId] = getLobbyCategoryIdParts(categoryId);
+  const handleCategoryClick = useCategoryHandler(
+    setClosedCategories,
+    (categoryId) => {
+      const collapsed = closedCategories.has(categoryId);
+      const [spaceId, roomId] = getLobbyCategoryIdParts(categoryId);
 
-    // Prevent collapsing if all parents are collapsed
-    const toggleable = !getAllAncestorsCollapsed(spaceId ?? '', roomId ?? '');
+      // Prevent collapsing if all parents are collapsed
+      const toggleable = !getAllAncestorsCollapsed(spaceId ?? "", roomId ?? "");
 
-    if (toggleable) {
-      return collapsed;
-    }
-    return !collapsed;
-  });
+      if (toggleable) {
+        return collapsed;
+      }
+      return !collapsed;
+    },
+  );
 
   const handleOpenRoom: MouseEventHandler<HTMLButtonElement> = (evt) => {
-    const rId = evt.currentTarget.getAttribute('data-room-id');
+    const rId = evt.currentTarget.getAttribute("data-room-id");
     if (!rId) return;
     const pSpaceIdOrAlias = getCanonicalAliasOrRoomId(mx, space.roomId);
-    navigate(getSpaceRoomPath(pSpaceIdOrAlias, getCanonicalAliasOrRoomId(mx, rId)));
+    navigate(
+      getSpaceRoomPath(pSpaceIdOrAlias, getCanonicalAliasOrRoomId(mx, rId)),
+    );
   };
 
   const togglePinToSidebar = useCallback(
@@ -546,10 +629,10 @@ export function Lobby() {
       const newSpacesContent = makeCinnySpacesContent(mx, newItems);
       mx.setAccountData(
         CustomAccountDataEvent.CinnySpaces as keyof AccountDataEvents,
-        newSpacesContent
+        newSpacesContent,
       );
     },
-    [mx, sidebarItems, sidebarSpaces]
+    [mx, sidebarItems, sidebarSpaces],
   );
 
   const getPaddingTop = (vItem: VirtualItem) => {
@@ -586,7 +669,9 @@ export function Lobby() {
         const pathStrings: string[] = [];
 
         for (let iDepth = 0; iDepth < (depth ?? 0); iDepth += 1) {
-          const X = iDepth * PADDING_LEFT_DEPTH_OFFSET + PADDING_LEFT_DEPTH_OFFSET_START;
+          const X =
+            iDepth * PADDING_LEFT_DEPTH_OFFSET +
+            PADDING_LEFT_DEPTH_OFFSET_START;
 
           const bY = vItem.end;
 
@@ -595,12 +680,12 @@ export function Lobby() {
 
         pathHolder.push(
           <path
-            d={pathStrings.join(' ')}
+            d={pathStrings.join(" ")}
             fill="none"
             stroke={color.Surface.ContainerLine}
             strokeWidth={config.borderWidth.B300}
             display="block"
-          />
+          />,
         );
 
         aY = vItem.end;
@@ -609,18 +694,18 @@ export function Lobby() {
       return (
         <svg
           style={{
-            position: 'absolute',
+            position: "absolute",
             inset: 0,
-            width: '100%',
-            height: '100%',
-            pointerEvents: 'none',
+            width: "100%",
+            height: "100%",
+            pointerEvents: "none",
           }}
         >
           {pathHolder}
         </svg>
       );
     },
-    [hierarchy]
+    [hierarchy],
   );
 
   return (
@@ -631,7 +716,7 @@ export function Lobby() {
             showProfile={!onTop}
             powerLevels={roomsPowerLevels.get(space.roomId) ?? {}}
           />
-          <Box style={{ position: 'relative' }} grow="Yes">
+          <Box style={{ position: "relative" }} grow="Yes">
             <Scroll ref={scrollRef} hideTrack visibility="Hover">
               <PageContent>
                 <PageContentCenter>
@@ -653,21 +738,28 @@ export function Lobby() {
                   </ScrollTopContainer>
                   <div
                     style={{
-                      position: 'relative',
+                      position: "relative",
                       height: virtualizer.getTotalSize(),
                     }}
                   >
-                    <PageHeroSection ref={heroSectionRef} style={{ paddingTop: 0 }}>
+                    <PageHeroSection
+                      ref={heroSectionRef}
+                      style={{ paddingTop: 0 }}
+                    >
                       <LobbyHero />
                     </PageHeroSection>
                     {vItems.map((vItem) => {
                       const item = hierarchy[vItem.index];
                       if (!item) return null;
-                      const nextSpaceId = hierarchy[vItem.index + 1]?.space.roomId;
-                      const categoryId = makeLobbyCategoryId(space.roomId, item.space.roomId);
+                      const nextSpaceId =
+                        hierarchy[vItem.index + 1]?.space.roomId;
+                      const categoryId = makeLobbyCategoryId(
+                        space.roomId,
+                        item.space.roomId,
+                      );
                       const inClosedCategory = getInClosedCategories(
                         space.roomId,
-                        item.space.roomId
+                        item.space.roomId,
                       );
 
                       const paddingLeft = `calc((${item.space.depth} - 1) * ${config.space.S400})`;
@@ -692,7 +784,8 @@ export function Lobby() {
                               roomsPowerLevels={roomsPowerLevels}
                               categoryId={categoryId}
                               closed={
-                                inClosedCategory || (draggingItem ? 'space' in draggingItem : false)
+                                inClosedCategory ||
+                                (draggingItem ? "space" in draggingItem : false)
                               }
                               handleClose={handleCategoryClick}
                               draggingItem={draggingItem}
@@ -705,7 +798,9 @@ export function Lobby() {
                               togglePinToSidebar={togglePinToSidebar}
                               onSpacesFound={handleSpacesFound}
                               onOpenRoom={handleOpenRoom}
-                              hierarchyData={spaceHierarchies.get(item.space.roomId)}
+                              hierarchyData={spaceHierarchies.get(
+                                item.space.roomId,
+                              )}
                             />
                           ) : (
                             <SpaceHierarchyNavItem
@@ -732,12 +827,12 @@ export function Lobby() {
                   {reordering && (
                     <Box
                       style={{
-                        position: 'absolute',
+                        position: "absolute",
                         bottom: config.space.S400,
                         left: 0,
                         right: 0,
                         zIndex: 2,
-                        pointerEvents: 'none',
+                        pointerEvents: "none",
                       }}
                       justifyContent="Center"
                     >
@@ -745,7 +840,9 @@ export function Lobby() {
                         variant="Secondary"
                         outlined
                         radii="Pill"
-                        before={<Spinner variant="Secondary" fill="Soft" size="100" />}
+                        before={
+                          <Spinner variant="Secondary" fill="Soft" size="100" />
+                        }
                       >
                         <Text size="L400">Reordering</Text>
                       </Chip>
