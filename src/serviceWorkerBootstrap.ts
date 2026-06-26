@@ -114,7 +114,7 @@ function createSwWatchdog() {
     const registration = await navigator.serviceWorker.getRegistration().catch(() => undefined);
     registration?.active?.postMessage({ type: 'CLAIM_CLIENTS' });
     try {
-      void registration?.update();
+      await registration?.update();
     } catch (err) {
       Sentry.captureException(err);
     }
