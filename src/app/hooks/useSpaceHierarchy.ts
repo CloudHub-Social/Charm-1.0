@@ -356,7 +356,7 @@ export const useFetchSpaceHierarchyLevel = (
   const fetchLevel: QueryFunction<
     Awaited<ReturnType<typeof mx.getRoomHierarchy>>,
     string[],
-    string | undefined
+    enabled: enable,
   > = useCallback(
     ({ pageParam }) => mx.getRoomHierarchy(roomId, PER_PAGE_COUNT, 1, false, pageParam),
     [roomId, mx]
@@ -415,6 +415,110 @@ export const useFetchSpaceHierarchyLevel = (
   }, [data]);
 
   const fetching = isLoading || isFetchingNextPage;
+
+/**
+ * Fetches space hierarchy levels for multiple rooms one-at-a-time to avoid
+ * triggering N parallel requests (and subsequent 429 rate limiting).
+ *
+ * @param roomIds - Ordered list of space room IDs to fetch hierarchy for.
+ * @returns A Map from roomId to FetchSpaceHierarchyLevelData.
+ */
+export const useSequentialSpaceHierarchies = (
+  roomIds: string[]
+): Map<string, FetchSpaceHierarchyLevelData> => {
+  const mx = useMatrixClient();
+  const [results, setResults] = useState<Map<string, FetchSpaceHierarchyLevelData>>(new Map());
+  const fetchedRef = useRef<Set<string>>(new Set());
+  const pendingRef = useRef<string[]>([]);
+  const processingRef = useRef(false);
+
+  // Stable join so the effect only re-runs when the room list actually changes.
+  const roomIdsKey = roomIds.join(',');
+
+  useEffect(() => {
+    const newIds = roomIds.filter((id) => !fetchedRef.current.has(id));
+    if (newIds.length === 0) return;
+
+    newIds.forEach((id) => fetchedRef.current.add(id));
+    pendingRef.current = [...pendingRef.current, ...newIds];
+
+    if (processingRef.current) return;
+
+    const processQueue = async () => {
+      processingRef.current = true;
+
+      while (pendingRef.current.length > 0) {
+        const roomId = pendingRef.current[0];
+        pendingRef.current = pendingRef.current.slice(1);
+
+        setResults((prev) => {
+          const next = new Map(prev);
+          next.set(roomId, { fetching: true, error: null, rooms: new Map() });
+          return next;
+        });
+
+        const roomsMap: Map<string, IHierarchyRoom> = new Map();
+        let nextBatch: string | undefined;
+        let pageCount = 0;
+        let fetchError: Error | null = null;
+        let retry = true;
+        let retryCount = 0;
+        const MAX_RETRIES = 5;
+
+        while (retry && retryCount <= MAX_RETRIES) {
+          retry = false;
+          try {
+            do {
+              // eslint-disable-next-line no-await-in-loop
+              const result = await mx.getRoomHierarchy(roomId, PER_PAGE_COUNT, 1, false, nextBatch);
+              result.rooms.forEach((r) => roomsMap.set(r.room_id, r));
+              nextBatch = result.next_batch;
+              pageCount += 1;
+            } while (nextBatch && pageCount <= MAX_AUTO_PAGE_COUNT);
+          } catch (err) {
+            if (
+              err instanceof MatrixError &&
+              err.errcode === (ErrorCode.M_LIMIT_EXCEEDED as string)
+            ) {
+              const { retry_after_ms: delay } = err.data;
+              if (typeof delay === 'number') {
+                // eslint-disable-next-line no-await-in-loop
+                await new Promise<void>((resolve) => {
+                  setTimeout(resolve, delay);
+                });
+                // Reset and retry this same roomId (up to MAX_RETRIES).
+                roomsMap.clear();
+                nextBatch = undefined;
+                pageCount = 0;
+                retry = true;
+                retryCount += 1;
+              } else {
+                fetchError = err instanceof Error ? err : new Error(String(err));
+              }
+            } else {
+              fetchError = err instanceof Error ? err : new Error(String(err));
+            }
+          }
+        }
+
+        setResults((prev) => {
+          const next = new Map(prev);
+          next.set(roomId, { fetching: false, error: fetchError, rooms: roomsMap });
+          return next;
+        });
+      }
+
+      processingRef.current = false;
+    };
+
+    processQueue();
+    // roomIdsKey is the stable serialization of roomIds.
+    // mx is stable for the lifetime of the client session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomIdsKey, mx]);
+
+  return results;
+};
 
   return {
     fetching,
