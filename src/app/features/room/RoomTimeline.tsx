@@ -1031,21 +1031,24 @@ export function RoomTimeline({
       jumpURLOnlyCleanupTimerRef.current = undefined;
     }
 
-    if (
-      !shouldClearNotificationJumpRouteURLOnly({ eventId, jumpMode, liveTimelineLinked })
-    ) {
+    if (!shouldClearNotificationJumpRouteURLOnly({ eventId, jumpMode, liveTimelineLinked })) {
       return undefined;
     }
 
     jumpURLOnlyCleanupTimerRef.current = setTimeout(() => {
       jumpURLOnlyCleanupTimerRef.current = undefined;
-      if (!shouldClearNotificationJumpRouteURLOnly({ eventId, jumpMode, liveTimelineLinked: liveTimelineLinkedRef.current })) {
+      if (
+        !shouldClearNotificationJumpRouteURLOnly({
+          eventId,
+          jumpMode,
+          liveTimelineLinked: liveTimelineLinkedRef.current,
+        })
+      ) {
         return;
       }
-      navigate(
-        buildNotificationJumpCleanupTarget(location.pathname, location.search, eventId!),
-        { replace: true }
-      );
+      navigate(buildNotificationJumpCleanupTarget(location.pathname, location.search, eventId!), {
+        replace: true,
+      });
     }, 2000);
 
     return () => {
