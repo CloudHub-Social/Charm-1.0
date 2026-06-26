@@ -5,6 +5,8 @@ import { ConcurrencyQueue } from './concurrencyQueue';
 const memberQueue = new ConcurrencyQueue(3);
 const loadedRoomIds = new Set<string>();
 const inflightPromises = new Map<string, Promise<void>>();
+// Rooms whose inflight promise was created by a foreground call (direct, not queued).
+const foregroundInflight = new Set<string>();
 
 /**
  * Load room members at most once per room.
@@ -24,22 +26,24 @@ export async function loadRoomMembersOnce(
   if (loadedRoomIds.has(roomId)) return;
 
   if (options?.foreground) {
-    // Foreground calls bypass the queue. If a background promise is already
-    // cached (waiting for a queue slot), we still fire loadMembersIfNeeded()
-    // directly — the SDK deduplicates concurrent network calls — and replace
-    // the cached promise so any other waiters also get the faster path.
-    // The displaced background callback will run when it gets a slot but
-    // loadMembersIfNeeded() will be a cheap no-op by then.
-    const p: Promise<void> = room
-      .loadMembersIfNeeded()
-      .then(() => {
-        loadedRoomIds.add(roomId);
-      })
-      .finally(() => {
-        if (inflightPromises.get(roomId) === p) inflightPromises.delete(roomId);
-      });
-    inflightPromises.set(roomId, p);
-    await p;
+    // Reuse an existing foreground promise to deduplicate concurrent foreground callers.
+    // If the cached promise is a background one (not in foregroundInflight), replace it
+    // with a direct call so it doesn't block behind the queue.
+    // The displaced background callback becomes a no-op when it eventually runs.
+    if (!inflightPromises.has(roomId) || !foregroundInflight.has(roomId)) {
+      const p: Promise<void> = room
+        .loadMembersIfNeeded()
+        .then(() => {
+          loadedRoomIds.add(roomId);
+        })
+        .finally(() => {
+          foregroundInflight.delete(roomId);
+          if (inflightPromises.get(roomId) === p) inflightPromises.delete(roomId);
+        });
+      inflightPromises.set(roomId, p);
+      foregroundInflight.add(roomId);
+    }
+    await inflightPromises.get(roomId)!;
     return;
   }
 
