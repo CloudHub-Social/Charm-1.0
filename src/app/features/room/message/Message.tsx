@@ -44,11 +44,7 @@ import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import type { MemberPowerTag } from '$types/matrix/room';
 
 import { PowerIcon } from '$components/power';
-import {
-  Info,
-  menuIcon,
-  userFallbackIcon,
-} from '$components/icons/phosphor';
+import { Info, menuIcon, userFallbackIcon } from '$components/icons/phosphor';
 import { getMatrixToRoomEvent } from '$plugins/matrix-to';
 import { getPowerTagIconSrc } from '$hooks/useMemberPowerTag';
 import { useSableCosmetics } from '$hooks/useSableCosmetics';

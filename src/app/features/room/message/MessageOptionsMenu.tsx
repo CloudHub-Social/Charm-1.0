@@ -12,11 +12,7 @@ import {
   as,
   config,
 } from 'folds';
-import type {
-  Dispatch,
-  MouseEventHandler,
-  SetStateAction,
-} from 'react';
+import type { Dispatch, MouseEventHandler, SetStateAction } from 'react';
 import { useCallback, useState } from 'react';
 import FocusTrap from 'focus-trap-react';
 import type { MatrixEvent, Relations, Room, RoomPinnedEventsEventContent } from '$types/matrix-sdk';
@@ -118,7 +114,14 @@ export const MessageCopyLinkItem = as<
     onClose?.();
   };
   return (
-    <MenuItem size="300" after={menuIcon(Link)} radii="300" onClick={handleCopy} {...props} ref={ref}>
+    <MenuItem
+      size="300"
+      after={menuIcon(Link)}
+      radii="300"
+      onClick={handleCopy}
+      {...props}
+      ref={ref}
+    >
       <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
         Copy Link
       </Text>
@@ -126,25 +129,31 @@ export const MessageCopyLinkItem = as<
   );
 });
 
-export const MessageCopyTextItem = as<
-  'button',
-  { mEvent: MatrixEvent; onClose?: () => void }
->(({ mEvent, onClose, ...props }, ref) => {
-  const content = mEvent.getContent();
-  const body: string | undefined = content['m.new_content']?.body ?? content.body;
-  if (!body || mEvent.isRedacted()) return null;
-  const handleCopy = () => {
-    copyToClipboard(body);
-    onClose?.();
-  };
-  return (
-    <MenuItem size="300" after={menuIcon(ClipboardText)} radii="300" onClick={handleCopy} {...props} ref={ref}>
-      <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
-        Copy Text
-      </Text>
-    </MenuItem>
-  );
-});
+export const MessageCopyTextItem = as<'button', { mEvent: MatrixEvent; onClose?: () => void }>(
+  ({ mEvent, onClose, ...props }, ref) => {
+    const content = mEvent.getContent();
+    const body: string | undefined = content['m.new_content']?.body ?? content.body;
+    if (!body || mEvent.isRedacted()) return null;
+    const handleCopy = () => {
+      copyToClipboard(body);
+      onClose?.();
+    };
+    return (
+      <MenuItem
+        size="300"
+        after={menuIcon(ClipboardText)}
+        radii="300"
+        onClick={handleCopy}
+        {...props}
+        ref={ref}
+      >
+        <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
+          Copy Text
+        </Text>
+      </MenuItem>
+    );
+  }
+);
 
 export const MessagePinItem = as<
   'button',
@@ -163,7 +172,14 @@ export const MessagePinItem = as<
     onClose?.();
   };
   return (
-    <MenuItem size="300" after={menuIcon(isPinned ? PushPinSlash : PushPin)} radii="300" onClick={handlePin} {...props} ref={ref}>
+    <MenuItem
+      size="300"
+      after={menuIcon(isPinned ? PushPinSlash : PushPin)}
+      radii="300"
+      onClick={handlePin}
+      {...props}
+      ref={ref}
+    >
       <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
         {isPinned ? 'Unpin Message' : 'Pin Message'}
       </Text>
@@ -190,7 +206,14 @@ export const MessageBookmarkItem = as<
     onClose?.();
   };
   return (
-    <MenuItem size="300" after={<Icon size="100" src={Icons.Bookmark} filled={isBookmarked} />} radii="300" onClick={handleClick} {...props} ref={ref}>
+    <MenuItem
+      size="300"
+      after={<Icon size="100" src={Icons.Bookmark} filled={isBookmarked} />}
+      radii="300"
+      onClick={handleClick}
+      {...props}
+      ref={ref}
+    >
       <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
         {isBookmarked ? 'Remove Bookmark' : 'Bookmark Message'}
       </Text>
@@ -276,7 +299,9 @@ export function MessageOptionsBar({
     (evt) => {
       const target = evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
       const rect = target.getBoundingClientRect();
-      window.requestAnimationFrame(() => { setMenuAnchor(rect); });
+      window.requestAnimationFrame(() => {
+        setMenuAnchor(rect);
+      });
     },
     [setMenuAnchor]
   );
@@ -292,7 +317,9 @@ export function MessageOptionsBar({
   const handleAddReactions: MouseEventHandler<HTMLButtonElement> = useCallback(() => {
     const rect = menuAnchor;
     closeMenu();
-    setTimeout(() => { setEmojiBoardAnchor(rect); }, 100);
+    setTimeout(() => {
+      setEmojiBoardAnchor(rect);
+    }, 100);
   }, [menuAnchor, closeMenu, setEmojiBoardAnchor]);
 
   if (!show && !menuAnchor && !emojiBoardAnchor) return null;
@@ -320,7 +347,9 @@ export function MessageOptionsBar({
                     onReactionToggle(mEvent.getId()!, mxc, shortcode);
                     setEmojiBoardAnchor(undefined);
                   }}
-                  requestClose={() => { setEmojiBoardAnchor(undefined); }}
+                  requestClose={() => {
+                    setEmojiBoardAnchor(undefined);
+                  }}
                 />
               }
             >
@@ -364,7 +393,9 @@ export function MessageOptionsBar({
           )}
           {canEditEvent(mx, mEvent) && onEditId && (
             <IconButton
-              onClick={() => { onEditId(mEvent.getId()); }}
+              onClick={() => {
+                onEditId(mEvent.getId());
+              }}
               variant="SurfaceVariant"
               size="300"
               radii="300"
@@ -399,7 +430,12 @@ export function MessageOptionsBar({
                   )}
                   <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
                     {canSendReaction && (
-                      <MenuItem size="300" after={menuIcon(Smiley)} radii="300" onClick={handleAddReactions}>
+                      <MenuItem
+                        size="300"
+                        after={menuIcon(Smiley)}
+                        radii="300"
+                        onClick={handleAddReactions}
+                      >
                         <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
                           Add Reaction
                         </Text>
@@ -435,7 +471,9 @@ export function MessageOptionsBar({
                       radii="300"
                       data-event-id={mEvent.getId()}
                       onClick={(evt: React.MouseEvent) => {
-                        onReplyClick(evt as unknown as Parameters<MouseEventHandler<HTMLButtonElement>>[0]);
+                        onReplyClick(
+                          evt as unknown as Parameters<MouseEventHandler<HTMLButtonElement>>[0]
+                        );
                         closeMenu();
                       }}
                     >
@@ -484,9 +522,7 @@ export function MessageOptionsBar({
                     {isEdited && (
                       <MessageEditHistoryItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                     )}
-                    {showDeveloperTools && (
-                      <MessageSourceCodeItem room={room} mEvent={mEvent} />
-                    )}
+                    {showDeveloperTools && <MessageSourceCodeItem room={room} mEvent={mEvent} />}
                     <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
                     <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
                     <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
@@ -656,7 +692,9 @@ export function EventOptionsBar({
     (evt) => {
       const target = evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
       const rect = target.getBoundingClientRect();
-      window.requestAnimationFrame(() => { setMenuAnchor(rect); });
+      window.requestAnimationFrame(() => {
+        setMenuAnchor(rect);
+      });
     },
     [setMenuAnchor]
   );
@@ -691,7 +729,9 @@ export function EventOptionsBar({
                       radii="300"
                       data-event-id={mEvent.getId()}
                       onClick={(evt: React.MouseEvent) => {
-                        onReplyClick(evt as unknown as Parameters<MouseEventHandler<HTMLButtonElement>>[0]);
+                        onReplyClick(
+                          evt as unknown as Parameters<MouseEventHandler<HTMLButtonElement>>[0]
+                        );
                         closeMenu();
                       }}
                     >
@@ -705,9 +745,7 @@ export function EventOptionsBar({
                     {isEdited && (
                       <MessageEditHistoryItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                     )}
-                    {showDeveloperTools && (
-                      <MessageSourceCodeItem room={room} mEvent={mEvent} />
-                    )}
+                    {showDeveloperTools && <MessageSourceCodeItem room={room} mEvent={mEvent} />}
                     <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
                     <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
                     <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
