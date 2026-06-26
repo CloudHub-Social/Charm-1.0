@@ -26,6 +26,7 @@ import { completeRoomNavigation } from '$utils/perfTelemetry';
 import * as Sentry from '@sentry/react';
 import { CustomStateEvent } from '$types/matrix/room';
 import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
+import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 
 const log = createLogger('slidingSync');
 const debugLog = createDebugLogger('slidingSync');
@@ -328,6 +329,8 @@ export class SlidingSyncManager {
 
   private syncCount = 0;
 
+  private consecutiveCryptoStoreErrors = 0;
+
   private previousListCounts: Map<string, number> = new Map();
 
   /**
@@ -453,12 +456,17 @@ export class SlidingSyncManager {
         const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(errorMsg);
         const isCryptoStoreError = cryptoStoreErrorType !== undefined;
 
+        if (isCryptoStoreError) {
+          this.consecutiveCryptoStoreErrors += 1;
+        }
+
         debugLog.error('sync', 'Sliding sync error', {
           error: err,
           errorMessage: errorMsg,
           syncNumber: this.syncCount,
           state,
           isCryptoStoreError,
+          consecutiveCryptoStoreErrors: this.consecutiveCryptoStoreErrors,
         });
         Sentry.metrics.count('sable.sync.error', 1, {
           attributes: {
@@ -481,11 +489,39 @@ export class SlidingSyncManager {
               errorMessage: errorMsg,
               syncState: state,
               syncNumber: this.syncCount,
+              consecutiveCryptoStoreErrors: this.consecutiveCryptoStoreErrors,
               userId: this.mx.getUserId(),
               recovery_recommendation:
                 'Matrix SDK WASM crypto layer issue - client will attempt to reconnect',
             },
           });
+
+          // When a service worker controller change occurred, the IDB connection
+          // is very likely stale (especially on Safari). Reload immediately.
+          // Otherwise, tolerate a couple of transient errors before forcing reload.
+          const swChanged = !!(window as Record<string, unknown>).__swControllerChanged;
+          const threshold = swChanged ? 1 : 3;
+          if (this.consecutiveCryptoStoreErrors >= threshold) {
+            log.warn(
+              `SlidingSyncManager: ${this.consecutiveCryptoStoreErrors} consecutive crypto store errors ` +
+                `(swChanged=${swChanged}) — reloading to recover IDB connections`
+            );
+            Sentry.addBreadcrumb({
+              category: 'sync.slidingSync',
+              message: 'Reloading page to recover stale IDB connections',
+              level: 'error',
+              data: {
+                consecutiveCryptoStoreErrors: this.consecutiveCryptoStoreErrors,
+                swChanged,
+                threshold,
+              },
+            });
+            Sentry.metrics.count('sable.sync.crypto_store_reload', 1, {
+              attributes: { transport: 'sliding', sw_changed: swChanged },
+            });
+            reloadWithTelemetry('crypto_store_idb_recovery');
+            return;
+          }
         }
 
         // Detect M_UNKNOWN_POS error (sliding sync position lost)
@@ -525,6 +561,7 @@ export class SlidingSyncManager {
         (state === SlidingSyncState.RequestFinished || state === SlidingSyncState.Complete)
       ) {
         this.lastSuccessfulSyncAt = Date.now();
+        this.consecutiveCryptoStoreErrors = 0;
       }
 
       // Before room data is processed, reset live timelines for active rooms that
