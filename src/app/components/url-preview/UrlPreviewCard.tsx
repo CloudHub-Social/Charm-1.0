@@ -26,10 +26,19 @@ const linkStyles = { color: color.Success.Main };
 // Module-level in-flight deduplication: prevents N+1 concurrent requests when a
 // large event batch renders many UrlPreviewCard instances for the same URL.
 // Scoped by MatrixClient to avoid cross-account dedup if multiple clients exist.
-// Inner cache keyed by URL only (not ts) â€ Ethe same URL shows the same preview
+// Inner cache keyed by URL only â€ Ethe same URL shows the same preview
 // regardless of which message referenced it. Promises are evicted after settling
 // so a later render can retry after network recovery.
 const previewRequestCache = new WeakMap<MatrixClient, Map<string, Promise<IPreviewUrlResponse>>>();
+
+// Settled-result cache keyed by `${url}:${ts}`: honours the Matrix spec requirement
+// that `ts` selects the point-in-time snapshot of a URL's Open Graph metadata.
+// Successful entries are stored indefinitely for the session; error entries expire
+// after 60 s to suppress retry storms without masking recovery.
+type SettledEntry =
+  | { ok: true; data: IPreviewUrlResponse }
+  | { ok: false; expiry: number };
+const previewResultCache = new WeakMap<MatrixClient, Map<string, SettledEntry>>();
 
 const getClientCache = (mx: MatrixClient): Map<string, Promise<IPreviewUrlResponse>> => {
   let clientCache = previewRequestCache.get(mx);
@@ -38,6 +47,15 @@ const getClientCache = (mx: MatrixClient): Map<string, Promise<IPreviewUrlRespon
     previewRequestCache.set(mx, clientCache);
   }
   return clientCache;
+};
+
+const getResultCache = (mx: MatrixClient): Map<string, SettledEntry> => {
+  let resultCache = previewResultCache.get(mx);
+  if (!resultCache) {
+    resultCache = new Map();
+    previewResultCache.set(mx, resultCache);
+  }
+  return resultCache;
 };
 
 const openMediaInNewTab = async (url: string | undefined, accessToken: string | null) => {
@@ -140,6 +158,15 @@ export const UrlPreviewCard = as<
       if (isDirect) return null;
       if (!ts && !bundle) return null;
       if (urlPreview && ts) {
+        const resultCache = getResultCache(mx);
+        const cacheKey = `${url}:${ts}`;
+        const settled = resultCache.get(cacheKey);
+        if (settled !== undefined) {
+          if (settled.ok) return settled.data;
+          if (settled.expiry > Date.now()) return null;
+          resultCache.delete(cacheKey);
+        }
+
         const clientCache = getClientCache(mx);
         const cached = clientCache.get(url);
         if (cached !== undefined) return cached;
@@ -150,12 +177,14 @@ export const UrlPreviewCard = as<
           clientCache.set(url, previewResult);
           const preview = await previewResult;
           clientCache.delete(url);
+          resultCache.set(cacheKey, { ok: true, data: preview });
           return preview;
         } catch {
           // Synapse returns 502/404/403 when the external URL is unreachable, forbidden,
           // or the preview service is unavailable. This is expected behaviour — silently
           // suppress and render no preview rather than propagating to error boundary.
           clientCache.delete(url);
+          resultCache.set(cacheKey, { ok: false, expiry: Date.now() + 60_000 });
           return null;
         }
       }
