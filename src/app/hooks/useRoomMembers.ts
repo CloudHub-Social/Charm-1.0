@@ -8,6 +8,9 @@ export const useRoomMembers = (mx: MatrixClient, roomId: string): RoomMember[] =
   const loadInitiatedRef = useRef(false);
 
   useEffect(() => {
+    // Reset on every room change so navigating to a new room always triggers a load.
+    loadInitiatedRef.current = false;
+
     const room = mx.getRoom(roomId);
     let loadingMembers = true;
     let disposed = false;
