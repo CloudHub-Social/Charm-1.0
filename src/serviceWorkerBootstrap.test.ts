@@ -385,6 +385,12 @@ describe('registerAppServiceWorker', () => {
     }) as typeof window.addEventListener);
 
     registerAppServiceWorker();
+    // Drain the async chain from the initial handleVisibilityChange() ping:
+    // registerAppServiceWorker() calls handleVisibilityChange() synchronously,
+    // which starts pingServiceWorker() (async). That awaits getRegistration()
+    // (one tick) then calls postMessage (next tick). Flush both ticks so
+    // mockClear() captures only what the 'online' handler does.
+    await Promise.resolve();
     await Promise.resolve();
     addWindowListenerSpy.mockRestore();
 
