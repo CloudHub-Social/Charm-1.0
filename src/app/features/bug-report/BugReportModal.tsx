@@ -247,7 +247,7 @@ function BugReportModal() {
           devicePixelRatio: window.devicePixelRatio,
           online: navigator.onLine,
           isPwa,
-          url: window.location.href,
+          url: scrubMatrixUrl(window.location.href),
           version,
         },
       });
