@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import type { MatrixClient, Room } from "$types/matrix-sdk";
-import { loadRoomMembersOnce } from "$utils/loadRoomMembers";
+import { useEffect, useState } from 'react';
+import type { MatrixClient, Room } from '$types/matrix-sdk';
+import { loadRoomMembersOnce } from '$utils/loadRoomMembers';
 
 export type GroupMemberInfo = {
   userId: string;
@@ -10,12 +10,12 @@ export type GroupMemberInfo = {
 
 // Filter out bridge bots (not bridged users)
 const isBridgeBot = (userId: string): boolean => {
-  const localpart = userId.split(":")[0]?.substring(1) ?? "";
+  const localpart = userId.split(':')[0]?.substring(1) ?? '';
   const lowerLocalpart = localpart.toLowerCase();
 
   // Only filter out users ending with 'bot' (e.g., discordbot, blueskybot)
   // Don't filter bridge users with IDs like discord_378405164077547520
-  if (lowerLocalpart.endsWith("bot")) return true;
+  if (lowerLocalpart.endsWith('bot')) return true;
 
   return false;
 };
@@ -28,18 +28,13 @@ const isBridgeBot = (userId: string): boolean => {
 function getInitialMembers(
   mx: MatrixClient,
   room: Room | undefined,
-  maxMembers: number,
+  maxMembers: number
 ): GroupMemberInfo[] {
   if (!room) return [];
   const currentUserId = mx.getUserId();
   return room
     .getMembers()
-    .filter(
-      (m) =>
-        m.membership === "join" &&
-        m.userId !== currentUserId &&
-        !isBridgeBot(m.userId),
-    )
+    .filter((m) => m.membership === 'join' && m.userId !== currentUserId && !isBridgeBot(m.userId))
     .slice(0, maxMembers)
     .map((m) => ({
       userId: m.userId,
@@ -57,12 +52,12 @@ function getInitialMembers(
 export const useGroupDMMembers = (
   mx: MatrixClient,
   room: Room | undefined,
-  maxMembers = 3,
+  maxMembers = 3
 ): GroupMemberInfo[] => {
   // Seed from local room state so the triple-avatar layout renders on the
   // first paint instead of flashing in after the async profile fetch.
   const [members, setMembers] = useState<GroupMemberInfo[]>(() =>
-    getInitialMembers(mx, room, maxMembers),
+    getInitialMembers(mx, room, maxMembers)
   );
 
   useEffect(() => {
@@ -80,14 +75,11 @@ export const useGroupDMMembers = (
         let allMembers = room.getMembers();
 
         let joinedMembers = allMembers.filter(
-          (m) =>
-            m.membership === "join" &&
-            m.userId !== currentUserId &&
-            !isBridgeBot(m.userId),
+          (m) => m.membership === 'join' && m.userId !== currentUserId && !isBridgeBot(m.userId)
         );
         const expectedVisibleMembers = Math.min(
           maxMembers,
-          Math.max(0, room.getJoinedMemberCount() - 1),
+          Math.max(0, room.getJoinedMemberCount() - 1)
         );
 
         if (joinedMembers.length < expectedVisibleMembers) {
@@ -96,10 +88,7 @@ export const useGroupDMMembers = (
 
           allMembers = room.getMembers();
           joinedMembers = allMembers.filter(
-            (m) =>
-              m.membership === "join" &&
-              m.userId !== currentUserId &&
-              !isBridgeBot(m.userId),
+            (m) => m.membership === 'join' && m.userId !== currentUserId && !isBridgeBot(m.userId)
           );
         }
 

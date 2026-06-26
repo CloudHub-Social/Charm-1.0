@@ -1,15 +1,9 @@
-import type { MatrixClient, MatrixEvent, RoomMember } from "$types/matrix-sdk";
-import { EventType, RoomMemberEvent, RoomStateEvent } from "$types/matrix-sdk";
-import { useEffect, useRef, useState } from "react";
-import {
-  isRoomMembersLoaded,
-  loadRoomMembersOnce,
-} from "$utils/loadRoomMembers";
+import type { MatrixClient, MatrixEvent, RoomMember } from '$types/matrix-sdk';
+import { EventType, RoomMemberEvent, RoomStateEvent } from '$types/matrix-sdk';
+import { useEffect, useRef, useState } from 'react';
+import { isRoomMembersLoaded, loadRoomMembersOnce } from '$utils/loadRoomMembers';
 
-export const useRoomMembers = (
-  mx: MatrixClient,
-  roomId: string,
-): RoomMember[] => {
+export const useRoomMembers = (mx: MatrixClient, roomId: string): RoomMember[] => {
   const [members, setMembers] = useState<RoomMember[]>([]);
   const loadInitiatedRef = useRef(false);
 

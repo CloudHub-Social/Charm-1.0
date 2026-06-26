@@ -1,5 +1,5 @@
-import type { Room } from "$types/matrix-sdk";
-import { ConcurrencyQueue } from "./concurrencyQueue";
+import type { Room } from '$types/matrix-sdk';
+import { ConcurrencyQueue } from './concurrencyQueue';
 
 /**
  * Shared concurrency-limited room member loader.
