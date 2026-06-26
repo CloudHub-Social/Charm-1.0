@@ -1104,7 +1104,7 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
           // When a service worker controller change occurred, the IDB connection
           // is very likely stale (especially on Safari). Reload immediately.
           // Otherwise, tolerate a couple of transient errors before forcing reload.
-          const swChanged = !!(window as Record<string, unknown>).__swControllerChanged;
+          const swChanged = !!(window as unknown as Record<string, unknown>).__swControllerChanged;
           const threshold = swChanged ? 1 : 3;
           if (consecutiveCryptoStoreErrors >= threshold) {
             log.warn(

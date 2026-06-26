@@ -417,7 +417,7 @@ export function registerAppServiceWorker() {
     });
     // Flag that a SW controller change occurred — IDB connections may become stale,
     // especially on Safari. Used by sync error handlers to trigger faster recovery.
-    (window as Record<string, unknown>).__swControllerChanged = true;
+    (window as unknown as Record<string, unknown>).__swControllerChanged = true;
     Sentry.metrics.count('sable.sw.controller_change', 1, {
       attributes: {
         visibility_state: document.visibilityState,
