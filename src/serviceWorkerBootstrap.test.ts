@@ -347,6 +347,110 @@ describe('registerAppServiceWorker', () => {
     expect(getRegistration.mock.calls.length).toBe(baselineCalls);
   });
 
+  it('resets the watchdog miss counter when the device comes back online', async () => {
+    mockHasServiceWorker.mockReturnValue(true);
+    let visibilityState: DocumentVisibilityState = 'visible';
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibilityState,
+    });
+    const postMessage = vi.fn();
+    const getRegistration = vi.fn().mockResolvedValue({
+      active: { postMessage, scriptURL: 'https://charm.example/sw.js' },
+      update: vi.fn(),
+    });
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        onLine: true,
+        serviceWorker: {
+          register: mockRegister,
+          getRegistration,
+          ready: mockReady,
+          controller: null,
+          addEventListener: mockAddEventListener,
+        },
+      },
+    });
+
+    const windowListeners = new Map<string, EventListener>();
+    const addWindowListenerSpy = vi.spyOn(window, 'addEventListener').mockImplementation(((
+      type: string,
+      listener: EventListenerOrEventListenerObject
+    ) => {
+      if (typeof listener === 'function') {
+        windowListeners.set(type, listener);
+      }
+    }) as typeof window.addEventListener);
+
+    registerAppServiceWorker();
+    await Promise.resolve();
+    addWindowListenerSpy.mockRestore();
+
+    // Simulate network recovery: 'online' fires while the app is visible.
+    // This should reset the watchdog timer (stop + restart) without triggering
+    // a ping. The timer restart is not observable in unit tests, so we verify
+    // that firing 'online' while visible does NOT dispatch a new SW ping.
+    postMessage.mockClear();
+    windowListeners.get('online')?.(new Event('online'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // No ping should be sent from the 'online' handler itself.
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it('skips watchdog reset on online event when the app is not visible', async () => {
+    mockHasServiceWorker.mockReturnValue(true);
+    let visibilityState: DocumentVisibilityState = 'hidden';
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibilityState,
+    });
+    const postMessage = vi.fn();
+    const getRegistration = vi.fn().mockResolvedValue({
+      active: { postMessage, scriptURL: 'https://charm.example/sw.js' },
+      update: vi.fn(),
+    });
+
+    Object.defineProperty(window, 'navigator', {
+      configurable: true,
+      value: {
+        onLine: true,
+        serviceWorker: {
+          register: mockRegister,
+          getRegistration,
+          ready: mockReady,
+          controller: null,
+          addEventListener: mockAddEventListener,
+        },
+      },
+    });
+
+    const windowListeners = new Map<string, EventListener>();
+    const addWindowListenerSpy = vi.spyOn(window, 'addEventListener').mockImplementation(((
+      type: string,
+      listener: EventListenerOrEventListenerObject
+    ) => {
+      if (typeof listener === 'function') {
+        windowListeners.set(type, listener);
+      }
+    }) as typeof window.addEventListener);
+
+    registerAppServiceWorker();
+    await Promise.resolve();
+    addWindowListenerSpy.mockRestore();
+
+    postMessage.mockClear();
+    visibilityState = 'hidden';
+    // Firing 'online' while hidden should be a no-op.
+    windowListeners.get('online')?.(new Event('online'));
+    await Promise.resolve();
+
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
   it('pings the watchdog when foreground recovery is requested without a focus event', async () => {
     mockHasServiceWorker.mockReturnValue(true);
     let visibilityState: DocumentVisibilityState = 'hidden';

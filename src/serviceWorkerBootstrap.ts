@@ -493,15 +493,31 @@ export function registerAppServiceWorker() {
     void swWatchdog.pingServiceWorker(mapForegroundRecoveryTriggerToWatchdogReason(trigger));
   });
 
+  // When the device comes back online after a network change, reset the
+  // consecutive miss counter. On mobile (especially iOS), switching networks
+  // (WiFi → LTE, etc.) can cause the OS to kill and restart the SW process.
+  // If a watchdog ping happens to time out during that restart window it
+  // would increment the miss counter toward the reload threshold — even
+  // though the SW is healthy and was just restarted by the OS. Resetting the
+  // counter on network recovery ensures a transient disruption caused by a
+  // network change doesn't trigger an unnecessary page reload.
+  const handleOnline = () => {
+    if (document.visibilityState !== 'visible') return;
+    swWatchdog.stop();
+    swWatchdog.restart();
+  };
+
   handleVisibilityChange();
   document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('focus', handleWindowFocus);
   window.addEventListener('pageshow', handlePageShow);
+  window.addEventListener('online', handleOnline);
   window.addEventListener(
     'beforeunload',
     () => {
       unsubscribeForegroundRecoveryListener?.();
       unsubscribeForegroundRecoveryListener = undefined;
+      window.removeEventListener('online', handleOnline);
     },
     { once: true }
   );
