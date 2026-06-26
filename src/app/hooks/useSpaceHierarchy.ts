@@ -545,17 +545,22 @@ export const useSequentialSpaceHierarchies = (
           }
         }
 
-        if (!cancelled) {
-          setResults((prev) => {
-            const next = new Map(prev);
-            next.set(roomId, {
-              fetching: false,
-              error: fetchError,
-              rooms: roomsMap,
-            });
-            return next;
-          });
+        if (cancelled) {
+          // Fetch was interrupted mid-flight; remove from fetchedRef so this
+          // room is re-queued on the next effect run rather than stuck forever.
+          fetchedRef.current.delete(roomId);
+          break;
         }
+
+        setResults((prev) => {
+          const next = new Map(prev);
+          next.set(roomId, {
+            fetching: false,
+            error: fetchError,
+            rooms: roomsMap,
+          });
+          return next;
+        });
       }
 
       // Only reset the flag if we weren't cancelled — if we were, the cleanup
