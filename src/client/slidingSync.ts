@@ -29,7 +29,6 @@ import {
   classifyCryptoStoreIndexedDbError,
   getCryptoStoreRecoveryAction,
   hasRecentServiceWorkerControllerChange,
-  resetCryptoStoreRecoveryReloadCount,
 } from './cryptoStoreErrors';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 
@@ -104,6 +103,7 @@ export type SlidingSyncConfig = {
   includeInviteList?: boolean;
   probeTimeoutMs?: number;
   onCryptoStoreRecoveryExhausted?: () => void;
+  pageLevelRecoveryEnabled?: boolean;
 };
 
 export type SlidingSyncListDiagnostics = {
@@ -328,6 +328,7 @@ export class SlidingSyncManager {
   ) => void;
 
   private readonly onCryptoStoreRecoveryExhausted: () => void;
+  private readonly pageLevelRecoveryEnabled: boolean;
 
   private presenceExtension!: ExtensionPresence;
 
@@ -398,6 +399,7 @@ export class SlidingSyncManager {
     const pollTimeoutMs = clampPositive(config.pollTimeoutMs, DEFAULT_POLL_TIMEOUT_MS);
     this.probeTimeoutMs = clampPositive(config.probeTimeoutMs, 5000);
     this.onCryptoStoreRecoveryExhausted = config.onCryptoStoreRecoveryExhausted ?? (() => {});
+    this.pageLevelRecoveryEnabled = config.pageLevelRecoveryEnabled !== false;
     this.maxRooms = clampPositive(config.maxRooms, DEFAULT_MAX_ROOMS);
     this.spaceGraphWarmupRooms = Math.min(
       this.maxRooms,
@@ -513,7 +515,11 @@ export class SlidingSyncManager {
           // Otherwise, tolerate a couple of transient errors before forcing reload.
           const swChanged = hasRecentServiceWorkerControllerChange();
           const threshold = swChanged ? 1 : 3;
-          if (!this.disposed && this.consecutiveCryptoStoreErrors >= threshold) {
+          if (
+            this.pageLevelRecoveryEnabled &&
+            !this.disposed &&
+            this.consecutiveCryptoStoreErrors >= threshold
+          ) {
             log.warn(
               `SlidingSyncManager: ${this.consecutiveCryptoStoreErrors} consecutive crypto store errors ` +
                 `(swChanged=${swChanged}) — reloading to recover IDB connections`
@@ -534,7 +540,7 @@ export class SlidingSyncManager {
             const recoveryAction = getCryptoStoreRecoveryAction();
             if (recoveryAction === 'clear_cache') {
               this.onCryptoStoreRecoveryExhausted();
-            } else {
+            } else if (recoveryAction === 'reload') {
               reloadWithTelemetry('crypto_store_idb_recovery');
             }
             return;
@@ -579,7 +585,6 @@ export class SlidingSyncManager {
       ) {
         this.lastSuccessfulSyncAt = Date.now();
         this.consecutiveCryptoStoreErrors = 0;
-        resetCryptoStoreRecoveryReloadCount();
       }
 
       // Before room data is processed, reset live timelines for active rooms that

@@ -11,7 +11,7 @@ import {
 
 import { clearNavToActivePathStore } from '$state/navToActivePath';
 import type { Session, Sessions, SessionStoreName } from '$state/sessions';
-import { getSessionStoreName, MATRIX_SESSIONS_KEY } from '$state/sessions';
+import { getFallbackSession, getSessionStoreName, MATRIX_SESSIONS_KEY } from '$state/sessions';
 import { getLocalStorageItem } from '$state/utils/atomWithLocalStorage';
 import { createLogger } from '$utils/debug';
 import { createDebugLogger } from '$utils/debugLogger';
@@ -81,6 +81,35 @@ type MatrixClientWithWritableFetchRoomEvent = MatrixClient & {
 };
 
 type MatrixDeviceContextClient = Pick<MatrixClient, 'getDeviceId'>;
+
+const getStoredSessionForUserId = (userId: string): Session | undefined => {
+  const sessions = getLocalStorageItem<Session[]>(MATRIX_SESSIONS_KEY, []);
+  const matchingSession = sessions.find((session) => session.userId === userId);
+  if (matchingSession) return matchingSession;
+  const fallbackSession = getFallbackSession();
+  return fallbackSession?.userId === userId ? fallbackSession : undefined;
+};
+
+const clearSessionStoresAndReload = async (mx: MatrixClient): Promise<void> => {
+  await stopClient(mx);
+  clearNavToActivePathStore(mx.getSafeUserId() ?? mx.getUserId());
+
+  const userId = mx.getUserId();
+  const session = userId ? getStoredSessionForUserId(userId) : undefined;
+  if (session) {
+    const storeName = getSessionStoreName(session);
+    await Promise.all([
+      mx.clearStores({ cryptoDatabasePrefix: storeName.rustCryptoPrefix }),
+      deleteSessionStores(storeName),
+    ]);
+  } else {
+    await mx.clearStores();
+  }
+
+  await clearClientCachesAndServiceWorkers();
+  resetCryptoStoreRecoveryReloadCount();
+  reloadWithTelemetry('clear_cache_and_reload');
+};
 
 export const normalizeMatrixEventType = (type: unknown): string =>
   typeof type === 'string' && type.trim().length > 0 ? type : MATRIX_EVENT_FALLBACK_TYPE;
@@ -905,6 +934,7 @@ export const getSlidingSyncManager = (mx: MatrixClient): SlidingSyncManager | un
   slidingSyncByClient.get(mx);
 
 const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig): Promise<void> => {
+  const pageLevelRecoveryEnabled = (config?.clientScope ?? 'app') === 'app';
   setSentryMatrixDeviceContext(mx);
   debugLog.info('sync', 'Starting Matrix client', { userId: mx.getUserId() });
   Sentry.addBreadcrumb({
@@ -1114,7 +1144,7 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
           // Otherwise, tolerate a couple of transient errors before forcing reload.
           const swChanged = hasRecentServiceWorkerControllerChange();
           const threshold = swChanged ? 1 : 3;
-          if (consecutiveCryptoStoreErrors >= threshold) {
+          if (pageLevelRecoveryEnabled && consecutiveCryptoStoreErrors >= threshold) {
             log.warn(
               `initClient: ${consecutiveCryptoStoreErrors} consecutive crypto store errors ` +
                 `(swChanged=${swChanged}) — reloading to recover IDB connections`
@@ -1130,8 +1160,8 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
             });
             const recoveryAction = getCryptoStoreRecoveryAction();
             if (recoveryAction === 'clear_cache') {
-              void clearCacheAndReload(mx);
-            } else {
+              void clearSessionStoresAndReload(mx);
+            } else if (recoveryAction === 'reload') {
               reloadWithTelemetry('crypto_store_idb_recovery');
             }
             return;
@@ -1140,9 +1170,6 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
       } else {
         // Any non-error state breaks the consecutive run.
         consecutiveCryptoStoreErrors = 0;
-        if (state === SyncState.Syncing || state === SyncState.Prepared) {
-          resetCryptoStoreRecoveryReloadCount();
-        }
       }
       if (
         !classicInitialSyncDone &&
@@ -1335,8 +1362,9 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
     {
       ...slidingConfig,
       includeInviteList: true,
+      pageLevelRecoveryEnabled,
       onCryptoStoreRecoveryExhausted: () => {
-        void clearCacheAndReload(mx);
+        void clearSessionStoresAndReload(mx);
       },
       pollTimeoutMs: slidingConfig?.pollTimeoutMs ?? SLIDING_SYNC_POLL_TIMEOUT_MS,
     },

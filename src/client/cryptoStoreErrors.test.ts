@@ -76,6 +76,15 @@ describe('crypto store IndexedDB error classification', () => {
 
   it('allows one recovery reload before falling back to cache clearing', () => {
     expect(getCryptoStoreRecoveryAction()).toBe('reload');
+    expect(getCryptoStoreRecoveryAction()).toBe('reload_pending');
+  });
+
+  it('falls back to cache clearing after a recovery reload has completed', () => {
+    expect(getCryptoStoreRecoveryAction()).toBe('reload');
+
+    const windowRecord = window as unknown as Record<string, unknown>;
+    delete windowRecord.__cryptoStoreRecoveryReloadPending;
+
     expect(getCryptoStoreRecoveryAction()).toBe('clear_cache');
   });
 
