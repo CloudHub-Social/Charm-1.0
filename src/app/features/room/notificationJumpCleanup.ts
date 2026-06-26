@@ -26,7 +26,7 @@ export const shouldClearNotificationJumpRouteURLOnly = ({
   jumpMode,
   liveTimelineLinked,
 }: Pick<NotificationJumpCleanupOptions, 'eventId' | 'jumpMode' | 'liveTimelineLinked'>): boolean =>
-  Boolean(eventId && jumpMode && !liveTimelineLinked);
+  Boolean(eventId && jumpMode === 'notification_live' && !liveTimelineLinked);
 
 export const getNotificationJumpCleanupEventId = (
   options: NotificationJumpCleanupOptions
