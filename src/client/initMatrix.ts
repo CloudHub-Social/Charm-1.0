@@ -22,7 +22,11 @@ import { cryptoCallbacks } from './secretStorageKeys';
 import type { SlidingSyncConfig, SlidingSyncDiagnostics } from './slidingSync';
 import { SlidingSyncManager } from './slidingSync';
 import { installThreadEventInstrumentation } from './threadEventPatch';
-import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
+import {
+  classifyCryptoStoreIndexedDbError,
+  clearRecentServiceWorkerControllerChange,
+  hasRecentServiceWorkerControllerChange,
+} from './cryptoStoreErrors';
 import { clearClientCachesAndServiceWorkers } from '$utils/appCacheReset';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 
@@ -1107,7 +1111,7 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
           // When a service worker controller change occurred, the IDB connection
           // is very likely stale (especially on Safari). Reload immediately.
           // Otherwise, tolerate a couple of transient errors before forcing reload.
-          const swChanged = !!(window as unknown as Record<string, unknown>).__swControllerChanged;
+          const swChanged = hasRecentServiceWorkerControllerChange();
           const threshold = swChanged ? 1 : 3;
           if (consecutiveCryptoStoreErrors >= threshold) {
             log.warn(
@@ -1130,6 +1134,7 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
       } else {
         // Reset counter on any successful sync cycle
         consecutiveCryptoStoreErrors = 0;
+        clearRecentServiceWorkerControllerChange();
       }
       if (
         !classicInitialSyncDone &&

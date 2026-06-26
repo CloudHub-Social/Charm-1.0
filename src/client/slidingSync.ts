@@ -25,7 +25,11 @@ import { createDebugLogger } from '$utils/debugLogger';
 import { completeRoomNavigation } from '$utils/perfTelemetry';
 import * as Sentry from '@sentry/react';
 import { CustomStateEvent } from '$types/matrix/room';
-import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
+import {
+  classifyCryptoStoreIndexedDbError,
+  clearRecentServiceWorkerControllerChange,
+  hasRecentServiceWorkerControllerChange,
+} from './cryptoStoreErrors';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 
 const log = createLogger('slidingSync');
@@ -502,9 +506,9 @@ export class SlidingSyncManager {
           // When a service worker controller change occurred, the IDB connection
           // is very likely stale (especially on Safari). Reload immediately.
           // Otherwise, tolerate a couple of transient errors before forcing reload.
-          const swChanged = !!(window as unknown as Record<string, unknown>).__swControllerChanged;
+          const swChanged = hasRecentServiceWorkerControllerChange();
           const threshold = swChanged ? 1 : 3;
-          if (this.consecutiveCryptoStoreErrors >= threshold) {
+          if (!this.disposed && this.consecutiveCryptoStoreErrors >= threshold) {
             log.warn(
               `SlidingSyncManager: ${this.consecutiveCryptoStoreErrors} consecutive crypto store errors ` +
                 `(swChanged=${swChanged}) — reloading to recover IDB connections`
@@ -565,6 +569,7 @@ export class SlidingSyncManager {
       ) {
         this.lastSuccessfulSyncAt = Date.now();
         this.consecutiveCryptoStoreErrors = 0;
+        clearRecentServiceWorkerControllerChange();
       }
 
       // Before room data is processed, reset live timelines for active rooms that

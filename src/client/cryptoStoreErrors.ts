@@ -6,6 +6,14 @@ export type CryptoStoreIndexedDbErrorType =
   | 'unknown_idb_error'
   | 'crypto_store_error';
 
+const SW_CONTROLLER_CHANGED_AT_KEY = '__swControllerChangedAt';
+const SW_CONTROLLER_CHANGE_RECOVERY_WINDOW_MS = 2 * 60_000;
+
+const getWindowRecord = (): Record<string, unknown> | undefined => {
+  if (typeof window === 'undefined') return undefined;
+  return window as unknown as Record<string, unknown>;
+};
+
 export const classifyCryptoStoreIndexedDbError = (
   errorMessage: string
 ): CryptoStoreIndexedDbErrorType | undefined => {
@@ -23,3 +31,27 @@ export const classifyCryptoStoreIndexedDbError = (
 
 export const isCryptoStoreIndexedDbError = (errorMessage: string): boolean =>
   classifyCryptoStoreIndexedDbError(errorMessage) !== undefined;
+
+export const markRecentServiceWorkerControllerChange = (now = Date.now()): void => {
+  const windowRecord = getWindowRecord();
+  if (!windowRecord) return;
+  windowRecord[SW_CONTROLLER_CHANGED_AT_KEY] = now;
+};
+
+export const clearRecentServiceWorkerControllerChange = (): void => {
+  const windowRecord = getWindowRecord();
+  if (!windowRecord) return;
+  delete windowRecord[SW_CONTROLLER_CHANGED_AT_KEY];
+};
+
+export const hasRecentServiceWorkerControllerChange = (now = Date.now()): boolean => {
+  const windowRecord = getWindowRecord();
+  if (!windowRecord) return false;
+  const changedAt = windowRecord[SW_CONTROLLER_CHANGED_AT_KEY];
+  if (typeof changedAt !== 'number') return false;
+  if (now - changedAt > SW_CONTROLLER_CHANGE_RECOVERY_WINDOW_MS) {
+    delete windowRecord[SW_CONTROLLER_CHANGED_AT_KEY];
+    return false;
+  }
+  return true;
+};
