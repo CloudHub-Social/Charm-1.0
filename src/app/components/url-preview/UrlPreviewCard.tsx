@@ -146,7 +146,10 @@ export const UrlPreviewCard = as<
   const [autoplayGifs] = useSetting(settingsAtom, 'autoplayGifs');
   const [imageError, setImageError] = useState(false);
   const [directMediaError, setDirectMediaError] = useState(false);
-  const directAnimatedPreviewRef = useRef<{ url: string; isAnimated: boolean }>();
+  const directAnimatedPreviewRef = useRef<{
+    url: string;
+    isAnimated: boolean;
+  }>();
 
   const isDirect = !!mediaType;
 
@@ -166,7 +169,13 @@ export const UrlPreviewCard = as<
 
         const clientCache = getClientCache(mx);
         const cached = clientCache.get(cacheKey);
-        if (cached !== undefined) return cached;
+        if (cached !== undefined) {
+          try {
+            return await cached;
+          } catch {
+            return null;
+          }
+        }
 
         try {
           const previewResult = mx?.getUrlPreview(url, ts);
@@ -178,8 +187,8 @@ export const UrlPreviewCard = as<
           return preview;
         } catch {
           // Synapse returns 502/404/403 when the external URL is unreachable, forbidden,
-          // or the preview service is unavailable. This is expected behaviour — silently
-          // suppress and render no preview rather than propagating to error boundary.
+          // or the preview service is unavailable. Suppress for 60 s to avoid hammering
+          // a failing endpoint, then allow a retry after the TTL expires.
           clientCache.delete(cacheKey);
           resultCache.set(cacheKey, { ok: false, expiry: Date.now() + 60_000 });
           return null;
@@ -453,7 +462,10 @@ export const UrlPreviewCard = as<
           <Box
             shrink="No"
             className={urlPreviewChrome.UrlPreviewMediaWell}
-            style={{ ...mediaWellStyle, aspectRatio: aspectRatio ?? '16 / 9' }}
+            style={{
+              ...mediaWellStyle,
+              aspectRatio: aspectRatio ?? '16 / 9',
+            }}
           >
             <VideoContent
               style={{
@@ -468,7 +480,11 @@ export const UrlPreviewCard = as<
               mimeType={(prev['og:video:type'] as string) ?? ''}
               renderVideo={(vidProps) => (
                 <Video
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                  }}
                   {...vidProps}
                 />
               )}
@@ -480,7 +496,10 @@ export const UrlPreviewCard = as<
           <Box
             shrink="No"
             className={urlPreviewChrome.UrlPreviewMediaWell}
-            style={{ ...mediaWellStyle, aspectRatio: aspectRatio ?? '16 / 9' }}
+            style={{
+              ...mediaWellStyle,
+              aspectRatio: aspectRatio ?? '16 / 9',
+            }}
           >
             <ImageContent
               style={{
