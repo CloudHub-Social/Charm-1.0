@@ -1,8 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
+  clearRecentServiceWorkerControllerChange,
   classifyCryptoStoreIndexedDbError,
+  getCryptoStoreRecoveryAction,
+  hasRecentServiceWorkerControllerChange,
   isCryptoStoreIndexedDbError,
+  markRecentServiceWorkerControllerChange,
+  maybeResetCryptoStoreRecoveryReloadCount,
+  resetCryptoStoreRecoveryReloadCount,
 } from './cryptoStoreErrors';
+
+const SW_CONTROLLER_CHANGED_AT_KEY = '__swControllerChangedAt';
+
+afterEach(() => {
+  clearRecentServiceWorkerControllerChange();
+  resetCryptoStoreRecoveryReloadCount();
+});
 
 describe('crypto store IndexedDB error classification', () => {
   it('classifies Safari IndexedDB transaction aborts from rust crypto logs', () => {
@@ -45,5 +58,62 @@ describe('crypto store IndexedDB error classification', () => {
   it('ignores unrelated sync errors', () => {
     expect(classifyCryptoStoreIndexedDbError('Fetch is aborted')).toBeUndefined();
     expect(isCryptoStoreIndexedDbError('Fetch is aborted')).toBe(false);
+  });
+
+  it('tracks recent service worker controller changes within the recovery window', () => {
+    markRecentServiceWorkerControllerChange(1_000);
+
+    expect(hasRecentServiceWorkerControllerChange(1_000)).toBe(true);
+    expect(hasRecentServiceWorkerControllerChange(1_000 + 119_999)).toBe(true);
+  });
+
+  it('expires stale service worker controller changes and clears the stored state', () => {
+    const windowRecord = window as unknown as Record<string, unknown>;
+    markRecentServiceWorkerControllerChange(1_000);
+
+    expect(hasRecentServiceWorkerControllerChange(1_000 + 120_001)).toBe(false);
+    expect(windowRecord[SW_CONTROLLER_CHANGED_AT_KEY]).toBeUndefined();
+  });
+
+  it('allows one recovery reload before falling back to cache clearing', () => {
+    expect(getCryptoStoreRecoveryAction()).toBe('reload');
+    expect(getCryptoStoreRecoveryAction()).toBe('reload_pending');
+  });
+
+  it('falls back to cache clearing after a recovery reload has completed', () => {
+    expect(getCryptoStoreRecoveryAction()).toBe('reload');
+
+    const windowRecord = window as unknown as Record<string, unknown>;
+    delete windowRecord.__cryptoStoreRecoveryReloadPending;
+
+    expect(getCryptoStoreRecoveryAction()).toBe('clear_cache');
+  });
+
+  it('resets the recovery reload cap after a healthy sync', () => {
+    expect(getCryptoStoreRecoveryAction()).toBe('reload');
+
+    resetCryptoStoreRecoveryReloadCount();
+
+    expect(getCryptoStoreRecoveryAction()).toBe('reload');
+  });
+
+  it('does not reset the persisted recovery cap before the healthy window elapses', () => {
+    expect(getCryptoStoreRecoveryAction(1_000)).toBe('reload');
+
+    const windowRecord = window as unknown as Record<string, unknown>;
+    delete windowRecord.__cryptoStoreRecoveryReloadPending;
+
+    expect(maybeResetCryptoStoreRecoveryReloadCount(30_000)).toBe(false);
+    expect(getCryptoStoreRecoveryAction()).toBe('clear_cache');
+  });
+
+  it('resets the persisted recovery cap after a sustained healthy period', () => {
+    expect(getCryptoStoreRecoveryAction(1_000)).toBe('reload');
+
+    const windowRecord = window as unknown as Record<string, unknown>;
+    delete windowRecord.__cryptoStoreRecoveryReloadPending;
+
+    expect(maybeResetCryptoStoreRecoveryReloadCount(61_000)).toBe(true);
+    expect(getCryptoStoreRecoveryAction()).toBe('reload');
   });
 });

@@ -97,6 +97,7 @@ import {
   buildNotificationJumpCleanupTarget,
   getNotificationJumpCleanupEventId,
   shouldClearNotificationJumpRoute,
+  shouldClearNotificationJumpRouteURLOnly,
 } from './notificationJumpCleanup';
 import * as css from './RoomTimeline.css';
 
@@ -350,6 +351,7 @@ export function RoomTimeline({
   const jumpRetryIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const jumpRecenterTimeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const jumpRouteCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const jumpURLOnlyCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const jumpHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const jumpAnchorKeyRef = useRef<string | undefined>(undefined);
   const jumpLayoutReanchorRafRef = useRef<number | undefined>(undefined);
@@ -1017,6 +1019,45 @@ export function RoomTimeline({
     setFocusItem,
     liveTimelineLinked,
   ]);
+
+  // URL-only cleanup for notification jumps that land in history context
+  // (event too far from live to trigger the full scroll-to-bottom cleanup).
+  // Without this, ?jumpMode&eventId stay in the history entry indefinitely,
+  // causing the room to re-fire the notification jump if the user swipes back
+  // to that entry via the native gesture. Does NOT remove the visual highlight.
+  useEffect(() => {
+    if (jumpURLOnlyCleanupTimerRef.current !== undefined) {
+      clearTimeout(jumpURLOnlyCleanupTimerRef.current);
+      jumpURLOnlyCleanupTimerRef.current = undefined;
+    }
+
+    if (!shouldClearNotificationJumpRouteURLOnly({ eventId, jumpMode, liveTimelineLinked })) {
+      return undefined;
+    }
+
+    jumpURLOnlyCleanupTimerRef.current = setTimeout(() => {
+      jumpURLOnlyCleanupTimerRef.current = undefined;
+      if (
+        !shouldClearNotificationJumpRouteURLOnly({
+          eventId,
+          jumpMode,
+          liveTimelineLinked: liveTimelineLinkedRef.current,
+        })
+      ) {
+        return;
+      }
+      navigate(buildNotificationJumpCleanupTarget(location.pathname, location.search, eventId!), {
+        replace: true,
+      });
+    }, 2000);
+
+    return () => {
+      if (jumpURLOnlyCleanupTimerRef.current !== undefined) {
+        clearTimeout(jumpURLOnlyCleanupTimerRef.current);
+        jumpURLOnlyCleanupTimerRef.current = undefined;
+      }
+    };
+  }, [eventId, jumpMode, liveTimelineLinked, location.pathname, location.search, navigate]);
 
   useEffect(() => {
     const focusItem = timelineSync.focusItem;
