@@ -458,6 +458,9 @@ export class SlidingSyncManager {
 
         if (isCryptoStoreError) {
           this.consecutiveCryptoStoreErrors += 1;
+        } else {
+          // Non-crypto error (e.g. network) breaks the consecutive run
+          this.consecutiveCryptoStoreErrors = 0;
         }
 
         debugLog.error('sync', 'Sliding sync error', {

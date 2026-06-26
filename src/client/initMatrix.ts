@@ -1049,6 +1049,9 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
 
         if (isCryptoStoreError) {
           consecutiveCryptoStoreErrors += 1;
+        } else {
+          // Non-crypto error (e.g. network) breaks the consecutive run
+          consecutiveCryptoStoreErrors = 0;
         }
 
         debugLog.warn('sync', `Classic sync problem: ${state}`, {
