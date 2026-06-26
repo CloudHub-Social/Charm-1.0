@@ -32,8 +32,12 @@ export async function loadRoomMembersOnce(
     // loadMembersIfNeeded() will be a cheap no-op by then.
     const p: Promise<void> = room
       .loadMembersIfNeeded()
-      .then(() => { loadedRoomIds.add(roomId); })
-      .finally(() => { if (inflightPromises.get(roomId) === p) inflightPromises.delete(roomId); });
+      .then(() => {
+        loadedRoomIds.add(roomId);
+      })
+      .finally(() => {
+        if (inflightPromises.get(roomId) === p) inflightPromises.delete(roomId);
+      });
     inflightPromises.set(roomId, p);
     await p;
     return;
@@ -43,8 +47,12 @@ export async function loadRoomMembersOnce(
   if (!inflightPromises.has(roomId)) {
     const p: Promise<void> = memberQueue
       .add(() => room.loadMembersIfNeeded())
-      .then(() => { loadedRoomIds.add(roomId); })
-      .finally(() => { if (inflightPromises.get(roomId) === p) inflightPromises.delete(roomId); });
+      .then(() => {
+        loadedRoomIds.add(roomId);
+      })
+      .finally(() => {
+        if (inflightPromises.get(roomId) === p) inflightPromises.delete(roomId);
+      });
     inflightPromises.set(roomId, p);
   }
   await inflightPromises.get(roomId)!;
