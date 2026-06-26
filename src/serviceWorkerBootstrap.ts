@@ -6,6 +6,7 @@ import { getFallbackSession, MATRIX_SESSIONS_KEY, ACTIVE_SESSION_KEY } from './a
 import { getLocalStorageItem } from './app/state/utils/atomWithLocalStorage';
 import { hasServiceWorker } from './app/utils/platform';
 import { reloadWithTelemetry } from './app/utils/reloadWithTelemetry';
+import { markRecentServiceWorkerControllerChange } from './client/cryptoStoreErrors';
 import { pushSessionToSW } from './sw-session';
 import { consumeLaunchContext } from './launch-context-persistence';
 import { appEvents } from './app/utils/appEvents';
@@ -415,6 +416,9 @@ export function registerAppServiceWorker() {
         hasController: !!navigator.serviceWorker.controller,
       },
     });
+    // Flag that a SW controller change occurred — IDB connections may become stale,
+    // especially on Safari. Used by sync error handlers to trigger faster recovery.
+    markRecentServiceWorkerControllerChange();
     Sentry.metrics.count('sable.sw.controller_change', 1, {
       attributes: {
         visibility_state: document.visibilityState,

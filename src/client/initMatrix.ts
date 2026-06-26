@@ -11,7 +11,7 @@ import {
 
 import { clearNavToActivePathStore } from '$state/navToActivePath';
 import type { Session, Sessions, SessionStoreName } from '$state/sessions';
-import { getSessionStoreName, MATRIX_SESSIONS_KEY } from '$state/sessions';
+import { getFallbackSession, getSessionStoreName, MATRIX_SESSIONS_KEY } from '$state/sessions';
 import { getLocalStorageItem } from '$state/utils/atomWithLocalStorage';
 import { createLogger } from '$utils/debug';
 import { createDebugLogger } from '$utils/debugLogger';
@@ -22,7 +22,13 @@ import { cryptoCallbacks } from './secretStorageKeys';
 import type { SlidingSyncConfig, SlidingSyncDiagnostics } from './slidingSync';
 import { SlidingSyncManager } from './slidingSync';
 import { installThreadEventInstrumentation } from './threadEventPatch';
-import { classifyCryptoStoreIndexedDbError } from './cryptoStoreErrors';
+import {
+  classifyCryptoStoreIndexedDbError,
+  getCryptoStoreRecoveryAction,
+  hasRecentServiceWorkerControllerChange,
+  maybeResetCryptoStoreRecoveryReloadCount,
+  resetCryptoStoreRecoveryReloadCount,
+} from './cryptoStoreErrors';
 import { clearClientCachesAndServiceWorkers } from '$utils/appCacheReset';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 
@@ -76,6 +82,35 @@ type MatrixClientWithWritableFetchRoomEvent = MatrixClient & {
 };
 
 type MatrixDeviceContextClient = Pick<MatrixClient, 'getDeviceId'>;
+
+const getStoredSessionForUserId = (userId: string): Session | undefined => {
+  const sessions = getLocalStorageItem<Session[]>(MATRIX_SESSIONS_KEY, []);
+  const matchingSession = sessions.find((session) => session.userId === userId);
+  if (matchingSession) return matchingSession;
+  const fallbackSession = getFallbackSession();
+  return fallbackSession?.userId === userId ? fallbackSession : undefined;
+};
+
+const clearSessionStoresAndReload = async (mx: MatrixClient): Promise<void> => {
+  await stopClient(mx);
+  clearNavToActivePathStore(mx.getSafeUserId() ?? mx.getUserId());
+
+  const userId = mx.getUserId();
+  const session = userId ? getStoredSessionForUserId(userId) : undefined;
+  if (session) {
+    const storeName = getSessionStoreName(session);
+    await Promise.all([
+      mx.clearStores({ cryptoDatabasePrefix: storeName.rustCryptoPrefix }),
+      deleteSessionStores(storeName),
+    ]);
+  } else {
+    await mx.clearStores();
+  }
+
+  await clearClientCachesAndServiceWorkers();
+  resetCryptoStoreRecoveryReloadCount();
+  reloadWithTelemetry('clear_cache_and_reload');
+};
 
 export const normalizeMatrixEventType = (type: unknown): string =>
   typeof type === 'string' && type.trim().length > 0 ? type : MATRIX_EVENT_FALLBACK_TYPE;
@@ -900,6 +935,7 @@ export const getSlidingSyncManager = (mx: MatrixClient): SlidingSyncManager | un
   slidingSyncByClient.get(mx);
 
 const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig): Promise<void> => {
+  const pageLevelRecoveryEnabled = (config?.clientScope ?? 'app') === 'app';
   setSentryMatrixDeviceContext(mx);
   debugLog.info('sync', 'Starting Matrix client', { userId: mx.getUserId() });
   Sentry.addBreadcrumb({
@@ -992,25 +1028,8 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
       (filterDefinition.room.timeline as { lazy_load_members?: boolean }).lazy_load_members = true;
     }
 
-    installStartupFetchRoomEventPatch(mx, { stubOnCacheMiss: true });
-    installClassicSyncNetworkReconnect(mx);
-
-    let syncStarted: Promise<void>;
-    try {
-      syncStarted = mx.startClient({
-        lazyLoadMembers: true,
-        pollTimeout: effectivePollTimeout,
-        threadSupport: true,
-        filter: classicFilter,
-      });
-    } catch (syncErr) {
-      fetchRoomEventStartupCleanupByClient.get(mx)?.();
-      throw syncErr;
-    }
-
-    await Promise.race([syncStarted, startupTimeout]);
-    // Attach an ongoing classic-sync observer — equivalent to SlidingSyncManager's
-    // onLifecycle listener. Tracks state transitions, initial-sync timing, and errors.
+    // Attach an ongoing classic-sync observer before startClient() so startup
+    // crypto-store failures are observed as well as steady-state ones.
     let classicSyncCount = 0;
     const classicSyncStartMs = performance.now();
     let classicInitialSyncDone = false;
@@ -1024,6 +1043,8 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
         'startup.transport': 'classic',
       },
     });
+
+    let consecutiveCryptoStoreErrors = 0;
 
     const classicSyncListener = (
       state: SyncState,
@@ -1045,12 +1066,20 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
         const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(errorMsg);
         const isCryptoStoreError = cryptoStoreErrorType !== undefined;
 
+        if (isCryptoStoreError) {
+          consecutiveCryptoStoreErrors += 1;
+        } else {
+          // Non-crypto error (e.g. network) breaks the consecutive run
+          consecutiveCryptoStoreErrors = 0;
+        }
+
         debugLog.warn('sync', `Classic sync problem: ${state}`, {
           state,
           prevState: prevState ?? 'null',
           errorMessage: errorMsg,
           syncNumber: classicSyncCount,
           isCryptoStoreError,
+          consecutiveCryptoStoreErrors,
         });
         Sentry.metrics.count('sable.sync.error', 1, {
           attributes: {
@@ -1069,6 +1098,7 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
             error: errorMsg,
             syncNumber: classicSyncCount,
             isCryptoStoreError,
+            consecutiveCryptoStoreErrors,
           },
         });
 
@@ -1086,17 +1116,50 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
               syncState: state,
               prevState,
               syncNumber: classicSyncCount,
+              consecutiveCryptoStoreErrors,
               userId: mx.getUserId(),
               recovery_recommendation:
                 'Matrix SDK WASM crypto layer issue - client will attempt to reconnect',
             },
           });
+
+          // When a service worker controller change occurred, the IDB connection
+          // is very likely stale (especially on Safari). Reload immediately.
+          // Otherwise, tolerate a couple of transient errors before forcing reload.
+          const swChanged = hasRecentServiceWorkerControllerChange();
+          const threshold = swChanged ? 1 : 3;
+          if (pageLevelRecoveryEnabled && consecutiveCryptoStoreErrors >= threshold) {
+            log.warn(
+              `initClient: ${consecutiveCryptoStoreErrors} consecutive crypto store errors ` +
+                `(swChanged=${swChanged}) — reloading to recover IDB connections`
+            );
+            Sentry.addBreadcrumb({
+              category: 'sync.classic',
+              message: 'Reloading page to recover stale IDB connections',
+              level: 'error',
+              data: { consecutiveCryptoStoreErrors, swChanged, threshold },
+            });
+            Sentry.metrics.count('sable.sync.crypto_store_reload', 1, {
+              attributes: { transport: 'classic', sw_changed: swChanged },
+            });
+            const recoveryAction = getCryptoStoreRecoveryAction();
+            if (recoveryAction === 'clear_cache') {
+              void clearSessionStoresAndReload(mx);
+            } else if (recoveryAction === 'reload') {
+              reloadWithTelemetry('crypto_store_idb_recovery');
+            }
+            return;
+          }
         }
+      } else {
+        // Any non-error state breaks the consecutive run.
+        consecutiveCryptoStoreErrors = 0;
       }
       if (
         !classicInitialSyncDone &&
         (state === SyncState.Syncing || state === SyncState.Prepared)
       ) {
+        maybeResetCryptoStoreRecoveryReloadCount();
         classicInitialSyncDone = true;
         const elapsed = performance.now() - classicSyncStartMs;
         debugLog.info('sync', 'Classic sync initial ready', {
@@ -1125,6 +1188,26 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
     };
     classicSyncObserverByClient.set(mx, classicSyncListener);
     mx.on(ClientEvent.Sync, classicSyncListener);
+
+    installStartupFetchRoomEventPatch(mx, { stubOnCacheMiss: true });
+    installClassicSyncNetworkReconnect(mx);
+
+    let syncStarted: Promise<void>;
+    try {
+      syncStarted = mx.startClient({
+        lazyLoadMembers: true,
+        pollTimeout: effectivePollTimeout,
+        threadSupport: true,
+        filter: classicFilter,
+      });
+    } catch (syncErr) {
+      fetchRoomEventStartupCleanupByClient.get(mx)?.();
+      mx.removeListener(ClientEvent.Sync, classicSyncListener);
+      classicSyncObserverByClient.delete(mx);
+      throw syncErr;
+    }
+
+    await Promise.race([syncStarted, startupTimeout]);
   };
 
   let slidingWarmCacheAtStart = mx.getRooms().length > 0;
@@ -1284,6 +1367,10 @@ const startClientInternal = async (mx: MatrixClient, config?: StartClientConfig)
     {
       ...slidingConfig,
       includeInviteList: true,
+      pageLevelRecoveryEnabled,
+      onCryptoStoreRecoveryExhausted: () => {
+        void clearSessionStoresAndReload(mx);
+      },
       pollTimeoutMs: slidingConfig?.pollTimeoutMs ?? SLIDING_SYNC_POLL_TIMEOUT_MS,
     },
     slidingWarmCacheAtStart
