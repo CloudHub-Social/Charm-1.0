@@ -468,7 +468,7 @@ export const useFetchSpaceHierarchyLevel = (
   );
 
   const queryResponse = useInfiniteQuery({
-    refetchOnMount: enable,
+    enabled: enable,
     queryKey: [roomId, "hierarchy_level"],
     initialPageParam: undefined,
     queryFn: fetchLevel,
@@ -557,6 +557,13 @@ export const useSequentialSpaceHierarchies = (
   const roomIdsKey = roomIds.join(",");
 
   useEffect(() => {
+    // Prune IDs that are no longer in roomIds so they can be re-fetched if
+    // they reappear in the hierarchy later.
+    const currentSet = new Set(roomIds);
+    fetchedRef.current.forEach((id) => {
+      if (!currentSet.has(id)) fetchedRef.current.delete(id);
+    });
+
     const newIds = roomIds.filter((id) => !fetchedRef.current.has(id));
     if (newIds.length === 0) return;
 
@@ -576,18 +583,23 @@ export const useSequentialSpaceHierarchies = (
 
     if (processingRef.current) return;
 
+    let cancelled = false;
+
     const processQueue = async () => {
       processingRef.current = true;
 
       while (pendingRef.current.length > 0) {
+        if (cancelled) break;
         const roomId = pendingRef.current.shift();
         if (!roomId) continue;
 
-        setResults((prev) => {
-          const next = new Map(prev);
-          next.set(roomId, { fetching: true, error: null, rooms: new Map() });
-          return next;
-        });
+        if (!cancelled) {
+          setResults((prev) => {
+            const next = new Map(prev);
+            next.set(roomId, { fetching: true, error: null, rooms: new Map() });
+            return next;
+          });
+        }
 
         const roomsMap: Map<string, IHierarchyRoom> = new Map();
         let nextBatch: string | undefined;
@@ -598,9 +610,11 @@ export const useSequentialSpaceHierarchies = (
         const MAX_RETRIES = 5;
 
         while (retry && retryCount <= MAX_RETRIES) {
+          if (cancelled) break;
           retry = false;
           try {
             do {
+              if (cancelled) break;
               // eslint-disable-next-line no-await-in-loop
               const result = await mx.getRoomHierarchy(
                 roomId,
@@ -645,15 +659,17 @@ export const useSequentialSpaceHierarchies = (
           }
         }
 
-        setResults((prev) => {
-          const next = new Map(prev);
-          next.set(roomId, {
-            fetching: false,
-            error: fetchError,
-            rooms: roomsMap,
+        if (!cancelled) {
+          setResults((prev) => {
+            const next = new Map(prev);
+            next.set(roomId, {
+              fetching: false,
+              error: fetchError,
+              rooms: roomsMap,
+            });
+            return next;
           });
-          return next;
-        });
+        }
       }
 
       processingRef.current = false;
@@ -663,6 +679,9 @@ export const useSequentialSpaceHierarchies = (
     // roomIdsKey is the stable serialization of roomIds.
     // mx is stable for the lifetime of the client session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+    };
   }, [roomIdsKey, mx]);
 
   return results;
