@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Box, Text, Scroll, Button, config, toRem, Spinner } from 'folds';
-import { ArrowsClockwise, Code, Heart, menuIcon } from '$components/icons/phosphor';
-import { PageContent } from '$components/page';
-import { SequenceCard } from '$components/sequence-card';
-import { SettingTile } from '$components/setting-tile';
-import LogoSVG from '$public/res/svg/logo.svg';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Box, Text, Scroll, Button, config, toRem, Spinner } from "folds";
+import {
+  ArrowsClockwise,
+  Code,
+  Heart,
+  menuIcon,
+} from "$components/icons/phosphor";
+import { PageContent } from "$components/page";
+import { SequenceCard } from "$components/sequence-card";
+import { SettingTile } from "$components/setting-tile";
+import LogoSVG from "$public/res/svg/logo.svg";
 import {
   APP_ATTRIBUTION,
   APP_DESCRIPTION,
@@ -12,15 +17,15 @@ import {
   APP_SOURCE_URL,
   APP_SUPPORT_URL,
   APP_UPSTREAM_URL,
-} from '$app/config/brand';
-import { clearCacheAndReload } from '$client/initMatrix';
-import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
-import { useMatrixClient } from '$hooks/useMatrixClient';
-import { SequenceCardStyle } from '$features/settings/styles.css';
-import { SettingsSectionPage } from '$features/settings/SettingsSectionPage';
-import { Method } from '$types/matrix-sdk';
-import { useOpenBugReportModal } from '$state/hooks/bugReportModal';
-import { applyPendingAppUpdate, checkForAppUpdates } from '$utils/appUpdates';
+} from "$app/config/brand";
+import { clearCacheAndReload } from "$client/initMatrix";
+import { AsyncStatus, useAsyncCallback } from "$hooks/useAsyncCallback";
+import { useMatrixClient } from "$hooks/useMatrixClient";
+import { SequenceCardStyle } from "$features/settings/styles.css";
+import { SettingsSectionPage } from "$features/settings/SettingsSectionPage";
+import { Method } from "$types/matrix-sdk";
+import { useOpenBugReportModal } from "$state/hooks/bugReportModal";
+import { applyPendingAppUpdate, checkForAppUpdates } from "$utils/appUpdates";
 
 type VersionResult =
   | { error: { message: string } }
@@ -38,32 +43,36 @@ export function HomeserverInfo() {
     fetchedRef.current = true;
 
     // Step 1: Fetch well-known first to discover federation server
-    const userDomain = mx.getSafeUserId().split(':')[1];
+    const userDomain = mx.getSafeUserId().split(":")[1];
     mx.http
-      .request(Method.Get, '/server', undefined, undefined, {
-        prefix: '/.well-known/matrix',
+      .request(Method.Get, "/server", undefined, undefined, {
+        prefix: "/.well-known/matrix",
         baseUrl: `https://${userDomain}`,
       })
       .then((well_known) => {
         // Step 2: Parse m.server from well-known response
-        const mServer = (well_known as { 'm.server'?: string })['m.server'];
+        const mServer = (well_known as { "m.server"?: string })["m.server"];
         // Extract host from m.server (format: "host:port" or "host")
         const federationBase = mServer
-          ? `https://${mServer.split(':')[0]}${mServer.includes(':') ? `:${mServer.split(':')[1]}` : ''}`
+          ? `https://${mServer.split(":")[0]}${mServer.includes(":") ? `:${mServer.split(":")[1]}` : ""}`
           : `https://${userDomain}:8448`; // Fallback to port 8448 if well-known not found
 
         setFederationUrl(federationBase);
 
         // Step 3: Fetch federation version from discovered endpoint
-        return mx.http.request(Method.Get, '/version', undefined, undefined, {
-          prefix: '/_matrix/federation/v1',
+        return mx.http.request(Method.Get, "/version", undefined, undefined, {
+          prefix: "/_matrix/federation/v1",
           baseUrl: federationBase,
         });
       })
       .then((fetched_version) =>
         setVersion({
-          server: fetched_version as { name?: string; version?: string; compiler?: string },
-        })
+          server: fetched_version as {
+            name?: string;
+            version?: string;
+            compiler?: string;
+          },
+        }),
       )
       .catch((error) => {
         // Federation may not be exposed to clients — treat as optional
@@ -83,7 +92,7 @@ export function HomeserverInfo() {
         <SettingTile
           title="Domain"
           focusId="domain"
-          description={mx.getSafeUserId().split(':')[1]}
+          description={mx.getSafeUserId().split(":")[1]}
         />
       </SequenceCard>
       <SequenceCard
@@ -122,7 +131,7 @@ export function HomeserverInfo() {
       )}
       {version ? (
         <>
-          {'error' in version && version.error && (
+          {"error" in version && version.error && (
             <SequenceCard
               className={SequenceCardStyle}
               variant="SurfaceVariant"
@@ -132,7 +141,7 @@ export function HomeserverInfo() {
               {version.error.message}
             </SequenceCard>
           )}
-          {'server' in version && version.server?.name && (
+          {"server" in version && version.server?.name && (
             <SequenceCard
               className={SequenceCardStyle}
               variant="SurfaceVariant"
@@ -146,7 +155,7 @@ export function HomeserverInfo() {
               />
             </SequenceCard>
           )}
-          {'server' in version && version.server?.version && (
+          {"server" in version && version.server?.version && (
             <SequenceCard
               className={SequenceCardStyle}
               variant="SurfaceVariant"
@@ -160,7 +169,7 @@ export function HomeserverInfo() {
               />
             </SequenceCard>
           )}
-          {'server' in version && version.server?.compiler && (
+          {"server" in version && version.server?.compiler && (
             <SequenceCard
               className={SequenceCardStyle}
               variant="SurfaceVariant"
@@ -195,10 +204,12 @@ type AboutProps = {
 };
 export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
   const mx = useMatrixClient();
-  const devLabel = IS_RELEASE_TAG ? '' : '-dev';
-  const buildLabel = BUILD_HASH ? ` (${BUILD_HASH})` : '';
+  const devLabel = IS_RELEASE_TAG ? "" : "-dev";
+  const buildLabel = BUILD_HASH ? ` (${BUILD_HASH})` : "";
   const openBugReport = useOpenBugReportModal();
-  const [updateStatusMessage, setUpdateStatusMessage] = useState<string | undefined>();
+  const [updateStatusMessage, setUpdateStatusMessage] = useState<
+    string | undefined
+  >();
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
   const isApplyingUpdateRef = useRef(false);
   const isMountedRef = useRef(true);
@@ -212,7 +223,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
     () => () => {
       isMountedRef.current = false;
     },
-    []
+    [],
   );
 
   const handleCheckForUpdates = useCallback(async () => {
@@ -222,7 +233,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
       setUpdateStatusMessage(result.message);
     } catch (error) {
       setUpdateStatusMessage(
-        error instanceof Error ? error.message : 'Failed to check for updates.'
+        error instanceof Error ? error.message : "Failed to check for updates.",
       );
     }
   }, [runUpdateCheck]);
@@ -241,7 +252,9 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
     } catch (error) {
       if (isMountedRef.current) {
         setUpdateStatusMessage(
-          error instanceof Error ? error.message : 'Failed to apply the update.'
+          error instanceof Error
+            ? error.message
+            : "Failed to apply the update.",
         );
         isApplyingUpdateRef.current = false;
         setIsApplyingUpdate(false);
@@ -250,7 +263,11 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
   }, []);
 
   return (
-    <SettingsSectionPage title="About" requestBack={requestBack} requestClose={requestClose}>
+    <SettingsSectionPage
+      title="About"
+      requestBack={requestBack}
+      requestClose={requestClose}
+    >
       <Box grow="Yes">
         <Scroll hideTrack visibility="Hover">
           <PageContent>
@@ -283,7 +300,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                       fill="Soft"
                       size="300"
                       radii="300"
-                      before={menuIcon(Code, { weight: 'fill' })}
+                      before={menuIcon(Code, { weight: "fill" })}
                     >
                       <Text size="B300">Source Code</Text>
                     </Button>
@@ -296,7 +313,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                       fill="Soft"
                       size="300"
                       radii="300"
-                      before={menuIcon(Code, { weight: 'fill' })}
+                      before={menuIcon(Code, { weight: "fill" })}
                     >
                       <Text size="B300">Upstream</Text>
                     </Button>
@@ -309,7 +326,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                       fill="Soft"
                       size="300"
                       radii="300"
-                      before={menuIcon(Heart, { weight: 'fill' })}
+                      before={menuIcon(Heart, { weight: "fill" })}
                     >
                       <Text size="B300">Support</Text>
                     </Button>
@@ -329,7 +346,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                     focusId="check-for-updates"
                     description={
                       updateStatusMessage ??
-                      'Check whether a newer web app build is ready to apply in this client.'
+                      "Check whether a newer web app build is ready to apply in this client."
                     }
                     after={
                       updateCheckState.status === AsyncStatus.Success &&
@@ -348,7 +365,9 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                             ) : undefined
                           }
                         >
-                          <Text size="B300">{isApplyingUpdate ? 'Applying…' : 'Apply Update'}</Text>
+                          <Text size="B300">
+                            {isApplyingUpdate ? "Applying…" : "Apply Update"}
+                          </Text>
                         </Button>
                       ) : (
                         <Button
@@ -358,7 +377,9 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                           size="300"
                           radii="300"
                           outlined
-                          disabled={updateCheckState.status === AsyncStatus.Loading}
+                          disabled={
+                            updateCheckState.status === AsyncStatus.Loading
+                          }
                           before={
                             updateCheckState.status === AsyncStatus.Loading ? (
                               <Spinner variant="Secondary" size="100" />
@@ -369,8 +390,8 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                         >
                           <Text size="B300">
                             {updateCheckState.status === AsyncStatus.Loading
-                              ? 'Checking…'
-                              : 'Check'}
+                              ? "Checking…"
+                              : "Check"}
                           </Text>
                         </Button>
                       )
@@ -453,7 +474,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                         >
                           Cinny
                         </a>
-                        {', © '}
+                        {", © "}
                         <a
                           href="https://github.com/ajbura"
                           rel="noreferrer noopener"
@@ -461,7 +482,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                         >
                           Ajay Bura
                         </a>
-                        {', is used under the terms of '}
+                        {", is used under the terms of "}
                         <a
                           href="https://github.com/cinnyapp/cinny/blob/dev/LICENSE"
                           rel="noreferrer noopener"
@@ -474,7 +495,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                     </li>
                     <li>
                       <Text size="T300">
-                        {'The '}
+                        {"The "}
                         <a
                           href="https://github.com/matrix-org/matrix-js-sdk"
                           rel="noreferrer noopener"
@@ -482,7 +503,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                         >
                           matrix-js-sdk
                         </a>
-                        {', © '}
+                        {", © "}
                         <a
                           href="https://matrix.org/foundation"
                           rel="noreferrer noopener"
@@ -490,7 +511,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                         >
                           The Matrix.org Foundation C.I.C
                         </a>
-                        {', is used under the terms of '}
+                        {", is used under the terms of "}
                         <a
                           href="http://www.apache.org/licenses/LICENSE-2.0"
                           rel="noreferrer noopener"
@@ -503,7 +524,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                     </li>
                     <li>
                       <Text size="T300">
-                        {'The '}
+                        {"The "}
                         <a
                           href="https://github.com/mozilla/twemoji-colr"
                           target="_blank"
@@ -511,11 +532,15 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                         >
                           twemoji-colr
                         </a>
-                        {' font, © '}
-                        <a href="https://mozilla.org/" target="_blank" rel="noreferrer noopener">
+                        {" font, © "}
+                        <a
+                          href="https://mozilla.org/"
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        >
                           Mozilla Foundation
                         </a>
-                        {', is used under the terms of '}
+                        {", is used under the terms of "}
                         <a
                           href="http://www.apache.org/licenses/LICENSE-2.0"
                           target="_blank"
@@ -528,7 +553,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                     </li>
                     <li>
                       <Text size="T300">
-                        {'The '}
+                        {"The "}
                         <a
                           href="https://github.com/twitter/twemoji"
                           target="_blank"
@@ -536,7 +561,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                         >
                           Twemoji
                         </a>
-                        {' emoji art, © '}
+                        {" emoji art, © "}
                         <a
                           href="https://github.com/twitter/twemoji"
                           target="_blank"
@@ -544,7 +569,7 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                         >
                           Twitter, Inc and other contributors
                         </a>
-                        {', is used under the terms of '}
+                        {", is used under the terms of "}
                         <a
                           href="https://creativecommons.org/licenses/by/4.0/"
                           target="_blank"
@@ -557,19 +582,23 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                     </li>
                     <li>
                       <Text size="T300">
-                        {'The '}
+                        {"The "}
                         <a
                           href="https://material.io/design/sound/sound-resources.html"
                           target="_blank"
                           rel="noreferrer noopener"
                         >
                           Material sound resources
-                        </a>{' '}
-                        {', © '}
-                        <a href="https://google.com" target="_blank" rel="noreferrer noopener">
+                        </a>{" "}
+                        {", © "}
+                        <a
+                          href="https://google.com"
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        >
                           Google
                         </a>
-                        {', are used under the terms of '}
+                        {", are used under the terms of "}
                         <a
                           href="https://creativecommons.org/licenses/by/4.0/"
                           target="_blank"
