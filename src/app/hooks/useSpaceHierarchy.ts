@@ -563,6 +563,17 @@ export const useSequentialSpaceHierarchies = (
     newIds.forEach((id) => fetchedRef.current.add(id));
     pendingRef.current = [...pendingRef.current, ...newIds];
 
+    // Eagerly mark all queued IDs as fetching so child components see a
+    // non-undefined hierarchyData immediately and skip their own queries.
+    setResults((prev) => {
+      const next = new Map(prev);
+      newIds.forEach((id) => {
+        if (!next.has(id))
+          next.set(id, { fetching: true, error: null, rooms: new Map() });
+      });
+      return next;
+    });
+
     if (processingRef.current) return;
 
     const processQueue = async () => {
@@ -617,8 +628,13 @@ export const useSequentialSpaceHierarchies = (
                 roomsMap.clear();
                 nextBatch = undefined;
                 pageCount = 0;
-                retry = true;
                 retryCount += 1;
+                if (retryCount <= MAX_RETRIES) {
+                  retry = true;
+                } else {
+                  fetchError =
+                    err instanceof Error ? err : new Error(String(err));
+                }
               } else {
                 fetchError =
                   err instanceof Error ? err : new Error(String(err));
