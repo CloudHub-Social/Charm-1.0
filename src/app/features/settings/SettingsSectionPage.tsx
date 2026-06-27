@@ -3,7 +3,7 @@ import { Box, IconButton, Text } from 'folds';
 import { Page, PageHeader } from '$components/page';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { ArrowLeft, composerIcon, X } from '$components/icons/phosphor';
-import { settingsHeader } from './styles.css';
+import { settingsHeader, settingsSectionPage } from './styles.css';
 
 type SettingsSectionPageProps = {
   title: ReactNode;
@@ -29,7 +29,7 @@ export function SettingsSectionPage({
   const showBack = screenSize === ScreenSize.Mobile && requestBack;
 
   return (
-    <Page>
+    <Page className={settingsSectionPage}>
       <PageHeader className={settingsHeader}>
         <Box grow="Yes" gap="200">
           <Box grow="Yes" alignItems="Center" gap="200">

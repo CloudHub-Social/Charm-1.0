@@ -425,6 +425,20 @@ describe('SettingsSectionPage', () => {
 
     expect(screen.getByText('Devices').closest('header')).toHaveClass(settingsCss.settingsHeader);
   });
+
+  it('wraps section content in the scoped settings page class', () => {
+    const { container } = render(
+      <ScreenSizeProvider value={ScreenSize.Mobile}>
+        <SettingsSectionPage
+          title="Devices"
+          requestBack={vi.fn<() => void>()}
+          requestClose={vi.fn<() => void>()}
+        />
+      </ScreenSizeProvider>
+    );
+
+    expect(container.querySelector(`.${settingsCss.settingsSectionPage}`)).toBeInTheDocument();
+  });
 });
 
 describe('SettingsRoute', () => {
