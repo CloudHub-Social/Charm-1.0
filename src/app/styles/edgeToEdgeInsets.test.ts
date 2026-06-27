@@ -63,9 +63,13 @@ describe('android edge-to-edge inset contract', () => {
     expect(indexCss).not.toContain('height: var(--sable-visible-height, 100dvh)');
     expect(generalOverrides).toContain("backgroundColor: 'var(--sable-bg-container)'");
     expect(systemBarShell).toContain('var(--safe-area-inset-top, env(safe-area-inset-top, 0px))');
+    expect(systemBarShell).toContain("'--sable-safe-area-top': enabled ? safeAreaTop : '0px'");
     expect(systemBarShell).toContain(
       "'--sable-safe-area-bottom': enabled && !needsBottomSystemBar ? safeAreaBottom : '0px'"
     );
+    expect(systemBarShell).toContain("removeProperty('--sable-visible-height')");
+    expect(systemBarShell).toContain("removeProperty('--sable-safe-bottom')");
+    expect(systemBarShell).not.toContain('paddingTop: safeAreaTop');
     expect(systemBarShell).toContain("const needsBottomSystemBar = tauriOs === 'android'");
     expect(systemBarShell).toContain('var(--sable-bg-container-line)');
     expect(systemBarShell).toContain("borderTop: '1px solid var(--sable-bg-container-line)'");
@@ -97,10 +101,13 @@ describe('android edge-to-edge inset contract', () => {
     const telemetryBannerStyles = readWorkspaceFile(
       'src/app/components/telemetry-consent/TelemetryConsentBanner.css.ts'
     );
+    const modal500 = readWorkspaceFile('src/app/components/Modal500.tsx');
 
     expect(notificationBannerStyles).toContain("position: 'fixed'");
     expect(notificationBannerStyles).toContain("top: 'env(safe-area-inset-top, 0)'");
     expect(telemetryBannerStyles).toContain("position: 'fixed'");
     expect(telemetryBannerStyles).toContain("bottom: 'env(safe-area-inset-bottom, 0)'");
+    expect(modal500).not.toContain("paddingTop: 'var(--sable-safe-area-top, 0px)'");
+    expect(modal500).not.toContain("paddingBottom: 'var(--sable-safe-area-bottom, 0px)'");
   });
 });
