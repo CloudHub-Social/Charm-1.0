@@ -76,7 +76,7 @@ export {
 } from './MessageOptionsMenu';
 import * as css from './styles.css';
 
-const MemoizedBody = memo(({ children }: { children: ReactNode }) => children);
+export const MemoizedBody = memo(({ children }: { children: ReactNode }) => children);
 
 export type ForwardedMessageProps = {
   originalTimestamp: number;

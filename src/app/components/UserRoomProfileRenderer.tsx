@@ -60,6 +60,7 @@ function UserRoomProfileContextMenu({ state }: { state: UserRoomProfileState }) 
                   overflowY: 'auto',
                   WebkitOverflowScrolling: 'touch',
                   overscrollBehaviorY: 'contain',
+                  paddingBottom: 'var(--sable-safe-area-bottom, 0px)',
                 }}
               >
                 <UserRoomProfile userId={userId} initialProfile={initialProfile} />

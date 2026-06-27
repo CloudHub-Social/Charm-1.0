@@ -237,7 +237,9 @@ export const createRouter = (clientConfig: ClientConfig, screenSize: ScreenSize)
                           <UserRoomProfileRenderer />
                           <CreateRoomModalRenderer />
                           <CreateSpaceModalRenderer />
-                          <BugReportModalRenderer />
+                          <Suspense fallback={null}>
+                            <BugReportModalRenderer />
+                          </Suspense>
                           <SettingsShallowRouteRenderer />
                           <RoomSettingsRenderer />
                           <SpaceSettingsRenderer />
