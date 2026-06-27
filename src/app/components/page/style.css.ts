@@ -26,7 +26,6 @@ export type PageNavVariants = RecipeVariants<typeof PageNav>;
 export const PageNavHeader = recipe({
   base: {
     position: 'relative',
-    paddingTop: 'var(--sable-safe-area-top, 0px)',
     paddingRight: config.space.S200,
     paddingLeft: config.space.S200,
     flexShrink: 0,
@@ -69,7 +68,6 @@ export const PageNavContent = style({
 export const PageHeader = recipe({
   base: {
     position: 'relative',
-    paddingTop: 'var(--sable-safe-area-top, 0px)',
     paddingLeft: config.space.S400,
     paddingRight: config.space.S200,
   },

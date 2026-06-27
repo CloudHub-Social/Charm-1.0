@@ -63,6 +63,7 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
             width: '100%',
             minHeight: 0,
             flex: 1,
+            paddingTop: enabled ? safeAreaTop : 0,
             paddingLeft: enabled ? safeAreaLeft : 0,
             paddingRight: enabled ? safeAreaRight : 0,
           } as CSSProperties
