@@ -314,8 +314,8 @@ export function ClientRoot({ children }: ClientRootProps) {
   // Remember the last visited path so we can restore it on next app open
   // if the user has selected "Last Visited" as their landing screen preference
   useEffect(() => {
-    rememberLastVisitedPath(location.pathname);
-  }, [location.pathname]);
+    rememberLastVisitedPath(`${location.pathname}${location.search}`);
+  }, [location.pathname, location.search]);
 
   const handleLogout = useCallback(async () => {
     if (!mx || !activeSession) return;
