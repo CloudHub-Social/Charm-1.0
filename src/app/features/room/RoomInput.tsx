@@ -852,6 +852,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           plainText?.length === 0 ? getReplyContent(replyDraft, room) : undefined;
         if (replyContent) {
           contents[0]!['m.relates_to'] = replyContent;
+          if (!silentReply && replyDraft)
+            contents[0]!['m.mentions'] = { ['user_ids']: [replyDraft.userId] };
           setReplyDraft(replyDraftBase);
         }
       }
@@ -1849,6 +1851,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
       if (replyDraft) {
         content['m.relates_to'] = getReplyContent(replyDraft, room);
+        if (!silentReply && replyDraft)
+          content['m.mentions'] = { ['user_ids']: [replyDraft.userId] };
         setReplyDraft(replyDraftBase);
       }
       mx.sendEvent(roomId, EventType.Sticker, content);
