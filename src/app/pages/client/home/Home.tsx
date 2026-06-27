@@ -1,6 +1,6 @@
 import type { MouseEventHandler } from 'react';
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { RectCords } from 'folds';
 import {
   Avatar,
@@ -294,6 +294,7 @@ export function Home() {
   useNavToActivePathMapper('home');
   const clientConfig = useClientConfig();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const showAllRoomsFromRoute = searchParams.get('homeView') === 'all';
   const [isShowingAllRoomsInHome, setIsShowingAllRoomsInHome] = useState(showAllRoomsFromRoute);
@@ -302,6 +303,25 @@ export function Home() {
   const roomToUnread = useAtomValue(roomToUnreadAtom);
   const mDirects = useAtomValue(mDirectAtom);
   const navigate = useNavigate();
+  const updateShowAllRoomsPreference = useCallback(
+    (show: boolean) => {
+      setIsShowingAllRoomsInHome(show);
+
+      const nextSearchParams = new URLSearchParams(searchParams);
+      if (show) nextSearchParams.set('homeView', 'all');
+      else nextSearchParams.delete('homeView');
+
+      const nextSearch = nextSearchParams.toString();
+      navigate(
+        {
+          pathname: location.pathname,
+          search: nextSearch ? `?${nextSearch}` : '',
+        },
+        { replace: true }
+      );
+    },
+    [location.pathname, navigate, searchParams]
+  );
 
   const setIsResizingSidebar = useSetAtom(isResizingSidebarAtom);
   const [roomSidebarWidth, setRoomSidebarWidth] = useSetting(settingsAtom, 'roomSidebarWidth');
@@ -438,7 +458,7 @@ export function Home() {
           isRefreshing={isRefreshing}
           isShowingAllRoomsInHome={isShowingAllRoomsInHome}
           onRefresh={handleRefresh}
-          setIsShowingAllRoomsInHome={setIsShowingAllRoomsInHome}
+          setIsShowingAllRoomsInHome={updateShowAllRoomsPreference}
         />
         {noRoomToDisplay ? (
           <HomeEmpty />

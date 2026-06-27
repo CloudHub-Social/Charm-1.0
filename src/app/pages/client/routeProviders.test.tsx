@@ -10,7 +10,7 @@ import { allRoomsAtom } from '$state/room-list/roomList';
 import { mDirectAtom } from '$state/mDirectList';
 
 const mockUseMatrixClient = vi.fn<() => { getRoom: (roomId?: string) => unknown }>();
-const mockUseHomeRooms = vi.fn<() => string[]>();
+const mockUseHomeRooms = vi.fn<(isShowingAllRoomsInHome?: boolean) => string[]>();
 const mockUseSelectedRoom = vi.fn<() => string | undefined>();
 const mockUseSearchParamsViaServers = vi.fn<() => string[] | undefined>();
 const mockUseSelectedSpace = vi.fn<() => string | undefined>();
@@ -34,7 +34,7 @@ vi.mock('$hooks/useMatrixClient', () => ({
 }));
 
 vi.mock('./home/useHomeRooms', () => ({
-  useHomeRooms: () => mockUseHomeRooms(),
+  useHomeRooms: (isShowingAllRoomsInHome?: boolean) => mockUseHomeRooms(isShowingAllRoomsInHome),
 }));
 
 vi.mock('$hooks/router/useSelectedRoom', () => ({
@@ -250,6 +250,7 @@ describe('room route providers', () => {
     expect(screen.getByTestId('room-provider')).toHaveAttribute('data-room-id', '!room:server');
     expect(screen.getByText('Joined room')).toBeInTheDocument();
     expect(screen.queryByTestId('join-fallback')).not.toBeInTheDocument();
+    expect(mockUseHomeRooms).toHaveBeenCalledWith(true);
   });
 
   it('allows joined direct rooms on the home route when Show All Rooms is active', () => {

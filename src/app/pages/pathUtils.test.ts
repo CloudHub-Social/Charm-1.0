@@ -81,6 +81,14 @@ describe('last visited path', () => {
       '/home/room/%21room%3Aexample?homeView=all'
     );
   });
+
+  it('drops transient notification params while preserving restorable home state', () => {
+    rememberLastVisitedPath(
+      '/home/room/%21room%3Aexample?homeView=all&jumpMode=notification_live&joinCall=true&swClickId=notification-click-123'
+    );
+
+    expect(getLastVisitedPath()).toBe('/home/room/%21room%3Aexample?homeView=all');
+  });
 });
 
 describe('stripRoomEventSegment', () => {

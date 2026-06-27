@@ -17,18 +17,17 @@ import { useHomeRooms } from './useHomeRooms';
 
 export function HomeRouteRoomProvider({ children }: { children: ReactNode }) {
   const mx = useMatrixClient();
-  useHomeRooms();
-  const roomToParents = useAtomValue(roomToParentsAtom);
-  const roomToParentsReady = useAtomValue(roomToParentsReadyAtom);
-  const mDirects = useAtomValue(mDirectAtom);
-
   const { roomIdOrAlias: encodedRoomIdOrAlias, eventId: encodedEventId } = useParams();
   const [searchParams] = useSearchParams();
   const roomSearchParams = useMemo(() => getRoomSearchParams(searchParams), [searchParams]);
+  const isShowingAllRoomsInHome = roomSearchParams.homeView === 'all';
+  useHomeRooms(isShowingAllRoomsInHome);
+  const roomToParents = useAtomValue(roomToParentsAtom);
+  const roomToParentsReady = useAtomValue(roomToParentsReadyAtom);
+  const mDirects = useAtomValue(mDirectAtom);
   const roomIdOrAlias = encodedRoomIdOrAlias && decodeURIComponent(encodedRoomIdOrAlias);
   const eventId = encodedEventId && decodeURIComponent(encodedEventId);
   const viaServers = useSearchParamsViaServers();
-  const isShowingAllRoomsInHome = roomSearchParams.homeView === 'all';
   const roomId = useSelectedRoom();
   const room = mx.getRoom(roomId);
   const isJoinedRoom = room?.getMyMembership() === 'join';
