@@ -520,12 +520,18 @@ export function MessageOptionsBar({
                       </MenuItem>
                     )}
                     {!hideReadReceipts && (
-                      <MessageReadReceiptItem room={room} eventId={mEvent.getId() ?? ''} />
+                      <MessageReadReceiptItem
+                        room={room}
+                        eventId={mEvent.getId() ?? ''}
+                        closeMenu={closeMenu}
+                      />
                     )}
                     {isEdited && (
                       <MessageEditHistoryItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                     )}
-                    {showDeveloperTools && <MessageSourceCodeItem room={room} mEvent={mEvent} />}
+                    {showDeveloperTools && (
+                      <MessageSourceCodeItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                    )}
                     <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
                     <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
                     <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
@@ -541,7 +547,9 @@ export function MessageOptionsBar({
                         <Box
                           direction="Column"
                           gap="100"
-                          style={{ padding: `${config.space.S100} ${config.space.S200}` }}
+                          style={{
+                            padding: `${config.space.S100} ${config.space.S200}`,
+                          }}
                         >
                           <Text size="L400">Nickname</Text>
                           <input
@@ -618,10 +626,10 @@ export function MessageOptionsBar({
                       <Line size="300" />
                       <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
                         {!mEvent.isRedacted() && canDelete && (
-                          <MessageDeleteItem room={room} mEvent={mEvent} />
+                          <MessageDeleteItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                         )}
                         {mEvent.getSender() !== mx.getUserId() && (
-                          <MessageReportItem room={room} mEvent={mEvent} />
+                          <MessageReportItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                         )}
                       </Box>
                     </>
@@ -743,12 +751,18 @@ export function EventOptionsBar({
                       </Text>
                     </MenuItem>
                     {!hideReadReceipts && (
-                      <MessageReadReceiptItem room={room} eventId={mEvent.getId() ?? ''} />
+                      <MessageReadReceiptItem
+                        room={room}
+                        eventId={mEvent.getId() ?? ''}
+                        closeMenu={closeMenu}
+                      />
                     )}
                     {isEdited && (
                       <MessageEditHistoryItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                     )}
-                    {showDeveloperTools && <MessageSourceCodeItem room={room} mEvent={mEvent} />}
+                    {showDeveloperTools && (
+                      <MessageSourceCodeItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                    )}
                     <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
                     <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
                     <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
@@ -762,10 +776,10 @@ export function EventOptionsBar({
                       <Line size="300" />
                       <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
                         {!mEvent.isRedacted() && canDelete && (
-                          <MessageDeleteItem room={room} mEvent={mEvent} />
+                          <MessageDeleteItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                         )}
                         {mEvent.getSender() !== mx.getUserId() && (
-                          <MessageReportItem room={room} mEvent={mEvent} />
+                          <MessageReportItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                         )}
                       </Box>
                     </>

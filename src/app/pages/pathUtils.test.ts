@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  getLandingPath,
   getAppPathFromWindowHref,
+  getLastVisitedPath,
   getSettingsPath,
   getToRoomEventPath,
+  rememberLastVisitedPath,
   stripRoomEventSegment,
   withAdditionalSearchParams,
 } from './pathUtils';
+import { DefaultLandingScreen } from '$state/settings';
 
 describe('getSettingsPath', () => {
   it('returns the settings root path', () => {
@@ -61,6 +65,29 @@ describe('withAdditionalSearchParams', () => {
     expect(withAdditionalSearchParams('/room/abc?foo=bar', { joinCall: 'true' })).toBe(
       '/room/abc?foo=bar&joinCall=true'
     );
+  });
+});
+
+describe('last visited path', () => {
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it('remembers a searchable room route including query params', () => {
+    rememberLastVisitedPath('/home/room/%21room%3Aexample?homeView=all');
+
+    expect(getLastVisitedPath()).toBe('/home/room/%21room%3Aexample?homeView=all');
+    expect(getLandingPath(DefaultLandingScreen.LastVisited)).toBe(
+      '/home/room/%21room%3Aexample?homeView=all'
+    );
+  });
+
+  it('drops transient notification params while preserving restorable home state', () => {
+    rememberLastVisitedPath(
+      '/home/room/%21room%3Aexample?homeView=all&jumpMode=notification_live&joinCall=true&swClickId=notification-click-123'
+    );
+
+    expect(getLastVisitedPath()).toBe('/home/room/%21room%3Aexample?homeView=all');
   });
 });
 

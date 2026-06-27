@@ -365,7 +365,6 @@ function SmokeEmojiQaRoom() {
           <MessageBase
             data-testid="emoji-qa-text-row"
             space="0"
-            contentSpacing="0"
             style={{ backgroundColor: 'transparent' }}
           >
             <ModernLayout
@@ -393,7 +392,6 @@ function SmokeEmojiQaRoom() {
           <MessageBase
             data-testid="emoji-qa-jumbo-row"
             space="0"
-            contentSpacing="0"
             style={{ backgroundColor: 'transparent' }}
           >
             <ModernLayout

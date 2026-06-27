@@ -113,6 +113,21 @@ export const getResetPasswordPath = (server?: string): string => {
 export const getHomePath = (): string => HOME_PATH;
 
 const LAST_VISITED_PATH_KEY = 'sable_last_visited_path';
+const RESTORABLE_LAST_VISITED_SEARCH_PARAMS = new Set(['homeView']);
+
+const getRestorablePath = (path: string): string => {
+  const [pathname = '', search = ''] = path.split('?');
+  const params = new URLSearchParams(search);
+
+  Array.from(params.keys()).forEach((key) => {
+    if (!RESTORABLE_LAST_VISITED_SEARCH_PARAMS.has(key)) {
+      params.delete(key);
+    }
+  });
+
+  const nextSearch = params.toString();
+  return nextSearch ? `${pathname}?${nextSearch}` : pathname;
+};
 
 /**
  * Store the current path to localStorage so it can be restored on next app open.
@@ -131,7 +146,7 @@ export const rememberLastVisitedPath = (path: string): void => {
 
   if (isRememberablePath) {
     try {
-      localStorage.setItem(LAST_VISITED_PATH_KEY, path);
+      localStorage.setItem(LAST_VISITED_PATH_KEY, getRestorablePath(path));
     } catch {
       // Ignore storage errors
     }

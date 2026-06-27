@@ -12,7 +12,6 @@ const SpacingVar = createVar();
 const ContentSpacingVar = createVar();
 const withVarFallback = (cssVar: string, fallback: string): string =>
   `var(${cssVar.slice(4, -1)}, ${fallback})`;
-
 const SpacingVariant = styleVariants({
   '0': {
     vars: {
@@ -102,6 +101,15 @@ export const messageJumpHighlight = style({
   animationIterationCount: 'infinite',
 });
 
+const MobileVariant = styleVariants({
+  true: {
+    WebkitUserSelect: 'none',
+    msUserSelect: 'none',
+    userSelect: 'none',
+    MozUserSelect: 'none',
+  },
+});
+
 const HighlightVariant = styleVariants({
   true: [messageJumpHighlight],
 });
@@ -164,6 +172,7 @@ export const MessageBase = recipe({
     notifyHighlight: NotifyHighlightVariant,
     selected: SelectedVariant,
     isMarked: MarkedVariant,
+    mobile: MobileVariant,
   },
   defaultVariants: {
     space: '400',
@@ -281,12 +290,8 @@ export const MessageTextBody = recipe({
   base: {
     unicodeBidi: 'plaintext',
     alignSelf: 'start',
-    width: '100%',
-    minWidth: 0,
     wordBreak: 'break-word',
-    fontSize: '1rem !important',
-    lineHeight: config.lineHeight.T400,
-    letterSpacing: config.letterSpacing.T400,
+    fontSize: '1rem !important', // Override folds Text component to enable page zoom scaling
   },
   variants: {
     preWrap: {
@@ -297,57 +302,27 @@ export const MessageTextBody = recipe({
     jumboEmoji: {
       none: {
         fontSize: '1rem !important',
-        lineHeight: config.lineHeight.T400,
+        lineHeight: 'inherit',
       },
       extraSmall: {
         fontSize: '1.25rem !important',
         lineHeight: '1.4em',
-        paddingTop: '0.08em',
-        paddingBottom: '0.08em',
-        vars: {
-          '--sable-system-emoji-top-offset': '-0.2em',
-          '--sable-custom-emoji-top-offset': '-0.2em',
-        },
       },
       small: {
         fontSize: '1.5rem !important',
         lineHeight: '1.5em',
-        paddingTop: '0.08em',
-        paddingBottom: '0.08em',
-        vars: {
-          '--sable-system-emoji-top-offset': '-0.2em',
-          '--sable-custom-emoji-top-offset': '-0.2em',
-        },
       },
       normal: {
         fontSize: '1.805rem !important',
         lineHeight: '1.625em',
-        paddingTop: '0.08em',
-        paddingBottom: '0.08em',
-        vars: {
-          '--sable-system-emoji-top-offset': '-0.2em',
-          '--sable-custom-emoji-top-offset': '-0.2em',
-        },
       },
       large: {
         fontSize: '2.1rem !important',
         lineHeight: '1.675em',
-        paddingTop: '0.08em',
-        paddingBottom: '0.08em',
-        vars: {
-          '--sable-system-emoji-top-offset': '-0.2em',
-          '--sable-custom-emoji-top-offset': '-0.2em',
-        },
       },
       extraLarge: {
         fontSize: '2.4rem !important',
         lineHeight: '1.7em',
-        paddingTop: '0.08em',
-        paddingBottom: '0.08em',
-        vars: {
-          '--sable-system-emoji-top-offset': '-0.2em',
-          '--sable-custom-emoji-top-offset': '-0.2em',
-        },
       },
     },
     emote: {
@@ -356,17 +331,6 @@ export const MessageTextBody = recipe({
         fontStyle: 'italic',
       },
     },
-    notice: {
-      false: {
-        opacity: config.opacity.P400,
-      },
-      true: {
-        opacity: config.opacity.P300,
-      },
-    },
-  },
-  defaultVariants: {
-    notice: false,
   },
 });
 
