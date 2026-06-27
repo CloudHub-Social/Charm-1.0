@@ -1922,6 +1922,7 @@ export function useTimelineEventRenderer({
             highlight={highlighted}
             isMarked={marked}
             edit={editId === mEventId}
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}

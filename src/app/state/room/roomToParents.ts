@@ -155,7 +155,9 @@ export const useBindRoomToParentsAtom = (
     const cacheKey = getRoomToParentsCacheKey(userId);
     setRoomToParentsCacheKey(cacheKey);
     const cachedMap = readRoomToParentsCache(cacheKey);
-    setRoomToParents({ type: 'INITIALIZE', roomToParents: cachedMap });
+    if (cachedMap.size > 0) {
+      setRoomToParents({ type: 'INITIALIZE', roomToParents: cachedMap });
+    }
   }, [mx, setRoomToParents, setRoomToParentsCacheKey]);
 
   useSyncState(
