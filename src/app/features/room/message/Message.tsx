@@ -129,14 +129,21 @@ function useMobileLongPress(callback: () => void, delay = 500) {
     }
   }, []);
 
-  const onTouchStart = useCallback(() => {
-    if (!mobileOrTablet()) return;
-    firedRef.current = false;
-    timerRef.current = setTimeout(() => {
-      firedRef.current = true;
-      callback();
-    }, delay);
-  }, [callback, delay]);
+  const onTouchStart = useCallback(
+    (evt: React.TouchEvent) => {
+      if (!mobileOrTablet()) return;
+      evt.stopPropagation();
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+      }
+      firedRef.current = false;
+      timerRef.current = setTimeout(() => {
+        firedRef.current = true;
+        callback();
+      }, delay);
+    },
+    [callback, delay]
+  );
 
   const onTouchEnd = useCallback(() => {
     clear();
@@ -851,6 +858,7 @@ function MessageInternal(
           </div>
         ),
         canSendReaction: canSendReaction,
+        imagePackRooms,
       },
     });
   };

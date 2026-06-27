@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { Editor } from 'slate';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import type { Room } from '$types/matrix-sdk';
@@ -79,6 +80,12 @@ import {
 } from '$hooks/timeline/useProcessedTimeline';
 import { useTimelineEventRenderer } from '$hooks/timeline/useTimelineEventRenderer';
 import { isPhoneLayoutDevice } from '$utils/user-agent';
+import {
+  buildNotificationJumpCleanupTarget,
+  getNotificationJumpCleanupEventId,
+  shouldClearNotificationJumpRoute,
+  shouldClearNotificationJumpRouteURLOnly,
+} from './notificationJumpCleanup';
 import * as css from './RoomTimeline.css';
 
 const TimelineFloat = as<'div', css.TimelineFloatVariants>(
@@ -134,6 +141,8 @@ export function RoomTimeline({
   const mx = useMatrixClient();
   const alive = useAlive();
   const screenSize = useScreenSizeContext();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const { editId, handleEdit } = useMessageEdit(editor, {
     onReset: onEditorReset,
@@ -464,6 +473,85 @@ export function RoomTimeline({
       setIsReady(true);
     }
   }, [timelineSync.focusItem]);
+
+  useEffect(() => {
+    const cleanupEventId = getNotificationJumpCleanupEventId({
+      eventId,
+      jumpMode,
+      atBottom: atBottomState,
+      liveTimelineLinked: timelineSync.liveTimelineLinked,
+    });
+    if (!cleanupEventId) return undefined;
+
+    const timer = setTimeout(() => {
+      if (
+        !shouldClearNotificationJumpRoute({
+          eventId,
+          jumpMode,
+          atBottom: atBottomRef.current,
+          liveTimelineLinked: liveTimelineLinkedRef.current,
+        })
+      ) {
+        return;
+      }
+
+      timelineSync.setFocusItem(undefined);
+      navigate(
+        buildNotificationJumpCleanupTarget(location.pathname, location.search, cleanupEventId),
+        {
+          replace: true,
+        }
+      );
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [
+    atBottomState,
+    eventId,
+    jumpMode,
+    location.pathname,
+    location.search,
+    navigate,
+    timelineSync,
+    timelineSync.liveTimelineLinked,
+  ]);
+
+  useEffect(() => {
+    if (
+      !shouldClearNotificationJumpRouteURLOnly({
+        eventId,
+        jumpMode,
+        liveTimelineLinked: timelineSync.liveTimelineLinked,
+      })
+    ) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      if (
+        !shouldClearNotificationJumpRouteURLOnly({
+          eventId,
+          jumpMode,
+          liveTimelineLinked: liveTimelineLinkedRef.current,
+        })
+      ) {
+        return;
+      }
+
+      navigate(buildNotificationJumpCleanupTarget(location.pathname, location.search, eventId!), {
+        replace: true,
+      });
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [
+    eventId,
+    jumpMode,
+    location.pathname,
+    location.search,
+    navigate,
+    timelineSync.liveTimelineLinked,
+  ]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -1166,8 +1254,7 @@ export function RoomTimeline({
             before={chipIcon(ArrowDown)}
             onClick={() => {
               if (eventId) navigateRoom(room.roomId, undefined, { replace: true });
-              timelineSync.setTimeline(getInitialTimeline(room));
-              scrollToBottom();
+              timelineSync.jumpToLatest();
             }}
             style={{
               WebkitUserSelect: 'none',

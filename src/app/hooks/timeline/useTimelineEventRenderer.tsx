@@ -825,6 +825,15 @@ export function useTimelineEventRenderer({
                       )}
                     />
                   );
+                if (type === M_POLL_START.name || type === M_POLL_START.altName)
+                  return (
+                    <PollEvent
+                      mEvent={mEvent}
+                      room={room}
+                      canEnd={senderId === mx.getUserId() || canRedact}
+                      outlined={messageLayout === MessageLayout.Bubble}
+                    />
+                  );
                 if (type === (EventType.RoomMessage as string)) {
                   const editedEvent = getEditedEvent(mEventId, mEvent, timelineSet);
                   let editedNewContent: unknown;

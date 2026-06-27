@@ -746,8 +746,11 @@ export function MobileOptionsInternal({ options }: { options: OptionMenuProps })
 
   useEffect(() => {
     if (modal?.type === ModalType.MobileOptions) setIsActive(true);
-    if (!isActive) setModal(null);
-  }, [modal, setIsActive, isActive, setModal]);
+  }, [modal]);
+
+  useEffect(() => {
+    if (!isActive && modal?.type === ModalType.MobileOptions) setModal(null);
+  }, [isActive, modal, setModal]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartY.current = e.touches[0]?.clientY ?? null;
@@ -831,6 +834,7 @@ export function MobileOptionsInternal({ options }: { options: OptionMenuProps })
             canPinEvent={options.canPinEvent}
             cleanedDisplayName={options.cleanedDisplayName}
             canDelete={options.canDelete}
+            imagePackRooms={options.imagePackRooms}
             setIsEmoji={options.setIsEmoji}
             ActualMessage={options.ActualMessage}
             canSendReaction={options.canSendReaction}
