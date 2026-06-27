@@ -525,7 +525,9 @@ export function MessageOptionsBar({
                     {isEdited && (
                       <MessageEditHistoryItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                     )}
-                    {showDeveloperTools && <MessageSourceCodeItem room={room} mEvent={mEvent} closeMenu={closeMenu} />}
+                    {showDeveloperTools && (
+                      <MessageSourceCodeItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                    )}
                     <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
                     <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
                     <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
@@ -748,7 +750,9 @@ export function EventOptionsBar({
                     {isEdited && (
                       <MessageEditHistoryItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                     )}
-                    {showDeveloperTools && <MessageSourceCodeItem room={room} mEvent={mEvent} closeMenu={closeMenu} />}
+                    {showDeveloperTools && (
+                      <MessageSourceCodeItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                    )}
                     <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
                     <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
                     <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
