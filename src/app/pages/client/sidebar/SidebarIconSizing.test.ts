@@ -12,9 +12,9 @@ describe('sidebar icon sizing contract', () => {
     const bookmarksTab = readWorkspaceFile('src/app/pages/client/sidebar/BookmarksTab.tsx');
     const searchTab = readWorkspaceFile('src/app/pages/client/sidebar/SearchTab.tsx');
 
-    expect(searchTab).toContain("size={'400'}");
+    expect(searchTab).toMatch(/size=\{?['"]400['"]\}?/);
     expect(searchTab).toContain("getPhosphorIconSize(isBottom ? 'inline' : 'toolbar')");
-    expect(bookmarksTab).toContain('size="400"');
+    expect(bookmarksTab).toMatch(/size=\{?['"]400['"]\}?/);
     expect(bookmarksTab).toContain("getPhosphorIconSize('toolbar')");
   });
 });
