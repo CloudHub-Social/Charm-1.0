@@ -40,7 +40,9 @@ export const BannerContainer = style({
   flexDirection: 'column',
   gap: config.space.S200,
   padding: config.space.S400,
-  paddingTop: `calc(${config.space.S400} + var(--sable-inset-top, env(safe-area-inset-top, 0px)))`,
+  // top: env(safe-area-inset-top) already positions the container below the notch;
+  // do not add env() here a second time or the content shifts down by two insets.
+  paddingTop: config.space.S400,
   pointerEvents: 'none',
   alignItems: 'flex-end',
 

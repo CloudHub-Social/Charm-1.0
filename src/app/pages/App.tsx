@@ -97,16 +97,21 @@ function useSafeAreaSentryContext() {
     // Measure env(safe-area-inset-*) at startup and attach to every Sentry event
     // so future safe-area colour reports (e.g. CHARM-6Z / #396) include the real
     // inset values and are easier to reproduce and triage.
-    const probe = document.createElement('div');
-    probe.style.cssText =
-      'position:fixed;pointer-events:none;opacity:0;' +
-      'top:env(safe-area-inset-top,0px);' +
-      'bottom:env(safe-area-inset-bottom,0px);' +
-      'left:env(safe-area-inset-left,0px);' +
-      'right:env(safe-area-inset-right,0px);';
-    document.body.appendChild(probe);
-    const { top, bottom, left, right } = getComputedStyle(probe);
-    document.body.removeChild(probe);
+    // Use one element per axis: setting conflicting positional properties
+    // (e.g. top + bottom) on a single element can cause the secondary to
+    // resolve to "auto" in some browsers, producing incorrect diagnostics.
+    const measure = (prop: string, envVar: string): string => {
+      const el = document.createElement('div');
+      el.style.cssText = `position:fixed;pointer-events:none;opacity:0;${prop}:${envVar};`;
+      document.body.appendChild(el);
+      const value = getComputedStyle(el).getPropertyValue(prop);
+      document.body.removeChild(el);
+      return value;
+    };
+    const top = measure('top', 'env(safe-area-inset-top,0px)');
+    const bottom = measure('bottom', 'env(safe-area-inset-bottom,0px)');
+    const left = measure('left', 'env(safe-area-inset-left,0px)');
+    const right = measure('right', 'env(safe-area-inset-right,0px)');
 
     Sentry.setContext('safe_area_insets', { top, bottom, left, right });
     Sentry.setTag('safe_area_top', top);
