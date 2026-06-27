@@ -50,7 +50,10 @@ describe('android edge-to-edge inset contract', () => {
     const systemBarShell = readWorkspaceFile('src/app/components/app-shell/SystemBarShell.tsx');
     const mobileCapability = readWorkspaceFile('src-tauri/capabilities/mobile.json');
 
-    expect(indexHtml).not.toContain('viewport-fit=cover');
+    // viewport-fit=cover is required for env(safe-area-inset-*) to return
+    // non-zero values in iOS Safari and PWAs (fixes #396). Safe-area ownership
+    // on Android/Tauri is still handled by AppShell + the edge-to-edge plugin.
+    expect(indexHtml).toContain('viewport-fit=cover');
     expect(indexHtml).not.toContain('interactive-widget=');
     expect(appShell).toContain('const contentHeight = useCustomWindowsTitleBar');
     expect(appShell).toContain("height: '100%'");

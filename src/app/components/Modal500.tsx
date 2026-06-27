@@ -41,6 +41,7 @@ export function Modal500({ requestClose, children, fullScreenOnMobile = false }:
                 maxWidth: '100vw',
                 maxHeight: '100vh',
                 borderRadius: 0,
+                paddingTop: 'var(--sable-safe-area-top, 0px)',
                 paddingBottom: 'var(--sable-safe-area-bottom, 0px)',
                 overflow: 'hidden',
                 backgroundColor: color.Background.Container,

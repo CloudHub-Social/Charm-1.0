@@ -95,7 +95,7 @@ function ClientRootOptions({ mx, onLogout }: ClientRootOptionsProps) {
   const isWindowsTauri = isTauri() && osType() === 'windows';
   const topOffset = isWindowsTauri
     ? `calc(var(--tauri-titlebar-height) + ${config.space.S100})`
-    : config.space.S100;
+    : `calc(var(--sable-safe-area-top, 0px) + ${config.space.S100})`;
 
   const handleToggle: MouseEventHandler<HTMLButtonElement> = (evt) => {
     const cords = evt.currentTarget.getBoundingClientRect();

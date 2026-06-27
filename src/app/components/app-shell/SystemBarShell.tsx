@@ -53,7 +53,10 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
       <div
         style={
           {
-            '--sable-safe-area-top': enabled ? safeAreaTop : '0px',
+            // Always expose the top inset so notched Macs (desktop Safari) and iOS
+            // PWAs benefit from viewport-fit=cover. env() resolves to 0px on
+            // non-notched devices so there is no visual side-effect on desktops.
+            '--sable-safe-area-top': safeAreaTop,
             '--sable-safe-area-bottom': enabled && !needsBottomSystemBar ? safeAreaBottom : '0px',
             '--sable-safe-area-left': enabled ? safeAreaLeft : '0px',
             '--sable-safe-area-right': enabled ? safeAreaRight : '0px',
@@ -63,6 +66,10 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
             width: '100%',
             minHeight: 0,
             flex: 1,
+            // Push all content below the status bar on any device with a top notch.
+            // The PageNavHeader/PageHeader ::before pseudo-elements then fill the gap
+            // above with the header's own background colour.
+            paddingTop: safeAreaTop,
             paddingLeft: enabled ? safeAreaLeft : 0,
             paddingRight: enabled ? safeAreaRight : 0,
           } as CSSProperties

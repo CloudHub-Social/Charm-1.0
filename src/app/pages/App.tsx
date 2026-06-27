@@ -92,9 +92,36 @@ function AppClientConfigLoader({ screenSize }: { screenSize: ReturnType<typeof u
   );
 }
 
+function useSafeAreaSentryContext() {
+  useEffect(() => {
+    // Measure env(safe-area-inset-*) at startup and attach to every Sentry event
+    // so future safe-area colour reports (e.g. CHARM-6Z / #396) include the real
+    // inset values and are easier to reproduce and triage.
+    // Use one element per axis: setting conflicting positional properties
+    // (e.g. top + bottom) on a single element can cause the secondary to
+    // resolve to "auto" in some browsers, producing incorrect diagnostics.
+    const measure = (prop: string, envVar: string): string => {
+      const el = document.createElement('div');
+      el.style.cssText = `position:fixed;pointer-events:none;opacity:0;${prop}:${envVar};`;
+      document.body.appendChild(el);
+      const value = getComputedStyle(el).getPropertyValue(prop);
+      document.body.removeChild(el);
+      return value;
+    };
+    const top = measure('top', 'env(safe-area-inset-top,0px)');
+    const bottom = measure('bottom', 'env(safe-area-inset-bottom,0px)');
+    const left = measure('left', 'env(safe-area-inset-left,0px)');
+    const right = measure('right', 'env(safe-area-inset-right,0px)');
+
+    Sentry.setContext('safe_area_insets', { top, bottom, left, right });
+    Sentry.setTag('safe_area_top', top);
+  }, []);
+}
+
 function App() {
   const screenSize = useScreenSize();
   useCompositionEndTracking();
+  useSafeAreaSentryContext();
 
   return (
     <Sentry.ErrorBoundary fallback={renderAppErrorFallback}>
