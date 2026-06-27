@@ -67,7 +67,6 @@ import {
   getRoomUnreadInfo,
   getEventTimeline,
   getFirstLinkedTimeline,
-  getInitialTimeline,
   getEventIdAbsoluteIndex,
 } from '$utils/timeline';
 import { useTimelineSync } from '$hooks/timeline/useTimelineSync';
