@@ -569,10 +569,10 @@ export function MobileMessageMenu({
                   </MenuItem>
                 )}
                 {!mEvent.isRedacted() && canDelete && (
-                  <MessageDeleteItem room={room} mEvent={mEvent} />
+                  <MessageDeleteItem room={room} mEvent={mEvent} closeMenu={onClose} />
                 )}
                 {mEvent.getSender() !== mx.getUserId() && (
-                  <MessageReportItem room={room} mEvent={mEvent} />
+                  <MessageReportItem room={room} mEvent={mEvent} closeMenu={onClose} />
                 )}
               </div>
             ) : null}
