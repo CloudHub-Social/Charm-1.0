@@ -74,6 +74,12 @@ export function Login() {
     ? withSearchParam(getRegisterPath(server), { addAccount: '1' })
     : getRegisterPath(server);
 
+  const isAddingAccount = searchParams.get('addAccount') === '1';
+
+  const registerUrl = isAddingAccount
+    ? withSearchParam(getRegisterPath(server), { addAccount: '1' })
+    : getRegisterPath(server);
+
   return (
     <Box direction="Column" gap="500">
       <Text size="H2" priority="400">
