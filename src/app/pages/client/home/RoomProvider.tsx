@@ -55,7 +55,7 @@ export function HomeRouteRoomProvider({ children }: { children: ReactNode }) {
     isRoom(room) &&
     (isShowingAllRoomsInHome || (!mDirects.has(room.roomId) && !isLiveDirectRoom)) &&
     (isShowingAllRoomsInHome || cachedParentSpaceIds.size === 0) &&
-    (roomToParentsReady || liveParentSpaceIds.size === 0);
+    (isShowingAllRoomsInHome || roomToParentsReady || liveParentSpaceIds.size === 0);
 
   if (isHomeClassificationPending) {
     return null;
@@ -73,7 +73,9 @@ export function HomeRouteRoomProvider({ children }: { children: ReactNode }) {
 
   return (
     <RoomProvider key={room.roomId} value={room}>
-      <IsDirectRoomProvider value={false}>{children}</IsDirectRoomProvider>
+      <IsDirectRoomProvider value={mDirects.has(room.roomId) || !!isLiveDirectRoom}>
+        {children}
+      </IsDirectRoomProvider>
     </RoomProvider>
   );
 }

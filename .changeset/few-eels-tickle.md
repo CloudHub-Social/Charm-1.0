@@ -1,3 +1,5 @@
-"charm": fix: honor Show All Rooms when opening joined rooms from Home
+---
+'charm': patch
+---
 
 Preserve Home-route room navigation for joined DMs and parented rooms when the Home sidebar is temporarily showing all rooms.

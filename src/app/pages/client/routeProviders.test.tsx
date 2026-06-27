@@ -278,7 +278,43 @@ describe('room route providers', () => {
     );
 
     expect(screen.getByTestId('room-provider')).toHaveAttribute('data-room-id', '!dm:server');
+    expect(screen.getByTestId('direct-room-provider')).toHaveAttribute('data-direct', 'true');
     expect(screen.getByText('Joined DM')).toBeInTheDocument();
+    expect(screen.queryByTestId('join-fallback')).not.toBeInTheDocument();
+  });
+
+  it('allows Show All Home routes before room-to-parent readiness finishes', () => {
+    mockUseHomeRooms.mockReturnValue([]);
+    mockUseSelectedRoom.mockReturnValue('!room:server');
+    mockUseMatrixClient.mockReturnValue({
+      getRoom: () => ({
+        roomId: '!room:server',
+        getMyMembership: () => 'join',
+      }),
+    });
+    mockUseAtomValue.mockImplementation((atom: unknown) => {
+      if (atom === roomToParentsAtom) return new Map<string, Set<string>>();
+      if (atom === roomToParentsReadyAtom) return false;
+      if (atom === allRoomsAtom) return [];
+      if (atom === mDirectAtom) return new Set<string>();
+      throw new Error(`Unexpected atom: ${String(atom)}`);
+    });
+    mockGetStateEvents.mockReturnValue([
+      {
+        getStateKey: () => '!space:server',
+      },
+    ]);
+
+    renderWithRoute(
+      '/home/room/%21room%3Aserver?homeView=all',
+      '/home/room/:roomIdOrAlias',
+      <HomeRouteRoomProvider>
+        <div>Joined room</div>
+      </HomeRouteRoomProvider>
+    );
+
+    expect(screen.getByTestId('room-provider')).toHaveAttribute('data-room-id', '!room:server');
+    expect(screen.getByText('Joined room')).toBeInTheDocument();
     expect(screen.queryByTestId('join-fallback')).not.toBeInTheDocument();
   });
 

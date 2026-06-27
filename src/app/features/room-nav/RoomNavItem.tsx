@@ -72,7 +72,6 @@ import { InviteUserPrompt } from '$components/invite-user-prompt';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { useRoomName, useRoomTopic } from '$hooks/useRoomMeta';
 import { nicknamesAtom } from '$state/nicknames';
-import { useRoomNavigate } from '$hooks/useRoomNavigate';
 
 // Call Hooks & Plugins
 import { useCallMembers, useCallSession } from '$hooks/useCall';
@@ -347,7 +346,6 @@ export function RoomNavItem({
       ? lastMessage
       : undefined;
 
-  const { navigateRoom } = useRoomNavigate();
   const navigate = useNavigate();
   const screenSize = useScreenSizeContext();
   const isMobile = screenSize === ScreenSize.Mobile;
@@ -396,12 +394,12 @@ export function RoomNavItem({
             new CallControlState(callPref.microphone, callPref.video, callPref.sound)
           );
         } else {
-          navigateRoom(room.roomId);
+          navigate(linkPath);
         }
       } else {
         evt.stopPropagation();
         if (isChatOpen) setChatOpen(false);
-        navigateRoom(room.roomId);
+        navigate(linkPath);
       }
     } else {
       navigate(linkPath);
