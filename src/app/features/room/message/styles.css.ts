@@ -12,10 +12,10 @@ export const MessageBaseBubbleCollapsed = style({
 export const MessageOptionsBase = style([
   DefaultReset,
   {
-    position: 'fixed',
+    position: 'absolute',
     top: toRem(-30),
     right: 0,
-    zIndex: 1000,
+    zIndex: 1,
   },
 ]);
 export const MessageOptionsBar = style([
