@@ -101,10 +101,13 @@ describe('android edge-to-edge inset contract', () => {
     const telemetryBannerStyles = readWorkspaceFile(
       'src/app/components/telemetry-consent/TelemetryConsentBanner.css.ts'
     );
+    const modal500 = readWorkspaceFile('src/app/components/Modal500.tsx');
 
     expect(notificationBannerStyles).toContain("position: 'fixed'");
     expect(notificationBannerStyles).toContain("top: 'env(safe-area-inset-top, 0)'");
     expect(telemetryBannerStyles).toContain("position: 'fixed'");
     expect(telemetryBannerStyles).toContain("bottom: 'env(safe-area-inset-bottom, 0)'");
+    expect(modal500).not.toContain("paddingTop: 'var(--sable-safe-area-top, 0px)'");
+    expect(modal500).not.toContain("paddingBottom: 'var(--sable-safe-area-bottom, 0px)'");
   });
 });
