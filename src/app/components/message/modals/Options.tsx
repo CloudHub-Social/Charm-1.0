@@ -26,6 +26,7 @@ import {
 import { MessageEditHistoryItem } from './MessageEditHistory';
 import { MessageSourceCodeItem } from './MessageSource';
 import { MessageForwardItem } from './MessageForward';
+import { MessageCopyTextItem } from '$features/room/message/MessageOptionsMenu';
 
 import * as css from '$features/room/message/styles.css';
 import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
@@ -498,6 +499,9 @@ export function OptionMenu({
           onDeactivate: closeMenu,
           onPostDeactivate: handlePostDeactivate,
           allowOutsideClick: (e) => {
+            // When the emoji board is open it renders outside this trap; let
+            // clicks through so the board can receive them.
+            if (emojiBoardAnchor !== undefined) return true;
             e.preventDefault();
             closeMenu();
             return false;
@@ -633,6 +637,7 @@ export function OptionMenu({
               {showDeveloperTools && (
                 <MessageSourceCodeItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
               )}
+              <MessageCopyTextItem mEvent={mEvent} onClose={onTotalClose} />
               <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={onTotalClose} />
               {canForwardEvent(mEvent) && (
                 <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />

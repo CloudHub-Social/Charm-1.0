@@ -1157,6 +1157,7 @@ export function useTimelineEventRenderer({
                 htmlReactParserOptions={htmlReactParserOptions}
                 linkifyOpts={linkifyOpts}
                 outlineAttachment={messageLayout === MessageLayout.Bubble}
+                showMaps={showMaps}
                 mEvent={mEvent}
                 mx={mx}
                 room={room}
@@ -1200,6 +1201,7 @@ export function useTimelineEventRenderer({
             highlight={highlighted}
             isMarked={marked}
             edit={editId === mEventId}
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}
@@ -1873,7 +1875,9 @@ export function useTimelineEventRenderer({
         const senderId = mEvent.getSender() ?? '';
         const senderName =
           getMemberDisplayName(room, senderId, nicknames) || getMxIdLocalPart(senderId);
-        const targetId = getRedactionTargetId(mEvent);
+        const targetId = isReactionRedaction
+          ? (getReactionAnnotationTargetId(target) ?? getRedactionTargetId(mEvent))
+          : getRedactionTargetId(mEvent);
 
         const timeJSX = (
           <Time

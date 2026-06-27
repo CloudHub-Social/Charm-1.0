@@ -113,12 +113,12 @@ export const MessageBase = recipe({
     DefaultReset,
     {
       marginTop: SpacingVar,
-      padding: `${config.space.S100} ${config.space.S200} ${config.space.S100} ${config.space.S400}`,
+      padding: `${SpacingVar} ${config.space.S200} ${SpacingVar} ${config.space.S400}`,
       borderRadius: `0 ${config.radii.R400} ${config.radii.R400} 0`,
       minHeight: toRem(16),
       contain: 'layout',
       flexGrow: '1',
-      width: '100',
+      width: '100%',
     },
   ],
   variants: {
