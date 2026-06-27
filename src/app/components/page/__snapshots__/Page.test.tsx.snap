@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`PageHeader > matches snapshot (guards position:relative and ::before safe-area extension) 1`] = `
+<header
+  class="hru6be0 _1mqalmd1 _1mqalmd0 hru6be2 hru6bec style_PageHeader__f8tvaj7 style_PageHeader_outlined_true__f8tvaj9"
+>
+  Devices
+</header>
+`;
+
+exports[`PageNavHeader > matches snapshot (guards position:relative and ::before safe-area extension) 1`] = `
+<header
+  class="hru6be0 _1mqalmd1 _1mqalmd0 hru6be1 hru6bea style_PageNavHeader__f8tvaj4 style_PageNavHeader_outlined_true__f8tvaj5"
+>
+  Settings
+</header>
+`;
