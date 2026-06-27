@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`PageHeader > renders with position:relative class for safe-area ::before support 1`] = `
+<header
+  class="hru6be0 _1mqalmd1 _1mqalmd0 hru6be2 hru6bec style_PageHeader__1co06gj7 style_PageHeader_outlined_true__1co06gj9"
+>
+  Devices
+</header>
+`;
+
+exports[`PageNavHeader > renders with position:relative class for safe-area ::before support 1`] = `
+<header
+  class="hru6be0 _1mqalmd1 _1mqalmd0 hru6be1 hru6bea style_PageNavHeader__1co06gj4 style_PageNavHeader_outlined_true__1co06gj5"
+>
+  Settings
+</header>
+`;

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useRef } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef } from 'react';
 import { Provider as JotaiProvider } from 'jotai';
 import { createStore } from 'jotai/vanilla';
 import { OverlayContainerProvider, PopOutContainerProvider, TooltipContainerProvider } from 'folds';
@@ -78,9 +78,31 @@ function AppConfigLoaded({ clientConfig, screenSize }: BootstrappedAppShellProps
   return <BootstrappedAppShell clientConfig={clientConfig} screenSize={screenSize} />;
 }
 
+function useSafeAreaSentryContext() {
+  useEffect(() => {
+    // Measure env(safe-area-inset-*) values via a temporary DOM element so we
+    // can include them as Sentry context on every event — helps triage future
+    // safe-area colour issues (see CHARM-6Z / GitHub #396).
+    const probe = document.createElement('div');
+    probe.style.cssText =
+      'position:fixed;pointer-events:none;opacity:0;' +
+      'top:env(safe-area-inset-top,0px);' +
+      'bottom:env(safe-area-inset-bottom,0px);' +
+      'left:env(safe-area-inset-left,0px);' +
+      'right:env(safe-area-inset-right,0px);';
+    document.body.appendChild(probe);
+    const { top, bottom, left, right } = getComputedStyle(probe);
+    document.body.removeChild(probe);
+
+    Sentry.setContext('safe_area_insets', { top, bottom, left, right });
+    Sentry.setTag('safe_area_top', top);
+  }, []);
+}
+
 function App() {
   const screenSize = useScreenSize();
   useCompositionEndTracking();
+  useSafeAreaSentryContext();
   const portalContainer = document.getElementById('portalContainer') ?? undefined;
 
   const renderAppConfig = useCallback(
