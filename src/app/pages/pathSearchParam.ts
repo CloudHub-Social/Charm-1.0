@@ -3,6 +3,7 @@ import type { RoomSearchParams, DirectCreateSearchParams } from './paths';
 type SearchParamsGetter<T> = (searchParams: URLSearchParams) => T;
 
 export const getRoomSearchParams: SearchParamsGetter<RoomSearchParams> = (searchParams) => ({
+  homeView: searchParams.get('homeView') ?? undefined,
   viaServers: searchParams.get('viaServers') ?? undefined,
 });
 
