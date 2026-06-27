@@ -78,13 +78,11 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
     viewport?.addEventListener('resize', clearStaleKeyboardViewportVars);
     viewport?.addEventListener('scroll', clearStaleKeyboardViewportVars);
     window.addEventListener('pageshow', clearStaleKeyboardViewportVars);
-    window.addEventListener('focusin', clearStaleKeyboardViewportVars);
 
     return () => {
       viewport?.removeEventListener('resize', clearStaleKeyboardViewportVars);
       viewport?.removeEventListener('scroll', clearStaleKeyboardViewportVars);
       window.removeEventListener('pageshow', clearStaleKeyboardViewportVars);
-      window.removeEventListener('focusin', clearStaleKeyboardViewportVars);
     };
   }, []);
 

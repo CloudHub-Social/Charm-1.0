@@ -13,7 +13,7 @@ describe('auth layout safe-area contract', () => {
     const authStyles = readWorkspaceFile('src/app/pages/auth/styles.css.ts');
 
     expect(authLayout).toContain('justifyContent="Center"');
-    expect(authStyles).toContain('var(--sable-safe-area-top, 0px)');
+    expect(authStyles).toContain('paddingTop: config.space.S400');
     expect(authStyles).toContain('var(--sable-safe-area-bottom, 0px)');
   });
 });

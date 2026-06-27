@@ -5,7 +5,7 @@ export const AuthLayout = style({
   minHeight: '100%',
   backgroundColor: color.Background.Container,
   color: color.Background.OnContainer,
-  paddingTop: `calc(${config.space.S400} + var(--sable-safe-area-top, 0px))`,
+  paddingTop: config.space.S400,
   paddingRight: config.space.S200,
   paddingBottom: `calc(${config.space.S200} + var(--sable-safe-area-bottom, 0px))`,
   paddingLeft: config.space.S400,
