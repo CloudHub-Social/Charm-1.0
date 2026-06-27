@@ -437,7 +437,7 @@ export function OptionMenu({
   const store = useStore();
   const mx = useMatrixClient();
   const isThreadedMessage = isThreadRelationEvent(mEvent, mEvent.threadRootId);
-  const isStickerMessage = mEvent.getType() === 'm.stidoecker';
+  const isStickerMessage = mEvent.getType() === 'm.sticker';
   const evtId = mEvent.getId()!;
   const evtTimeline = room.getTimelineForEvent(evtId);
   const edits =
@@ -733,7 +733,6 @@ export function MobileOptionsInternal({ options }: { options: OptionMenuProps })
   const [modal, setModal] = useAtom(modalAtom);
   const touchStartY = useRef<number | null>(null);
   const [touchYDiff, setTouchYDiff] = useState(0);
-  const date = new Date();
   const startTime = useRef(0);
 
   useEffect(() => {
@@ -743,7 +742,7 @@ export function MobileOptionsInternal({ options }: { options: OptionMenuProps })
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartY.current = e.touches[0]?.clientY ?? null;
-    startTime.current = date.getTime();
+    startTime.current = Date.now();
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -758,7 +757,7 @@ export function MobileOptionsInternal({ options }: { options: OptionMenuProps })
   };
 
   const handleTouchEnd = () => {
-    const endTime = date.getTime();
+    const endTime = Date.now();
     if (touchYDiff > 100 || (endTime - startTime.current < 600 && touchYDiff > 20)) {
       options.closeMenu();
       setIsActive(false);
