@@ -880,10 +880,12 @@ function MessageInternal(
       // If our long-press handler already fired (iOS), suppress the native contextmenu
       if (longPressFiredRef.current) {
         evt.preventDefault();
+        evt.stopPropagation();
         longPressFiredRef.current = false;
         return;
       }
       evt.preventDefault();
+      evt.stopPropagation();
       openMobileOptions();
       return;
     }
