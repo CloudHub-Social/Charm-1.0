@@ -9,7 +9,7 @@ import {
   EventType,
   KnownMembership,
 } from '$types/matrix-sdk';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useLayoutEffect } from 'react';
 import type { RoomToParents } from '$types/matrix/room';
 
 import {
@@ -62,20 +62,24 @@ const serializeRoomToParents = (value: RoomToParents): [string, string[]][] =>
   ]);
 
 const readRoomToParentsCache = (cacheKey: string): RoomToParents => {
-  const scopedCache = deserializeRoomToParents(cacheKey);
-  if (scopedCache.size > 0) return scopedCache;
-
-  const legacyCache = deserializeRoomToParents(ROOM_TO_PARENTS_CACHE_KEY);
-  if (legacyCache.size > 0) {
-    setLocalStorageItem(cacheKey, serializeRoomToParents(legacyCache));
+  if (localStorage.getItem(cacheKey) !== null) {
+    return deserializeRoomToParents(cacheKey);
   }
-  return legacyCache;
+
+  if (localStorage.getItem(ROOM_TO_PARENTS_CACHE_KEY) !== null) {
+    localStorage.removeItem(ROOM_TO_PARENTS_CACHE_KEY);
+  }
+
+  return new Map();
 };
 
 export const roomToParentsCacheKeyAtom = atom<string | undefined>(undefined);
 
 const persistRoomToParentsCache = (cacheKey: string | undefined, value: RoomToParents) => {
   if (!cacheKey) return;
+  if (localStorage.getItem(ROOM_TO_PARENTS_CACHE_KEY) !== null) {
+    localStorage.removeItem(ROOM_TO_PARENTS_CACHE_KEY);
+  }
   setLocalStorageItem(cacheKey, serializeRoomToParents(value));
 };
 
@@ -144,7 +148,7 @@ export const useBindRoomToParentsAtom = (
   );
 
   // Strategy 2: Initialize from cache immediately on mount
-  useEffect(() => {
+  useLayoutEffect(() => {
     const userId = mx.getUserId();
     if (!userId) return;
 

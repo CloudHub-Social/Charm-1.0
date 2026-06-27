@@ -36,4 +36,23 @@ describe('roomToParents cache scoping', () => {
     );
     expect(localStorage.getItem('roomToParents')).toBeNull();
   });
+
+  it('does not migrate legacy shared caches into a different user scope', () => {
+    const store = createStore();
+    const bobCacheKey = getRoomToParentsCacheKey('@bob:example.com');
+
+    localStorage.setItem(
+      'roomToParents',
+      JSON.stringify([['!room:example.com', ['!space:example.com']]])
+    );
+
+    store.set(roomToParentsCacheKeyAtom, bobCacheKey);
+    store.set(roomToParentsAtom, {
+      type: 'INITIALIZE',
+      roomToParents: new Map(),
+    });
+
+    expect(localStorage.getItem(bobCacheKey)).toBe(JSON.stringify([]));
+    expect(localStorage.getItem('roomToParents')).toBeNull();
+  });
 });
