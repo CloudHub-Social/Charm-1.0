@@ -60,7 +60,6 @@ import { modalAtom, ModalType } from '$state/modal';
 import { OptionQuickMenu } from '$components/message/modals/Options';
 
 export type ReactionHandler = (keyOrMxc: string, shortcode: string) => void;
-
 export const MemoizedBody = memo(({ children }: { children: ReactNode }) => children);
 
 export type ForwardedMessageProps = {
