@@ -4,8 +4,8 @@ import { render } from '@testing-library/react';
 import { BugReportModalRenderer } from './BugReportModal';
 
 vi.mock('$state/hooks/bugReportModal', () => ({
-  useBugReportModalOpen: vi.fn(() => false),
-  useCloseBugReportModal: vi.fn(() => () => {}),
+  useBugReportModalOpen: vi.fn<() => boolean>(() => false),
+  useCloseBugReportModal: vi.fn<() => () => void>(() => () => {}),
 }));
 
 describe('BugReportModalRenderer', () => {
