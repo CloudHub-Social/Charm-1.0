@@ -153,7 +153,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
     clear();
   }, [clear]);
 
-  return { onTouchStart, onTouchEnd, onTouchMove, firedRef };
+  return { onTouchStart, onTouchEnd, onTouchMove, onTouchCancel: clear, firedRef };
 }
 
 const clamp = (str: string, len: number) => (str.length > len ? `${str.slice(0, len)}...` : str);
