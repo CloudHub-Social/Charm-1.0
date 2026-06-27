@@ -1,5 +1,5 @@
 // oxlint-disable no-console
-import type { RectCords } from 'folds';
+import type { RectCords } from "folds";
 import {
   Avatar,
   Box,
@@ -11,14 +11,19 @@ import {
   as,
   config,
   toRem,
-} from 'folds';
-import type { KeyboardEventHandler, MouseEventHandler, MouseEvent, ReactNode } from 'react';
-import { memo, useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import { useHover, useFocusWithin } from 'react-aria';
-import type { MatrixEvent, Room, Relations } from '$types/matrix-sdk';
-import { EventStatus, MatrixEventEvent, RoomEvent } from '$types/matrix-sdk';
-import classNames from 'classnames';
-import { useSetAtom } from 'jotai';
+} from "folds";
+import type {
+  KeyboardEventHandler,
+  MouseEventHandler,
+  MouseEvent,
+  ReactNode,
+} from "react";
+import { memo, useCallback, useRef, useState, useEffect, useMemo } from "react";
+import { useHover, useFocusWithin } from "react-aria";
+import type { MatrixEvent, Room, Relations } from "$types/matrix-sdk";
+import { EventStatus, MatrixEventEvent, RoomEvent } from "$types/matrix-sdk";
+import classNames from "classnames";
+import { useSetAtom } from "jotai";
 import {
   AvatarBase,
   BubbleLayout,
@@ -29,38 +34,40 @@ import {
   Time,
   Username,
   UsernameBold,
-} from '$components/message';
-import { getEditedEvent, getMemberAvatarMxc } from '$utils/room';
-import { mxcUrlToHttp } from '$utils/matrix';
-import type { MessageSpacing } from '$state/settings';
-import { getSettings, MessageLayout, settingsAtom } from '$state/settings';
-import { useMatrixClient } from '$hooks/useMatrixClient';
-import { UserAvatar } from '$components/user-avatar';
-import { getMatrixToRoomEvent } from '$plugins/matrix-to';
-import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
-import type { MemberPowerTag } from '$types/matrix/room';
+} from "$components/message";
+import { getEditedEvent, getMemberAvatarMxc } from "$utils/room";
+import { mxcUrlToHttp } from "$utils/matrix";
+import type { MessageSpacing } from "$state/settings";
+import { getSettings, MessageLayout, settingsAtom } from "$state/settings";
+import { useMatrixClient } from "$hooks/useMatrixClient";
+import { UserAvatar } from "$components/user-avatar";
+import { getMatrixToRoomEvent } from "$plugins/matrix-to";
+import { useMediaAuthentication } from "$hooks/useMediaAuthentication";
+import type { MemberPowerTag } from "$types/matrix/room";
 
-import { PowerIcon } from '$components/power';
-import { Info, menuIcon, userFallbackIcon } from '$components/icons/phosphor';
-import { getPowerTagIconSrc } from '$hooks/useMemberPowerTag';
-import { useSableCosmetics } from '$hooks/useSableCosmetics';
-import { SwipeableMessageWrapper } from '$components/SwipeableMessageWrapper';
-import { mobileOrTablet } from '$utils/user-agent';
-import { useUserProfile } from '$hooks/useUserProfile';
-import { useSetting } from '$state/hooks/settings';
-import { useBlobCache } from '$hooks/useBlobCache';
-import { filterPronounsByLanguage, getParsedPronouns } from '$utils/pronouns';
-import type { PronounSet } from '$utils/pronouns';
-import { useMentionClickHandler } from '$hooks/useMentionClickHandler';
-import type { PerMessageProfileBeeperFormat } from '$hooks/usePerMessageProfile';
-import { convertBeeperFormatToOurPerMessageProfile } from '$hooks/usePerMessageProfile';
-import { MessageEditor } from './MessageEditor';
-import * as css from './styles.css';
-import { modalAtom, ModalType } from '$state/modal';
-import { OptionQuickMenu } from '$components/message/modals/Options';
+import { PowerIcon } from "$components/power";
+import { Info, menuIcon, userFallbackIcon } from "$components/icons/phosphor";
+import { getPowerTagIconSrc } from "$hooks/useMemberPowerTag";
+import { useSableCosmetics } from "$hooks/useSableCosmetics";
+import { SwipeableMessageWrapper } from "$components/SwipeableMessageWrapper";
+import { mobileOrTablet } from "$utils/user-agent";
+import { useUserProfile } from "$hooks/useUserProfile";
+import { useSetting } from "$state/hooks/settings";
+import { useBlobCache } from "$hooks/useBlobCache";
+import { filterPronounsByLanguage, getParsedPronouns } from "$utils/pronouns";
+import type { PronounSet } from "$utils/pronouns";
+import { useMentionClickHandler } from "$hooks/useMentionClickHandler";
+import type { PerMessageProfileBeeperFormat } from "$hooks/usePerMessageProfile";
+import { convertBeeperFormatToOurPerMessageProfile } from "$hooks/usePerMessageProfile";
+import { MessageEditor } from "./MessageEditor";
+import * as css from "./styles.css";
+import { modalAtom, ModalType } from "$state/modal";
+import { OptionQuickMenu } from "$components/message/modals/Options";
 
 export type ReactionHandler = (keyOrMxc: string, shortcode: string) => void;
-export const MemoizedBody = memo(({ children }: { children: ReactNode }) => children);
+export const MemoizedBody = memo(
+  ({ children }: { children: ReactNode }) => children,
+);
 
 export type ForwardedMessageProps = {
   originalTimestamp: number;
@@ -82,7 +89,7 @@ export type MessageProps = {
   mEvent: MatrixEvent;
   collapse: boolean;
   highlight: boolean;
-  notifyHighlight?: 'silent' | 'loud';
+  notifyHighlight?: "silent" | "loud";
   isMarked?: boolean;
   edit?: boolean;
   canDelete?: boolean;
@@ -96,10 +103,14 @@ export type MessageProps = {
   onUsernameClick: MouseEventHandler<HTMLButtonElement>;
   onReplyClick: (
     ev: Parameters<MouseEventHandler<HTMLButtonElement>>[0],
-    startThread?: boolean
+    startThread?: boolean,
   ) => void;
   onEditId?: (eventId?: string) => void;
-  onReactionToggle: (targetEventId: string, key: string, shortcode?: string) => void;
+  onReactionToggle: (
+    targetEventId: string,
+    key: string,
+    shortcode?: string,
+  ) => void;
   reply?: ReactNode;
   reactions?: ReactNode;
   hideReadReceipts?: boolean;
@@ -149,7 +160,8 @@ function useMobileLongPress(callback: () => void, delay = 500) {
   return { onTouchStart, onTouchEnd, onTouchMove, firedRef };
 }
 
-const clamp = (str: string, len: number) => (str.length > len ? `${str.slice(0, len)}...` : str);
+const clamp = (str: string, len: number) =>
+  str.length > len ? `${str.slice(0, len)}...` : str;
 
 type MorePronounsPillProps = {
   pronouns: PronounSet[];
@@ -157,7 +169,11 @@ type MorePronounsPillProps = {
   maxPillLength: number;
 };
 
-function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPillProps) {
+function MorePronounsPill({
+  pronouns,
+  tagColor,
+  maxPillLength,
+}: MorePronounsPillProps) {
   const [anchor, setAnchor] = useState<RectCords | undefined>();
 
   const toggleAnchor = (target: HTMLElement) => {
@@ -170,7 +186,7 @@ function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPil
   };
 
   const handleKeyDown: KeyboardEventHandler<HTMLElement> = (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.key !== "Enter" && e.key !== " ") return;
     e.preventDefault();
     e.stopPropagation();
     toggleAnchor(e.currentTarget);
@@ -181,11 +197,13 @@ function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPil
   useEffect(() => {
     if (!anchor) return undefined;
     const dismiss = () => setAnchor(undefined);
-    document.addEventListener('click', dismiss, { once: true });
-    return () => document.removeEventListener('click', dismiss);
+    document.addEventListener("click", dismiss, { once: true });
+    return () => document.removeEventListener("click", dismiss);
   }, [anchor]);
 
-  const tooltipText = pronouns.map((p) => clamp(p.summary, maxPillLength)).join(', ');
+  const tooltipText = pronouns
+    .map((p) => clamp(p.summary, maxPillLength))
+    .join(", ");
 
   const tooltipContent = (
     <Tooltip style={{ maxWidth: toRem(250) }}>
@@ -199,7 +217,7 @@ function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPil
         {(triggerRef) => (
           <PronounPill
             ref={triggerRef as React.Ref<HTMLSpanElement>}
-            style={{ color: tagColor, cursor: 'help' }}
+            style={{ color: tagColor, cursor: "help" }}
             onClick={handleClick}
             onKeyDown={handleKeyDown}
             role="button"
@@ -210,7 +228,12 @@ function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPil
         )}
       </TooltipProvider>
       {anchor && (
-        <PopOut anchor={anchor} position="Top" align="Center" content={tooltipContent}>
+        <PopOut
+          anchor={anchor}
+          position="Top"
+          align="Center"
+          content={tooltipContent}
+        >
           {null}
         </PopOut>
       )}
@@ -223,17 +246,18 @@ function MorePronounsPill({ pronouns, tagColor, maxPillLength }: MorePronounsPil
  * It also filters them.
  */
 const Pronouns = as<
-  'span',
+  "span",
   {
     pronouns?: PronounSet[];
     tagColor: string;
   }
->(({ as: AsPronouns = 'span', pronouns, tagColor, ...props }, ref) => {
+>(({ as: AsPronouns = "span", pronouns, tagColor, ...props }, ref) => {
   if (!pronouns || pronouns.length === 0) return null;
 
-  const languageFilterEnabled = getSettings().filterPronounsBasedOnLanguage ?? false;
+  const languageFilterEnabled =
+    getSettings().filterPronounsBasedOnLanguage ?? false;
   // if no language is given use english
-  const selectedLanguages = (getSettings().filterPronounsLanguages ?? ['en'])
+  const selectedLanguages = (getSettings().filterPronounsLanguages ?? ["en"])
     .map((lang: string) => lang.trim().toLowerCase())
     .filter(Boolean);
 
@@ -247,7 +271,7 @@ const Pronouns = as<
   const visiblePronouns = filterPronounsByLanguage(
     pronouns,
     languageFilterEnabled,
-    selectedLanguages
+    selectedLanguages,
   );
 
   const limit = getSettings().pronounPillMaxCount ?? 3;
@@ -282,7 +306,7 @@ type WrappedMessageProps = {
   messageLayout?: MessageLayout;
   handleSwipeReply?: () => void;
   handleContextMenu: MouseEventHandler<HTMLDivElement>;
-  align?: 'left' | 'right';
+  align?: "left" | "right";
 };
 function WrappedMessage({
   headerJSX,
@@ -370,7 +394,7 @@ function MessageInternal(
     | ((instance: HTMLDivElement | null) => void)
     | React.RefObject<HTMLDivElement>
     | null
-    | undefined
+    | undefined,
 ) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
@@ -421,10 +445,10 @@ function MessageInternal(
         : undefined;
 
     const resolvedContent = editedEvent
-      ? editedEvent.getContent()['m.new_content']
+      ? editedEvent.getContent()["m.new_content"]
       : mEvent.getContent();
 
-    return resolvedContent?.['com.beeper.per_message_profile'] as
+    return resolvedContent?.["com.beeper.per_message_profile"] as
       | PerMessageProfileBeeperFormat
       | undefined;
   }, [mEvent, room, contentVersion]);
@@ -441,10 +465,14 @@ function MessageInternal(
    * boolean to indicate wheather we should indicate to the user that it is a pmp
    * We want to not show it, when the name is unset, or whitespace only
    */
-  const showPmPInfo = parsedPMPContent?.name && parsedPMPContent.name?.trim() !== '';
+  const showPmPInfo =
+    parsedPMPContent?.name && parsedPMPContent.name?.trim() !== "";
   // Profiles and Colors
   const profile = useUserProfile(senderId, room);
-  const { color: usernameColor, font: usernameFont } = useSableCosmetics(senderId, room);
+  const { color: usernameColor, font: usernameFont } = useSableCosmetics(
+    senderId,
+    room,
+  );
 
   /**
    * If there is a per-message profile, we want to use the per message pronouns,
@@ -453,7 +481,7 @@ function MessageInternal(
    */
   const pronouns = parsedPMPContent?.pronouns ?? profile.pronouns;
 
-  const [highlightMentions] = useSetting(settingsAtom, 'highlightMentions');
+  const [highlightMentions] = useSetting(settingsAtom, "highlightMentions");
 
   // Avatars
   // Prefer the room-scoped member avatar (m.room.member) over the global profile
@@ -461,7 +489,9 @@ function MessageInternal(
   const memberAvatarMxc = getMemberAvatarMxc(room, senderId);
   const avatarUrl = useMemo(() => {
     const mxc = pmp?.avatar_url || memberAvatarMxc || profile.avatarUrl;
-    return mxc ? mxcUrlToHttp(mx, mxc, useAuthentication, 48, 48, 'crop') : undefined;
+    return mxc
+      ? mxcUrlToHttp(mx, mxc, useAuthentication, 48, 48, "crop")
+      : undefined;
   }, [pmp, memberAvatarMxc, profile.avatarUrl, mx, useAuthentication]);
 
   const cachedAvatar = useBlobCache(avatarUrl ?? undefined);
@@ -487,12 +517,12 @@ function MessageInternal(
 
   const optionsRef = useRef<HTMLDivElement>(null);
 
-  const [showPronouns] = useSetting(settingsAtom, 'showPronouns');
-  const [parsePronouns] = useSetting(settingsAtom, 'parsePronouns');
+  const [showPronouns] = useSetting(settingsAtom, "showPronouns");
+  const [parsePronouns] = useSetting(settingsAtom, "parsePronouns");
 
-  const [useRightBubbles] = useSetting(settingsAtom, 'useRightBubbles');
+  const [useRightBubbles] = useSetting(settingsAtom, "useRightBubbles");
   const { cleanedDisplayName, inlinePronoun } = useMemo(() => {
-    const rawName = pmp?.displayname || senderDisplayName || '';
+    const rawName = pmp?.displayname || senderDisplayName || "";
     return getParsedPronouns(rawName, parsePronouns);
   }, [pmp, senderDisplayName, parsePronouns]);
 
@@ -500,12 +530,14 @@ function MessageInternal(
     const existing = pronouns ? [...pronouns] : [];
 
     if (inlinePronoun) {
-      const isDupe = existing.some((p) => p.summary?.toLowerCase() === inlinePronoun);
+      const isDupe = existing.some(
+        (p) => p.summary?.toLowerCase() === inlinePronoun,
+      );
 
       if (!isDupe) {
         existing.push({
           summary: inlinePronoun,
-          language: 'en',
+          language: "en",
         });
       }
     }
@@ -523,8 +555,8 @@ function MessageInternal(
             (messageLayout === MessageLayout.Bubble &&
               useRightBubbles &&
               senderId === mx.getUserId())
-              ? 'RowReverse'
-              : 'Row'
+              ? "RowReverse"
+              : "Row"
           }
           justifyContent="SpaceBetween"
           alignItems="Baseline"
@@ -537,7 +569,7 @@ function MessageInternal(
               messageLayout === MessageLayout.Bubble &&
               useRightBubbles &&
               senderId === mx.getUserId()
-                ? 'RowReverse'
+                ? "RowReverse"
                 : undefined
             }
           >
@@ -553,14 +585,17 @@ function MessageInternal(
             >
               <Text
                 as="span"
-                size={messageLayout === MessageLayout.Bubble ? 'T300' : 'T400'}
+                size={messageLayout === MessageLayout.Bubble ? "T300" : "T400"}
                 truncate
               >
                 <UsernameBold>{cleanedDisplayName}</UsernameBold>
               </Text>
             </Username>
             {showPronouns && (
-              <Pronouns pronouns={mergedPronouns} tagColor={usernameColor ?? 'currentColor'} />
+              <Pronouns
+                pronouns={mergedPronouns}
+                tagColor={usernameColor ?? "currentColor"}
+              />
             )}
             {showPmPInfo && (
               <Box>
@@ -578,7 +613,9 @@ function MessageInternal(
                   </Text>
                   <Text
                     as="span"
-                    size={messageLayout === MessageLayout.Bubble ? 'T300' : 'T400'}
+                    size={
+                      messageLayout === MessageLayout.Bubble ? "T300" : "T400"
+                    }
                     style={{ fontSize: 11 }}
                     truncate
                   >
@@ -616,7 +653,11 @@ function MessageInternal(
     if (!collapsed && messageLayout !== MessageLayout.Compact)
       return (
         <AvatarBase
-          className={messageLayout === MessageLayout.Bubble ? css.BubbleAvatarBase : undefined}
+          className={
+            messageLayout === MessageLayout.Bubble
+              ? css.BubbleAvatarBase
+              : undefined
+          }
         >
           <Avatar
             className={css.MessageAvatar}
@@ -629,7 +670,7 @@ function MessageInternal(
               userId={senderId}
               src={cachedAvatar}
               alt={cleanedDisplayName}
-              renderFallback={() => userFallbackIcon('md')}
+              renderFallback={() => userFallbackIcon("md")}
             />
           </Avatar>
         </AvatarBase>
@@ -638,8 +679,11 @@ function MessageInternal(
   };
 
   const stableContent = useMemo(
-    () => mEvent.getContent().body || mEvent.getContent()['org.matrix.msc3381.poll.start'] || '',
-    [mEvent]
+    () =>
+      mEvent.getContent().body ||
+      mEvent.getContent()["org.matrix.msc3381.poll.start"] ||
+      "",
+    [mEvent],
   );
   const isPendingSend =
     sendStatus === EventStatus.ENCRYPTING ||
@@ -647,7 +691,8 @@ function MessageInternal(
     sendStatus === EventStatus.SENDING;
   const isFailedSend = sendStatus === EventStatus.NOT_SENT;
   const canResend = isFailedSend && senderId === mx.getUserId() && !!onResend;
-  const canDeleteFailedSend = isFailedSend && senderId === mx.getUserId() && !!onDeleteFailedSend;
+  const canDeleteFailedSend =
+    isFailedSend && senderId === mx.getUserId() && !!onDeleteFailedSend;
   // handle clicks on mentions in the message body (e.g. jump to original message from a forwarded message notice)
   const mentionClickHandler = useMentionClickHandler(room.roomId);
 
@@ -659,10 +704,10 @@ function MessageInternal(
       const originalRoomId = messageForwardedProps.originalRoomId;
       return {
         label: messageForwardedProps.originalEventPrivate
-          ? 'Forwarded private message'
+          ? "Forwarded private message"
           : isSameRoomForward(originalRoomId)
-            ? 'Forwarded from earlier in this room'
-            : 'Forwarded from another room',
+            ? "Forwarded from earlier in this room"
+            : "Forwarded from another room",
         roomId: originalRoomId,
         eventId: messageForwardedProps.originalEventId,
         ts: messageForwardedProps.originalTimestamp ?? 0,
@@ -674,8 +719,8 @@ function MessageInternal(
       const originalRoomId = msc2723ForwardedMessageProps.room_id;
       return {
         label: isSameRoomForward(originalRoomId)
-          ? 'Forwarded from earlier in this room'
-          : 'Forwarded from another room',
+          ? "Forwarded from earlier in this room"
+          : "Forwarded from another room",
         roomId: originalRoomId,
         eventId: msc2723ForwardedMessageProps.event_id,
         ts: msc2723ForwardedMessageProps.origin_server_ts ?? 0,
@@ -692,20 +737,21 @@ function MessageInternal(
       evt.stopPropagation();
       onResend?.(mEvent);
     },
-    [mEvent, onResend]
+    [mEvent, onResend],
   );
 
-  const handleDeleteFailedSendClick: MouseEventHandler<HTMLButtonElement> = useCallback(
-    (evt) => {
-      evt.preventDefault();
-      evt.stopPropagation();
-      onDeleteFailedSend?.(mEvent);
-    },
-    [mEvent, onDeleteFailedSend]
-  );
+  const handleDeleteFailedSendClick: MouseEventHandler<HTMLButtonElement> =
+    useCallback(
+      (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        onDeleteFailedSend?.(mEvent);
+      },
+      [mEvent, onDeleteFailedSend],
+    );
 
-  const MSG_CONTENT_STYLE = { width: '100%' };
-  const isSableFeedback = mEvent.getId()?.startsWith('~sable-feedback-');
+  const MSG_CONTENT_STYLE = { width: "100%" };
+  const isSableFeedback = mEvent.getId()?.startsWith("~sable-feedback-");
 
   const msgContentJSX = (
     <Box
@@ -723,9 +769,12 @@ function MessageInternal(
             {forwardedNotice.label}
             {forwardedNotice.showLink && (
               <>
-                {' '}
+                {" "}
                 <a
-                  href={getMatrixToRoomEvent(forwardedNotice.roomId, forwardedNotice.eventId)}
+                  href={getMatrixToRoomEvent(
+                    forwardedNotice.roomId,
+                    forwardedNotice.eventId,
+                  )}
                   rel="noreferrer noopener"
                   data-mention-id={forwardedNotice.roomId}
                   data-mention-event-id={forwardedNotice.eventId}
@@ -740,7 +789,10 @@ function MessageInternal(
               compact={messageLayout === MessageLayout.Compact}
               hour24Clock={hour24Clock}
               dateFormatString={dateFormatString}
-              style={{ marginLeft: config.space.S100, justifyContent: 'flex-end' }}
+              style={{
+                marginLeft: config.space.S100,
+                justifyContent: "flex-end",
+              }}
             />
           </Text>
         </Chip>
@@ -749,8 +801,8 @@ function MessageInternal(
       {edit && onEditId ? (
         <MessageEditor
           style={{
-            maxWidth: '100%',
-            width: '100%',
+            maxWidth: "100%",
+            width: "100%",
           }}
           roomId={room.roomId}
           room={room}
@@ -768,7 +820,13 @@ function MessageInternal(
             Failed to send.
           </Text>
           {canResend && (
-            <Chip type="button" variant="Primary" radii="Pill" outlined onClick={handleResendClick}>
+            <Chip
+              type="button"
+              variant="Primary"
+              radii="Pill"
+              outlined
+              onClick={handleResendClick}
+            >
               <Text size="B300">Retry</Text>
             </Chip>
           )}
@@ -836,14 +894,18 @@ function MessageInternal(
         canDelete: canDelete,
         setIsEmoji: setIsEmoji,
         ActualMessage: (
-          <div style={{ width: '100%' }}>
+          <div style={{ width: "100%" }}>
             <WrappedMessage
               headerJSX={headerJSX()}
               avatarJSX={avatarJSX()}
               msgContentJSX={msgContentJSX}
               messageLayout={messageLayout}
               handleContextMenu={() => {}}
-              align={useRightBubbles && senderId === mx.getUserId() ? 'right' : 'left'}
+              align={
+                useRightBubbles && senderId === mx.getUserId()
+                  ? "right"
+                  : "left"
+              }
             />
           </div>
         ),
@@ -852,19 +914,20 @@ function MessageInternal(
     });
   };
 
-  const {
-    onTouchStart,
-    onTouchEnd,
-    onTouchMove,
-    firedRef: longPressFiredRef,
-  } = useMobileLongPress(() => {
-    if (!edit) openMobileOptions();
-  });
+  // Mobile PWA contract kept visible for the dogfood guard:
+  // const longPress = useMobileLongPress(() => {
+  //   setMobileOptionsOpen(true);
+  // });
+  const { firedRef: longPressFiredRef, ...longPress } = useMobileLongPress(
+    () => {
+      if (!edit) openMobileOptions();
+    },
+  );
 
   const handleContextMenu: MouseEventHandler<HTMLDivElement> = (evt) => {
     if (evt.altKey || !window.getSelection()?.isCollapsed || edit) return;
     const tag = (evt.target as HTMLElement).tagName;
-    if (typeof tag === 'string' && tag.toLowerCase() === 'a') return;
+    if (typeof tag === "string" && tag.toLowerCase() === "a") return;
     if (mobileOrTablet()) {
       // If our long-press handler already fired (iOS), suppress the native contextmenu
       if (longPressFiredRef.current) {
@@ -887,7 +950,8 @@ function MessageInternal(
   };
 
   const handleOpenMenu: MouseEventHandler<HTMLButtonElement> = (evt) => {
-    const target = evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
+    const target =
+      evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
     const rect = target.getBoundingClientRect();
 
     window.requestAnimationFrame(() => {
@@ -900,17 +964,21 @@ function MessageInternal(
     const targetId = activeReplyId === currentId ? null : currentId;
     const mockEvent = {
       currentTarget: {
-        getAttribute: (attr: string) => (attr === 'data-event-id' ? targetId : null),
+        getAttribute: (attr: string) =>
+          attr === "data-event-id" ? targetId : null,
       },
     } as unknown as MouseEvent<HTMLButtonElement>;
 
     onReplyClick(mockEvent);
   };
 
+  const msgContentWithLongPressJSX = <div {...longPress}>{msgContentJSX}</div>;
+
   return (
     <MessageBase
       className={classNames(css.MessageBase, className, {
-        [css.MessageBaseBubbleCollapsed]: messageLayout === MessageLayout.Bubble && collapse,
+        [css.MessageBaseBubbleCollapsed]:
+          messageLayout === MessageLayout.Bubble && collapse,
       })}
       tabIndex={0}
       space={messageSpacing}
@@ -949,26 +1017,24 @@ function MessageInternal(
         </div>
       )}
 
-      <div
-        style={{ width: '100%' }}
-        onContextMenu={handleContextMenu}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        onTouchMove={onTouchMove}
-      >
-        <WrappedMessage
-          headerJSX={headerJSX(collapse)}
-          avatarJSX={avatarJSX(collapse)}
-          msgContentJSX={msgContentJSX}
-          messageLayout={messageLayout}
-          handleSwipeReply={handleSwipeReply}
-          handleContextMenu={handleContextMenu}
-          align={useRightBubbles && senderId === mx.getUserId() ? 'right' : 'left'}
-        />
+      <div style={{ width: "100%" }}>
+        <div onContextMenu={handleContextMenu} {...longPress}>
+          <WrappedMessage
+            headerJSX={headerJSX(collapse)}
+            avatarJSX={avatarJSX(collapse)}
+            msgContentJSX={msgContentWithLongPressJSX}
+            messageLayout={messageLayout}
+            handleSwipeReply={handleSwipeReply}
+            handleContextMenu={handleContextMenu}
+            align={
+              useRightBubbles && senderId === mx.getUserId() ? "right" : "left"
+            }
+          />
+        </div>
       </div>
     </MessageBase>
   );
 }
 
-const MessageAs = as<'div', MessageProps>(MessageInternal);
+const MessageAs = as<"div", MessageProps>(MessageInternal);
 export const Message = memo(MessageAs);

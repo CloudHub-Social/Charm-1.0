@@ -1,4 +1,4 @@
-import type { RectCords } from 'folds';
+import type { RectCords } from "folds";
 import {
   Box,
   Icon,
@@ -11,32 +11,43 @@ import {
   Text,
   as,
   config,
-} from 'folds';
-import type { Dispatch, MouseEventHandler, SetStateAction } from 'react';
-import { useCallback, useState } from 'react';
-import FocusTrap from 'focus-trap-react';
-import type { MatrixEvent, Relations, Room, RoomPinnedEventsEventContent } from '$types/matrix-sdk';
-import { EventType } from '$types/matrix-sdk';
-import type { StateEvents } from '$types/matrix-sdk';
-import { useAtomValue, useSetAtom } from 'jotai';
-import { useMatrixClient } from '$hooks/useMatrixClient';
-import { useRecentEmoji } from '$hooks/useRecentEmoji';
-import { EmojiBoard } from '$components/emoji-board';
-import { canEditEvent } from '$utils/room';
-import { copyToClipboard } from '$utils/dom';
-import { stopPropagation } from '$utils/keyboard';
-import { getMatrixToRoomEvent } from '$plugins/matrix-to';
-import { getViaServers } from '$plugins/via-servers';
-import { useRoomPinnedEvents } from '$hooks/useRoomPinnedEvents';
-import { useSetting } from '$state/hooks/settings';
-import { settingsAtom } from '$state/settings';
-import { nicknamesAtom, setNicknameAtom } from '$state/nicknames';
+} from "folds";
+import type { Dispatch, MouseEventHandler, SetStateAction } from "react";
+import { useCallback, useState } from "react";
+import FocusTrap from "focus-trap-react";
+import type {
+  MatrixEvent,
+  Relations,
+  Room,
+  RoomPinnedEventsEventContent,
+} from "$types/matrix-sdk";
+import { EventType } from "$types/matrix-sdk";
+import type { StateEvents } from "$types/matrix-sdk";
+import { useAtomValue, useSetAtom } from "jotai";
+import { useMatrixClient } from "$hooks/useMatrixClient";
+import { useRecentEmoji } from "$hooks/useRecentEmoji";
+import { EmojiBoard } from "$components/emoji-board";
+import { canEditEvent } from "$utils/room";
+import { copyToClipboard } from "$utils/dom";
+import { stopPropagation } from "$utils/keyboard";
+import { getMatrixToRoomEvent } from "$plugins/matrix-to";
+import { getViaServers } from "$plugins/via-servers";
+import { useRoomPinnedEvents } from "$hooks/useRoomPinnedEvents";
+import { useSetting } from "$state/hooks/settings";
+import { settingsAtom } from "$state/settings";
+import { nicknamesAtom, setNicknameAtom } from "$state/nicknames";
 import {
   addStickerToDefaultPack,
   doesStickerExistInDefaultPack,
-} from '$utils/addStickerToDefaultStickerPack';
-import { computeBookmarkId, createBookmarkItem } from '$features/bookmarks/bookmarkDomain';
-import { useIsBookmarked, useBookmarkActions } from '$features/bookmarks/useBookmarks';
+} from "$utils/addStickerToDefaultStickerPack";
+import {
+  computeBookmarkId,
+  createBookmarkItem,
+} from "$features/bookmarks/bookmarkDomain";
+import {
+  useIsBookmarked,
+  useBookmarkActions,
+} from "$features/bookmarks/useBookmarks";
 import {
   ArrowBendUpLeftIcon,
   ChatsCircle,
@@ -49,15 +60,15 @@ import {
   PushPinSlash,
   Smiley,
   Star,
-} from '$components/icons/phosphor';
-import { MessageAllReactionItem } from '$components/message/modals/MessageReactions';
-import { MessageReadReceiptItem } from '$components/message/modals/MessageReadRecipts';
-import { MessageEditHistoryItem } from '$components/message/modals/MessageEditHistory';
-import { MessageSourceCodeItem } from '$components/message/modals/MessageSource';
-import { MessageForwardItem } from '$components/message/modals/MessageForward';
-import { MessageDeleteItem } from '$components/message/modals/MessageDelete';
-import { MessageReportItem } from '$components/message/modals/MessageReport';
-import * as css from './styles.css';
+} from "$components/icons/phosphor";
+import { MessageAllReactionItem } from "$components/message/modals/MessageReactions";
+import { MessageReadReceiptItem } from "$components/message/modals/MessageReadRecipts";
+import { MessageEditHistoryItem } from "$components/message/modals/MessageEditHistory";
+import { MessageSourceCodeItem } from "$components/message/modals/MessageSource";
+import { MessageForwardItem } from "$components/message/modals/MessageForward";
+import { MessageDeleteItem } from "$components/message/modals/MessageDelete";
+import { MessageReportItem } from "$components/message/modals/MessageReport";
+import * as css from "./styles.css";
 
 // ---------------------------------------------------------------------------
 // Re-usable menu item components (previously inline in Message.tsx)
@@ -66,7 +77,7 @@ import * as css from './styles.css';
 export type ReactionHandler = (keyOrMxc: string, shortcode: string) => void;
 
 type MessageQuickReactionsProps = { onReaction: ReactionHandler };
-export const MessageQuickReactions = as<'div', MessageQuickReactionsProps>(
+export const MessageQuickReactions = as<"div", MessageQuickReactionsProps>(
   ({ onReaction, ...props }, ref) => {
     const mx = useMatrixClient();
     const recentEmojis = useRecentEmoji(mx, 4);
@@ -100,17 +111,19 @@ export const MessageQuickReactions = as<'div', MessageQuickReactionsProps>(
         <Line size="300" />
       </>
     );
-  }
+  },
 );
 
 export const MessageCopyLinkItem = as<
-  'button',
+  "button",
   { room: Room; mEvent: MatrixEvent; onClose?: () => void }
 >(({ room, mEvent, onClose, ...props }, ref) => {
   const handleCopy = () => {
     const eventId = mEvent.getId();
     if (!eventId) return;
-    copyToClipboard(getMatrixToRoomEvent(room.roomId, eventId, getViaServers(room)));
+    copyToClipboard(
+      getMatrixToRoomEvent(room.roomId, eventId, getViaServers(room)),
+    );
     onClose?.();
   };
   return (
@@ -129,46 +142,52 @@ export const MessageCopyLinkItem = as<
   );
 });
 
-export const MessageCopyTextItem = as<'button', { mEvent: MatrixEvent; onClose?: () => void }>(
-  ({ mEvent, onClose, ...props }, ref) => {
-    const content = mEvent.getContent();
-    const body: string | undefined = content['m.new_content']?.body ?? content.body;
-    if (!body || mEvent.isRedacted()) return null;
-    const handleCopy = () => {
-      copyToClipboard(body);
-      onClose?.();
-    };
-    return (
-      <MenuItem
-        size="300"
-        after={menuIcon(ClipboardText)}
-        radii="300"
-        onClick={handleCopy}
-        {...props}
-        ref={ref}
-      >
-        <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
-          Copy Text
-        </Text>
-      </MenuItem>
-    );
-  }
-);
+export const MessageCopyTextItem = as<
+  "button",
+  { mEvent: MatrixEvent; onClose?: () => void }
+>(({ mEvent, onClose, ...props }, ref) => {
+  const content = mEvent.getContent();
+  const body: string | undefined =
+    content["m.new_content"]?.body ?? content.body;
+  if (!body || mEvent.isRedacted()) return null;
+  const handleCopy = () => {
+    copyToClipboard(body);
+    onClose?.();
+  };
+  return (
+    <MenuItem
+      size="300"
+      after={menuIcon(ClipboardText)}
+      radii="300"
+      onClick={handleCopy}
+      {...props}
+      ref={ref}
+    >
+      <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
+        Copy Text
+      </Text>
+    </MenuItem>
+  );
+});
 
 export const MessagePinItem = as<
-  'button',
+  "button",
   { room: Room; mEvent: MatrixEvent; onClose?: () => void }
 >(({ room, mEvent, onClose, ...props }, ref) => {
   const mx = useMatrixClient();
   const pinnedEvents = useRoomPinnedEvents(room);
-  const isPinned = pinnedEvents.includes(mEvent.getId() ?? '');
+  const isPinned = pinnedEvents.includes(mEvent.getId() ?? "");
   const handlePin = () => {
     const eventId = mEvent.getId();
     const pinContent: RoomPinnedEventsEventContent = {
       pinned: Array.from(pinnedEvents).filter((id) => id !== eventId),
     };
     if (!isPinned && eventId) pinContent.pinned.push(eventId);
-    mx.sendStateEvent(room.roomId, EventType.RoomPinnedEvents as keyof StateEvents, pinContent);
+    mx.sendStateEvent(
+      room.roomId,
+      EventType.RoomPinnedEvents as keyof StateEvents,
+      pinContent,
+    );
     onClose?.();
   };
   return (
@@ -181,19 +200,22 @@ export const MessagePinItem = as<
       ref={ref}
     >
       <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
-        {isPinned ? 'Unpin Message' : 'Pin Message'}
+        {isPinned ? "Unpin Message" : "Pin Message"}
       </Text>
     </MenuItem>
   );
 });
 
 export const MessageBookmarkItem = as<
-  'button',
+  "button",
   { room: Room; mEvent: MatrixEvent; onClose?: () => void }
 >(({ room, mEvent, onClose, ...props }, ref) => {
-  const [enableMessageBookmarks] = useSetting(settingsAtom, 'enableMessageBookmarks');
+  const [enableMessageBookmarks] = useSetting(
+    settingsAtom,
+    "enableMessageBookmarks",
+  );
   const eventId = mEvent.getId();
-  const isBookmarked = useIsBookmarked(room.roomId, eventId ?? '');
+  const isBookmarked = useIsBookmarked(room.roomId, eventId ?? "");
   const { add, remove } = useBookmarkActions();
   if (!eventId || !enableMessageBookmarks) return null;
   const handleClick = async () => {
@@ -215,7 +237,7 @@ export const MessageBookmarkItem = as<
       ref={ref}
     >
       <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
-        {isBookmarked ? 'Remove Bookmark' : 'Bookmark Message'}
+        {isBookmarked ? "Remove Bookmark" : "Bookmark Message"}
       </Text>
     </MenuItem>
   );
@@ -253,10 +275,14 @@ export type MessageOptionsBarProps = {
   activeReplyId?: string | null;
   onReplyClick: (
     ev: Parameters<MouseEventHandler<HTMLButtonElement>>[0],
-    startThread?: boolean
+    startThread?: boolean,
   ) => void;
   onEditId?: (eventId?: string) => void;
-  onReactionToggle: (targetEventId: string, key: string, shortcode?: string) => void;
+  onReactionToggle: (
+    targetEventId: string,
+    key: string,
+    shortcode?: string,
+  ) => void;
 };
 
 export function MessageOptionsBar({
@@ -290,7 +316,7 @@ export function MessageOptionsBar({
   const nicknames = useAtomValue(nicknamesAtom);
   const setNickname = useSetAtom(setNicknameAtom);
   const [nickEditOpen, setNickEditOpen] = useState(false);
-  const [nickDraft, setNickDraft] = useState('');
+  const [nickDraft, setNickDraft] = useState("");
 
   const closeMenu = useCallback(() => {
     setMenuAnchor(undefined);
@@ -300,30 +326,34 @@ export function MessageOptionsBar({
 
   const handleOpenMenu: MouseEventHandler<HTMLButtonElement> = useCallback(
     (evt) => {
-      const target = evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
+      const target =
+        evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
       const rect = target.getBoundingClientRect();
       window.requestAnimationFrame(() => {
         setMenuAnchor(rect);
       });
     },
-    [setMenuAnchor]
+    [setMenuAnchor],
   );
 
-  const handleOpenEmojiBoard: MouseEventHandler<HTMLButtonElement> = useCallback(
-    (evt) => {
-      const target = evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
-      setEmojiBoardAnchor(target.getBoundingClientRect());
-    },
-    [setEmojiBoardAnchor]
-  );
+  const handleOpenEmojiBoard: MouseEventHandler<HTMLButtonElement> =
+    useCallback(
+      (evt) => {
+        const target =
+          evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
+        setEmojiBoardAnchor(target.getBoundingClientRect());
+      },
+      [setEmojiBoardAnchor],
+    );
 
-  const handleAddReactions: MouseEventHandler<HTMLButtonElement> = useCallback(() => {
-    const rect = menuAnchor;
-    closeMenu();
-    setTimeout(() => {
-      setEmojiBoardAnchor(rect);
-    }, 100);
-  }, [menuAnchor, closeMenu, setEmojiBoardAnchor]);
+  const handleAddReactions: MouseEventHandler<HTMLButtonElement> =
+    useCallback(() => {
+      const rect = menuAnchor;
+      closeMenu();
+      setTimeout(() => {
+        setEmojiBoardAnchor(rect);
+      }, 100);
+    }, [menuAnchor, closeMenu, setEmojiBoardAnchor]);
 
   if (edit || (!show && !menuAnchor && !emojiBoardAnchor)) return null;
 
@@ -334,7 +364,7 @@ export function MessageOptionsBar({
           {canSendReaction && (
             <PopOut
               position="Bottom"
-              align={emojiBoardAnchor?.width === 0 ? 'Start' : 'End'}
+              align={emojiBoardAnchor?.width === 0 ? "Start" : "End"}
               offset={emojiBoardAnchor?.width === 0 ? 0 : undefined}
               anchor={emojiBoardAnchor}
               content={
@@ -382,7 +412,7 @@ export function MessageOptionsBar({
             <IconButton
               onClick={(ev) => {
                 if (activeReplyId === mEvent.getId()) {
-                  ev.currentTarget.setAttribute('data-event-id', '');
+                  ev.currentTarget.setAttribute("data-event-id", "");
                 }
                 onReplyClick(ev, true);
               }}
@@ -409,7 +439,7 @@ export function MessageOptionsBar({
           <PopOut
             anchor={menuAnchor}
             position="Bottom"
-            align={menuAnchor?.width === 0 ? 'Start' : 'End'}
+            align={menuAnchor?.width === 0 ? "Start" : "End"}
             offset={menuAnchor?.width === 0 ? 0 : undefined}
             content={
               <FocusTrap
@@ -417,8 +447,8 @@ export function MessageOptionsBar({
                   initialFocus: false,
                   onDeactivate: () => setMenuAnchor(undefined),
                   clickOutsideDeactivates: true,
-                  isKeyForward: (evt: KeyboardEvent) => evt.key === 'ArrowDown',
-                  isKeyBackward: (evt: KeyboardEvent) => evt.key === 'ArrowUp',
+                  isKeyForward: (evt: KeyboardEvent) => evt.key === "ArrowDown",
+                  isKeyBackward: (evt: KeyboardEvent) => evt.key === "ArrowUp",
                   escapeDeactivates: stopPropagation,
                 }}
               >
@@ -431,7 +461,11 @@ export function MessageOptionsBar({
                       }}
                     />
                   )}
-                  <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
+                  <Box
+                    direction="Column"
+                    gap="100"
+                    className={css.MessageMenuGroup}
+                  >
                     {canSendReaction && (
                       <MenuItem
                         size="300"
@@ -439,14 +473,22 @@ export function MessageOptionsBar({
                         radii="300"
                         onClick={handleAddReactions}
                       >
-                        <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
+                        <Text
+                          className={css.MessageMenuItemText}
+                          as="span"
+                          size="T300"
+                          truncate
+                        >
                           Add Reaction
                         </Text>
                       </MenuItem>
                     )}
                     {isStickerMessage &&
                       mEvent.getContent().url &&
-                      !doesStickerExistInDefaultPack(mx, mEvent.getContent().url) && (
+                      !doesStickerExistInDefaultPack(
+                        mx,
+                        mEvent.getContent().url,
+                      ) && (
                         <MenuItem
                           size="300"
                           after={menuIcon(Star)}
@@ -455,19 +497,31 @@ export function MessageOptionsBar({
                             addStickerToDefaultPack(
                               mx,
                               `sticker-${mEvent.getId()}`,
-                              mEvent.getContent().url ?? mEvent.getContent().file?.url ?? '',
+                              mEvent.getContent().url ??
+                                mEvent.getContent().file?.url ??
+                                "",
                               mEvent.getContent().body,
-                              mEvent.getContent().info
+                              mEvent.getContent().info,
                             );
                             closeMenu();
                           }}
                         >
-                          <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
+                          <Text
+                            className={css.MessageMenuItemText}
+                            as="span"
+                            size="T300"
+                            truncate
+                          >
                             Add to User Sticker Pack
                           </Text>
                         </MenuItem>
                       )}
-                    {relations && <MessageAllReactionItem room={room} relations={relations} />}
+                    {relations && (
+                      <MessageAllReactionItem
+                        room={room}
+                        relations={relations}
+                      />
+                    )}
                     <MenuItem
                       size="300"
                       after={menuIcon(ArrowBendUpLeftIcon)}
@@ -475,12 +529,19 @@ export function MessageOptionsBar({
                       data-event-id={mEvent.getId()}
                       onClick={(evt: React.MouseEvent) => {
                         onReplyClick(
-                          evt as unknown as Parameters<MouseEventHandler<HTMLButtonElement>>[0]
+                          evt as unknown as Parameters<
+                            MouseEventHandler<HTMLButtonElement>
+                          >[0],
                         );
                         closeMenu();
                       }}
                     >
-                      <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
+                      <Text
+                        className={css.MessageMenuItemText}
+                        as="span"
+                        size="T300"
+                        truncate
+                      >
                         Reply
                       </Text>
                     </MenuItem>
@@ -492,13 +553,20 @@ export function MessageOptionsBar({
                         data-event-id={mEvent.getId()}
                         onClick={(evt: React.MouseEvent) => {
                           onReplyClick(
-                            evt as unknown as Parameters<MouseEventHandler<HTMLButtonElement>>[0],
-                            true
+                            evt as unknown as Parameters<
+                              MouseEventHandler<HTMLButtonElement>
+                            >[0],
+                            true,
                           );
                           closeMenu();
                         }}
                       >
-                        <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
+                        <Text
+                          className={css.MessageMenuItemText}
+                          as="span"
+                          size="T300"
+                          truncate
+                        >
                           Reply in Thread
                         </Text>
                       </MenuItem>
@@ -514,36 +582,75 @@ export function MessageOptionsBar({
                           closeMenu();
                         }}
                       >
-                        <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
+                        <Text
+                          className={css.MessageMenuItemText}
+                          as="span"
+                          size="T300"
+                          truncate
+                        >
                           Edit Message
                         </Text>
                       </MenuItem>
                     )}
                     {!hideReadReceipts && (
-                      <MessageReadReceiptItem room={room} eventId={mEvent.getId() ?? ''} />
+                      <MessageReadReceiptItem
+                        room={room}
+                        eventId={mEvent.getId() ?? ""}
+                        closeMenu={closeMenu}
+                      />
                     )}
                     {isEdited && (
-                      <MessageEditHistoryItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                      <MessageEditHistoryItem
+                        room={room}
+                        mEvent={mEvent}
+                        closeMenu={closeMenu}
+                      />
                     )}
                     {showDeveloperTools && (
-                      <MessageSourceCodeItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                      <MessageSourceCodeItem
+                        room={room}
+                        mEvent={mEvent}
+                        closeMenu={closeMenu}
+                      />
                     )}
-                    <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
+                    <MessageCopyLinkItem
+                      room={room}
+                      mEvent={mEvent}
+                      onClose={closeMenu}
+                    />
                     <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
-                    <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
+                    <MessageForwardItem
+                      room={room}
+                      mEvent={mEvent}
+                      onClose={closeMenu}
+                    />
                   </Box>
                   <Line size="300" />
-                  <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
-                    <MessageBookmarkItem room={room} mEvent={mEvent} onClose={closeMenu} />
+                  <Box
+                    direction="Column"
+                    gap="100"
+                    className={css.MessageMenuGroup}
+                  >
+                    <MessageBookmarkItem
+                      room={room}
+                      mEvent={mEvent}
+                      onClose={closeMenu}
+                    />
                     {canPinEvent && (
-                      <MessagePinItem room={room} mEvent={mEvent} onClose={closeMenu} />
+                      <MessagePinItem
+                        room={room}
+                        mEvent={mEvent}
+                        onClose={closeMenu}
+                      />
                     )}
                     {senderId !== mx.getUserId() &&
                       (nickEditOpen ? (
                         <Box
                           direction="Column"
                           gap="100"
-                          style={{ padding: `${config.space.S100} ${config.space.S200}` }}
+                          style={{
+                            padding: `${config.space.S100} ${config.space.S200}`,
+                          }}
                         >
                           <Text size="L400">Nickname</Text>
                           <input
@@ -552,21 +659,25 @@ export function MessageOptionsBar({
                             onChange={(e) => setNickDraft(e.target.value)}
                             placeholder={cleanedDisplayName}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                setNickname(senderId, nickDraft || undefined, mx);
+                              if (e.key === "Enter") {
+                                setNickname(
+                                  senderId,
+                                  nickDraft || undefined,
+                                  mx,
+                                );
                                 closeMenu();
                               }
-                              if (e.key === 'Escape') closeMenu();
+                              if (e.key === "Escape") closeMenu();
                             }}
                             style={{
-                              background: 'var(--mx-c-surface)',
-                              color: 'var(--mx-c-on-surface)',
-                              border: '1px solid var(--mx-c-outline)',
-                              borderRadius: '6px',
-                              padding: '4px 8px',
-                              fontSize: '14px',
-                              width: '100%',
-                              outline: 'none',
+                              background: "var(--mx-c-surface)",
+                              color: "var(--mx-c-on-surface)",
+                              border: "1px solid var(--mx-c-outline)",
+                              borderRadius: "6px",
+                              padding: "4px 8px",
+                              fontSize: "14px",
+                              width: "100%",
+                              outline: "none",
                             }}
                           />
                           <Box gap="200">
@@ -576,7 +687,11 @@ export function MessageOptionsBar({
                               variant="Success"
                               fill="None"
                               onClick={() => {
-                                setNickname(senderId, nickDraft || undefined, mx);
+                                setNickname(
+                                  senderId,
+                                  nickDraft || undefined,
+                                  mx,
+                                );
                                 closeMenu();
                               }}
                             >
@@ -604,12 +719,19 @@ export function MessageOptionsBar({
                           after={menuIcon(PencilSimple)}
                           radii="300"
                           onClick={() => {
-                            setNickDraft(nicknames[senderId] ?? '');
+                            setNickDraft(nicknames[senderId] ?? "");
                             setNickEditOpen(true);
                           }}
                         >
-                          <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
-                            {nicknames[senderId] ? 'Edit Nickname' : 'Set Nickname'}
+                          <Text
+                            className={css.MessageMenuItemText}
+                            as="span"
+                            size="T300"
+                            truncate
+                          >
+                            {nicknames[senderId]
+                              ? "Edit Nickname"
+                              : "Set Nickname"}
                           </Text>
                         </MenuItem>
                       ))}
@@ -618,12 +740,24 @@ export function MessageOptionsBar({
                     mEvent.getSender() !== mx.getUserId()) && (
                     <>
                       <Line size="300" />
-                      <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
+                      <Box
+                        direction="Column"
+                        gap="100"
+                        className={css.MessageMenuGroup}
+                      >
                         {!mEvent.isRedacted() && canDelete && (
-                          <MessageDeleteItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                          <MessageDeleteItem
+                            room={room}
+                            mEvent={mEvent}
+                            closeMenu={closeMenu}
+                          />
                         )}
                         {mEvent.getSender() !== mx.getUserId() && (
-                          <MessageReportItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                          <MessageReportItem
+                            room={room}
+                            mEvent={mEvent}
+                            closeMenu={closeMenu}
+                          />
                         )}
                       </Box>
                     </>
@@ -640,7 +774,7 @@ export function MessageOptionsBar({
               aria-pressed={!!menuAnchor}
             >
               {menuIcon(DotsThreeOutlineVerticalIcon, {
-                weight: menuAnchor ? 'fill' : 'regular',
+                weight: menuAnchor ? "fill" : "regular",
               })}
             </IconButton>
           </PopOut>
@@ -668,7 +802,7 @@ export type EventOptionsBarProps = {
   stateEvent: boolean;
   onReplyClick: (
     ev: Parameters<MouseEventHandler<HTMLButtonElement>>[0],
-    startThread?: boolean
+    startThread?: boolean,
   ) => void;
 };
 
@@ -695,13 +829,14 @@ export function EventOptionsBar({
 
   const handleOpenMenu: MouseEventHandler<HTMLButtonElement> = useCallback(
     (evt) => {
-      const target = evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
+      const target =
+        evt.currentTarget.parentElement?.parentElement ?? evt.currentTarget;
       const rect = target.getBoundingClientRect();
       window.requestAnimationFrame(() => {
         setMenuAnchor(rect);
       });
     },
-    [setMenuAnchor]
+    [setMenuAnchor],
   );
 
   if (!show && !menuAnchor) return null;
@@ -713,7 +848,7 @@ export function EventOptionsBar({
           <PopOut
             anchor={menuAnchor}
             position="Bottom"
-            align={menuAnchor?.width === 0 ? 'Start' : 'End'}
+            align={menuAnchor?.width === 0 ? "Start" : "End"}
             offset={menuAnchor?.width === 0 ? 0 : undefined}
             content={
               <FocusTrap
@@ -721,13 +856,17 @@ export function EventOptionsBar({
                   initialFocus: false,
                   onDeactivate: () => setMenuAnchor(undefined),
                   clickOutsideDeactivates: true,
-                  isKeyForward: (evt: KeyboardEvent) => evt.key === 'ArrowDown',
-                  isKeyBackward: (evt: KeyboardEvent) => evt.key === 'ArrowUp',
+                  isKeyForward: (evt: KeyboardEvent) => evt.key === "ArrowDown",
+                  isKeyBackward: (evt: KeyboardEvent) => evt.key === "ArrowUp",
                   escapeDeactivates: stopPropagation,
                 }}
               >
                 <Menu>
-                  <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
+                  <Box
+                    direction="Column"
+                    gap="100"
+                    className={css.MessageMenuGroup}
+                  >
                     <MenuItem
                       size="300"
                       after={menuIcon(ArrowBendUpLeftIcon)}
@@ -735,41 +874,84 @@ export function EventOptionsBar({
                       data-event-id={mEvent.getId()}
                       onClick={(evt: React.MouseEvent) => {
                         onReplyClick(
-                          evt as unknown as Parameters<MouseEventHandler<HTMLButtonElement>>[0]
+                          evt as unknown as Parameters<
+                            MouseEventHandler<HTMLButtonElement>
+                          >[0],
                         );
                         closeMenu();
                       }}
                     >
-                      <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
+                      <Text
+                        className={css.MessageMenuItemText}
+                        as="span"
+                        size="T300"
+                        truncate
+                      >
                         Reply
                       </Text>
                     </MenuItem>
                     {!hideReadReceipts && (
-                      <MessageReadReceiptItem room={room} eventId={mEvent.getId() ?? ''} />
+                      <MessageReadReceiptItem
+                        room={room}
+                        eventId={mEvent.getId() ?? ""}
+                        closeMenu={closeMenu}
+                      />
                     )}
                     {isEdited && (
-                      <MessageEditHistoryItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                      <MessageEditHistoryItem
+                        room={room}
+                        mEvent={mEvent}
+                        closeMenu={closeMenu}
+                      />
                     )}
                     {showDeveloperTools && (
-                      <MessageSourceCodeItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                      <MessageSourceCodeItem
+                        room={room}
+                        mEvent={mEvent}
+                        closeMenu={closeMenu}
+                      />
                     )}
-                    <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
+                    <MessageCopyLinkItem
+                      room={room}
+                      mEvent={mEvent}
+                      onClose={closeMenu}
+                    />
                     <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
-                    <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
+                    <MessageForwardItem
+                      room={room}
+                      mEvent={mEvent}
+                      onClose={closeMenu}
+                    />
                     {!stateEvent && (
-                      <MessageBookmarkItem room={room} mEvent={mEvent} onClose={closeMenu} />
+                      <MessageBookmarkItem
+                        room={room}
+                        mEvent={mEvent}
+                        onClose={closeMenu}
+                      />
                     )}
                   </Box>
                   {((!mEvent.isRedacted() && canDelete && !stateEvent) ||
                     (mEvent.getSender() !== mx.getUserId() && !stateEvent)) && (
                     <>
                       <Line size="300" />
-                      <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
+                      <Box
+                        direction="Column"
+                        gap="100"
+                        className={css.MessageMenuGroup}
+                      >
                         {!mEvent.isRedacted() && canDelete && (
-                          <MessageDeleteItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                          <MessageDeleteItem
+                            room={room}
+                            mEvent={mEvent}
+                            closeMenu={closeMenu}
+                          />
                         )}
                         {mEvent.getSender() !== mx.getUserId() && (
-                          <MessageReportItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                          <MessageReportItem
+                            room={room}
+                            mEvent={mEvent}
+                            closeMenu={closeMenu}
+                          />
                         )}
                       </Box>
                     </>
@@ -795,7 +977,7 @@ export function EventOptionsBar({
               aria-pressed={!!menuAnchor}
             >
               {menuIcon(DotsThreeOutlineVerticalIcon, {
-                weight: menuAnchor ? 'fill' : 'regular',
+                weight: menuAnchor ? "fill" : "regular",
               })}
             </IconButton>
           </PopOut>
