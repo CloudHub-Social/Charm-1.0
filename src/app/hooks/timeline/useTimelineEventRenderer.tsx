@@ -1,7 +1,7 @@
-import type { MouseEventHandler } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { useAtomValue } from "jotai";
+import type { MouseEventHandler } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useAtomValue } from 'jotai';
 import type {
   IThreadBundledRelationship,
   MatrixClient,
@@ -9,18 +9,13 @@ import type {
   Room,
   PushProcessor,
   EventTimelineSet,
-} from "$types/matrix-sdk";
-import type { IImageContent } from "$types/matrix/common";
-import {
-  NotificationCountType,
-  RoomEvent,
-  ThreadEvent,
-  EventType,
-} from "$types/matrix-sdk";
-import type { SessionMembershipData } from "$types/matrix-sdk";
-import type { HTMLReactParserOptions } from "html-react-parser";
-import type { Opts as LinkifyOpts } from "linkifyjs";
-import { Box, Chip, Avatar, Text, config, toRem } from "folds";
+} from '$types/matrix-sdk';
+import type { IImageContent } from '$types/matrix/common';
+import { NotificationCountType, RoomEvent, ThreadEvent, EventType } from '$types/matrix-sdk';
+import type { SessionMembershipData } from '$types/matrix-sdk';
+import type { HTMLReactParserOptions } from 'html-react-parser';
+import type { Opts as LinkifyOpts } from 'linkifyjs';
+import { Box, Chip, Avatar, Text, config, toRem } from 'folds';
 import {
   Code,
   Hash,
@@ -33,16 +28,16 @@ import {
   Smiley,
   timelineIcon,
   Trash,
-} from "$components/icons/phosphor";
-import type { ResolvedHiddenEventSettings } from "$state/hooks/settings";
-import { MessageLayout, type MessageSpacing } from "$state/settings";
-import { nicknamesAtom } from "$state/nicknames";
-import type { useGetMemberPowerTag } from "$hooks/useMemberPowerTag";
-import type { useMemberEventParser } from "$hooks/useMemberEventParser";
-import { useMatrixClient } from "$hooks/useMatrixClient";
-import { useMediaAuthentication } from "$hooks/useMediaAuthentication";
-import { useMatrixEventRenderer } from "$hooks/useMatrixEventRenderer";
-import { useOpenUserRoomProfile } from "$state/hooks/userRoomProfile";
+} from '$components/icons/phosphor';
+import type { ResolvedHiddenEventSettings } from '$state/hooks/settings';
+import { MessageLayout, type MessageSpacing } from '$state/settings';
+import { nicknamesAtom } from '$state/nicknames';
+import type { useGetMemberPowerTag } from '$hooks/useMemberPowerTag';
+import type { useMemberEventParser } from '$hooks/useMemberEventParser';
+import { useMatrixClient } from '$hooks/useMatrixClient';
+import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { useMatrixEventRenderer } from '$hooks/useMatrixEventRenderer';
+import { useOpenUserRoomProfile } from '$state/hooks/userRoomProfile';
 import {
   EventContent,
   ImageContent,
@@ -54,15 +49,15 @@ import {
   Reply,
   ReactionKeyInline,
   Time,
-} from "$components/message";
-import { Image } from "$components/media";
-import { ImageViewer } from "$components/image-viewer";
-import { RenderMessageContent } from "$components/RenderMessageContent";
-import { ClientSideHoverFreeze } from "$components/ClientSideHoverFreeze";
-import { UserAvatar } from "$components/user-avatar";
-import type { GetContentCallback } from "$types/matrix/room";
+} from '$components/message';
+import { Image } from '$components/media';
+import { ImageViewer } from '$components/image-viewer';
+import { RenderMessageContent } from '$components/RenderMessageContent';
+import { ClientSideHoverFreeze } from '$components/ClientSideHoverFreeze';
+import { UserAvatar } from '$components/user-avatar';
+import type { GetContentCallback } from '$types/matrix/room';
 
-import { getMxIdLocalPart, mxcUrlToHttp } from "$utils/matrix";
+import { getMxIdLocalPart, mxcUrlToHttp } from '$utils/matrix';
 import {
   getEditedEvent,
   getEditChain,
@@ -82,16 +77,16 @@ import {
   isThreadRelationEvent,
   reactionOrEditEvent,
   getMemberAvatarMxc,
-} from "$utils/room";
-import { getLinkedTimelines, getLiveTimeline } from "$utils/timeline";
-import * as customHtmlCss from "$styles/CustomHtml.css";
-import { UnreadBadge, UnreadBadgeCenter } from "$components/unread-badge";
-import type { ForwardedMessageProps } from "$features/room/message";
-import { EncryptedContent, Message, Reactions } from "$features/room/message";
-import { PollEvent } from "$features/room/poll/PollEvent";
+} from '$utils/room';
+import { getLinkedTimelines, getLiveTimeline } from '$utils/timeline';
+import * as customHtmlCss from '$styles/CustomHtml.css';
+import { UnreadBadge, UnreadBadgeCenter } from '$components/unread-badge';
+import type { ForwardedMessageProps } from '$features/room/message';
+import { EncryptedContent, Message, Reactions } from '$features/room/message';
+import { PollEvent } from '$features/room/poll/PollEvent';
 
-import { useSableCosmetics } from "$hooks/useSableCosmetics";
-import { M_POLL_START } from "matrix-js-sdk";
+import { useSableCosmetics } from '$hooks/useSableCosmetics';
+import { M_POLL_START } from 'matrix-js-sdk';
 
 function DecoratedUser({ room, userId, userName }: DecoratedUserProps) {
   const { color, font } = useSableCosmetics(userId, room ?? ({} as Room));
@@ -105,10 +100,10 @@ function DecoratedUser({ room, userId, userName }: DecoratedUserProps) {
         room.roomId,
         undefined,
         userId,
-        evt.currentTarget.getBoundingClientRect(),
+        evt.currentTarget.getBoundingClientRect()
       );
     },
-    [room, userId, openUserRoomProfile],
+    [room, userId, openUserRoomProfile]
   );
 
   return (
@@ -166,9 +161,7 @@ function ThreadReplyChip({
     if (thread) {
       const fromThread = thread.events.filter(
         (ev) =>
-          ev.getId() !== mEventId &&
-          !reactionOrEditEvent(ev) &&
-          isThreadRelationEvent(ev, mEventId),
+          ev.getId() !== mEventId && !reactionOrEditEvent(ev) && isThreadRelationEvent(ev, mEventId)
       );
       if (fromThread.length > 0) return fromThread;
     }
@@ -177,9 +170,7 @@ function ThreadReplyChip({
       .flatMap((tl) => tl.getEvents())
       .filter(
         (ev) =>
-          ev.getId() !== mEventId &&
-          !reactionOrEditEvent(ev) &&
-          isThreadRelationEvent(ev, mEventId),
+          ev.getId() !== mEventId && !reactionOrEditEvent(ev) && isThreadRelationEvent(ev, mEventId)
       );
   }, [room, mEventId, thread, counter]);
 
@@ -189,9 +180,7 @@ function ThreadReplyChip({
   // events fetched into the local timeline, which can be much lower than the
   // true total before the thread drawer is first opened and paginated.
   const bundledCount =
-    thread.rootEvent?.getServerAggregatedRelation<IThreadBundledRelationship>(
-      "m.thread",
-    )?.count;
+    thread.rootEvent?.getServerAggregatedRelation<IThreadBundledRelationship>('m.thread')?.count;
   const replyCount = bundledCount ?? thread.length ?? 0;
   if (replyCount === 0) return null;
 
@@ -206,11 +195,11 @@ function ThreadReplyChip({
   });
 
   const latestReply = replyEvents.at(-1);
-  let latestSenderId = "";
-  let latestBody = "";
+  let latestSenderId = '';
+  let latestBody = '';
   if (latestReply) {
-    latestSenderId = latestReply.getSender() ?? "";
-    latestBody = (latestReply.getContent()?.body as string | undefined) ?? "";
+    latestSenderId = latestReply.getSender() ?? '';
+    latestBody = (latestReply.getContent()?.body as string | undefined) ?? '';
   }
 
   const latestSenderName =
@@ -220,19 +209,16 @@ function ThreadReplyChip({
 
   const isOpen = openThreadId === mEventId;
 
-  const unreadTotal = room.getThreadUnreadNotificationCount(
-    mEventId,
-    NotificationCountType.Total,
-  );
+  const unreadTotal = room.getThreadUnreadNotificationCount(mEventId, NotificationCountType.Total);
   const unreadHighlight = room.getThreadUnreadNotificationCount(
     mEventId,
-    NotificationCountType.Highlight,
+    NotificationCountType.Highlight
   );
 
   return (
     <Chip
       size="400"
-      variant={isOpen ? "Primary" : "SurfaceVariant"}
+      variant={isOpen ? 'Primary' : 'SurfaceVariant'}
       radii="300"
       before={
         uniqueSenders.length > 0 ? (
@@ -240,25 +226,14 @@ function ThreadReplyChip({
             {uniqueSenders.slice(0, 3).map((senderId, index) => {
               const avatarMxc = getMemberAvatarMxc(room, senderId);
               const avatarUrl = avatarMxc
-                ? (mxcUrlToHttp(
-                    mx,
-                    avatarMxc,
-                    useAuthentication,
-                    20,
-                    20,
-                    "crop",
-                  ) ?? undefined)
+                ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 20, 20, 'crop') ?? undefined)
                 : undefined;
               const displayName =
                 getMemberDisplayName(room, senderId, nicknames) ??
                 getMxIdLocalPart(senderId) ??
                 senderId;
               return (
-                <Avatar
-                  key={senderId}
-                  size="200"
-                  style={{ marginLeft: index > 0 ? "-4px" : 0 }}
-                >
+                <Avatar key={senderId} size="200" style={{ marginLeft: index > 0 ? '-4px' : 0 }}>
                   <UserAvatar
                     userId={senderId}
                     src={avatarUrl}
@@ -266,12 +241,12 @@ function ThreadReplyChip({
                     renderFallback={() => (
                       <span
                         style={{
-                          fontSize: "10px",
-                          fontWeight: "bold",
+                          fontSize: '10px',
+                          fontWeight: 'bold',
                           lineHeight: 1,
                         }}
                       >
-                        {displayName[0]?.toUpperCase() ?? "?"}
+                        {displayName[0]?.toUpperCase() ?? '?'}
                       </span>
                     )}
                   />
@@ -284,17 +259,17 @@ function ThreadReplyChip({
       onClick={onToggle}
       style={{ marginTop: config.space.S200 }}
     >
-      <Text size="T300" style={{ whiteSpace: "nowrap" }}>
-        {replyCount}&nbsp;{replyCount === 1 ? "reply" : "replies"}
+      <Text size="T300" style={{ whiteSpace: 'nowrap' }}>
+        {replyCount}&nbsp;{replyCount === 1 ? 'reply' : 'replies'}
       </Text>
       {latestBody && (
         <Text
           size="T300"
           style={{
             opacity: 0.7,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
             maxWidth: toRem(180),
           }}
         >
@@ -351,15 +326,8 @@ export interface TimelineEventRendererOptions {
   callbacks: {
     onUserClick: MouseEventHandler<HTMLButtonElement>;
     onUsernameClick: MouseEventHandler<HTMLButtonElement>;
-    onReplyClick: (
-      evt: React.MouseEvent<HTMLButtonElement>,
-      startThread?: boolean,
-    ) => void;
-    onReactionToggle: (
-      targetEventId: string,
-      key: string,
-      shortcode?: string,
-    ) => void;
+    onReplyClick: (evt: React.MouseEvent<HTMLButtonElement>, startThread?: boolean) => void;
+    onReactionToggle: (targetEventId: string, key: string, shortcode?: string) => void;
     onEditId: (editId?: string) => void;
     onResend: (mEvent: MatrixEvent) => void;
     onDeleteFailedSend: (mEvent: MatrixEvent) => void;
@@ -413,12 +381,7 @@ export function useTimelineEventRenderer({
     setOpenThread,
     handleOpenReply,
   },
-  utils: {
-    htmlReactParserOptions,
-    linkifyOpts,
-    getMemberPowerTag,
-    parseMemberEvent,
-  },
+  utils: { htmlReactParserOptions, linkifyOpts, getMemberPowerTag, parseMemberEvent },
 }: TimelineEventRendererOptions) {
   const { t } = useTranslation();
   const {
@@ -436,27 +399,22 @@ export function useTimelineEventRenderer({
     mEvent: MatrixEvent,
     item: number,
     timelineSet: EventTimelineSet,
-    collapse: boolean,
+    collapse: boolean
   ) => {
     if (!hiddenEventEdits) return null;
 
     const highlighted = focusItem?.index === item && focusItem.highlight;
     const marked = activeReplyId === mEventId && suppressMark !== true;
-    const senderId = mEvent.getSender() ?? "";
+    const senderId = mEvent.getSender() ?? '';
     const senderName =
-      getMemberDisplayName(room, senderId, nicknames) ||
-      getMxIdLocalPart(senderId);
+      getMemberDisplayName(room, senderId, nicknames) || getMxIdLocalPart(senderId);
     const editTargetId = getEditTargetId(mEvent);
-    const chain =
-      editTargetId &&
-      getEditChain(timelineSet, editTargetId, mEvent.getType(), room);
+    const chain = editTargetId && getEditChain(timelineSet, editTargetId, mEvent.getType(), room);
     const previousEditId = chain ? getPreviousEditId(mEvent, chain) : undefined;
     const replyEventId = previousEditId ?? editTargetId;
     const { oldBody, newBody } = getEditDiffBodies(mEvent, timelineSet, room);
     const canShowDiff =
-      typeof oldBody === "string" &&
-      typeof newBody === "string" &&
-      oldBody !== newBody;
+      typeof oldBody === 'string' && typeof newBody === 'string' && oldBody !== newBody;
 
     const timeJSX = (
       <Time
@@ -468,9 +426,9 @@ export function useTimelineEventRenderer({
     );
 
     const targetReply =
-      typeof replyEventId === "string" ? (
+      typeof replyEventId === 'string' ? (
         <Reply
-          style={{ opacity: "80%" }}
+          style={{ opacity: '80%' }}
           room={room}
           timelineSet={timelineSet}
           replyEventId={replyEventId}
@@ -509,17 +467,12 @@ export function useTimelineEventRenderer({
         activeReplyId={activeReplyId}
         reactions={(() => {
           const threadChip =
-            !hideThreadChip &&
-            (room.getThread(mEventId) || mEvent.threadRootId) ? (
+            !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
               <ThreadReplyChip
                 room={room}
                 mEventId={mEventId}
                 openThreadId={openThreadId}
-                onToggle={() =>
-                  setOpenThread(
-                    openThreadId === mEventId ? undefined : mEventId,
-                  )
-                }
+                onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
               />
             ) : null;
           if (!reactionRelations && !threadChip) return undefined;
@@ -555,16 +508,10 @@ export function useTimelineEventRenderer({
             <Box grow="Yes" direction="Column">
               {targetReply}
               <Text size="T300" priority="300">
-                <DecoratedUser
-                  userId={senderId}
-                  userName={senderName}
-                  room={room}
-                />
-                {canShowDiff ? " edited a message:" : " edited a message"}
+                <DecoratedUser userId={senderId} userName={senderName} room={room} />
+                {canShowDiff ? ' edited a message:' : ' edited a message'}
               </Text>
-              {canShowDiff && (
-                <InlineTextDiff oldText={oldBody} newText={newBody} />
-              )}
+              {canShowDiff && <InlineTextDiff oldText={oldBody} newText={newBody} />}
             </Box>
           }
         />
@@ -572,42 +519,24 @@ export function useTimelineEventRenderer({
     );
   };
 
-  return useMatrixEventRenderer<
-    [string, MatrixEvent, number, EventTimelineSet, boolean]
-  >(
+  return useMatrixEventRenderer<[string, MatrixEvent, number, EventTimelineSet, boolean]>(
     {
-      [EventType.RoomMessage]: (
-        mEventId,
-        mEvent,
-        item,
-        timelineSet,
-        collapse,
-      ) => {
+      [EventType.RoomMessage]: (mEventId, mEvent, item, timelineSet, collapse) => {
         if (isEditEvent(mEvent)) {
-          return renderEditTimelineEvent(
-            mEventId,
-            mEvent,
-            item,
-            timelineSet,
-            collapse,
-          );
+          return renderEditTimelineEvent(mEventId, mEvent, item, timelineSet, collapse);
         }
 
         const { replyEventId: rawReplyEventId, threadRootId } = mEvent;
         const isThreadRel = isThreadRelationEvent(mEvent, threadRootId);
         const actualThreadRootId = isThreadRel ? threadRootId : undefined;
-        const explicitInReplyTo = mEvent.getWireContent()?.["m.relates_to"]?.[
-          "m.in_reply_to"
-        ]?.event_id as unknown;
+        const explicitInReplyTo = mEvent.getWireContent()?.['m.relates_to']?.['m.in_reply_to']
+          ?.event_id as unknown;
         const threadReplyTargetId =
-          isThreadRel && typeof explicitInReplyTo === "string"
-            ? explicitInReplyTo
-            : undefined;
+          isThreadRel && typeof explicitInReplyTo === 'string' ? explicitInReplyTo : undefined;
         // In the thread drawer (hideThreadChip=true), suppress reply headers for events
         // that only have m.in_reply_to as a non-thread-client fallback (is_falling_back: true).
         const replyEventId =
-          hideThreadChip &&
-          mEvent.getWireContent()?.["m.relates_to"]?.is_falling_back
+          hideThreadChip && mEvent.getWireContent()?.['m.relates_to']?.is_falling_back
             ? undefined
             : (threadReplyTargetId ?? rawReplyEventId);
 
@@ -618,31 +547,26 @@ export function useTimelineEventRenderer({
         const marked = activeReplyId === mEventId && !suppressMark;
 
         const pushActions = pushProcessor.actionsForEvent(mEvent);
-        let notifyHighlight: "silent" | "loud" | undefined;
+        let notifyHighlight: 'silent' | 'loud' | undefined;
         if (pushActions?.notify && pushActions.tweaks?.highlight) {
-          notifyHighlight = pushActions.tweaks?.sound ? "loud" : "silent";
+          notifyHighlight = pushActions.tweaks?.sound ? 'loud' : 'silent';
         }
 
         const baseContent = mEvent.getContent() || {};
         const editedEvent = getEditedEvent(mEventId, mEvent, timelineSet);
         let editedNewContent: unknown;
         if (editedEvent) {
-          editedNewContent = editedEvent.getContent()["m.new_content"];
+          editedNewContent = editedEvent.getContent()['m.new_content'];
         }
         const safeContent =
-          Object.keys(baseContent).length > 0
-            ? baseContent
-            : mEvent.getOriginalContent();
-        const getContent = (() =>
-          editedNewContent ?? safeContent) as GetContentCallback;
+          Object.keys(baseContent).length > 0 ? baseContent : mEvent.getOriginalContent();
+        const getContent = (() => editedNewContent ?? safeContent) as GetContentCallback;
 
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const senderDisplayName =
-          getMemberDisplayName(room, senderId, nicknames) ??
-          getMxIdLocalPart(senderId) ??
-          senderId;
+          getMemberDisplayName(room, senderId, nicknames) ?? getMxIdLocalPart(senderId) ?? senderId;
 
-        const forwardContent = baseContent["moe.sable.message.forward"] as
+        const forwardContent = baseContent['moe.sable.message.forward'] as
           | {
               original_timestamp?: unknown;
               original_room_id?: string;
@@ -651,20 +575,18 @@ export function useTimelineEventRenderer({
             }
           | undefined;
 
-        const messageForwardedProps: ForwardedMessageProps | undefined =
-          forwardContent
-            ? {
-                isForwarded: true,
-                originalTimestamp:
-                  typeof forwardContent.original_timestamp === "number"
-                    ? forwardContent.original_timestamp
-                    : mEvent.getTs(),
-                originalRoomId: forwardContent.original_room_id ?? room.roomId,
-                originalEventId: forwardContent.original_event_id ?? "",
-                originalEventPrivate:
-                  forwardContent.original_event_private ?? false,
-              }
-            : undefined;
+        const messageForwardedProps: ForwardedMessageProps | undefined = forwardContent
+          ? {
+              isForwarded: true,
+              originalTimestamp:
+                typeof forwardContent.original_timestamp === 'number'
+                  ? forwardContent.original_timestamp
+                  : mEvent.getTs(),
+              originalRoomId: forwardContent.original_room_id ?? room.roomId,
+              originalEventId: forwardContent.original_event_id ?? '',
+              originalEventPrivate: forwardContent.original_event_private ?? false,
+            }
+          : undefined;
 
         return (
           <Message
@@ -679,9 +601,7 @@ export function useTimelineEventRenderer({
             isMarked={marked}
             notifyHighlight={notifyHighlight}
             edit={editId === mEventId}
-            canDelete={
-              canRedact || (canDeleteOwn && senderId === mx.getUserId())
-            }
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}
@@ -706,24 +626,19 @@ export function useTimelineEventRenderer({
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
                   threadRootId={hideThreadChip ? undefined : actualThreadRootId}
-                  mentions={baseContent["m.mentions"]}
+                  mentions={baseContent['m.mentions']}
                   onClick={handleOpenReply}
                 />
               )
             }
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -752,16 +667,11 @@ export function useTimelineEventRenderer({
             dateFormatString={dateFormatString}
           >
             {mEvent.isRedacted() ? (
-              <RedactedContent
-                reason={mEvent.getUnsigned().redacted_because?.content.reason}
-              />
+              <RedactedContent reason={mEvent.getUnsigned().redacted_because?.content.reason} />
             ) : (
               <RenderMessageContent
                 displayName={senderDisplayName}
-                msgType={
-                  ((editedNewContent ?? safeContent) as { msgtype?: string })
-                    .msgtype ?? ""
-                }
+                msgType={((editedNewContent ?? safeContent) as { msgtype?: string }).msgtype ?? ''}
                 ts={mEvent.getTs()}
                 edited={!!editedEvent}
                 getContent={getContent}
@@ -780,36 +690,20 @@ export function useTimelineEventRenderer({
           </Message>
         );
       },
-      [EventType.RoomMessageEncrypted]: (
-        mEventId,
-        mEvent,
-        item,
-        timelineSet,
-        collapse,
-      ) => {
+      [EventType.RoomMessageEncrypted]: (mEventId, mEvent, item, timelineSet, collapse) => {
         if (isEditEvent(mEvent)) {
-          return renderEditTimelineEvent(
-            mEventId,
-            mEvent,
-            item,
-            timelineSet,
-            collapse,
-          );
+          return renderEditTimelineEvent(mEventId, mEvent, item, timelineSet, collapse);
         }
 
         const { replyEventId: rawReplyEventId, threadRootId } = mEvent;
         const isThreadRel = isThreadRelationEvent(mEvent, threadRootId);
         const actualThreadRootId = isThreadRel ? threadRootId : undefined;
-        const explicitInReplyTo = mEvent.getWireContent()?.["m.relates_to"]?.[
-          "m.in_reply_to"
-        ]?.event_id as unknown;
+        const explicitInReplyTo = mEvent.getWireContent()?.['m.relates_to']?.['m.in_reply_to']
+          ?.event_id as unknown;
         const threadReplyTargetId =
-          isThreadRel && typeof explicitInReplyTo === "string"
-            ? explicitInReplyTo
-            : undefined;
+          isThreadRel && typeof explicitInReplyTo === 'string' ? explicitInReplyTo : undefined;
         const replyEventId =
-          hideThreadChip &&
-          mEvent.getWireContent()?.["m.relates_to"]?.is_falling_back
+          hideThreadChip && mEvent.getWireContent()?.['m.relates_to']?.is_falling_back
             ? undefined
             : (threadReplyTargetId ?? rawReplyEventId);
 
@@ -818,16 +712,14 @@ export function useTimelineEventRenderer({
         const hasReactions = reactions && reactions.length > 0;
         const highlighted = focusItem?.index === item && focusItem.highlight;
         const marked = activeReplyId === mEventId && !suppressMark;
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const senderDisplayName =
-          getMemberDisplayName(room, senderId, nicknames) ??
-          getMxIdLocalPart(senderId) ??
-          senderId;
+          getMemberDisplayName(room, senderId, nicknames) ?? getMxIdLocalPart(senderId) ?? senderId;
 
         const pushActions = pushProcessor.actionsForEvent(mEvent);
-        let notifyHighlight: "silent" | "loud" | undefined;
+        let notifyHighlight: 'silent' | 'loud' | undefined;
         if (pushActions?.notify && pushActions.tweaks?.highlight) {
-          notifyHighlight = pushActions.tweaks?.sound ? "loud" : "silent";
+          notifyHighlight = pushActions.tweaks?.sound ? 'loud' : 'silent';
         }
 
         return (
@@ -843,9 +735,7 @@ export function useTimelineEventRenderer({
             isMarked={marked}
             notifyHighlight={notifyHighlight}
             edit={editId === mEventId}
-            canDelete={
-              canRedact || (canDeleteOwn && senderId === mx.getUserId())
-            }
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}
@@ -875,17 +765,12 @@ export function useTimelineEventRenderer({
             }
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -941,25 +826,17 @@ export function useTimelineEventRenderer({
                     />
                   );
                 if (type === (EventType.RoomMessage as string)) {
-                  const editedEvent = getEditedEvent(
-                    mEventId,
-                    mEvent,
-                    timelineSet,
-                  );
+                  const editedEvent = getEditedEvent(mEventId, mEvent, timelineSet);
                   let editedNewContent: unknown;
                   if (editedEvent) {
-                    editedNewContent =
-                      editedEvent.getContent()["m.new_content"];
+                    editedNewContent = editedEvent.getContent()['m.new_content'];
                   }
 
                   const baseContent = mEvent.getContent() || {};
                   const safeContent =
-                    Object.keys(baseContent).length > 0
-                      ? baseContent
-                      : mEvent.getOriginalContent();
+                    Object.keys(baseContent).length > 0 ? baseContent : mEvent.getOriginalContent();
 
-                  const getContent = (() =>
-                    editedNewContent ?? safeContent) as GetContentCallback;
+                  const getContent = (() => editedNewContent ?? safeContent) as GetContentCallback;
 
                   return (
                     <RenderMessageContent
@@ -969,7 +846,7 @@ export function useTimelineEventRenderer({
                           (editedNewContent ?? safeContent) as {
                             msgtype?: string;
                           }
-                        ).msgtype ?? ""
+                        ).msgtype ?? ''
                       }
                       ts={mEvent.getTs()}
                       edited={!!editedEvent}
@@ -1001,16 +878,12 @@ export function useTimelineEventRenderer({
         const { replyEventId: rawReplyEventId, threadRootId } = mEvent;
         const isThreadRel = isThreadRelationEvent(mEvent, threadRootId);
         const actualThreadRootId = isThreadRel ? threadRootId : undefined;
-        const explicitInReplyTo = mEvent.getWireContent()?.["m.relates_to"]?.[
-          "m.in_reply_to"
-        ]?.event_id as unknown;
+        const explicitInReplyTo = mEvent.getWireContent()?.['m.relates_to']?.['m.in_reply_to']
+          ?.event_id as unknown;
         const threadReplyTargetId =
-          isThreadRel && typeof explicitInReplyTo === "string"
-            ? explicitInReplyTo
-            : undefined;
+          isThreadRel && typeof explicitInReplyTo === 'string' ? explicitInReplyTo : undefined;
         const replyEventId =
-          hideThreadChip &&
-          mEvent.getWireContent()?.["m.relates_to"]?.is_falling_back
+          hideThreadChip && mEvent.getWireContent()?.['m.relates_to']?.is_falling_back
             ? undefined
             : (threadReplyTargetId ?? rawReplyEventId);
 
@@ -1019,11 +892,9 @@ export function useTimelineEventRenderer({
         const hasReactions = reactions && reactions.length > 0;
         const highlighted = focusItem?.index === item && focusItem.highlight;
         const marked = activeReplyId === mEventId && !suppressMark;
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const senderDisplayName =
-          getMemberDisplayName(room, senderId, nicknames) ??
-          getMxIdLocalPart(senderId) ??
-          senderId;
+          getMemberDisplayName(room, senderId, nicknames) ?? getMxIdLocalPart(senderId) ?? senderId;
         const content = mEvent.getContent() ?? {};
 
         return (
@@ -1037,9 +908,7 @@ export function useTimelineEventRenderer({
             messageLayout={messageLayout}
             highlight={highlighted}
             isMarked={marked}
-            canDelete={
-              canRedact || (canDeleteOwn && senderId === mx.getUserId())
-            }
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}
@@ -1062,24 +931,19 @@ export function useTimelineEventRenderer({
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
                   threadRootId={hideThreadChip ? undefined : actualThreadRootId}
-                  mentions={content["m.mentions"]}
+                  mentions={content['m.mentions']}
                   onClick={handleOpenReply}
                 />
               )
             }
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -1108,9 +972,7 @@ export function useTimelineEventRenderer({
             dateFormatString={dateFormatString}
           >
             {mEvent.isRedacted() ? (
-              <RedactedContent
-                reason={mEvent.getUnsigned().redacted_because?.content.reason}
-              />
+              <RedactedContent reason={mEvent.getUnsigned().redacted_because?.content.reason} />
             ) : (
               <MSticker
                 content={mEvent.getContent() as unknown as IImageContent}
@@ -1140,18 +1002,14 @@ export function useTimelineEventRenderer({
         const { replyEventId: rawReplyEventId, threadRootId } = mEvent;
         const isThreadRel = isThreadRelationEvent(mEvent, threadRootId);
         const actualThreadRootId = isThreadRel ? threadRootId : undefined;
-        const explicitInReplyTo = mEvent.getWireContent()?.["m.relates_to"]?.[
-          "m.in_reply_to"
-        ]?.event_id as unknown;
+        const explicitInReplyTo = mEvent.getWireContent()?.['m.relates_to']?.['m.in_reply_to']
+          ?.event_id as unknown;
         const threadReplyTargetId =
-          isThreadRel && typeof explicitInReplyTo === "string"
-            ? explicitInReplyTo
-            : undefined;
+          isThreadRel && typeof explicitInReplyTo === 'string' ? explicitInReplyTo : undefined;
         // In the thread drawer (hideThreadChip=true), suppress reply headers for events
         // that only have m.in_reply_to as a non-thread-client fallback (is_falling_back: true).
         const replyEventId =
-          hideThreadChip &&
-          mEvent.getWireContent()?.["m.relates_to"]?.is_falling_back
+          hideThreadChip && mEvent.getWireContent()?.['m.relates_to']?.is_falling_back
             ? undefined
             : (threadReplyTargetId ?? rawReplyEventId);
 
@@ -1162,20 +1020,18 @@ export function useTimelineEventRenderer({
         const marked = activeReplyId === mEventId && !suppressMark;
 
         const pushActions = pushProcessor.actionsForEvent(mEvent);
-        let notifyHighlight: "silent" | "loud" | undefined;
+        let notifyHighlight: 'silent' | 'loud' | undefined;
         if (pushActions?.notify && pushActions.tweaks?.highlight) {
-          notifyHighlight = pushActions.tweaks?.sound ? "loud" : "silent";
+          notifyHighlight = pushActions.tweaks?.sound ? 'loud' : 'silent';
         }
 
         const baseContent = mEvent.getContent() || {};
 
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const senderDisplayName =
-          getMemberDisplayName(room, senderId, nicknames) ??
-          getMxIdLocalPart(senderId) ??
-          senderId;
+          getMemberDisplayName(room, senderId, nicknames) ?? getMxIdLocalPart(senderId) ?? senderId;
 
-        const forwardContent = baseContent["moe.sable.message.forward"] as
+        const forwardContent = baseContent['moe.sable.message.forward'] as
           | {
               original_timestamp?: unknown;
               original_room_id?: string;
@@ -1184,20 +1040,18 @@ export function useTimelineEventRenderer({
             }
           | undefined;
 
-        const messageForwardedProps: ForwardedMessageProps | undefined =
-          forwardContent
-            ? {
-                isForwarded: true,
-                originalTimestamp:
-                  typeof forwardContent.original_timestamp === "number"
-                    ? forwardContent.original_timestamp
-                    : mEvent.getTs(),
-                originalRoomId: forwardContent.original_room_id ?? room.roomId,
-                originalEventId: forwardContent.original_event_id ?? "",
-                originalEventPrivate:
-                  forwardContent.original_event_private ?? false,
-              }
-            : undefined;
+        const messageForwardedProps: ForwardedMessageProps | undefined = forwardContent
+          ? {
+              isForwarded: true,
+              originalTimestamp:
+                typeof forwardContent.original_timestamp === 'number'
+                  ? forwardContent.original_timestamp
+                  : mEvent.getTs(),
+              originalRoomId: forwardContent.original_room_id ?? room.roomId,
+              originalEventId: forwardContent.original_event_id ?? '',
+              originalEventPrivate: forwardContent.original_event_private ?? false,
+            }
+          : undefined;
 
         return (
           <Message
@@ -1212,9 +1066,7 @@ export function useTimelineEventRenderer({
             isMarked={marked}
             notifyHighlight={notifyHighlight}
             edit={editId === mEventId}
-            canDelete={
-              canRedact || (canDeleteOwn && senderId === mx.getUserId())
-            }
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}
@@ -1239,24 +1091,19 @@ export function useTimelineEventRenderer({
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
                   threadRootId={hideThreadChip ? undefined : actualThreadRootId}
-                  mentions={baseContent["m.mentions"]}
+                  mentions={baseContent['m.mentions']}
                   onClick={handleOpenReply}
                 />
               )
             }
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -1285,9 +1132,7 @@ export function useTimelineEventRenderer({
             dateFormatString={dateFormatString}
           >
             {mEvent.isRedacted() ? (
-              <RedactedContent
-                reason={mEvent.getUnsigned().redacted_because?.content.reason}
-              />
+              <RedactedContent reason={mEvent.getUnsigned().redacted_because?.content.reason} />
             ) : (
               <PollEvent
                 mEvent={mEvent}
@@ -1303,16 +1148,12 @@ export function useTimelineEventRenderer({
         const { replyEventId: rawReplyEventId, threadRootId } = mEvent;
         const isThreadRel = isThreadRelationEvent(mEvent, threadRootId);
         const actualThreadRootId = isThreadRel ? threadRootId : undefined;
-        const explicitInReplyTo = mEvent.getWireContent()?.["m.relates_to"]?.[
-          "m.in_reply_to"
-        ]?.event_id as unknown;
+        const explicitInReplyTo = mEvent.getWireContent()?.['m.relates_to']?.['m.in_reply_to']
+          ?.event_id as unknown;
         const threadReplyTargetId =
-          isThreadRel && typeof explicitInReplyTo === "string"
-            ? explicitInReplyTo
-            : undefined;
+          isThreadRel && typeof explicitInReplyTo === 'string' ? explicitInReplyTo : undefined;
         const replyEventId =
-          hideThreadChip &&
-          mEvent.getWireContent()?.["m.relates_to"]?.is_falling_back
+          hideThreadChip && mEvent.getWireContent()?.['m.relates_to']?.is_falling_back
             ? undefined
             : (threadReplyTargetId ?? rawReplyEventId);
 
@@ -1323,18 +1164,16 @@ export function useTimelineEventRenderer({
         const marked = activeReplyId === mEventId && !suppressMark;
 
         const pushActions = pushProcessor.actionsForEvent(mEvent);
-        let notifyHighlight: "silent" | "loud" | undefined;
+        let notifyHighlight: 'silent' | 'loud' | undefined;
         if (pushActions?.notify && pushActions.tweaks?.highlight) {
-          notifyHighlight = pushActions.tweaks?.sound ? "loud" : "silent";
+          notifyHighlight = pushActions.tweaks?.sound ? 'loud' : 'silent';
         }
 
         const baseContent = mEvent.getContent() || {};
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const senderDisplayName =
-          getMemberDisplayName(room, senderId, nicknames) ??
-          getMxIdLocalPart(senderId) ??
-          senderId;
-        const forwardContent = baseContent["moe.sable.message.forward"] as
+          getMemberDisplayName(room, senderId, nicknames) ?? getMxIdLocalPart(senderId) ?? senderId;
+        const forwardContent = baseContent['moe.sable.message.forward'] as
           | {
               original_timestamp?: unknown;
               original_room_id?: string;
@@ -1343,20 +1182,18 @@ export function useTimelineEventRenderer({
             }
           | undefined;
 
-        const messageForwardedProps: ForwardedMessageProps | undefined =
-          forwardContent
-            ? {
-                isForwarded: true,
-                originalTimestamp:
-                  typeof forwardContent.original_timestamp === "number"
-                    ? forwardContent.original_timestamp
-                    : mEvent.getTs(),
-                originalRoomId: forwardContent.original_room_id ?? room.roomId,
-                originalEventId: forwardContent.original_event_id ?? "",
-                originalEventPrivate:
-                  forwardContent.original_event_private ?? false,
-              }
-            : undefined;
+        const messageForwardedProps: ForwardedMessageProps | undefined = forwardContent
+          ? {
+              isForwarded: true,
+              originalTimestamp:
+                typeof forwardContent.original_timestamp === 'number'
+                  ? forwardContent.original_timestamp
+                  : mEvent.getTs(),
+              originalRoomId: forwardContent.original_room_id ?? room.roomId,
+              originalEventId: forwardContent.original_event_id ?? '',
+              originalEventPrivate: forwardContent.original_event_private ?? false,
+            }
+          : undefined;
 
         return (
           <Message
@@ -1371,9 +1208,7 @@ export function useTimelineEventRenderer({
             isMarked={marked}
             notifyHighlight={notifyHighlight}
             edit={editId === mEventId}
-            canDelete={
-              canRedact || (canDeleteOwn && senderId === mx.getUserId())
-            }
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}
@@ -1398,24 +1233,19 @@ export function useTimelineEventRenderer({
                   timelineSet={timelineSet}
                   replyEventId={replyEventId}
                   threadRootId={hideThreadChip ? undefined : actualThreadRootId}
-                  mentions={baseContent["m.mentions"]}
+                  mentions={baseContent['m.mentions']}
                   onClick={handleOpenReply}
                 />
               )
             }
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -1444,9 +1274,7 @@ export function useTimelineEventRenderer({
             dateFormatString={dateFormatString}
           >
             {mEvent.isRedacted() ? (
-              <RedactedContent
-                reason={mEvent.getUnsigned().redacted_because?.content.reason}
-              />
+              <RedactedContent reason={mEvent.getUnsigned().redacted_because?.content.reason} />
             ) : (
               <PollEvent
                 mEvent={mEvent}
@@ -1458,13 +1286,7 @@ export function useTimelineEventRenderer({
           </Message>
         );
       },
-      [EventType.RoomMember]: (
-        mEventId,
-        mEvent,
-        item,
-        timelineSet,
-        collapse,
-      ) => {
+      [EventType.RoomMember]: (mEventId, mEvent, item, timelineSet, collapse) => {
         const membershipChanged = isMembershipChanged(mEvent);
         if (hideMemberInReadOnly && isReadOnly) return null;
         if (membershipChanged && hideMembershipEvents) return null;
@@ -1483,7 +1305,7 @@ export function useTimelineEventRenderer({
           />
         );
 
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const reactionRelations = getEventReactions(timelineSet, mEventId);
         const reactions = reactionRelations?.getSortedAnnotationsByKey();
         const hasReactions = reactions && reactions.length > 0;
@@ -1499,9 +1321,7 @@ export function useTimelineEventRenderer({
             highlight={highlighted}
             isMarked={marked}
             edit={editId === mEventId}
-            canDelete={
-              canRedact || (canDeleteOwn && senderId === mx.getUserId())
-            }
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}
@@ -1517,17 +1337,12 @@ export function useTimelineEventRenderer({
             activeReplyId={activeReplyId}
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || mEvent.threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -1561,10 +1376,7 @@ export function useTimelineEventRenderer({
               icon={parsed.icon}
               content={
                 <Text size="T300" priority="300">
-                  <Box
-                    direction="Row"
-                    style={{ flexWrap: "wrap", columnGap: toRem(6) }}
-                  >
+                  <Box direction="Row" style={{ flexWrap: 'wrap', columnGap: toRem(6) }}>
                     {parsed.body}
                   </Box>
                 </Text>
@@ -1576,10 +1388,9 @@ export function useTimelineEventRenderer({
       [EventType.RoomName]: (mEventId, mEvent, item, timelineSet, collapse) => {
         const highlighted = focusItem?.index === item && focusItem.highlight;
         const marked = activeReplyId === mEventId && !suppressMark;
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const senderName =
-          getMemberDisplayName(room, senderId, nicknames) ||
-          getMxIdLocalPart(senderId);
+          getMemberDisplayName(room, senderId, nicknames) || getMxIdLocalPart(senderId);
         const timeJSX = (
           <Time
             ts={mEvent.getTs()}
@@ -1604,9 +1415,7 @@ export function useTimelineEventRenderer({
             highlight={highlighted}
             isMarked={marked}
             edit={editId === mEventId}
-            canDelete={
-              canRedact || (canDeleteOwn && senderId === mx.getUserId())
-            }
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}
@@ -1622,17 +1431,12 @@ export function useTimelineEventRenderer({
             activeReplyId={activeReplyId}
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || mEvent.threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -1667,12 +1471,8 @@ export function useTimelineEventRenderer({
               content={
                 <Box grow="Yes" direction="Column">
                   <Text size="T300" priority="300">
-                    <DecoratedUser
-                      userId={senderId}
-                      userName={senderName}
-                      room={room}
-                    />
-                    {t("Organisms.RoomCommon.changed_room_name")}
+                    <DecoratedUser userId={senderId} userName={senderName} room={room} />
+                    {t('Organisms.RoomCommon.changed_room_name')}
                   </Text>
                 </Box>
               }
@@ -1680,19 +1480,12 @@ export function useTimelineEventRenderer({
           </Message>
         );
       },
-      [EventType.RoomTopic]: (
-        mEventId,
-        mEvent,
-        item,
-        timelineSet,
-        collapse,
-      ) => {
+      [EventType.RoomTopic]: (mEventId, mEvent, item, timelineSet, collapse) => {
         const highlighted = focusItem?.index === item && focusItem.highlight;
         const marked = activeReplyId === mEventId && !suppressMark;
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const senderName =
-          getMemberDisplayName(room, senderId, nicknames) ||
-          getMxIdLocalPart(senderId);
+          getMemberDisplayName(room, senderId, nicknames) || getMxIdLocalPart(senderId);
 
         const timeJSX = (
           <Time
@@ -1718,9 +1511,7 @@ export function useTimelineEventRenderer({
             highlight={highlighted}
             isMarked={marked}
             edit={editId === mEventId}
-            canDelete={
-              canRedact || (canDeleteOwn && senderId === mx.getUserId())
-            }
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}
@@ -1736,17 +1527,12 @@ export function useTimelineEventRenderer({
             activeReplyId={activeReplyId}
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || mEvent.threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -1781,12 +1567,8 @@ export function useTimelineEventRenderer({
               content={
                 <Box grow="Yes" direction="Column">
                   <Text size="T300" priority="300">
-                    <DecoratedUser
-                      userId={senderId}
-                      userName={senderName}
-                      room={room}
-                    />
-                    {" changed room topic"}
+                    <DecoratedUser userId={senderId} userName={senderName} room={room} />
+                    {' changed room topic'}
                   </Text>
                 </Box>
               }
@@ -1794,19 +1576,12 @@ export function useTimelineEventRenderer({
           </Message>
         );
       },
-      [EventType.RoomAvatar]: (
-        mEventId,
-        mEvent,
-        item,
-        timelineSet,
-        collapse,
-      ) => {
+      [EventType.RoomAvatar]: (mEventId, mEvent, item, timelineSet, collapse) => {
         const highlighted = focusItem?.index === item && focusItem.highlight;
         const marked = activeReplyId === mEventId && !suppressMark;
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const senderName =
-          getMemberDisplayName(room, senderId, nicknames) ||
-          getMxIdLocalPart(senderId);
+          getMemberDisplayName(room, senderId, nicknames) || getMxIdLocalPart(senderId);
 
         const timeJSX = (
           <Time
@@ -1832,9 +1607,7 @@ export function useTimelineEventRenderer({
             highlight={highlighted}
             isMarked={marked}
             edit={editId === mEventId}
-            canDelete={
-              canRedact || (canDeleteOwn && senderId === mx.getUserId())
-            }
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}
@@ -1850,17 +1623,12 @@ export function useTimelineEventRenderer({
             activeReplyId={activeReplyId}
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || mEvent.threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -1895,12 +1663,8 @@ export function useTimelineEventRenderer({
               content={
                 <Box grow="Yes" direction="Column">
                   <Text size="T300" priority="300">
-                    <DecoratedUser
-                      userId={senderId}
-                      userName={senderName}
-                      room={room}
-                    />
-                    {" changed room avatar"}
+                    <DecoratedUser userId={senderId} userName={senderName} room={room} />
+                    {' changed room avatar'}
                   </Text>
                 </Box>
               }
@@ -1908,24 +1672,17 @@ export function useTimelineEventRenderer({
           </Message>
         );
       },
-      [EventType.GroupCallMemberPrefix]: (
-        mEventId,
-        mEvent,
-        item,
-        timelineSet,
-        collapse,
-      ) => {
+      [EventType.GroupCallMemberPrefix]: (mEventId, mEvent, item, timelineSet, collapse) => {
         const highlighted = focusItem?.index === item && focusItem.highlight;
         const marked = activeReplyId === mEventId && !suppressMark;
-        const senderId = mEvent.getSender() ?? "";
-        const senderName =
-          getMemberDisplayName(room, senderId) || getMxIdLocalPart(senderId);
+        const senderId = mEvent.getSender() ?? '';
+        const senderName = getMemberDisplayName(room, senderId) || getMxIdLocalPart(senderId);
 
         const content = mEvent.getContent() as SessionMembershipData;
         const prevContent = mEvent.getPrevContent();
 
         const callJoined = content.application;
-        if (callJoined && "application" in prevContent) {
+        if (callJoined && 'application' in prevContent) {
           return null;
         }
 
@@ -1953,9 +1710,7 @@ export function useTimelineEventRenderer({
             highlight={highlighted}
             isMarked={marked}
             edit={editId === mEventId}
-            canDelete={
-              canRedact || (canDeleteOwn && senderId === mx.getUserId())
-            }
+            canDelete={canRedact || (canDeleteOwn && senderId === mx.getUserId())}
             canSendReaction={canSendReaction}
             canPinEvent={canPinEvent}
             imagePackRooms={imagePackRooms}
@@ -1971,17 +1726,12 @@ export function useTimelineEventRenderer({
             activeReplyId={activeReplyId}
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || mEvent.threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -2012,18 +1762,12 @@ export function useTimelineEventRenderer({
             <EventContent
               messageLayout={messageLayout}
               time={timeJSX}
-              icon={
-                callJoined ? timelineIcon(Phone) : timelineIcon(PhoneDisconnect)
-              }
+              icon={callJoined ? timelineIcon(Phone) : timelineIcon(PhoneDisconnect)}
               content={
                 <Box grow="Yes" direction="Column">
                   <Text size="T300" priority="300">
-                    <DecoratedUser
-                      userId={senderId}
-                      userName={senderName}
-                      room={room}
-                    />
-                    {callJoined ? " joined the call" : " ended the call"}
+                    <DecoratedUser userId={senderId} userName={senderName} room={room} />
+                    {callJoined ? ' joined the call' : ' ended the call'}
                   </Text>
                 </Box>
               }
@@ -2036,13 +1780,10 @@ export function useTimelineEventRenderer({
 
         const highlighted = focusItem?.index === item && focusItem.highlight;
         const marked = activeReplyId === mEventId;
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const senderName =
-          getMemberDisplayName(room, senderId, nicknames) ||
-          getMxIdLocalPart(senderId);
-        const targetId =
-          getReactionAnnotationTargetId(mEvent) ??
-          mEvent.getRelation()?.event_id;
+          getMemberDisplayName(room, senderId, nicknames) || getMxIdLocalPart(senderId);
+        const targetId = getReactionAnnotationTargetId(mEvent) ?? mEvent.getRelation()?.event_id;
 
         const timeJSX = (
           <Time
@@ -2054,9 +1795,9 @@ export function useTimelineEventRenderer({
         );
 
         const targetReply =
-          typeof targetId === "string" ? (
+          typeof targetId === 'string' ? (
             <Reply
-              style={{ opacity: "80%" }}
+              style={{ opacity: '80%' }}
               room={room}
               timelineSet={timelineSet}
               replyEventId={targetId}
@@ -2100,16 +1841,13 @@ export function useTimelineEventRenderer({
               activeReplyId={activeReplyId}
               reactions={(() => {
                 const threadChip =
-                  !hideThreadChip &&
-                  (room.getThread(mEventId) || mEvent.threadRootId) ? (
+                  !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
                     <ThreadReplyChip
                       room={room}
                       mEventId={mEventId}
                       openThreadId={openThreadId}
                       onToggle={() =>
-                        setOpenThread(
-                          openThreadId === mEventId ? undefined : mEventId,
-                        )
+                        setOpenThread(openThreadId === mEventId ? undefined : mEventId)
                       }
                     />
                   ) : null;
@@ -2161,8 +1899,7 @@ export function useTimelineEventRenderer({
 
         if (!hiddenEventReactions) return null;
 
-        const reactionKey =
-          getReactionKey(mEvent) ?? mEvent.getRelation()?.key ?? "";
+        const reactionKey = getReactionKey(mEvent) ?? mEvent.getRelation()?.key ?? '';
         const reactionShortcode = getReactionShortcode(mEvent);
 
         return (
@@ -2191,17 +1928,12 @@ export function useTimelineEventRenderer({
             activeReplyId={activeReplyId}
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || mEvent.threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -2237,12 +1969,8 @@ export function useTimelineEventRenderer({
                 <Box grow="Yes" direction="Column">
                   {targetReply}
                   <Text size="T300" priority="300">
-                    <DecoratedUser
-                      userId={senderId}
-                      userName={senderName}
-                      room={room}
-                    />
-                    {" reacted with "}
+                    <DecoratedUser userId={senderId} userName={senderName} room={room} />
+                    {' reacted with '}
                     <ReactionKeyInline
                       mx={mx}
                       reactionKey={reactionKey}
@@ -2256,16 +1984,9 @@ export function useTimelineEventRenderer({
           </Message>
         );
       },
-      [EventType.RoomRedaction]: (
-        mEventId,
-        mEvent,
-        item,
-        timelineSet,
-        collapse,
-      ) => {
+      [EventType.RoomRedaction]: (mEventId, mEvent, item, timelineSet, collapse) => {
         const target = getRedactionTargetEvent(timelineSet, mEvent);
-        const isReactionRedaction =
-          target?.getType() === (EventType.Reaction as string);
+        const isReactionRedaction = target?.getType() === (EventType.Reaction as string);
         if (isReactionRedaction) {
           if (hideMemberInReadOnly && isReadOnly) return null;
           if (!hiddenEventReactionRedactionTimeline) return null;
@@ -2275,13 +1996,11 @@ export function useTimelineEventRenderer({
 
         const highlighted = focusItem?.index === item && focusItem.highlight;
         const marked = activeReplyId === mEventId;
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const senderName =
-          getMemberDisplayName(room, senderId, nicknames) ||
-          getMxIdLocalPart(senderId);
+          getMemberDisplayName(room, senderId, nicknames) || getMxIdLocalPart(senderId);
         const targetId = isReactionRedaction
-          ? (getReactionAnnotationTargetId(target) ??
-            getRedactionTargetId(mEvent))
+          ? (getReactionAnnotationTargetId(target) ?? getRedactionTargetId(mEvent))
           : getRedactionTargetId(mEvent);
 
         const timeJSX = (
@@ -2295,7 +2014,7 @@ export function useTimelineEventRenderer({
 
         const targetReply = targetId ? (
           <Reply
-            style={{ opacity: "80%" }}
+            style={{ opacity: '80%' }}
             room={room}
             timelineSet={timelineSet}
             replyEventId={targetId}
@@ -2333,17 +2052,12 @@ export function useTimelineEventRenderer({
             activeReplyId={activeReplyId}
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || mEvent.threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -2379,14 +2093,8 @@ export function useTimelineEventRenderer({
                 <Box grow="Yes" direction="Column">
                   {targetReply}
                   <Text size="T300" priority="300">
-                    <DecoratedUser
-                      userId={senderId}
-                      userName={senderName}
-                      room={room}
-                    />
-                    {isReactionRedaction
-                      ? " redacted a reaction"
-                      : " redacted a message"}
+                    <DecoratedUser userId={senderId} userName={senderName} room={room} />
+                    {isReactionRedaction ? ' redacted a reaction' : ' redacted a message'}
                   </Text>
                 </Box>
               }
@@ -2394,20 +2102,13 @@ export function useTimelineEventRenderer({
           </Message>
         );
       },
-      [EventType.RoomPinnedEvents]: (
-        mEventId,
-        mEvent,
-        item,
-        timelineSet,
-        collapse,
-      ) => {
+      [EventType.RoomPinnedEvents]: (mEventId, mEvent, item, timelineSet, collapse) => {
         if (!hiddenEventOther) return null;
         const highlighted = focusItem?.index === item && focusItem.highlight;
         const marked = activeReplyId === mEventId && !suppressMark;
-        const senderId = mEvent.getSender() ?? "";
+        const senderId = mEvent.getSender() ?? '';
         const senderName =
-          getMemberDisplayName(room, senderId, nicknames) ||
-          getMxIdLocalPart(senderId);
+          getMemberDisplayName(room, senderId, nicknames) || getMxIdLocalPart(senderId);
 
         const { pinned } = mEvent.getContent();
         const prevPinned = mEvent.getPrevContent().pinned;
@@ -2415,10 +2116,7 @@ export function useTimelineEventRenderer({
           ? pinned?.filter((x: string) => !prevPinned.includes(x))
           : pinned?.filter((x: string) => x.length > 0);
         const pinsRemoved =
-          (prevPinned &&
-            pinned &&
-            prevPinned.filter((x: string) => !pinned.includes(x))) ||
-          [];
+          (prevPinned && pinned && prevPinned.filter((x: string) => !pinned.includes(x))) || [];
 
         const pinPreviewIds = (pinsAdded ?? []).concat(...(pinsRemoved ?? []));
         const pinnedSet = new Set(pinned ?? []);
@@ -2462,17 +2160,12 @@ export function useTimelineEventRenderer({
             activeReplyId={activeReplyId}
             reactions={(() => {
               const threadChip =
-                !hideThreadChip &&
-                (room.getThread(mEventId) || mEvent.threadRootId) ? (
+                !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
                   <ThreadReplyChip
                     room={room}
                     mEventId={mEventId}
                     openThreadId={openThreadId}
-                    onToggle={() =>
-                      setOpenThread(
-                        openThreadId === mEventId ? undefined : mEventId,
-                      )
-                    }
+                    onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                   />
                 ) : null;
               if (!reactionRelations && !threadChip) return undefined;
@@ -2507,23 +2200,16 @@ export function useTimelineEventRenderer({
               content={
                 <Box grow="Yes" direction="Column">
                   <Text size="T300" priority="300">
-                    <DecoratedUser
-                      userId={senderId}
-                      userName={senderName}
-                      room={room}
-                    />
+                    <DecoratedUser userId={senderId} userName={senderName} room={room} />
                     {(pinsAdded?.length > 0 &&
-                      `pinned ${pinsAdded.length} message${pinsAdded.length > 1 ? "s" : ""}`) ||
-                      ""}
-                    {(pinsAdded?.length > 0 &&
-                      pinsRemoved?.length > 0 &&
-                      ` and `) ||
-                      ""}
+                      `pinned ${pinsAdded.length} message${pinsAdded.length > 1 ? 's' : ''}`) ||
+                      ''}
+                    {(pinsAdded?.length > 0 && pinsRemoved?.length > 0 && ` and `) || ''}
                     {(pinsRemoved?.length > 0 &&
                       `unpinned ${pinsRemoved.length} message${
-                        pinsRemoved.length > 1 ? "s" : ""
+                        pinsRemoved.length > 1 ? 's' : ''
                       }`) ||
-                      ""}
+                      ''}
                     {((!pinsAdded || pinsAdded.length <= 0) &&
                       (!pinsRemoved || pinsRemoved.length <= 0) &&
                       `has not changed the pins`) ||
@@ -2535,17 +2221,11 @@ export function useTimelineEventRenderer({
                       .map((x: string) => (
                         <Reply
                           key={x}
-                          style={{ opacity: "80%" }}
+                          style={{ opacity: '80%' }}
                           room={room}
                           replyEventId={x}
                           onClick={handleOpenReply}
-                          replyIcon={
-                            <>
-                              {menuIcon(
-                                pinnedSet.has(x) ? PushPin : PushPinSlash,
-                              )}
-                            </>
-                          }
+                          replyIcon={<>{menuIcon(pinnedSet.has(x) ? PushPin : PushPinSlash)}</>}
                         />
                       ))}
                 </Box>
@@ -2559,10 +2239,9 @@ export function useTimelineEventRenderer({
       if (!hiddenEventOther) return null;
       const highlighted = focusItem?.index === item && focusItem.highlight;
       const marked = activeReplyId === mEventId && !suppressMark;
-      const senderId = mEvent.getSender() ?? "";
+      const senderId = mEvent.getSender() ?? '';
       const senderName =
-        getMemberDisplayName(room, senderId, nicknames) ||
-        getMxIdLocalPart(senderId);
+        getMemberDisplayName(room, senderId, nicknames) || getMxIdLocalPart(senderId);
 
       const timeJSX = (
         <Time
@@ -2603,17 +2282,12 @@ export function useTimelineEventRenderer({
           activeReplyId={activeReplyId}
           reactions={(() => {
             const threadChip =
-              !hideThreadChip &&
-              (room.getThread(mEventId) || mEvent.threadRootId) ? (
+              !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
                 <ThreadReplyChip
                   room={room}
                   mEventId={mEventId}
                   openThreadId={openThreadId}
-                  onToggle={() =>
-                    setOpenThread(
-                      openThreadId === mEventId ? undefined : mEventId,
-                    )
-                  }
+                  onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                 />
               ) : null;
             if (!reactionRelations && !threadChip) return undefined;
@@ -2648,14 +2322,10 @@ export function useTimelineEventRenderer({
             content={
               <Box grow="Yes" direction="Column">
                 <Text size="T300" priority="300">
-                  <DecoratedUser
-                    userId={senderId}
-                    userName={senderName}
-                    room={room}
-                  />
-                  {" sent "}
+                  <DecoratedUser userId={senderId} userName={senderName} room={room} />
+                  {' sent '}
                   <code className={customHtmlCss.Code}>{mEvent.getType()}</code>
-                  {" state event"}
+                  {' state event'}
                 </Text>
               </Box>
             }
@@ -2671,10 +2341,9 @@ export function useTimelineEventRenderer({
 
       const highlighted = focusItem?.index === item && focusItem.highlight;
       const marked = activeReplyId === mEventId && !suppressMark;
-      const senderId = mEvent.getSender() ?? "";
+      const senderId = mEvent.getSender() ?? '';
       const senderName =
-        getMemberDisplayName(room, senderId, nicknames) ||
-        getMxIdLocalPart(senderId);
+        getMemberDisplayName(room, senderId, nicknames) || getMxIdLocalPart(senderId);
 
       const timeJSX = (
         <Time
@@ -2715,17 +2384,12 @@ export function useTimelineEventRenderer({
           activeReplyId={activeReplyId}
           reactions={(() => {
             const threadChip =
-              !hideThreadChip &&
-              (room.getThread(mEventId) || mEvent.threadRootId) ? (
+              !hideThreadChip && (room.getThread(mEventId) || mEvent.threadRootId) ? (
                 <ThreadReplyChip
                   room={room}
                   mEventId={mEventId}
                   openThreadId={openThreadId}
-                  onToggle={() =>
-                    setOpenThread(
-                      openThreadId === mEventId ? undefined : mEventId,
-                    )
-                  }
+                  onToggle={() => setOpenThread(openThreadId === mEventId ? undefined : mEventId)}
                 />
               ) : null;
             if (!reactionRelations && !threadChip) return undefined;
@@ -2761,15 +2425,15 @@ export function useTimelineEventRenderer({
               <Box grow="Yes" direction="Column">
                 <Text size="T300" priority="300">
                   <b>{senderName}</b>
-                  {" sent "}
+                  {' sent '}
                   <code className={customHtmlCss.Code}>{mEvent.getType()}</code>
-                  {" event"}
+                  {' event'}
                 </Text>
               </Box>
             }
           />
         </Message>
       );
-    },
+    }
   );
 }

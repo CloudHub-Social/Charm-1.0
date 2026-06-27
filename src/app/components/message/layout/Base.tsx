@@ -1,8 +1,8 @@
-import { as } from "folds";
-import classNames from "classnames";
-import * as css from "./layout.css";
+import { as } from 'folds';
+import classNames from 'classnames';
+import * as css from './layout.css';
 
-export const MessageBase = as<"div", css.MessageBaseVariants>(
+export const MessageBase = as<'div', css.MessageBaseVariants>(
   (
     {
       className,
@@ -13,10 +13,11 @@ export const MessageBase = as<"div", css.MessageBaseVariants>(
       collapse,
       autoCollapse,
       space,
+      contentSpacing,
       mobile,
       ...props
     },
-    ref,
+    ref
   ) => (
     <div
       className={classNames(
@@ -28,78 +29,44 @@ export const MessageBase = as<"div", css.MessageBaseVariants>(
           collapse,
           autoCollapse,
           space,
+          contentSpacing,
           mobile,
         }),
-        className,
+        className
       )}
       {...props}
       ref={ref}
     />
-  ),
+  )
 );
 
-export const AvatarBase = as<"span">(({ className, ...props }, ref) => (
-  <span
-    className={classNames(css.AvatarBase, className)}
-    {...props}
-    ref={ref}
-  />
+export const AvatarBase = as<'span'>(({ className, ...props }, ref) => (
+  <span className={classNames(css.AvatarBase, className)} {...props} ref={ref} />
 ));
 
-export const Username = as<"span">(
-  ({ as: AsUsername = "span", className, ...props }, ref) => (
-    <AsUsername
-      className={classNames(css.Username, className)}
-      {...props}
-      ref={ref}
-    />
-  ),
+export const Username = as<'span'>(({ as: AsUsername = 'span', className, ...props }, ref) => (
+  <AsUsername className={classNames(css.Username, className)} {...props} ref={ref} />
+));
+
+export const UsernameBold = as<'b'>(({ as: AsUsernameBold = 'b', className, ...props }, ref) => (
+  <AsUsernameBold className={classNames(css.UsernameBold, className)} {...props} ref={ref} />
+));
+
+export const PronounPill = as<'span'>(
+  ({ as: AsPronounPill = 'span', className, ...props }, ref) => (
+    <AsPronounPill className={classNames(css.PronounPill, className)} {...props} ref={ref} />
+  )
 );
 
-export const UsernameBold = as<"b">(
-  ({ as: AsUsernameBold = "b", className, ...props }, ref) => (
-    <AsUsernameBold
-      className={classNames(css.UsernameBold, className)}
-      {...props}
-      ref={ref}
-    />
-  ),
-);
-
-export const PronounPill = as<"span">(
-  ({ as: AsPronounPill = "span", className, ...props }, ref) => (
-    <AsPronounPill
-      className={classNames(css.PronounPill, className)}
-      {...props}
-      ref={ref}
-    />
-  ),
-);
-
-export const MessageTextBody = as<
-  "div",
-  css.MessageTextBodyVariants & { notice?: boolean }
->(
+export const MessageTextBody = as<'div', css.MessageTextBodyVariants & { notice?: boolean }>(
   (
-    {
-      as: AsComp = "div",
-      children,
-      className,
-      preWrap,
-      jumboEmoji,
-      emote,
-      notice,
-      ...props
-    },
-    ref,
+    { as: AsComp = 'div', children, className, preWrap, jumboEmoji, emote, notice, ...props },
+    ref
   ) => {
     void notice;
     return (
       <AsComp
-        className={classNames(
-          css.MessageTextBody({ preWrap, jumboEmoji, emote }),
-          className,
-        )}
+        className={classNames(css.MessageTextBody({ preWrap, jumboEmoji, emote }), className)}
         {...props}
         ref={ref}
         dir="auto"
@@ -107,5 +74,5 @@ export const MessageTextBody = as<
         {children}
       </AsComp>
     );
-  },
+  }
 );
