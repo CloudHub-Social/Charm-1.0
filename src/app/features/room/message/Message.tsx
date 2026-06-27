@@ -467,9 +467,10 @@ function MessageInternal(
   // avatar so per-room avatar overrides are respected in the timeline.
   const memberAvatarMxc = getMemberAvatarMxc(room, senderId);
   const avatarUrl = useMemo(() => {
+    if (collapse) return undefined;
     const mxc = pmp?.avatar_url || memberAvatarMxc || profile.avatarUrl;
     return mxc ? mxcUrlToHttp(mx, mxc, useAuthentication, 48, 48, 'crop') : undefined;
-  }, [pmp, memberAvatarMxc, profile.avatarUrl, mx, useAuthentication]);
+  }, [collapse, pmp, memberAvatarMxc, profile.avatarUrl, mx, useAuthentication]);
 
   const cachedAvatar = useBlobCache(avatarUrl ?? undefined);
 
