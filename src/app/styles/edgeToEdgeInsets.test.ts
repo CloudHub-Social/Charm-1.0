@@ -50,7 +50,11 @@ describe('android edge-to-edge inset contract', () => {
     const systemBarShell = readWorkspaceFile('src/app/components/app-shell/SystemBarShell.tsx');
     const mobileCapability = readWorkspaceFile('src-tauri/capabilities/mobile.json');
 
-    expect(indexHtml).not.toContain('viewport-fit=cover');
+    // viewport-fit=cover is required for env(safe-area-inset-*) to work in iOS
+    // Safari and PWAs. Android/Tauri uses the edge-to-edge plugin instead, but
+    // viewport-fit=cover has no side-effect on Android since the CSS variables
+    // are gated on !isTauri().
+    expect(indexHtml).toContain('viewport-fit=cover');
     expect(indexHtml).not.toContain('interactive-widget=');
     expect(appShell).toContain('const contentHeight = useCustomWindowsTitleBar');
     expect(appShell).toContain("height: '100%'");
@@ -60,9 +64,9 @@ describe('android edge-to-edge inset contract', () => {
     expect(indexCss).not.toContain('height: var(--sable-visible-height, 100dvh)');
     expect(generalOverrides).toContain("backgroundColor: 'var(--sable-bg-container)'");
     expect(systemBarShell).toContain('var(--safe-area-inset-top, env(safe-area-inset-top, 0px))');
-    expect(systemBarShell).toContain(
-      "'--sable-safe-area-bottom': enabled && !needsBottomSystemBar ? safeAreaBottom : '0px'"
-    );
+    // Bottom safe area is zeroed out: iOS home-indicator padding must not push
+    // content up off the bottom of the screen.
+    expect(systemBarShell).toContain("'--sable-safe-area-bottom': '0px'");
     expect(systemBarShell).toContain("const needsBottomSystemBar = tauriOs === 'android'");
     expect(systemBarShell).toContain('var(--sable-bg-container-line)');
     expect(systemBarShell).toContain("borderTop: '1px solid var(--sable-bg-container-line)'");
