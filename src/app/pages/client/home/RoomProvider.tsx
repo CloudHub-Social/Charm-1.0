@@ -1,11 +1,14 @@
 import type { ReactNode } from 'react';
+import { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useAtomValue } from 'jotai';
 import { useSelectedRoom } from '$hooks/router/useSelectedRoom';
 import { IsDirectRoomProvider, RoomProvider } from '$hooks/useRoom';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { JoinBeforeNavigate } from '$features/join-before-navigate';
 import { useSearchParamsViaServers } from '$hooks/router/useSearchParamsViaServers';
+import { getRoomSearchParams } from '$pages/pathSearchParam';
 import { EventType } from '$types/matrix-sdk';
 import { getAccountData, getAllParents, getMDirects, getStateEvents, isRoom } from '$utils/room';
 import { roomToParentsAtom, roomToParentsReadyAtom } from '$state/room/roomToParents';
@@ -20,9 +23,12 @@ export function HomeRouteRoomProvider({ children }: { children: ReactNode }) {
   const mDirects = useAtomValue(mDirectAtom);
 
   const { roomIdOrAlias: encodedRoomIdOrAlias, eventId: encodedEventId } = useParams();
+  const [searchParams] = useSearchParams();
+  const roomSearchParams = useMemo(() => getRoomSearchParams(searchParams), [searchParams]);
   const roomIdOrAlias = encodedRoomIdOrAlias && decodeURIComponent(encodedRoomIdOrAlias);
   const eventId = encodedEventId && decodeURIComponent(encodedEventId);
   const viaServers = useSearchParamsViaServers();
+  const isShowingAllRoomsInHome = roomSearchParams.homeView === 'all';
   const roomId = useSelectedRoom();
   const room = mx.getRoom(roomId);
   const isJoinedRoom = room?.getMyMembership() === 'join';
@@ -47,9 +53,8 @@ export function HomeRouteRoomProvider({ children }: { children: ReactNode }) {
   const isLiveHomeRoom =
     !!room &&
     isRoom(room) &&
-    !mDirects.has(room.roomId) &&
-    !isLiveDirectRoom &&
-    cachedParentSpaceIds.size === 0 &&
+    (isShowingAllRoomsInHome || (!mDirects.has(room.roomId) && !isLiveDirectRoom)) &&
+    (isShowingAllRoomsInHome || cachedParentSpaceIds.size === 0) &&
     (roomToParentsReady || liveParentSpaceIds.size === 0);
 
   if (isHomeClassificationPending) {

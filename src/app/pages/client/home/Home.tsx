@@ -36,6 +36,7 @@ import {
   getHomeCreatePath,
   getHomeRoomPath,
   getHomeSearchPath,
+  withAdditionalSearchParams,
   withSearchParam,
 } from '$pages/pathUtils';
 import { getCanonicalAliasOrRoomId } from '$utils/matrix';
@@ -628,7 +629,12 @@ export function Home() {
                             useDirectAvatarFallback={mDirects.has(roomId)}
                             isStrict={showRoomIcon === ShowRoomIcon.Strict}
                             hideText={hideText}
-                            linkPath={getHomeRoomPath(getCanonicalAliasOrRoomId(mx, roomId))}
+                            linkPath={withAdditionalSearchParams(
+                              getHomeRoomPath(getCanonicalAliasOrRoomId(mx, roomId)),
+                              {
+                                homeView: isShowingAllRoomsInHome ? 'all' : undefined,
+                              }
+                            )}
                             notificationMode={getRoomNotificationMode(
                               notificationPreferences,
                               room.roomId
