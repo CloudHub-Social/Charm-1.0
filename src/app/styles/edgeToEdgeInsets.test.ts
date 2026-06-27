@@ -67,6 +67,8 @@ describe('android edge-to-edge inset contract', () => {
     expect(systemBarShell).toContain(
       "'--sable-safe-area-bottom': enabled && !needsBottomSystemBar ? safeAreaBottom : '0px'"
     );
+    expect(systemBarShell).toContain("removeProperty('--sable-visible-height')");
+    expect(systemBarShell).toContain("removeProperty('--sable-safe-bottom')");
     expect(systemBarShell).not.toContain('paddingTop: safeAreaTop');
     expect(systemBarShell).toContain("const needsBottomSystemBar = tauriOs === 'android'");
     expect(systemBarShell).toContain('var(--sable-bg-container-line)');

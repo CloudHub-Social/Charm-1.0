@@ -5,9 +5,10 @@ export const AuthLayout = style({
   minHeight: '100%',
   backgroundColor: color.Background.Container,
   color: color.Background.OnContainer,
-  padding: config.space.S400,
+  paddingTop: `calc(${config.space.S400} + var(--sable-safe-area-top, 0px))`,
   paddingRight: config.space.S200,
-  paddingBottom: 0,
+  paddingBottom: `calc(${config.space.S200} + var(--sable-safe-area-bottom, 0px))`,
+  paddingLeft: config.space.S400,
   position: 'relative',
 });
 
