@@ -63,7 +63,13 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
             width: '100%',
             minHeight: 0,
             flex: 1,
+            // Paint the safe-area padding with the surface color so the iOS
+            // notch (top) and home-indicator (bottom) regions blend with the
+            // page header and message composer instead of revealing the
+            // near-white #root background.
+            backgroundColor: 'var(--sable-surface-container)',
             paddingTop: enabled ? safeAreaTop : 0,
+            paddingBottom: enabled && !needsBottomSystemBar ? safeAreaBottom : 0,
             paddingLeft: enabled ? safeAreaLeft : 0,
             paddingRight: enabled ? safeAreaRight : 0,
           } as CSSProperties
