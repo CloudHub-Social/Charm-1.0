@@ -16,6 +16,7 @@ import {
   PushPinSlash,
   Smiley,
   Star,
+  UserMinus,
 } from '$components/icons/phosphor';
 import { MessageAllReactionItem } from './MessageReactions';
 import { MessageReadReceiptItem } from './MessageReadRecipts';
@@ -47,6 +48,10 @@ import { useRoomPinnedEvents } from '$hooks/useRoomPinnedEvents';
 import { EmojiBoard } from '$components/emoji-board';
 import { MemoizedBody, type ReactionHandler } from '$features/room/message';
 import { useRecentEmoji } from '$hooks/useRecentEmoji';
+import { useRoomCreators } from '$hooks/useRoomCreators';
+import { usePowerLevels } from '$hooks/usePowerLevels';
+import { useRoomPermissions } from '$hooks/useRoomPermissions';
+import { useMemberPowerCompare } from '$hooks/useMemberPowerCompare';
 
 function WrappedMessage({
   isModal,
@@ -362,6 +367,7 @@ export function OptionQuickMenu({
               setIsEmoji={setIsEmoji}
               emojiBoardAnchor={menuAnchor}
               canSendReaction={canSendReaction}
+              imagePackRooms={imagePackRooms}
             />
           }
         >
@@ -454,6 +460,16 @@ export function OptionMenu({
   const nicknames = useAtomValue(nicknamesAtom);
   const setNickname = useSetAtom(setNicknameAtom);
   const senderId = mEvent.getSender() ?? '';
+  const powerLevels = usePowerLevels(room);
+  const creators = useRoomCreators(room);
+  const permissions = useRoomPermissions(creators, powerLevels);
+  const { hasMorePower } = useMemberPowerCompare(creators, powerLevels);
+  const myUserId = mx.getSafeUserId();
+  const canKickUser =
+    !!senderId &&
+    senderId !== myUserId &&
+    permissions.action('kick', myUserId) &&
+    hasMorePower(myUserId, senderId);
 
   const onTotalClose = () => {
     setModal(null);
@@ -717,10 +733,27 @@ export function OptionMenu({
                   </MenuItem>
                 ))}
             </Box>
-            {((!mEvent.isRedacted() && canDelete) || mEvent.getSender() !== mx.getUserId()) && (
+            {((!mEvent.isRedacted() && canDelete) ||
+              mEvent.getSender() !== mx.getUserId() ||
+              canKickUser) && (
               <>
                 <Line size="300" />
                 <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
+                  {canKickUser && (
+                    <MenuItem
+                      size="300"
+                      after={menuIcon(UserMinus)}
+                      radii="300"
+                      onClick={() => {
+                        void mx.kick(room.roomId, senderId);
+                        onTotalClose();
+                      }}
+                    >
+                      <Text className={css.MessageMenuItemText} as="span" size="T300" truncate>
+                        Kick from Room
+                      </Text>
+                    </MenuItem>
+                  )}
                   {!mEvent.isRedacted() && canDelete && (
                     <MessageDeleteItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                   )}

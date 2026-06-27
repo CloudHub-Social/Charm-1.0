@@ -452,14 +452,14 @@ export function RoomTimeline({
             retryIntervalId = undefined;
           }
         }, 200);
+        timeoutId = setTimeout(() => {
+          if (retryIntervalId !== undefined) {
+            clearInterval(retryIntervalId);
+            retryIntervalId = undefined;
+          }
+          timelineSync.setFocusItem(undefined);
+        }, 2000);
       }
-      timeoutId = setTimeout(() => {
-        if (retryIntervalId !== undefined) {
-          clearInterval(retryIntervalId);
-          retryIntervalId = undefined;
-        }
-        timelineSync.setFocusItem(undefined);
-      }, 2000);
     }
     return () => {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
@@ -955,6 +955,22 @@ export function RoomTimeline({
     });
     setIsReady(true);
   }, [processedEvents.length]);
+
+  useEffect(() => {
+    if (isReady) return;
+    if (eventId) return;
+    if (timelineSync.eventsLength !== 0 || processedEvents.length !== 0) return;
+    if (timelineSync.canPaginateBack || timelineSync.backwardStatus === 'loading') return;
+    pendingReadyRef.current = false;
+    setIsReady(true);
+  }, [
+    eventId,
+    isReady,
+    processedEvents.length,
+    timelineSync.backwardStatus,
+    timelineSync.canPaginateBack,
+    timelineSync.eventsLength,
+  ]);
 
   useEffect(() => {
     if (!onEditLastMessageRef) return;
