@@ -1,6 +1,6 @@
 import type { MouseEventHandler } from 'react';
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { RectCords } from 'folds';
 import {
   Avatar,
@@ -294,7 +294,9 @@ export function Home() {
   useNavToActivePathMapper('home');
   const clientConfig = useClientConfig();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [isShowingAllRoomsInHome, setIsShowingAllRoomsInHome] = useState(false);
+  const [searchParams] = useSearchParams();
+  const showAllRoomsFromRoute = searchParams.get('homeView') === 'all';
+  const [isShowingAllRoomsInHome, setIsShowingAllRoomsInHome] = useState(showAllRoomsFromRoute);
   const rooms = useHomeRooms(isShowingAllRoomsInHome);
   const notificationPreferences = useRoomsNotificationPreferencesContext();
   const roomToUnread = useAtomValue(roomToUnreadAtom);
@@ -304,6 +306,10 @@ export function Home() {
   const setIsResizingSidebar = useSetAtom(isResizingSidebarAtom);
   const [roomSidebarWidth, setRoomSidebarWidth] = useSetting(settingsAtom, 'roomSidebarWidth');
   const [curWidth, setCurWidth] = useState(roomSidebarWidth);
+  useEffect(() => {
+    setIsShowingAllRoomsInHome(showAllRoomsFromRoute);
+  }, [showAllRoomsFromRoute]);
+
   useEffect(() => {
     setCurWidth(roomSidebarWidth);
   }, [roomSidebarWidth]);

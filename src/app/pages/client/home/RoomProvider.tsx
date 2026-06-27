@@ -46,6 +46,7 @@ export function HomeRouteRoomProvider({ children }: { children: ReactNode }) {
   const isHomeClassificationPending =
     !!room &&
     isJoinedRoom &&
+    !isShowingAllRoomsInHome &&
     !roomToParentsReady &&
     cachedParentSpaceIds.size === 0 &&
     liveParentSpaceIds.size === 0 &&
