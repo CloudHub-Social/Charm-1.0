@@ -525,7 +525,9 @@ export function MessageOptionsBar({
                     {isEdited && (
                       <MessageEditHistoryItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                     )}
-                    {showDeveloperTools && <MessageSourceCodeItem room={room} mEvent={mEvent} />}
+                    {showDeveloperTools && (
+                      <MessageSourceCodeItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                    )}
                     <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
                     <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
                     <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
@@ -618,10 +620,10 @@ export function MessageOptionsBar({
                       <Line size="300" />
                       <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
                         {!mEvent.isRedacted() && canDelete && (
-                          <MessageDeleteItem room={room} mEvent={mEvent} />
+                          <MessageDeleteItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                         )}
                         {mEvent.getSender() !== mx.getUserId() && (
-                          <MessageReportItem room={room} mEvent={mEvent} />
+                          <MessageReportItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                         )}
                       </Box>
                     </>
@@ -748,7 +750,9 @@ export function EventOptionsBar({
                     {isEdited && (
                       <MessageEditHistoryItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                     )}
-                    {showDeveloperTools && <MessageSourceCodeItem room={room} mEvent={mEvent} />}
+                    {showDeveloperTools && (
+                      <MessageSourceCodeItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
+                    )}
                     <MessageCopyLinkItem room={room} mEvent={mEvent} onClose={closeMenu} />
                     <MessageCopyTextItem mEvent={mEvent} onClose={closeMenu} />
                     <MessageForwardItem room={room} mEvent={mEvent} onClose={closeMenu} />
@@ -762,10 +766,10 @@ export function EventOptionsBar({
                       <Line size="300" />
                       <Box direction="Column" gap="100" className={css.MessageMenuGroup}>
                         {!mEvent.isRedacted() && canDelete && (
-                          <MessageDeleteItem room={room} mEvent={mEvent} />
+                          <MessageDeleteItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                         )}
                         {mEvent.getSender() !== mx.getUserId() && (
-                          <MessageReportItem room={room} mEvent={mEvent} />
+                          <MessageReportItem room={room} mEvent={mEvent} closeMenu={closeMenu} />
                         )}
                       </Box>
                     </>
