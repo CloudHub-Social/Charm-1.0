@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildNotificationJumpCleanupTarget,
+  buildEventTargetCleanupTarget,
   shouldClearNotificationJumpRoute,
 } from './notificationJumpCleanup';
 
@@ -45,7 +45,7 @@ describe('notificationJumpCleanup', () => {
 
   it('removes notification-only query params and strips the event segment', () => {
     expect(
-      buildNotificationJumpCleanupTarget(
+      buildEventTargetCleanupTarget(
         '/direct/%21abc/%24event',
         '?jumpMode=notification_live&joinCall=true&via=push',
         '$event'

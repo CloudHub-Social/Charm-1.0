@@ -32,7 +32,10 @@ export const getNotificationJumpCleanupEventId = (
   options: NotificationJumpCleanupOptions
 ): string | undefined => (shouldClearNotificationJumpRoute(options) ? options.eventId : undefined);
 
-export const buildNotificationJumpCleanupTarget = (
+// Event-targeted room routes are transient jump state. Once the jump has
+// landed, strip the event segment and notification-only params so back
+// navigation returns to the stable room route instead of re-arming the jump.
+export const buildEventTargetCleanupTarget = (
   pathname: string,
   search: string,
   eventId: string

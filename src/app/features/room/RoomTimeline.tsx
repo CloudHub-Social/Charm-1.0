@@ -80,7 +80,7 @@ import {
 import { useTimelineEventRenderer } from '$hooks/timeline/useTimelineEventRenderer';
 import { isPhoneLayoutDevice } from '$utils/user-agent';
 import {
-  buildNotificationJumpCleanupTarget,
+  buildEventTargetCleanupTarget,
   getNotificationJumpCleanupEventId,
   shouldClearNotificationJumpRoute,
   shouldClearNotificationJumpRouteURLOnly,
@@ -269,6 +269,7 @@ export function RoomTimeline({
   // A recovery useLayoutEffect watches for processedEvents becoming non-empty
   // and performs the final scroll + setIsReady when this flag is set.
   const pendingReadyRef = useRef(false);
+  const jumpRouteCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const currentRoomIdRef = useRef(room.roomId);
 
   const [isReady, setIsReady] = useState(false);
@@ -442,6 +443,23 @@ export function RoomTimeline({
         setIsReady(true);
         vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
         timelineSync.setFocusItem((prev) => (prev ? { ...prev, scrollTo: false } : undefined));
+        if (eventId === timelineSyncRef.current.focusItem.eventId) {
+          if (jumpRouteCleanupTimerRef.current !== undefined) {
+            clearTimeout(jumpRouteCleanupTimerRef.current);
+          }
+          const cleanupEventId = timelineSyncRef.current.focusItem.eventId;
+          if (cleanupEventId) {
+            jumpRouteCleanupTimerRef.current = setTimeout(() => {
+              if (timelineSyncRef.current.focusItem?.eventId !== cleanupEventId) return;
+
+              navigate(
+                buildEventTargetCleanupTarget(location.pathname, location.search, cleanupEventId),
+                { replace: true }
+              );
+              jumpRouteCleanupTimerRef.current = undefined;
+            }, 3200);
+          }
+        }
         return true;
       };
 
@@ -465,13 +483,38 @@ export function RoomTimeline({
       if (timeoutId !== undefined) clearTimeout(timeoutId);
       if (retryIntervalId !== undefined) clearInterval(retryIntervalId);
     };
-  }, [timelineSync.focusItem, timelineSync, reducedMotion, getRawIndexToProcessedIndex]);
+  }, [
+    eventId,
+    timelineSync.focusItem,
+    timelineSync,
+    reducedMotion,
+    getRawIndexToProcessedIndex,
+    location.pathname,
+    location.search,
+    navigate,
+  ]);
 
   useEffect(() => {
     if (timelineSync.focusItem) {
       setIsReady(true);
     }
   }, [timelineSync.focusItem]);
+
+  useEffect(
+    () => () => {
+      if (jumpRouteCleanupTimerRef.current !== undefined) {
+        clearTimeout(jumpRouteCleanupTimerRef.current);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (jumpRouteCleanupTimerRef.current !== undefined) {
+      clearTimeout(jumpRouteCleanupTimerRef.current);
+      jumpRouteCleanupTimerRef.current = undefined;
+    }
+  }, [eventId, location.pathname, location.search, room.roomId]);
 
   useEffect(() => {
     const cleanupEventId = getNotificationJumpCleanupEventId({
@@ -495,12 +538,9 @@ export function RoomTimeline({
       }
 
       timelineSync.setFocusItem(undefined);
-      navigate(
-        buildNotificationJumpCleanupTarget(location.pathname, location.search, cleanupEventId),
-        {
-          replace: true,
-        }
-      );
+      navigate(buildEventTargetCleanupTarget(location.pathname, location.search, cleanupEventId), {
+        replace: true,
+      });
     }, 250);
 
     return () => clearTimeout(timer);
@@ -537,7 +577,7 @@ export function RoomTimeline({
         return;
       }
 
-      navigate(buildNotificationJumpCleanupTarget(location.pathname, location.search, eventId!), {
+      navigate(buildEventTargetCleanupTarget(location.pathname, location.search, eventId!), {
         replace: true,
       });
     }, 2000);
