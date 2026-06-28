@@ -48,6 +48,8 @@ describe('android edge-to-edge inset contract', () => {
     const indexHtml = readWorkspaceFile('index.html');
     const indexCss = readWorkspaceFile('src/index.css');
     const systemBarShell = readWorkspaceFile('src/app/components/app-shell/SystemBarShell.tsx');
+    const room = readWorkspaceFile('src/app/features/room/Room.tsx');
+    const systemBarStyle = readWorkspaceFile('src/app/components/app-shell/useSystemBarStyle.tsx');
     const mobileCapability = readWorkspaceFile('src-tauri/capabilities/mobile.json');
 
     // viewport-fit=cover is required for env(safe-area-inset-*) to work in iOS
@@ -60,6 +62,7 @@ describe('android edge-to-edge inset contract', () => {
     expect(appShell).toContain("height: '100%'");
     expect(appShell).toContain('height: contentHeight');
     expect(appShell).toContain('<ScreenSizeProvider value={screenSize}>');
+    expect(appShell).toContain('<SystemBarStyleProvider>');
     expect(indexCss).toContain('height: var(--sable-visible-height, 100%)');
     expect(indexCss).not.toContain('height: var(--sable-visible-height, 100dvh)');
     expect(generalOverrides).toContain("backgroundColor: 'var(--sable-bg-container)'");
@@ -67,6 +70,34 @@ describe('android edge-to-edge inset contract', () => {
     // Bottom safe area is zeroed out: iOS home-indicator padding must not push
     // content up off the bottom of the screen.
     expect(systemBarShell).toContain("'--sable-safe-area-bottom': '0px'");
+    expect(systemBarShell).toContain('backgroundColor: enabled');
+    expect(systemBarShell).toContain("safeAreaFill ?? 'var(--sable-bg-container)'");
+    expect(systemBarShell).toContain('paddingBottom: 0');
+    expect(systemBarShell).toContain("removeProperty('--sable-visible-height')");
+    expect(systemBarShell).toContain("removeProperty('--sable-safe-bottom')");
+    expect(systemBarShell).toContain('const keyboardVarsApplied =');
+    expect(systemBarShell).toContain(
+      "document.documentElement.style.getPropertyValue('--sable-visible-height') !== ''"
+    );
+    expect(systemBarStyle).toContain(
+      'registerSafeAreaFill: (owner: symbol, fill: string | undefined) => void;'
+    );
+    expect(systemBarStyle).toContain(
+      'const registerSafeAreaFill = useCallback((nextOwner: symbol, fill: string | undefined) => {'
+    );
+    expect(systemBarStyle).toContain(
+      'const unregisterSafeAreaFill = useCallback((nextOwner: symbol) => {'
+    );
+    expect(systemBarStyle).toContain(
+      'current.owner === nextOwner ? { owner: null, safeAreaFill: undefined } : current'
+    );
+    expect(systemBarStyle).toContain(
+      "const ownerRef = useRef(Symbol('system-bar-safe-area-fill'))"
+    );
+    expect(room).toContain(
+      'const isSinglePaneRoomLayout = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice()'
+    );
+    expect(room).toContain("isSinglePaneRoomLayout ? 'var(--sable-surface-container)' : undefined");
     expect(systemBarShell).toContain("const needsBottomSystemBar = tauriOs === 'android'");
     expect(systemBarShell).toContain('var(--sable-bg-container-line)');
     expect(systemBarShell).toContain("borderTop: '1px solid var(--sable-bg-container-line)'");
@@ -86,7 +117,7 @@ describe('android edge-to-edge inset contract', () => {
     expect(pageStyles).not.toContain('--sable-inset-');
     expect(pageStyles).toContain('var(--sable-safe-area-bottom, 0px)');
     expect(sidebarStyles).not.toContain('--sable-inset-');
-    expect(roomView).toContain('var(--sable-safe-bottom, var(--sable-safe-area-bottom, 0px))');
+    expect(roomView).toContain('paddingBottom: 0');
     expect(roomViewTypingStyles).not.toContain('--sable-inset-');
     expect(threadDrawerStyles).not.toContain('--sable-inset-');
   });

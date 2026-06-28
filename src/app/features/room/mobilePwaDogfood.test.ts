@@ -191,9 +191,7 @@ describe('mobile PWA dogfood contract', () => {
   it('drops the room footer safe-area inset while the mobile keyboard is visible', () => {
     const roomView = readWorkspaceFile('src/app/features/room/RoomView.tsx');
 
-    expect(roomView).toContain(
-      "paddingBottom: 'var(--sable-safe-bottom, var(--sable-safe-area-bottom, 0px))'"
-    );
+    expect(roomView).toContain('paddingBottom: 0');
   });
 
   it('keeps the mobile space list from dragging into blank space during swipe navigation', () => {
