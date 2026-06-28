@@ -24,6 +24,9 @@ import { getLocalStorageItem, setLocalStorageItem } from '$state/utils/atomWithL
 
 export type RoomToParentsAction =
   | {
+      type: 'RESET';
+    }
+  | {
       type: 'INITIALIZE';
       roomToParents: RoomToParents;
     }
@@ -50,6 +53,9 @@ const ROOM_TO_PARENTS_CACHE_KEY = 'roomToParents';
 export const getRoomToParentsCacheKey = (userId: string): string =>
   `${ROOM_TO_PARENTS_CACHE_KEY}:${userId}`;
 
+export const hasRoomToParentsCache = (cacheKey: string): boolean =>
+  localStorage.getItem(cacheKey) !== null;
+
 const deserializeRoomToParents = (key: string): RoomToParents => {
   const cached = getLocalStorageItem<[string, string[]][]>(key, []);
   return new Map(cached.map(([room, parents]: [string, string[]]) => [room, new Set(parents)]));
@@ -62,7 +68,7 @@ const serializeRoomToParents = (value: RoomToParents): [string, string[]][] =>
   ]);
 
 const readRoomToParentsCache = (cacheKey: string): RoomToParents => {
-  if (localStorage.getItem(cacheKey) !== null) {
+  if (hasRoomToParentsCache(cacheKey)) {
     return deserializeRoomToParents(cacheKey);
   }
 
@@ -89,6 +95,11 @@ export const roomToParentsAtom = atom<RoomToParents, [RoomToParentsAction], unde
   (get) => get(baseRoomToParents),
   (get, set, action) => {
     const cacheKey = get(roomToParentsCacheKeyAtom);
+    if (action.type === 'RESET') {
+      set(baseRoomToParents, new Map());
+      set(baseRoomToParentsReady, false);
+      return;
+    }
     if (action.type === 'INITIALIZE') {
       set(baseRoomToParents, action.roomToParents);
       set(baseRoomToParentsReady, true);
@@ -150,12 +161,17 @@ export const useBindRoomToParentsAtom = (
   // Strategy 2: Initialize from cache immediately on mount
   useLayoutEffect(() => {
     const userId = mx.getUserId();
-    if (!userId) return;
+    if (!userId) {
+      setRoomToParentsCacheKey(undefined);
+      setRoomToParents({ type: 'RESET' });
+      return;
+    }
 
     const cacheKey = getRoomToParentsCacheKey(userId);
     setRoomToParentsCacheKey(cacheKey);
+    setRoomToParents({ type: 'RESET' });
     const cachedMap = readRoomToParentsCache(cacheKey);
-    if (cachedMap.size > 0) {
+    if (hasRoomToParentsCache(cacheKey) || cachedMap.size > 0) {
       setRoomToParents({ type: 'INITIALIZE', roomToParents: cachedMap });
     }
   }, [mx, setRoomToParents, setRoomToParentsCacheKey]);

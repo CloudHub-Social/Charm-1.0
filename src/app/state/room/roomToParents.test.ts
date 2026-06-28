@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createStore } from 'jotai';
 import {
   getRoomToParentsCacheKey,
+  hasRoomToParentsCache,
   roomToParentsAtom,
   roomToParentsCacheKeyAtom,
+  roomToParentsReadyAtom,
 } from './roomToParents';
 
 describe('roomToParents cache scoping', () => {
@@ -56,6 +58,14 @@ describe('roomToParents cache scoping', () => {
     expect(localStorage.getItem('roomToParents')).toBeNull();
   });
 
+  it('treats an existing empty scoped cache as a hydrated cache', () => {
+    const bobCacheKey = getRoomToParentsCacheKey('@bob:example.com');
+
+    localStorage.setItem(bobCacheKey, JSON.stringify([]));
+
+    expect(hasRoomToParentsCache(bobCacheKey)).toBe(true);
+  });
+
   it('clears stale in-memory hierarchy when a scoped cache initializes empty', () => {
     const store = createStore();
     const aliceCacheKey = getRoomToParentsCacheKey('@alice:example.com');
@@ -75,5 +85,26 @@ describe('roomToParents cache scoping', () => {
 
     expect(store.get(roomToParentsAtom)).toEqual(new Map());
     expect(localStorage.getItem(bobCacheKey)).toBe(JSON.stringify([]));
+  });
+
+  it('drops stale in-memory hierarchy and readiness when switching scopes before hydrate', () => {
+    const store = createStore();
+    const aliceCacheKey = getRoomToParentsCacheKey('@alice:example.com');
+    const bobCacheKey = getRoomToParentsCacheKey('@bob:example.com');
+
+    store.set(roomToParentsCacheKeyAtom, aliceCacheKey);
+    store.set(roomToParentsAtom, {
+      type: 'INITIALIZE',
+      roomToParents: new Map([['!room:example.com', new Set(['!space:example.com'])]]),
+    });
+
+    expect(store.get(roomToParentsReadyAtom)).toBe(true);
+
+    store.set(roomToParentsCacheKeyAtom, bobCacheKey);
+    store.set(roomToParentsAtom, { type: 'RESET' });
+
+    expect(store.get(roomToParentsAtom)).toEqual(new Map());
+    expect(store.get(roomToParentsReadyAtom)).toBe(false);
+    expect(localStorage.getItem(bobCacheKey)).toBeNull();
   });
 });
