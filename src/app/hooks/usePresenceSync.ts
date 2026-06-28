@@ -298,7 +298,12 @@ export function usePresenceSyncEffect(): void {
       }
 
       const freshnessFloor = getFreshnessFloor();
-      if (remoteUpdatedAt !== null && freshnessFloor > 0 && remoteUpdatedAt < freshnessFloor) {
+      // Reject stale updates, and legacy updates that omit `updatedAt` once a
+      // local freshness floor exists. The mount and debounce reconciliation
+      // paths only accept timestamp-less content when no local freshness exists,
+      // so mirror that here — otherwise an old client's timestamp-less write
+      // would be normalized to `Date.now()` and could roll back newer local state.
+      if (freshnessFloor > 0 && (remoteUpdatedAt === null || remoteUpdatedAt < freshnessFloor)) {
         debugLog.info('general', 'Ignoring stale presence account data update', {
           remoteUpdatedAt,
           freshnessFloor,
@@ -314,38 +319,34 @@ export function usePresenceSyncEffect(): void {
 
       if (!state.presenceMode || typeof state.autoIdled !== 'boolean') return;
 
+      // DON'T apply remote idle state if we're currently active locally.
+      // This prevents race conditions where remote idle updates overwrite local
+      // activity during the debounce window before our activity uploads to
+      // account data. Fully ignore the remote event here (rather than masking
+      // only `autoIdled`) so a differing remote `presenceMode` can't overwrite
+      // our local presence while we hold online precedence.
+      if (shouldIgnoreRemoteIdleWhileLocallyActive(rawContent, autoIdledRef.current)) {
+        debugLog.info('general', 'Ignoring remote idle state — we are active locally');
+        return;
+      }
+
       // Apply state from another device
       debugLog.info('general', 'Received presence update from another device', { state });
-
-      const effectiveRawContent = shouldIgnoreRemoteIdleWhileLocallyActive(
-        rawContent,
-        autoIdledRef.current
-      )
-        ? { ...rawContent, autoIdled: false }
-        : rawContent;
-      const { synctoken: _effectiveEchoField, ...effectiveState } = effectiveRawContent;
 
       // ONLINE TAKES PRECEDENCE: If remote device is active (not auto-idled),
       // immediately clear local auto-idle state. This ensures that when ANY device
       // becomes active, ALL devices switch to online.
-      if (!effectiveState.autoIdled && autoIdledRef.current) {
+      if (!state.autoIdled && autoIdledRef.current) {
         debugLog.info('general', 'Remote device is active — clearing local auto-idle');
         // Trigger activity event in auto-idle hook to reset its timer
         window.dispatchEvent(
           new CustomEvent('sable:remote-activity', {
-            detail: { timestamp: effectiveState.lastActivityAt },
+            detail: { timestamp: state.lastActivityAt },
           })
         );
       }
 
-      // DON'T apply remote idle state if we're currently active locally.
-      // This prevents race conditions where remote idle updates overwrite local activity
-      // during the debounce window before our activity uploads to account data.
-      if (shouldIgnoreRemoteIdleWhileLocallyActive(rawContent, autoIdledRef.current)) {
-        debugLog.info('general', 'Ignoring remote idle state — we are active locally');
-      }
-
-      applyRemoteContent(effectiveRawContent);
+      applyRemoteContent(rawContent);
 
       // DO NOT send to server here — the remote device already sent it.
       // Sending again causes redundant traffic and can trigger rate limiting,
@@ -400,16 +401,21 @@ export function usePresenceSyncEffect(): void {
       }
 
       if (remoteContent && remoteUpdatedAt !== null && remoteUpdatedAt >= localUpdatedAt) {
-        const effectiveRemoteContent = shouldIgnoreRemoteIdleWhileLocallyActive(
-          remoteContent,
-          autoIdledRef.current
-        )
-          ? { ...remoteContent, autoIdled: false }
-          : remoteContent;
-        const applyResult = applyRemoteContent(effectiveRemoteContent);
-        if (applyResult !== 'ignored') {
-          if (applyResult !== 'updated') sendServerPresence();
-          return;
+        if (shouldIgnoreRemoteIdleWhileLocallyActive(remoteContent, autoIdledRef.current)) {
+          // ONLINE TAKES PRECEDENCE: the remote account data reports idle but
+          // this device is active. Don't adopt the remote idle state and don't
+          // bail out — advance our freshness past the remote write and fall
+          // through to upload our active state, so the shared account data (the
+          // source of truth) reflects online precedence instead of leaving other
+          // devices to read the stale idle payload.
+          localUpdatedAt = getNextLocalPresenceSyncUpdatedAt(remoteUpdatedAt);
+          persistRemoteFreshness(localUpdatedAt);
+        } else {
+          const applyResult = applyRemoteContent(remoteContent);
+          if (applyResult !== 'ignored') {
+            if (applyResult !== 'updated') sendServerPresence();
+            return;
+          }
         }
       }
 

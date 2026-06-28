@@ -206,6 +206,80 @@ describe('usePresenceSyncEffect', () => {
     expect(store.get(presenceAutoIdledAtom)).toBe(false);
   });
 
+  it('keeps local presence mode when ignoring a remote idle update with a different mode', () => {
+    const store = makeStore({ sendPresence: true, presenceMode: 'online' });
+    renderHook(() => usePresenceSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      callbackHolder.current?.(
+        makePresenceEvent({
+          presenceMode: 'unavailable',
+          autoIdled: true,
+          updatedAt: 900,
+          lastActivityAt: 900,
+        })
+      );
+    });
+
+    expect(store.get(settingsAtom).presenceMode).toBe('online');
+    expect(store.get(presenceAutoIdledAtom)).toBe(false);
+  });
+
+  it('ignores a legacy remote update without updatedAt once local freshness exists', () => {
+    localStorage.setItem(PRESENCE_SYNC_UPDATED_AT_KEY, '500');
+    const store = makeStore({ sendPresence: true, presenceMode: 'online' });
+    renderHook(() => usePresenceSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      callbackHolder.current?.(
+        makePresenceEvent({
+          presenceMode: 'offline',
+          autoIdled: true,
+          lastActivityAt: 400,
+        })
+      );
+    });
+
+    expect(store.get(settingsAtom).presenceMode).toBe('online');
+    expect(store.get(presenceAutoIdledAtom)).toBe(false);
+    expect(sentry.addBreadcrumb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'presence-sync',
+        message: 'Ignored stale remote presence state',
+      })
+    );
+  });
+
+  it('uploads the local active state when debounce reconciliation sees newer remote idle account data', async () => {
+    localStorage.setItem(PRESENCE_SYNC_UPDATED_AT_KEY, '100');
+    mockMx.getAccountData.mockReturnValueOnce(null).mockReturnValue({
+      getContent: () => ({
+        presenceMode: 'online',
+        autoIdled: true,
+        updatedAt: 900,
+        lastActivityAt: 900,
+      }),
+    });
+
+    const store = makeStore({ sendPresence: true, presenceMode: 'online' });
+    renderHook(() => usePresenceSyncEffect(), { wrapper: makeWrapper(store) });
+
+    await act(async () => {
+      vi.advanceTimersByTime(25_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(store.get(settingsAtom).presenceMode).toBe('online');
+    expect(store.get(presenceAutoIdledAtom)).toBe(false);
+
+    // Online precedence: our active state is written back to account data with a
+    // fresher timestamp so other devices stop reading the stale idle payload.
+    const uploaded = mockMx.setAccountData.mock.calls.at(-1)?.[1];
+    expect(uploaded).toMatchObject({ presenceMode: 'online', autoIdled: false });
+    expect(uploaded?.updatedAt as number).toBeGreaterThan(900);
+  });
+
   it('still refreshes server presence when remote account data is already fresh and unchanged', async () => {
     mockMx.getAccountData.mockReturnValue({
       getContent: () => ({
@@ -329,16 +403,14 @@ describe('usePresenceSyncEffect', () => {
   });
 
   it('keeps local activity when debounce reconciliation sees newer remote idle account data', async () => {
-    mockMx.getAccountData
-      .mockReturnValueOnce(null)
-      .mockReturnValue({
-        getContent: () => ({
-          presenceMode: 'online',
-          autoIdled: true,
-          updatedAt: 900,
-          lastActivityAt: 900,
-        }),
-      });
+    mockMx.getAccountData.mockReturnValueOnce(null).mockReturnValue({
+      getContent: () => ({
+        presenceMode: 'online',
+        autoIdled: true,
+        updatedAt: 900,
+        lastActivityAt: 900,
+      }),
+    });
 
     const store = makeStore({ sendPresence: true, presenceMode: 'online' });
     renderHook(() => usePresenceSyncEffect(), { wrapper: makeWrapper(store) });
