@@ -1300,7 +1300,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
         content['m.mentions'] = getMentionContent(
           Array.from(mentionData.users),
-          replyMentions?.room === true
+          mentionData.room || replyMentions?.room === true
         );
         content[prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
           imagePacksUsedRef.current.toJSON();
