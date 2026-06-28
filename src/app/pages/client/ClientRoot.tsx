@@ -94,9 +94,11 @@ type ClientRootOptionsProps = {
 function ClientRootOptions({ mx, onLogout }: ClientRootOptionsProps) {
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
   const isWindowsTauri = isTauri() && osType() === 'windows';
+  const safeAreaTopInset = 'var(--sable-safe-area-top, env(safe-area-inset-top, 0px))';
+  const safeAreaRightInset = 'var(--sable-safe-area-right, env(safe-area-inset-right, 0px))';
   const topOffset = isWindowsTauri
     ? `calc(var(--tauri-titlebar-height) + ${config.space.S100})`
-    : config.space.S100;
+    : `calc(${safeAreaTopInset} + ${config.space.S100})`;
 
   const handleToggle: MouseEventHandler<HTMLButtonElement> = (evt) => {
     const cords = evt.currentTarget.getBoundingClientRect();
@@ -111,7 +113,7 @@ function ClientRootOptions({ mx, onLogout }: ClientRootOptionsProps) {
       style={{
         position: 'absolute',
         top: topOffset,
-        right: config.space.S100,
+        right: `calc(${safeAreaRightInset} + ${config.space.S100})`,
       }}
       variant="Background"
       fill="None"
