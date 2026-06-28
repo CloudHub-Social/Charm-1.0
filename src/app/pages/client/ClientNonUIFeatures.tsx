@@ -115,6 +115,10 @@ import {
   resolveMessageNotificationPolicy,
 } from './messageNotificationPolicy';
 import {
+  createMessageNotificationLifecycleState,
+  resolveMessageNotificationLifecycleState,
+} from './messageNotificationLifecycle';
+import {
   useServiceWorkerMessageListener,
   useServiceWorkerVisibilityHeartbeat,
   useVisibilityAndPageShowListeners,
@@ -498,10 +502,12 @@ function MessageNotifications() {
 
   useEffect(() => {
     const pushProcessor = new PushProcessor(mx);
-    // Track encrypted events that should skip focus check when decrypted (because we
-    // already checked focus when the encrypted event arrived, and want to use that
-    // original state rather than re-checking after decryption completes).
-    const skipFocusCheckEvents = new Set<string>();
+    // Track encrypted events that should replay the original lifecycle state after
+    // decryption instead of re-reading foreground state at decrypt time.
+    const encryptedArrivalLifecycle = new Map<
+      string,
+      { suppressForFocusedNotification: boolean; tabVisible: boolean }
+    >();
     // Tracks when each event first arrived so we can measure notification delivery latency
     const notifyTimerMap = new Map<string, number>();
     // Track pending decryption listeners to clean up on unmount
@@ -522,10 +528,16 @@ function MessageNotifications() {
       if (eventId && !notifyTimerMap.has(eventId)) {
         notifyTimerMap.set(eventId, performance.now());
       }
-      const shouldSkipFocusCheck = eventId && skipFocusCheckEvents.has(eventId);
-      if (!shouldSkipFocusCheck) {
-        if (document.hasFocus() && notificationSelected) return;
-      }
+      const currentLifecycleState = createMessageNotificationLifecycleState({
+        notificationSelected,
+        tabVisible: document.visibilityState === 'visible',
+        windowFocused: document.hasFocus(),
+      });
+      const lifecycleState = resolveMessageNotificationLifecycleState({
+        capturedState: eventId ? encryptedArrivalLifecycle.get(eventId) : undefined,
+        currentState: currentLifecycleState,
+      });
+      if (lifecycleState.suppressForFocusedNotification) return;
 
       // Older sliding sync proxies can omit num_live, so keep the historical
       // fallback in one pure helper instead of repeating this compound check inline.
@@ -541,17 +553,16 @@ function MessageNotifications() {
       // decryption comes with data.liveEvent=false which would wrongly block it.
       if (mEvent.getType() === 'm.room.encrypted' && mEvent.isEncrypted()) {
         if (eventId) {
-          // Mark this event to skip focus check when decrypted, so we use the focus
-          // state from when the encrypted event originally arrived, not when it decrypts.
-          skipFocusCheckEvents.add(eventId);
+          encryptedArrivalLifecycle.set(eventId, lifecycleState);
         }
 
         const handleDecrypted = () => {
           // After decryption, run the notification logic with the decrypted event
           handleTimelineEvent(mEvent, room, undefined, true, data);
-          // Clean up the skip-focus marker and listener tracker
+          // Clean up the captured lifecycle state and listener tracker once the
+          // replay has resolved against the decrypted event.
           if (eventId) {
-            skipFocusCheckEvents.delete(eventId);
+            encryptedArrivalLifecycle.delete(eventId);
             pendingDecryptListeners.delete(eventId);
           }
         };
@@ -615,7 +626,7 @@ function MessageNotifications() {
         pushActions,
         showNotifications,
         showSystemNotifications,
-        tabVisible: document.visibilityState === 'visible',
+        tabVisible: lifecycleState.tabVisible,
       });
       if (!notificationPolicy) return;
 
