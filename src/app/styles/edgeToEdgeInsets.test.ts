@@ -48,6 +48,7 @@ describe('android edge-to-edge inset contract', () => {
     const indexHtml = readWorkspaceFile('index.html');
     const indexCss = readWorkspaceFile('src/index.css');
     const systemBarShell = readWorkspaceFile('src/app/components/app-shell/SystemBarShell.tsx');
+    const room = readWorkspaceFile('src/app/features/room/Room.tsx');
     const mobileCapability = readWorkspaceFile('src-tauri/capabilities/mobile.json');
 
     // viewport-fit=cover is required for env(safe-area-inset-*) to work in iOS
@@ -67,12 +68,10 @@ describe('android edge-to-edge inset contract', () => {
     // Bottom safe area is zeroed out: iOS home-indicator padding must not push
     // content up off the bottom of the screen.
     expect(systemBarShell).toContain("'--sable-safe-area-bottom': '0px'");
-    expect(systemBarShell).toContain(
-      "backgroundColor: enabled ? 'var(--sable-surface-container)' : undefined"
-    );
-    expect(systemBarShell).toContain(
-      'paddingBottom: enabled && !needsBottomSystemBar ? safeAreaBottom : 0'
-    );
+    expect(systemBarShell).toContain('backgroundColor: enabled');
+    expect(systemBarShell).toContain("'var(--sable-safe-area-fill, var(--sable-bg-container))'");
+    expect(systemBarShell).toContain('`var(--sable-safe-bottom, ${safeAreaBottom})`');
+    expect(room).toContain("'--sable-safe-area-fill': 'var(--sable-surface-container)'");
     expect(systemBarShell).toContain("const needsBottomSystemBar = tauriOs === 'android'");
     expect(systemBarShell).toContain('var(--sable-bg-container-line)');
     expect(systemBarShell).toContain("borderTop: '1px solid var(--sable-bg-container-line)'");
