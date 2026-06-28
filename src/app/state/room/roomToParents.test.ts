@@ -4,6 +4,7 @@ import {
   getRoomToParentsCacheKey,
   roomToParentsAtom,
   roomToParentsCacheKeyAtom,
+  roomToParentsReadyAtom,
 } from './roomToParents';
 
 describe('roomToParents cache scoping', () => {
@@ -75,5 +76,26 @@ describe('roomToParents cache scoping', () => {
 
     expect(store.get(roomToParentsAtom)).toEqual(new Map());
     expect(localStorage.getItem(bobCacheKey)).toBe(JSON.stringify([]));
+  });
+
+  it('drops stale in-memory hierarchy and readiness when switching scopes before hydrate', () => {
+    const store = createStore();
+    const aliceCacheKey = getRoomToParentsCacheKey('@alice:example.com');
+    const bobCacheKey = getRoomToParentsCacheKey('@bob:example.com');
+
+    store.set(roomToParentsCacheKeyAtom, aliceCacheKey);
+    store.set(roomToParentsAtom, {
+      type: 'INITIALIZE',
+      roomToParents: new Map([['!room:example.com', new Set(['!space:example.com'])]]),
+    });
+
+    expect(store.get(roomToParentsReadyAtom)).toBe(true);
+
+    store.set(roomToParentsCacheKeyAtom, bobCacheKey);
+    store.set(roomToParentsAtom, { type: 'RESET' });
+
+    expect(store.get(roomToParentsAtom)).toEqual(new Map());
+    expect(store.get(roomToParentsReadyAtom)).toBe(false);
+    expect(localStorage.getItem(bobCacheKey)).toBeNull();
   });
 });

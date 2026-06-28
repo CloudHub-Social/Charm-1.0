@@ -24,6 +24,9 @@ import { getLocalStorageItem, setLocalStorageItem } from '$state/utils/atomWithL
 
 export type RoomToParentsAction =
   | {
+      type: 'RESET';
+    }
+  | {
       type: 'INITIALIZE';
       roomToParents: RoomToParents;
     }
@@ -89,6 +92,11 @@ export const roomToParentsAtom = atom<RoomToParents, [RoomToParentsAction], unde
   (get) => get(baseRoomToParents),
   (get, set, action) => {
     const cacheKey = get(roomToParentsCacheKeyAtom);
+    if (action.type === 'RESET') {
+      set(baseRoomToParents, new Map());
+      set(baseRoomToParentsReady, false);
+      return;
+    }
     if (action.type === 'INITIALIZE') {
       set(baseRoomToParents, action.roomToParents);
       set(baseRoomToParentsReady, true);
@@ -150,10 +158,15 @@ export const useBindRoomToParentsAtom = (
   // Strategy 2: Initialize from cache immediately on mount
   useLayoutEffect(() => {
     const userId = mx.getUserId();
-    if (!userId) return;
+    if (!userId) {
+      setRoomToParentsCacheKey(undefined);
+      setRoomToParents({ type: 'RESET' });
+      return;
+    }
 
     const cacheKey = getRoomToParentsCacheKey(userId);
     setRoomToParentsCacheKey(cacheKey);
+    setRoomToParents({ type: 'RESET' });
     const cachedMap = readRoomToParentsCache(cacheKey);
     if (cachedMap.size > 0) {
       setRoomToParents({ type: 'INITIALIZE', roomToParents: cachedMap });
