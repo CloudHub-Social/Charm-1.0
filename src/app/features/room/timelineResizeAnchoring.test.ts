@@ -7,6 +7,7 @@ describe('timelineResizeAnchoring', () => {
       getTimelineResizeAnchorTarget({
         atBottom: false,
         focusItem: { highlight: true },
+        bottomSettleUntil: 0,
         focusSettleUntil: 2_000,
         now: 1_500,
       })
@@ -18,7 +19,19 @@ describe('timelineResizeAnchoring', () => {
       getTimelineResizeAnchorTarget({
         atBottom: true,
         focusItem: { highlight: true },
+        bottomSettleUntil: 2_000,
         focusSettleUntil: 1_000,
+        now: 1_500,
+      })
+    ).toBe('bottom');
+  });
+
+  it('keeps live-bottom rooms pinned only during the bottom settle window', () => {
+    expect(
+      getTimelineResizeAnchorTarget({
+        atBottom: true,
+        bottomSettleUntil: 2_000,
+        focusSettleUntil: 0,
         now: 1_500,
       })
     ).toBe('bottom');
@@ -29,6 +42,7 @@ describe('timelineResizeAnchoring', () => {
       getTimelineResizeAnchorTarget({
         atBottom: false,
         focusItem: { highlight: true },
+        bottomSettleUntil: 0,
         focusSettleUntil: 1_000,
         now: 1_500,
       })
