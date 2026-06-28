@@ -56,15 +56,16 @@ export function useWebPushStartupReconcilerEffect({
   const retryAttemptRef = useRef(0);
   const [retryNonce, setRetryNonce] = useState(0);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
       mountedRef.current = false;
       if (retryTimeoutRef.current !== null) {
         clearTimeout(retryTimeoutRef.current);
       }
-    },
-    []
-  );
+    };
+  }, []);
 
   useEffect(() => {
     const nextPolicyKey =

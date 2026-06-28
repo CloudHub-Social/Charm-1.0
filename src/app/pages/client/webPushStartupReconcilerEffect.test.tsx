@@ -1,4 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
+import { StrictMode, type PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WebPushStartupReconcilerPolicy } from './webPushStartupReconcilerPolicy';
 import { useWebPushStartupReconcilerEffect } from './webPushStartupReconcilerEffect';
@@ -39,6 +40,10 @@ function createInput(overrides?: Partial<HookInput>) {
     },
     ...overrides,
   };
+}
+
+function StrictModeWrapper({ children }: PropsWithChildren) {
+  return <StrictMode>{children}</StrictMode>;
 }
 
 describe('useWebPushStartupReconcilerEffect', () => {
@@ -208,5 +213,21 @@ describe('useWebPushStartupReconcilerEffect', () => {
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(reconcilePushNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps retry scheduling alive under Strict Mode remount checks', async () => {
+    const reconcilePushNotifications = vi
+      .fn<ReconcilePushNotifications>()
+      .mockRejectedValueOnce(new Error('temporary startup failure'))
+      .mockResolvedValueOnce(undefined);
+    const input = createInput({ reconcilePushNotifications });
+    renderHook(() => useWebPushStartupReconcilerEffect(input), { wrapper: StrictModeWrapper });
+
+    await vi.waitFor(() => expect(reconcilePushNotifications).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    await vi.waitFor(() => expect(reconcilePushNotifications).toHaveBeenCalledTimes(2));
   });
 });
