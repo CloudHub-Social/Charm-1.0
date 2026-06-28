@@ -4,7 +4,7 @@ import type { PackImageReader } from '$plugins/custom-emoji';
 import type { IEmoji } from '$plugins/emoji';
 import { mxcUrlToHttp } from '$utils/matrix';
 import type { CSSProperties, ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { EmojiItemInfo, GifData } from '$components/emoji-board/types';
 import { EmojiType } from '$components/emoji-board/types';
 import { AuthenticatedImg } from '$components/AuthenticatedImg';
@@ -167,12 +167,14 @@ export function GifItem({
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const favoritedContent = useFavoriteGifs();
+  const favoriteGifsRef = useRef(favoritedContent.gifs);
   const [favorited, setFavorited] = useState(
     favoritedContent.gifs.find((v) => v.url == gif?.url) != undefined
   );
   const mx = useMatrixClient();
 
   useEffect(() => {
+    favoriteGifsRef.current = favoritedContent.gifs;
     setFavorited(favoritedContent.gifs.some((v) => v.url === gif?.url));
   }, [favoritedContent, gif?.url]);
 
@@ -209,18 +211,30 @@ export function GifItem({
                   e.stopPropagation();
                   if (!favorited) {
                     setFavorited(true);
+                    const nextFavorites = favoriteGifsRef.current.some((v) => v.url === gif.url)
+                      ? favoriteGifsRef.current
+                      : [...favoriteGifsRef.current, gif];
+                    favoriteGifsRef.current = nextFavorites;
                     await mx
                       .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
-                        gifs: [...favoritedContent.gifs, gif],
+                        gifs: nextFavorites,
                       })
-                      .catch(() => setFavorited(false));
+                      .catch(() => {
+                        favoriteGifsRef.current = favoritedContent.gifs;
+                        setFavorited(false);
+                      });
                   } else {
                     setFavorited(false);
+                    const nextFavorites = favoriteGifsRef.current.filter((v) => v.url != gif.url);
+                    favoriteGifsRef.current = nextFavorites;
                     await mx
                       .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
-                        gifs: favoritedContent.gifs.filter((v) => v.url != gif.url),
+                        gifs: nextFavorites,
                       })
-                      .catch(() => setFavorited(true));
+                      .catch(() => {
+                        favoriteGifsRef.current = favoritedContent.gifs;
+                        setFavorited(true);
+                      });
                   }
                 }}
               >

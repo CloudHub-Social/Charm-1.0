@@ -102,6 +102,7 @@ type KlipyGifResult = {
   id: string;
   title?: string;
   file?: KlipyGifFileSet;
+  files?: KlipyGifFileSet;
 };
 
 const hasGifVariant = (
@@ -113,7 +114,7 @@ const hasGifVariant = (
 const parseKlipyResult = (klipyResult: KlipyGifResult): GifData => {
   const SIZE_LIMIT = 3 * 1024 * 1024; // 3MB
 
-  const formats = klipyResult.file || {};
+  const formats = klipyResult.files || klipyResult.file || {};
   const mdGif = hasGifVariant(formats.md) ? formats.md.gif : formats.md;
   const preview = formats.xs?.gif || formats.sm?.gif || mdGif;
 
@@ -162,6 +163,16 @@ function useGifSearch(
       favorites: favoriteGifs,
     }));
   }, [favoriteGifs]);
+
+  const resetSearchGifs = useCallback(() => {
+    requestIdRef.current += 1;
+    setLoading(false);
+    setError(null);
+    setGifs((old) => ({
+      ...old,
+      gifs: [],
+    }));
+  }, []);
 
   const searchGifs = useCallback(
     async (query: string) => {
@@ -220,7 +231,7 @@ function useGifSearch(
     [gifSearch, gifsEnabled, klipyApiKey]
   );
 
-  return { gifs, loading, error, searchGifs };
+  return { gifs, loading, error, searchGifs, resetSearchGifs };
 }
 
 const useGroups = (
@@ -705,7 +716,7 @@ export function EmojiBoard({
   const activeGroupIdAtom = useMemo(() => atom<string | undefined>(undefined), []);
   const setActiveGroupId = useSetAtom(activeGroupIdAtom);
   const imagePacks = useRelevantImagePacks(usage, imagePackRooms);
-  const favoriteGifs = useFavoriteGifs().gifs as GifData[];
+  const favoriteGifs = useFavoriteGifs().gifs;
 
   useEffect(() => {
     if (!active || imagePacks.length === 0) return undefined;
@@ -775,6 +786,7 @@ export function EmojiBoard({
     loading: gifsLoading,
     error: gifsError,
     searchGifs,
+    resetSearchGifs,
   } = useGifSearch(favoriteGifs, gifSearch, klipyApiKey, gifsEnabled);
   const [emojiGroupItems, stickerGroupItems, gifGroupItems] = useGroups(
     activeTab,
@@ -818,6 +830,7 @@ export function EmojiBoard({
           } else {
             setShowFavoritesOnly(true);
             resetGifSearch();
+            resetSearchGifs();
           }
         } else if (term) {
           emojiSearch(term);
@@ -825,7 +838,7 @@ export function EmojiBoard({
           resetEmojiSearch();
         }
       },
-      [activeTab, emojiSearch, resetEmojiSearch, searchGifs, resetGifSearch]
+      [activeTab, emojiSearch, resetEmojiSearch, searchGifs, resetGifSearch, resetSearchGifs]
     ),
     { wait: 200 }
   );
