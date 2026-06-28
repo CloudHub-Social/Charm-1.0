@@ -5,6 +5,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react';
@@ -266,6 +267,10 @@ export function RoomTimeline({
   const currentRoomIdRef = useRef(room.roomId);
   const focusAnchorSettleUntilRef = useRef(0);
   const bottomAnchorSettleUntilRef = useRef(0);
+  const [bottomAnchorRestartToken, restartBottomAnchorTick] = useReducer(
+    (count: number) => count + 1,
+    0
+  );
 
   const [isReady, setIsReady] = useState(false);
 
@@ -284,13 +289,18 @@ export function RoomTimeline({
   const processedEventsRef = useRef<ProcessedEvent[]>([]);
   const timelineSyncRef = useRef<typeof timelineSync>(null as unknown as typeof timelineSync);
 
+  const refreshBottomAnchorSettleWindow = useCallback(() => {
+    bottomAnchorSettleUntilRef.current = Date.now() + BOTTOM_ANCHOR_SETTLE_MS;
+  }, []);
+
   const scrollToBottom = useCallback(() => {
     if (!vListRef.current) return;
     const lastIndex = processedEventsRef.current.length - 1;
     if (lastIndex < 0) return;
     vListRef.current.scrollTo(vListRef.current.scrollSize);
-    bottomAnchorSettleUntilRef.current = Date.now() + BOTTOM_ANCHOR_SETTLE_MS;
-  }, []);
+    refreshBottomAnchorSettleWindow();
+    restartBottomAnchorTick();
+  }, [refreshBottomAnchorSettleWindow]);
 
   const timelineSync = useTimelineSync({
     room,
@@ -332,10 +342,6 @@ export function RoomTimeline({
 
   const refreshFocusAnchorSettleWindow = useCallback(() => {
     focusAnchorSettleUntilRef.current = Date.now() + FOCUS_ITEM_SETTLE_MS;
-  }, []);
-
-  const refreshBottomAnchorSettleWindow = useCallback(() => {
-    bottomAnchorSettleUntilRef.current = Date.now() + BOTTOM_ANCHOR_SETTLE_MS;
   }, []);
 
   useLayoutEffect(() => {
@@ -609,7 +615,14 @@ export function RoomTimeline({
       viewportObserver.disconnect();
       cancelAnimationFrame(rafId);
     };
-  }, [getRawIndexToProcessedIndex, room.roomId, atBottomState, timelineSync.focusItem, isReady]);
+  }, [
+    bottomAnchorRestartToken,
+    getRawIndexToProcessedIndex,
+    room.roomId,
+    atBottomState,
+    timelineSync.focusItem,
+    isReady,
+  ]);
 
   const actions = useTimelineActions({
     room,
