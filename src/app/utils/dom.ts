@@ -254,7 +254,10 @@ const getClipboardImageBlob = async (blob: Blob): Promise<Blob> => {
   canvas.height = bitmap.height;
 
   const ctx = canvas.getContext('2d');
-  ctx?.drawImage(bitmap, 0, 0);
+  if (!ctx) {
+    throw new Error('Failed to acquire a 2D canvas context for clipboard copy.');
+  }
+  ctx.drawImage(bitmap, 0, 0);
 
   const finalBlob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((result) => {
