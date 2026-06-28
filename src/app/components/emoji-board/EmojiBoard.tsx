@@ -794,6 +794,15 @@ export function EmojiBoard({
     gifs
   );
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(true);
+
+  useEffect(() => {
+    if (active && activeTab === EmojiBoardTab.Gif) return;
+
+    setShowFavoritesOnly(true);
+    resetGifSearch();
+    resetSearchGifs();
+  }, [active, activeTab, resetGifSearch, resetSearchGifs]);
+
   const groupsByTab = {
     [EmojiBoardTab.Emoji]: emojiGroupItems,
     [EmojiBoardTab.Sticker]: stickerGroupItems,
