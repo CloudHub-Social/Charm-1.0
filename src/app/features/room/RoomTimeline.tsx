@@ -289,6 +289,7 @@ export function RoomTimeline({
     const lastIndex = processedEventsRef.current.length - 1;
     if (lastIndex < 0) return;
     vListRef.current.scrollTo(vListRef.current.scrollSize);
+    bottomAnchorSettleUntilRef.current = Date.now() + BOTTOM_ANCHOR_SETTLE_MS;
   }, []);
 
   const timelineSync = useTimelineSync({
