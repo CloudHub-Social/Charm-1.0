@@ -56,6 +56,9 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
         style={
           {
             '--sable-safe-area-top': enabled ? safeAreaTop : '0px',
+            // Intentionally zero on iOS/web mobile. Room views own their
+            // keyboard/home-indicator spacing separately, and reserving the
+            // browser inset here reintroduced the persistent bottom gap.
             '--sable-safe-area-bottom': '0px',
             '--sable-safe-area-left': enabled ? safeAreaLeft : '0px',
             '--sable-safe-area-right': enabled ? safeAreaRight : '0px',
