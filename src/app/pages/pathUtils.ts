@@ -1,5 +1,5 @@
 import type { Path } from 'react-router-dom';
-import { generatePath } from 'react-router-dom';
+import { generatePath, matchPath } from 'react-router-dom';
 import { trimLeadingSlash, trimTrailingSlash } from '$utils/common';
 import type { HashRouterConfig } from '$hooks/useClientConfig';
 import type { SettingsPathSearchParams } from './paths';
@@ -119,6 +119,19 @@ const getRestorablePath = (path: string): string => {
   const [pathname = '', search = ''] = path.split('?');
   const params = new URLSearchParams(search);
 
+  let restorablePathname = pathname;
+
+  if (params.get('jumpMode') === 'notification_live') {
+    const roomMatch = [HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH]
+      .map((candidatePath) => matchPath({ path: candidatePath, end: true }, pathname))
+      .find((match) => match !== null);
+    const eventId = roomMatch?.params.eventId;
+
+    if (eventId) {
+      restorablePathname = stripRoomEventSegment(pathname, decodeURIComponent(eventId));
+    }
+  }
+
   Array.from(params.keys()).forEach((key) => {
     if (!RESTORABLE_LAST_VISITED_SEARCH_PARAMS.has(key)) {
       params.delete(key);
@@ -126,7 +139,7 @@ const getRestorablePath = (path: string): string => {
   });
 
   const nextSearch = params.toString();
-  return nextSearch ? `${pathname}?${nextSearch}` : pathname;
+  return nextSearch ? `${restorablePathname}?${nextSearch}` : restorablePathname;
 };
 
 /**
