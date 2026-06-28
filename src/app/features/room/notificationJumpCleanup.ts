@@ -32,6 +32,17 @@ export const getNotificationJumpCleanupEventId = (
   options: NotificationJumpCleanupOptions
 ): string | undefined => (shouldClearNotificationJumpRoute(options) ? options.eventId : undefined);
 
+export const shouldScheduleEventTargetCleanup = ({
+  eventId,
+  focusEventId,
+  jumpMode,
+}: {
+  eventId?: string;
+  focusEventId?: string;
+  jumpMode?: TimelineJumpMode;
+}): boolean =>
+  Boolean(eventId && focusEventId && eventId === focusEventId && jumpMode === 'notification_live');
+
 // Event-targeted room routes are transient jump state. Once the jump has
 // landed, strip the event segment and notification-only params so back
 // navigation returns to the stable room route instead of re-arming the jump.

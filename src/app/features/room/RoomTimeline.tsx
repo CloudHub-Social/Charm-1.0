@@ -82,6 +82,7 @@ import { isPhoneLayoutDevice } from '$utils/user-agent';
 import {
   buildEventTargetCleanupTarget,
   getNotificationJumpCleanupEventId,
+  shouldScheduleEventTargetCleanup,
   shouldClearNotificationJumpRoute,
   shouldClearNotificationJumpRouteURLOnly,
 } from './notificationJumpCleanup';
@@ -443,7 +444,13 @@ export function RoomTimeline({
         setIsReady(true);
         vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
         timelineSync.setFocusItem((prev) => (prev ? { ...prev, scrollTo: false } : undefined));
-        if (eventId === timelineSyncRef.current.focusItem.eventId) {
+        if (
+          shouldScheduleEventTargetCleanup({
+            eventId,
+            focusEventId: timelineSyncRef.current.focusItem.eventId,
+            jumpMode,
+          })
+        ) {
           if (jumpRouteCleanupTimerRef.current !== undefined) {
             clearTimeout(jumpRouteCleanupTimerRef.current);
           }
@@ -485,6 +492,7 @@ export function RoomTimeline({
     };
   }, [
     eventId,
+    jumpMode,
     timelineSync.focusItem,
     timelineSync,
     reducedMotion,
