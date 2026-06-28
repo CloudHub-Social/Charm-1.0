@@ -940,22 +940,25 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         .filter((fileItem): fileItem is TUploadItem => !!fileItem);
       const plannedFiles = applyAttachmentSendPlan(matchingFiles, sharedCaption);
 
-      const contentsPromises = uploads.map(async (upload) => {
+      const preparedUploadsPromises = uploads.map(async (upload) => {
         const fileItem = plannedFiles.find((f) => f.file === upload.file);
         if (!fileItem) throw new Error('Broken upload');
 
         if (fileItem.file.type.startsWith('image')) {
-          return getImageMsgContent(mx, fileItem, upload.mxc);
+          return { upload, content: await getImageMsgContent(mx, fileItem, upload.mxc) };
         }
         if (fileItem.file.type.startsWith('video')) {
-          return getVideoMsgContent(mx, fileItem, upload.mxc);
+          return { upload, content: await getVideoMsgContent(mx, fileItem, upload.mxc) };
         }
         if (fileItem.file.type.startsWith('audio')) {
-          return getAudioMsgContent(fileItem, upload.mxc);
+          return { upload, content: getAudioMsgContent(fileItem, upload.mxc) };
         }
-        return getFileMsgContent(fileItem, upload.mxc);
+        return { upload, content: getFileMsgContent(fileItem, upload.mxc) };
       });
-      const contents = fulfilledPromiseSettledResult(await Promise.allSettled(contentsPromises));
+      const preparedUploads = fulfilledPromiseSettledResult(
+        await Promise.allSettled(preparedUploadsPromises)
+      );
+      const contents = preparedUploads.map(({ content }) => content);
 
       /**
        * the currently with the room associated per-message profile, if any, so that it can be included in the message content when sending.
@@ -1009,17 +1012,24 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
       const invalidate = () =>
         queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
-      const sendContentsSequentially = async (
-        sendContent: (content: MessageContent) => Promise<void>
+      const sendPreparedUploadsSequentially = async (
+        sendContent: (preparedUpload: { upload: UploadSuccess; content: IContent }) => Promise<void>
       ) => {
-        await contents.reduce(
-          (promise, content) => promise.then(() => sendContent(content)),
+        await preparedUploads.reduce(
+          (promise, preparedUpload) => promise.then(() => sendContent(preparedUpload)),
           Promise.resolve()
         );
       };
 
       const sentImagePacksSnapshot = JSON.stringify(imagePacksUsedRef.current.toJSON());
       const resetComposerAfterSend = plainText.length > 0;
+      const successfulUploads: UploadSuccess[] = [];
+      const handlePartialUploadBatchSuccess = () => {
+        if (successfulUploads.length === 0) return;
+
+        handleCancelUpload(successfulUploads);
+        resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot);
+      };
 
       if (scheduledTime) {
         try {
@@ -1028,12 +1038,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             await cancelDelayedEvent(mx, editingScheduledDelayId);
           }
 
-          await sendContentsSequentially(async (content) => {
+          await sendPreparedUploadsSequentially(async ({ upload, content }) => {
             if (isEncrypted) {
               await sendDelayedMessageE2EE(mx, roomId, room, content, delayMs);
             } else {
               await sendDelayedMessage(mx, roomId, content, delayMs);
             }
+            successfulUploads.push(upload);
           });
 
           invalidate();
@@ -1046,6 +1057,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           setEditingScheduledDelayId(null);
           setScheduledTime(null);
         } catch (error) {
+          invalidate();
+          handlePartialUploadBatchSuccess();
           debugLog.error('message', 'Failed to schedule uploaded file message', {
             roomId,
             error: error instanceof Error ? error.message : String(error),
@@ -1068,48 +1081,54 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         }
 
-        await sendContentsSequentially(async (content) => {
-          const sendStartTime = Date.now();
-          const span = Sentry.startInactiveSpan({
-            name: 'message.send',
-            op: 'message',
-            attributes: {
-              'message.room_id': roomId,
-              'message.type': content.msgtype ?? 'm.text',
-              'message.is_encrypted': isEncrypted,
-              'message.body_length': content.body?.length ?? 0,
-              'message.is_thread': !!threadRootId,
-            },
-          });
+        try {
+          await sendPreparedUploadsSequentially(async ({ upload, content }) => {
+            const sendStartTime = Date.now();
+            const span = Sentry.startInactiveSpan({
+              name: 'message.send',
+              op: 'message',
+              attributes: {
+                'message.room_id': roomId,
+                'message.type': content.msgtype ?? 'm.text',
+                'message.is_encrypted': isEncrypted,
+                'message.body_length': content.body?.length ?? 0,
+                'message.is_thread': !!threadRootId,
+              },
+            });
 
-          try {
-            const res = await mx.sendMessage(
-              roomId,
-              threadRootId ?? null,
-              content as RoomMessageEventContent
-            );
-            debugLog.info('message', 'Uploaded file message sent', {
-              roomId,
-              eventId: res.event_id,
-              msgtype: content.msgtype,
-            });
-            span.setAttribute('message.event_id', res.event_id);
-            span.setAttribute('message.send_duration_ms', Date.now() - sendStartTime);
-          } catch (error: unknown) {
-            debugLog.error('message', 'Failed to send uploaded file message', {
-              roomId,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            log.error('failed to send uploaded message', { roomId }, error);
-            span.setAttribute(
-              'message.error',
-              error instanceof Error ? error.message : String(error)
-            );
-            throw error;
-          } finally {
-            span.end();
-          }
-        });
+            try {
+              const res = await mx.sendMessage(
+                roomId,
+                threadRootId ?? null,
+                content as RoomMessageEventContent
+              );
+              debugLog.info('message', 'Uploaded file message sent', {
+                roomId,
+                eventId: res.event_id,
+                msgtype: content.msgtype,
+              });
+              successfulUploads.push(upload);
+              span.setAttribute('message.event_id', res.event_id);
+              span.setAttribute('message.send_duration_ms', Date.now() - sendStartTime);
+            } catch (error: unknown) {
+              debugLog.error('message', 'Failed to send uploaded file message', {
+                roomId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              log.error('failed to send uploaded message', { roomId }, error);
+              span.setAttribute(
+                'message.error',
+                error instanceof Error ? error.message : String(error)
+              );
+              throw error;
+            } finally {
+              span.end();
+            }
+          });
+        } catch (error) {
+          handlePartialUploadBatchSuccess();
+          throw error;
+        }
 
         handleCancelUpload(uploads);
         if (resetComposerAfterSend) {
@@ -1160,7 +1179,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       submitInFlightRef.current = true;
 
       try {
-        uploadBoardHandlers.current?.handleSend();
         const commandName = getBeginCommand(editor);
         /**
          * a map of regex patterns to replace nicknames with,

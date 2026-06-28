@@ -68,8 +68,11 @@ export function UploadBoardHeader({
   const handleSend = async () => {
     if (sendingRef.current) return;
     sendingRef.current = true;
-    await onSend(uploads.filter((upload) => upload.status === UploadStatus.Success));
-    sendingRef.current = false;
+    try {
+      await onSend(uploads.filter((upload) => upload.status === UploadStatus.Success));
+    } finally {
+      sendingRef.current = false;
+    }
   };
 
   useImperativeHandle(imperativeHandlerRef, () => ({
