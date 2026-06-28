@@ -5,7 +5,11 @@ import { createStore, Provider } from 'jotai';
 import { getSettings, presenceAutoIdledAtom, settingsAtom } from '$state/settings';
 import { CustomAccountDataEvent } from '$types/matrix/accountData';
 import { SetPresence } from '$types/matrix-sdk';
-import { resetPresenceSyncThrottleForTests, usePresenceSyncEffect } from './usePresenceSync';
+import {
+  resetPresenceSyncThrottleForTests,
+  setPresenceSyncThrottleTimestampForTests,
+  usePresenceSyncEffect,
+} from './usePresenceSync';
 
 const PRESENCE_SYNC_UPDATED_AT_KEY = 'presence-sync-updated-at:@alice:example.com';
 
@@ -183,6 +187,85 @@ describe('usePresenceSyncEffect', () => {
     expect(store.get(presenceAutoIdledAtom)).toBe(false);
   });
 
+  it('keeps local active state when a remote device reports auto-idle', () => {
+    const store = makeStore({ sendPresence: true, presenceMode: 'online' });
+    renderHook(() => usePresenceSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      callbackHolder.current?.(
+        makePresenceEvent({
+          presenceMode: 'online',
+          autoIdled: true,
+          updatedAt: 900,
+          lastActivityAt: 900,
+        })
+      );
+    });
+
+    expect(store.get(settingsAtom).presenceMode).toBe('online');
+    expect(store.get(presenceAutoIdledAtom)).toBe(false);
+  });
+
+  it('still refreshes server presence when remote account data is already fresh and unchanged', async () => {
+    mockMx.getAccountData.mockReturnValue({
+      getContent: () => ({
+        presenceMode: 'online',
+        autoIdled: false,
+        updatedAt: 200,
+        lastActivityAt: 200,
+      }),
+    });
+    const store = makeStore({ sendPresence: true, presenceMode: 'online' });
+    renderHook(() => usePresenceSyncEffect(), { wrapper: makeWrapper(store) });
+
+    await act(async () => {
+      vi.advanceTimersByTime(25_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockMx.setPresence).toHaveBeenCalledWith({
+      presence: 'online',
+      status_msg: undefined,
+    });
+  });
+
+  it('advances freshness for duplicate remote states before later stale updates arrive', () => {
+    localStorage.setItem(PRESENCE_SYNC_UPDATED_AT_KEY, '100');
+    const store = makeStore({ sendPresence: true, presenceMode: 'online' });
+    renderHook(() => usePresenceSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      callbackHolder.current?.(
+        makePresenceEvent({
+          presenceMode: 'online',
+          autoIdled: false,
+          updatedAt: 100,
+          lastActivityAt: 100,
+        })
+      );
+      callbackHolder.current?.(
+        makePresenceEvent({
+          presenceMode: 'online',
+          autoIdled: false,
+          updatedAt: 200,
+          lastActivityAt: 100,
+        })
+      );
+      callbackHolder.current?.(
+        makePresenceEvent({
+          presenceMode: 'offline',
+          autoIdled: true,
+          updatedAt: 150,
+          lastActivityAt: 150,
+        })
+      );
+    });
+
+    expect(store.get(settingsAtom).presenceMode).toBe('online');
+    expect(store.get(presenceAutoIdledAtom)).toBe(false);
+  });
+
   it('updates classic and sliding sync presence configuration when sending presence', async () => {
     const store = makeStore({ sendPresence: true, presenceMode: 'offline' });
     renderHook(() => usePresenceSyncEffect(), { wrapper: makeWrapper(store) });
@@ -197,6 +280,25 @@ describe('usePresenceSyncEffect', () => {
       presence: 'offline',
       status_msg: undefined,
     });
+    expect(mockMx.setSyncPresence).toHaveBeenCalledWith(SetPresence.Offline);
+    expect(slidingSyncManager.setPresenceEnabled).toHaveBeenCalledWith(false);
+  });
+
+  it('updates sync-presence flags even when the server send is throttled', async () => {
+    const store = makeStore({ sendPresence: true, presenceMode: 'offline' });
+    renderHook(() => usePresenceSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(24_999);
+      setPresenceSyncThrottleTimestampForTests(Date.now());
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      await Promise.resolve();
+    });
+
+    expect(mockMx.setPresence).not.toHaveBeenCalled();
     expect(mockMx.setSyncPresence).toHaveBeenCalledWith(SetPresence.Offline);
     expect(slidingSyncManager.setPresenceEnabled).toHaveBeenCalledWith(false);
   });
