@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useSetAtom } from 'jotai';
 import * as Sentry from '@sentry/react';
-import { activeSessionIdAtom, pendingNotificationAtom } from '$state/sessions';
+import { activeSessionIdAtom, createPendingNotification, pendingNotificationAtom } from '$state/sessions';
 import {
   buildNotificationBreadcrumb,
   buildNotificationMetricAttributes,
@@ -55,16 +55,17 @@ export function ToRoomEvent() {
     // Switch to the target account first so the notification jumper navigates
     // under the correct session.
     if (userId) setActiveSessionId(userId);
-    setPending({
+    setPending(
+      createPendingNotification({
       roomId,
       eventId,
       jumpMode,
       joinCall,
       targetSessionId: userId,
-      requestedAt: Date.now(),
       swClickId,
       source: 'to_room_event',
-    });
+      })
+    );
   }, [userId, roomId, eventId, jumpMode, joinCall, swClickId, setActiveSessionId, setPending]);
 
   return null;

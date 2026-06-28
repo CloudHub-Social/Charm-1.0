@@ -176,10 +176,33 @@ export type PendingNotification = {
   targetSessionId?: string;
   requestedAt?: number;
   swClickId?: string;
-  source?: 'to_room_event';
+  source?:
+    | 'to_room_event'
+    | 'service_worker_click'
+    | 'foreground_notification'
+    | 'background_notification';
 };
 
 export const pendingNotificationAtom = atom<PendingNotification | null>(null);
+
+export const createPendingNotification = ({
+  roomId,
+  eventId,
+  jumpMode,
+  joinCall,
+  targetSessionId,
+  swClickId,
+  source,
+}: Omit<PendingNotification, 'requestedAt'>): PendingNotification => ({
+  roomId,
+  eventId,
+  jumpMode,
+  joinCall,
+  targetSessionId,
+  requestedAt: Date.now(),
+  swClickId,
+  source,
+});
 
 // ─── In-app notification banner ────────────────────────────────────────────
 
