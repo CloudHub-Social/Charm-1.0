@@ -105,12 +105,11 @@ export function useWebPushStartupReconcilerEffect({
       const attempt = retryAttemptRef.current + 1;
       const nextRetryDelayMs = WEB_PUSH_STARTUP_RETRY_DELAYS_MS[retryAttemptRef.current];
 
-      reconciledKeyRef.current = null;
-
       if (nextRetryDelayMs !== undefined) {
         retryAttemptRef.current = attempt;
         retryTimeoutRef.current = setTimeout(() => {
           retryTimeoutRef.current = null;
+          reconciledKeyRef.current = null;
           setRetryNonce((value) => value + 1);
         }, nextRetryDelayMs);
       }

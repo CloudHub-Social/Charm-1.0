@@ -199,6 +199,99 @@ describe('useWebPushStartupReconcilerEffect', () => {
     );
   });
 
+  it('does not bypass a scheduled retry on same-key rerenders', async () => {
+    const reconcilePushNotifications = vi
+      .fn<ReconcilePushNotifications>()
+      .mockRejectedValueOnce(new Error('temporary startup failure'))
+      .mockResolvedValueOnce(undefined);
+    const initialInput = createInput({ reconcilePushNotifications });
+    const rerenderedInput = createInput({
+      reconcilePushNotifications,
+      pushSubscription: [
+        { endpoint: 'https://push.example/subscription' } as PushSubscriptionJSON,
+        vi.fn<(subscription: PushSubscription | null) => void>(),
+      ] as HookInput['pushSubscription'],
+    });
+
+    const hook = renderHook(({ input }) => useWebPushStartupReconcilerEffect(input), {
+      initialProps: { input: initialInput },
+    });
+
+    await vi.waitFor(() => expect(reconcilePushNotifications).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(initialInput.transportLog.warn).toHaveBeenCalledWith(
+        'notification',
+        'Web push startup reconciliation failed',
+        expect.objectContaining({
+          attempt: 1,
+          nextRetryDelayMs: 5_000,
+        })
+      )
+    );
+
+    hook.rerender({ input: rerenderedInput });
+    expect(reconcilePushNotifications).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    await vi.waitFor(() => expect(reconcilePushNotifications).toHaveBeenCalledTimes(2));
+  });
+
+  it('stops retrying once the startup retry budget is exhausted', async () => {
+    const reconcilePushNotifications = vi
+      .fn<ReconcilePushNotifications>()
+      .mockRejectedValue(new Error('persistent startup failure'));
+    const initialInput = createInput({ reconcilePushNotifications });
+    const rerenderedInput = createInput({
+      reconcilePushNotifications,
+      pushSubscription: [
+        { endpoint: 'https://push.example/second-subscription' } as PushSubscriptionJSON,
+        vi.fn<(subscription: PushSubscription | null) => void>(),
+      ] as HookInput['pushSubscription'],
+    });
+
+    const hook = renderHook(({ input }) => useWebPushStartupReconcilerEffect(input), {
+      initialProps: { input: initialInput },
+    });
+
+    await vi.waitFor(() => expect(reconcilePushNotifications).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(40_000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    await vi.waitFor(() => expect(reconcilePushNotifications).toHaveBeenCalledTimes(6));
+    await vi.waitFor(() =>
+      expect(initialInput.transportLog.warn).toHaveBeenLastCalledWith(
+        'notification',
+        'Web push startup reconciliation failed',
+        expect.objectContaining({
+          attempt: 6,
+          nextRetryDelayMs: undefined,
+        })
+      )
+    );
+
+    hook.rerender({ input: rerenderedInput });
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(reconcilePushNotifications).toHaveBeenCalledTimes(6);
+  });
+
   it('cleans up scheduled retries on unmount', async () => {
     const reconcilePushNotifications = vi
       .fn<ReconcilePushNotifications>()
