@@ -187,9 +187,7 @@ describe('mobile PWA dogfood contract', () => {
     expect(userRoomProfileRenderer).toContain('<Modal500 requestClose={close} fullScreenOnMobile>');
     expect(userRoomProfileRenderer).toContain('Member Profile');
     expect(bugReportModal).toContain('<Modal500 requestClose={close} fullScreenOnMobile>');
-    expect(accountSwitcher).toContain(
-      'const useModalAccountSwitcher = Boolean(isBottom && isPhoneLayout);'
-    );
+    expect(accountSwitcher).toContain('const useModalAccountSwitcher = isPhoneLayout;');
     expect(accountSwitcher).toContain(
       '<Modal500 requestClose={() => setMenuAnchor(undefined)} fullScreenOnMobile>'
     );

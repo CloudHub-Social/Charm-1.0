@@ -371,7 +371,7 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
   const label = activeDisplayName ?? activeLocalPart;
   const sectionMenuMaxHeight = getAccountSwitcherMenuMaxHeight(menuAnchor, isBottom);
   const isPhoneLayout = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
-  const useModalAccountSwitcher = Boolean(isBottom && isPhoneLayout);
+  const useModalAccountSwitcher = isPhoneLayout;
 
   if (!activeSession) return null;
 

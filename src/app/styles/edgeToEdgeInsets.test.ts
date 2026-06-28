@@ -158,9 +158,7 @@ describe('android edge-to-edge inset contract', () => {
     expect(accountSwitcher).toContain('const availableAboveTrigger = Math.max(');
     expect(accountSwitcher).toContain('menuAnchor.y - mobileMenuViewportPadding');
     expect(accountSwitcher).toMatch(/WebkitOverflowScrolling:\s*["']touch["']/);
-    expect(accountSwitcher).toContain(
-      'const useModalAccountSwitcher = Boolean(isBottom && isPhoneLayout);'
-    );
+    expect(accountSwitcher).toContain('const useModalAccountSwitcher = isPhoneLayout;');
     expect(accountSwitcher).toContain(
       '<Modal500 requestClose={() => setMenuAnchor(undefined)} fullScreenOnMobile>'
     );
