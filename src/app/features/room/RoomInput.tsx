@@ -916,6 +916,17 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       }
     };
 
+    const focusComposer = () => {
+      requestAnimationFrame(() => {
+        try {
+          ReactEditor.focus(editor);
+          moveCursor(editor);
+        } catch {
+          // Ignore focus errors
+        }
+      });
+    };
+
     const getNicknameReplacementMap = () => {
       const nicknameReplacement = new Map<RegExp, string>();
 
@@ -969,8 +980,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       };
     };
 
-    const handleSendUpload = async (uploads: UploadSuccess[]) => {
-      const sharedCaption = getSharedComposerCaption();
+    const handleSendUpload = async (
+      uploads: UploadSuccess[],
+      options?: { sharedCaption?: ComposerAttachmentCaption }
+    ) => {
+      const sharedCaption = options?.sharedCaption ?? getSharedComposerCaption();
       const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
       const clearSentUploadReplyDraft = () => {
         if (serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot) {
@@ -983,6 +997,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         .filter((fileItem): fileItem is TUploadItem => !!fileItem);
       const sendPlan = createAttachmentSendPlan(matchingFiles, sharedCaption);
       const plannedFiles = applyAttachmentSendPlan(matchingFiles, sharedCaption);
+      const sharedCaptionApplied = sendPlan.some((caption) => !!caption);
+      const hasDeferredComposerText = Boolean(sharedCaption && !sharedCaptionApplied);
 
       const preparedUploadsPromises = uploads.map(async (upload) => {
         const fileItem = plannedFiles.find((f) => f.file === upload.file);
@@ -1022,36 +1038,45 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       }
 
       if (contents.length > 0) {
-        const replyContent = getReplyContent(replyDraft, room);
-        if (Object.keys(replyContent).length > 0) {
-          contents[0]!['m.relates_to'] = replyContent;
+        if (!hasDeferredComposerText) {
+          const replyContent = getReplyContent(replyDraft, room);
+          if (Object.keys(replyContent).length > 0) {
+            contents[0]!['m.relates_to'] = replyContent;
+          }
         }
 
-        const mentionData = getMentions(mx, roomId, editor);
+        const mentionData = sharedCaptionApplied
+          ? getMentions(mx, roomId, editor)
+          : { room: false, users: new Set<string>() };
         const replyMentions = getReplyMentionData(
-          replyDraft,
+          hasDeferredComposerText ? undefined : replyDraft,
           replyEvent,
           silentReply,
-          mentionData.room
+          sharedCaptionApplied ? mentionData.room : false
         );
         if (replyMentions?.user_ids) {
           replyMentions.user_ids.forEach((id) => mentionData.users.add(id));
         }
 
-        contents[0]!['m.mentions'] = getMentionContent(
-          Array.from(mentionData.users),
-          mentionData.room || replyMentions?.room === true
-        );
-        contents[0]![prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
-          imagePacksUsedRef.current.toJSON();
+        if (mentionData.users.size > 0 || mentionData.room || replyMentions?.room === true) {
+          contents[0]!['m.mentions'] = getMentionContent(
+            Array.from(mentionData.users),
+            mentionData.room || replyMentions?.room === true
+          );
+        }
 
-        const links = getLinks(editor.children);
-        contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME] = [];
-        links?.forEach((link) =>
-          contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME].push({
-            matched_url: link,
-          })
-        );
+        if (sharedCaptionApplied) {
+          contents[0]![prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
+            imagePacksUsedRef.current.toJSON();
+
+          const links = getLinks(editor.children);
+          contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME] = [];
+          links?.forEach((link) =>
+            contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME].push({
+              matched_url: link,
+            })
+          );
+        }
       }
 
       const invalidate = () =>
@@ -1066,22 +1091,36 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       };
 
       const sentImagePacksSnapshot = JSON.stringify(imagePacksUsedRef.current.toJSON());
-      const sharedCaptionApplied = sendPlan.some((caption) => !!caption);
       const successfulUploads: UploadSuccess[] = [];
-      const clearConsumedUploadSendContext = (options?: { refocus?: boolean }) => {
+      const clearConsumedUploadSendContext = (contextOptions?: { refocus?: boolean }) => {
         if (sharedCaptionApplied) {
-          resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot, options);
+          resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot, contextOptions);
           return;
         }
 
+        if (hasDeferredComposerText) {
+          if (contextOptions?.refocus) focusComposer();
+          return;
+        }
+
+        clearSentUploadReplyDraft();
         clearSentMessageContext(sentReplyDraftSnapshot, sentImagePacksSnapshot);
         sendTypingStatus(false);
+        if (contextOptions?.refocus) focusComposer();
       };
       const handlePartialUploadBatchSuccess = () => {
         if (successfulUploads.length === 0) return;
 
         handleCancelUpload(successfulUploads);
         clearConsumedUploadSendContext();
+      };
+      const handleUploadSendFailure = () => {
+        if (successfulUploads.length > 0) {
+          handlePartialUploadBatchSuccess();
+          return;
+        }
+
+        handleCancelUpload(uploads);
       };
 
       if (scheduledTime) {
@@ -1103,12 +1142,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           invalidate();
           handleCancelUpload(uploads);
           clearConsumedUploadSendContext({ refocus: true });
-          if (!sharedCaptionApplied) clearSentUploadReplyDraft();
           setEditingScheduledDelayId(null);
           setScheduledTime(null);
         } catch (error) {
           invalidate();
-          handlePartialUploadBatchSuccess();
+          handleUploadSendFailure();
           debugLog.error('message', 'Failed to schedule uploaded file message', {
             roomId,
             error: error instanceof Error ? error.message : String(error),
@@ -1176,13 +1214,12 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             }
           });
         } catch (error) {
-          handlePartialUploadBatchSuccess();
+          handleUploadSendFailure();
           throw error;
         }
 
         handleCancelUpload(uploads);
         clearConsumedUploadSendContext({ refocus: true });
-        if (!sharedCaptionApplied) clearSentUploadReplyDraft();
       }
     };
 
@@ -1355,17 +1392,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         }
 
-        if (selectedFiles.length > 0) {
-          const uploadsReady =
-            uploadStates.length === selectedFiles.length &&
-            uploadStates.every((upload) => upload.status === UploadStatus.Success);
-
-          if (uploadsReady) {
-            await uploadBoardHandlers.current?.handleSend();
-          }
-          return;
-        }
-
         if (plainText === '') return;
 
         // Discord-style edit: when an editDraft is active, send an m.replace event
@@ -1441,6 +1467,30 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             resetEditor(editor);
             resetEditorHistory(editor);
             sendTypingStatus(false);
+          }
+          return;
+        }
+
+        if (selectedFiles.length > 0) {
+          const uploadsReady =
+            uploadStates.length === selectedFiles.length &&
+            uploadStates.every((upload) => upload.status === UploadStatus.Success);
+
+          if (uploadsReady) {
+            const successfulUploads = uploadStates.filter(
+              (upload): upload is UploadSuccess => upload.status === UploadStatus.Success
+            );
+            await handleSendUpload(successfulUploads, {
+              sharedCaption:
+                plainText.length > 0
+                  ? {
+                      body: plainText,
+                      formattedBody: customHtmlEqualsPlainText(customHtml, plainText)
+                        ? undefined
+                        : customHtml,
+                    }
+                  : undefined,
+            });
           }
           return;
         }
