@@ -1052,6 +1052,7 @@ export function EmojiBoard({
                 loading={gifsLoading}
                 error={gifsError}
                 isEmpty={groups.every((group) => group.items.length === 0)}
+                showEmptyState={!showFavoritesOnly}
               />
             )}
           </EmojiGroupHolder>

@@ -53,11 +53,12 @@ type GifStatusProps = {
   loading: boolean;
   error: string | null;
   isEmpty: boolean;
+  showEmptyState: boolean;
 };
 
-export function GifStatus({ loading, error, isEmpty }: Readonly<GifStatusProps>) {
+export function GifStatus({ loading, error, isEmpty, showEmptyState }: Readonly<GifStatusProps>) {
   if (loading) return <GifSearching />;
   if (error) return <GifSearchError error={error} />;
-  if (isEmpty) return <NoGifResults />;
+  if (isEmpty && showEmptyState) return <NoGifResults />;
   return null;
 }

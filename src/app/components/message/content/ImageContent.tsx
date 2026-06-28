@@ -566,6 +566,7 @@ export const ImageContent = as<'div', ImageContentProps>(
                     radii="0"
                     fill="Soft"
                     variant="Secondary"
+                    disabled={srcState.status !== AsyncStatus.Success}
                     title={favorited ? 'Unfavorite gif' : 'Favorite gif'}
                     onClick={async (e) => {
                       e.preventDefault();
