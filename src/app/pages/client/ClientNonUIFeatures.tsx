@@ -39,7 +39,6 @@ import {
   isDMRoom,
   isNotificationEvent,
 } from '$utils/room';
-import { NotificationType } from '$types/matrix/room';
 import { getMxIdLocalPart, mxcUrlToHttp } from '$utils/matrix';
 import { useInboxNotificationsSelected } from '$hooks/router/useInbox';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
@@ -114,6 +113,10 @@ import {
   resolvePreferredNotificationTransportProvider,
   type NotificationTransportPlatform,
 } from '$features/settings/notifications/NotificationTransport';
+import {
+  isHistoricalMessageNotificationEvent,
+  resolveMessageNotificationPolicy,
+} from './messageNotificationPolicy';
 import {
   useServiceWorkerMessageListener,
   useVisibilityAndPageShowListeners,
@@ -456,7 +459,7 @@ function InviteNotifications() {
 
 function MessageNotifications() {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const notifiedEventsRef = useRef(new Set());
+  const notifiedEventsRef = useRef(new Set<string>());
   // Record mount time so we can distinguish live events from historical backfill
   // on sliding sync proxies that don't set num_live (which causes liveEvent=false
   // for all events, including actually-new messages).
@@ -526,19 +529,14 @@ function MessageNotifications() {
         if (document.hasFocus() && notificationSelected) return;
       }
 
-      // Older sliding sync proxies (e.g. matrix-sliding-sync) omit num_live,
-      // which causes every event to arrive with fromCache=true and therefore
-      // liveEvent=false — silently blocking all notifications. Fall back to an
-      // age check: treat the event as potentially live only when it was sent
-      // within 60 s of this component mounting (tight enough to avoid phantom
-      // notifications for pre-existing unread messages, generous enough for
-      // messages that arrived during a brief offline window).
-      // Additionally, skip the event if the user already has a read receipt
-      // covering it (message was read on another device before this session).
-      const isHistoricalEvent =
-        !data.liveEvent &&
-        (mEvent.getTs() < clientStartTimeRef.current - 60 * 1000 ||
-          (!!room && room.hasUserReadEvent(mx.getSafeUserId(), mEvent.getId()!)));
+      // Older sliding sync proxies can omit num_live, so keep the historical
+      // fallback in one pure helper instead of repeating this compound check inline.
+      const isHistoricalEvent = isHistoricalMessageNotificationEvent({
+        clientStartTime: clientStartTimeRef.current,
+        eventTs: mEvent.getTs(),
+        hasUserReadReceipt: !!room && room.hasUserReadEvent(mx.getSafeUserId(), mEvent.getId()!),
+        liveEvent: data.liveEvent ?? false,
+      });
 
       // For encrypted events that haven't been decrypted yet, wait for decryption
       // before processing the notification. The SDK's Timeline re-emission after
@@ -578,11 +576,6 @@ function MessageNotifications() {
         return;
       }
 
-      const notificationType = getNotificationType(mx, room.roomId);
-      if (notificationType === NotificationType.Mute) {
-        return;
-      }
-
       const sender = mEvent.getSender();
       if (!sender || !eventId || mEvent.getSender() === mx.getUserId()) return;
 
@@ -609,33 +602,24 @@ function MessageNotifications() {
         notifyTimerMap.delete(eventId);
       }
       const pushActions = pushProcessor.actionsForEvent(mEvent);
-
-      // For DMs with "All Messages" or "Default" notification settings:
-      // Always notify even if push rules fail to match due to sliding sync limitations.
-      // For "Mention & Keywords": respect the push rule (only notify if it matches).
-      const shouldForceDMNotification =
-        isDM && notificationType !== NotificationType.MentionsAndKeywords;
-      const shouldNotify = pushActions?.notify || shouldForceDMNotification;
-
-      // If we shouldn't notify based on rules/settings, skip everything
-      if (!shouldNotify) return;
-
-      const loudByRule = Boolean(pushActions.tweaks?.sound);
-      const isHighlightByRule = Boolean(pushActions.tweaks?.highlight);
-
-      // With sliding sync we only load m.room.member/$ME in required_state, so
-      // PushProcessor cannot evaluate the room_member_count == 2 condition on
-      // .m.rule.room_one_to_one.  That rule therefore fails to match, and DM
-      // messages fall through to .m.rule.message which carries no sound tweak —
-      // leaving loudByRule=false.  Treat known DMs as inherently loud so that
-      // the OS notification and badge are consistent with the DM context.
-      const isLoud = loudByRule || isDM;
-
-      // Apply focus mode filter: check if this notification should be shown
-      // based on the current focus mode setting.
-      if (!shouldShowNotificationInFocusMode(focusMode, isDM, isHighlightByRule)) {
-        return;
-      }
+      const notificationPolicy = resolveMessageNotificationPolicy({
+        allowByFocusMode: shouldShowNotificationInFocusMode(
+          focusMode,
+          isDM,
+          Boolean(pushActions?.tweaks?.highlight)
+        ),
+        backgroundNotificationSounds,
+        hasSystemPermission: notificationPermission('granted'),
+        isDM,
+        isMobileDevice: mobileOrTablet(),
+        notificationSound,
+        notificationType: getNotificationType(mx, room.roomId),
+        pushActions,
+        showNotifications,
+        showSystemNotifications,
+        tabVisible: document.visibilityState === 'visible',
+      });
+      if (!notificationPolicy) return;
 
       // Record as notified to prevent duplicate banners (e.g. re-emitted decrypted events).
       notifiedEventsRef.current.add(eventId);
@@ -652,7 +636,7 @@ function MessageNotifications() {
       // in sandboxed environments, browsers with DnD active, or Electron — and
       // an uncaught exception here would abort the handler before setInAppBanner
       // is reached, causing in-app notifications to silently vanish too.
-      if (!mobileOrTablet() && showSystemNotifications && notificationPermission('granted')) {
+      if (notificationPolicy.shouldShowSystemNotification) {
         try {
           const isEncryptedRoom = !!getStateEvent(room, EventType.RoomEncryption);
           const avatarMxc =
@@ -674,7 +658,7 @@ function MessageNotifications() {
               showMessageContent,
               showEncryptedMessageContent,
             }),
-            silent: !notificationSound || !isLoud,
+            silent: notificationPolicy.silent,
             eventId,
           });
           const noti = new window.Notification(osPayload.title, osPayload.options);
@@ -695,87 +679,83 @@ function MessageNotifications() {
         }
       }
 
-      const tabVisible = document.visibilityState === 'visible';
-      if (notificationSound && isLoud && (tabVisible || backgroundNotificationSounds)) {
+      if (notificationPolicy.shouldPlaySound) {
         playSound();
       }
 
       // In-app banner requires a visible tab.
-      if (!tabVisible) return;
+      if (!notificationPolicy.shouldShowBanner) return;
 
       // Page is visible — show the themed in-app notification banner.
       // Show banner for: highlighted messages (mentions/keywords), DM messages, or loud notifications.
       // Loud notifications include any room set to "All Messages" with sound enabled.
-      if (showNotifications && (isHighlightByRule || isDM || isLoud)) {
-        const avatarMxc =
-          room.getAvatarFallbackMember()?.getMxcAvatarUrl() ?? room.getMxcAvatarUrl();
-        const roomAvatar = avatarMxc
-          ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96, 'crop') ?? undefined)
-          : undefined;
-        const resolvedSenderName =
-          getMemberDisplayName(room, sender, nicknamesRef.current) ??
-          getMxIdLocalPart(sender) ??
-          sender;
-        const content = mEvent.getContent();
-        // Events reaching here are already decrypted (m.room.encrypted is skipped
-        // above). Pass isEncryptedRoom:false so the preview always shows the actual
-        // message body when showMessageContent is enabled.
-        const previewText = resolveNotificationPreviewText({
-          content: mEvent.getContent(),
-          eventType: mEvent.getType(),
-          effectiveType: mEvent.getEffectiveEvent()?.type as string | undefined,
-          isEncryptedRoom: false,
-          showMessageContent,
-          showEncryptedMessageContent,
-        });
+      const avatarMxc = room.getAvatarFallbackMember()?.getMxcAvatarUrl() ?? room.getMxcAvatarUrl();
+      const roomAvatar = avatarMxc
+        ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96, 'crop') ?? undefined)
+        : undefined;
+      const resolvedSenderName =
+        getMemberDisplayName(room, sender, nicknamesRef.current) ??
+        getMxIdLocalPart(sender) ??
+        sender;
+      const content = mEvent.getContent();
+      // Events reaching here are already decrypted (m.room.encrypted is skipped
+      // above). Pass isEncryptedRoom:false so the preview always shows the actual
+      // message body when showMessageContent is enabled.
+      const previewText = resolveNotificationPreviewText({
+        content: mEvent.getContent(),
+        eventType: mEvent.getType(),
+        effectiveType: mEvent.getEffectiveEvent()?.type as string | undefined,
+        isEncryptedRoom: false,
+        showMessageContent,
+        showEncryptedMessageContent,
+      });
 
-        // Build a rich ReactNode body using the same HTML parser as the room
-        // timeline — mxc images, mention pills, linkify, spoilers, code blocks.
-        let bodyNode: ReactNode;
-        if (
-          showMessageContent &&
-          content.format === 'org.matrix.custom.html' &&
-          content.formatted_body
-        ) {
-          const htmlParserOpts = getReactCustomHtmlParser(mx, room.roomId, {
-            settingsLinkBaseUrl: appBaseUrl,
-            linkifyOpts: LINKIFY_OPTS,
-            useAuthentication,
-            nicknames: nicknamesRef.current,
-          });
-          bodyNode = parse(sanitizeCustomHtml(content.formatted_body), htmlParserOpts) as ReactNode;
-        }
-
-        const payload = buildRoomMessageNotification({
-          roomName: room.name ?? 'Unknown',
-          roomAvatar,
-          username: resolvedSenderName,
-          previewText,
-          silent: !notificationSound || !isLoud,
-          eventId,
+      // Build a rich ReactNode body using the same HTML parser as the room
+      // timeline — mxc images, mention pills, linkify, spoilers, code blocks.
+      let bodyNode: ReactNode;
+      if (
+        showMessageContent &&
+        content.format === 'org.matrix.custom.html' &&
+        content.formatted_body
+      ) {
+        const htmlParserOpts = getReactCustomHtmlParser(mx, room.roomId, {
+          settingsLinkBaseUrl: appBaseUrl,
+          linkifyOpts: LINKIFY_OPTS,
+          useAuthentication,
+          nicknames: nicknamesRef.current,
         });
-        const { roomId } = room;
-        const capturedEventId = eventId;
-        const capturedUserId = mx.getUserId() ?? undefined;
-        const canonicalAlias = room.getCanonicalAlias();
-        const serverName = canonicalAlias?.split(':')[1] ?? room.roomId.split(':')[1] ?? undefined;
-        setInAppBanner({
-          id: eventId,
-          title: payload.title,
-          roomName: room.name ?? undefined,
-          serverName,
-          senderName: resolvedSenderName,
-          body: previewText,
-          bodyNode,
-          icon: roomAvatar,
-          onClick: () => {
-            window.focus();
-            navigateToRoomNotificationTarget(navigate, capturedUserId, roomId, capturedEventId, {
-              jumpMode: 'notification_live',
-            });
-          },
-        });
+        bodyNode = parse(sanitizeCustomHtml(content.formatted_body), htmlParserOpts) as ReactNode;
       }
+
+      const payload = buildRoomMessageNotification({
+        roomName: room.name ?? 'Unknown',
+        roomAvatar,
+        username: resolvedSenderName,
+        previewText,
+        silent: notificationPolicy.silent,
+        eventId,
+      });
+      const { roomId } = room;
+      const capturedEventId = eventId;
+      const capturedUserId = mx.getUserId() ?? undefined;
+      const canonicalAlias = room.getCanonicalAlias();
+      const serverName = canonicalAlias?.split(':')[1] ?? room.roomId.split(':')[1] ?? undefined;
+      setInAppBanner({
+        id: eventId,
+        title: payload.title,
+        roomName: room.name ?? undefined,
+        serverName,
+        senderName: resolvedSenderName,
+        body: previewText,
+        bodyNode,
+        icon: roomAvatar,
+        onClick: () => {
+          window.focus();
+          navigateToRoomNotificationTarget(navigate, capturedUserId, roomId, capturedEventId, {
+            jumpMode: 'notification_live',
+          });
+        },
+      });
     };
     mx.on(RoomEvent.Timeline, handleTimelineEvent);
     return () => {
