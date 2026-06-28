@@ -119,8 +119,8 @@ import {
 } from './messageNotificationPolicy';
 import {
   useServiceWorkerMessageListener,
+  useServiceWorkerVisibilityHeartbeat,
   useVisibilityAndPageShowListeners,
-  useVisibilityFocusBlurPageShowListeners,
 } from './runtimeListeners';
 const pushRelayLog = createDebugLogger('push-relay');
 const transportLog = createDebugLogger('push-transport');
@@ -1104,7 +1104,6 @@ function SyncNotificationSettingsWithServiceWorker() {
   );
   const [clearNotificationsOnRead] = useSetting(settingsAtom, 'clearNotificationsOnRead');
   const [focusMode] = useSetting(settingsAtom, 'focusMode');
-  const heartbeatIntervalIdRef = useRef<number | undefined>(undefined);
 
   const postVisibility = useCallback(() => {
     const visible = document.visibilityState === 'visible';
@@ -1113,49 +1112,9 @@ function SyncNotificationSettingsWithServiceWorker() {
     navigator.serviceWorker.controller?.postMessage(payload);
     navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage(payload));
   }, []);
-
-  const stopHeartbeat = useCallback(() => {
-    if (heartbeatIntervalIdRef.current !== undefined) {
-      window.clearInterval(heartbeatIntervalIdRef.current);
-      heartbeatIntervalIdRef.current = undefined;
-    }
-  }, []);
-
-  const restartHeartbeat = useCallback(() => {
-    stopHeartbeat();
-    postVisibility();
-    if (document.visibilityState === 'visible' && document.hasFocus()) {
-      heartbeatIntervalIdRef.current = window.setInterval(postVisibility, 10_000);
-    }
-  }, [postVisibility, stopHeartbeat]);
-
-  const handleVisibilityChange = useCallback(() => {
-    if (document.visibilityState === 'visible') {
-      restartHeartbeat();
-      return;
-    }
-    postVisibility();
-    stopHeartbeat();
-  }, [postVisibility, restartHeartbeat, stopHeartbeat]);
-
-  const handleFocus = useCallback(() => restartHeartbeat(), [restartHeartbeat]);
-  const handleBlur = useCallback(() => postVisibility(), [postVisibility]);
-  const handlePageShow = useCallback(() => restartHeartbeat(), [restartHeartbeat]);
-
-  useEffect(() => {
-    if (!('serviceWorker' in navigator)) return undefined;
-    handleVisibilityChange();
-
-    return () => {
-      stopHeartbeat();
-    };
-  }, [handleVisibilityChange, stopHeartbeat]);
-  useVisibilityFocusBlurPageShowListeners({
+  useServiceWorkerVisibilityHeartbeat({
     enabled: 'serviceWorker' in navigator,
-    onVisibilityChange: handleVisibilityChange,
-    onFocus: handleFocus,
-    onBlur: handleBlur,
-    onPageShow: handlePageShow,
+    postVisibility,
   });
 
   useEffect(() => {
