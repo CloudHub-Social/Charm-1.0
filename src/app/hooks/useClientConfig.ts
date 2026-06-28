@@ -18,6 +18,11 @@ export type SessionSyncConfig = {
   heartbeatMaxBackoffMs?: number;
 };
 
+export type GifsConfig = {
+  klipyApiKey?: string;
+  proxyUrl?: string;
+};
+
 export type ClientConfig = {
   defaultHomeserver?: number;
   homeserverList?: string[];
@@ -61,6 +66,8 @@ export type ClientConfig = {
   };
 
   hashRouter?: HashRouterConfig;
+
+  gifs?: GifsConfig;
 
   matrixToBaseUrl?: string;
 

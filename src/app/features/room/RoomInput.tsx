@@ -68,6 +68,7 @@ import {
 } from '$components/editor';
 import { plainToEditorInput } from '$components/editor/input';
 import { htmlToMarkdown } from '$plugins/markdown';
+import type { GifData } from '$components/emoji-board';
 import { EmojiBoard, EmojiBoardTab } from '$components/emoji-board';
 import type { TUploadContent } from '$utils/matrix';
 import { encryptFile, getImageInfo, mxcUrlToHttp, toggleReaction } from '$utils/matrix';
@@ -205,6 +206,8 @@ import {
   getStructuredMarkdownAction,
   shouldInsertBreakAfterStructuredReplacement,
 } from './composerInputAssist';
+import { useClientConfig } from '$hooks/useClientConfig';
+import { GifIcon } from '@phosphor-icons/react';
 
 // Returns the event ID of the most recent non-reaction/non-edit event in a thread,
 // falling back to the thread root if no replies exist yet.
@@ -306,6 +309,20 @@ interface ReplyEventContent {
 const createUploadItemKey = () =>
   globalThis.crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const toBase64Url = (value: string): string => {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+
+  for (const byte of bytes) {
+    binary += String.fromCodePoint(byte);
+  }
+
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll(/=+$/g, '');
+};
+
+const toMatrixMediaId = (value: string, providerPrefix: string): string =>
+  providerPrefix + toBase64Url(value);
+
 interface RoomInputProps {
   editor: Editor;
   fileDropContainerRef: RefObject<HTMLElement>;
@@ -321,6 +338,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     // don't clobber the main room draft (and vice versa).
     const draftKey = threadRootId ?? roomId;
     const mx = useMatrixClient();
+    const clientConfig = useClientConfig();
     const useAuthentication = useMediaAuthentication();
     const [enterForNewline] = useSetting(settingsAtom, 'enterForNewline');
     const [editorOldAddFile] = useSetting(settingsAtom, 'editorOldAddFile');
@@ -1888,6 +1906,44 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       mx.sendEvent(roomId, EventType.Sticker, content);
     };
 
+    const handleGifSelect = async (gif: GifData) => {
+      let url = gif.url.startsWith('mxc://')
+        ? gif.url
+        : `mxc://${clientConfig.gifs?.proxyUrl ?? ''}/${toMatrixMediaId(
+            gif.url.slice('https://static.klipy.com/ii/'.length),
+            'klipy_'
+          )}`;
+
+      const content: RoomMessageEventContent & ReplyEventContent & IContent = {
+        body: gif.title,
+        url: url,
+        msgtype: MsgType.Image,
+        info: {
+          w: gif.width,
+          h: gif.height,
+          mimetype: 'image/gif',
+        },
+      };
+
+      // Handle replies if there's a reply draft
+      if (replyDraft) {
+        content['m.relates_to'] = {
+          'm.in_reply_to': {
+            event_id: replyDraft.eventId,
+          },
+        };
+        if (replyDraft.relation?.rel_type === RelationType.Thread) {
+          content['m.relates_to'].event_id = replyDraft.relation.event_id;
+          content['m.relates_to'].rel_type = RelationType.Thread;
+          content['m.relates_to'].is_falling_back = false;
+        }
+      }
+
+      // Send the gif as sticker event.
+      await mx.sendEvent(roomId, EventType.RoomMessage, content);
+      setReplyDraft(undefined);
+    };
+
     return (
       // eslint-disable-next-line jsx-a11y/no-static-element-interactions
       <div
@@ -2315,7 +2371,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               </IconButton>
 
               <MarkdownFormattingToolbarToggle variant="SurfaceVariant" />
-
               {isMobileLayout &&
                 emojiBoardAnchorRect &&
                 createPortal(
@@ -2348,6 +2403,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       onEmojiSelect={handleEmoticonSelect}
                       onCustomEmojiSelect={handleEmoticonSelect}
                       onStickerSelect={handleStickerSelect}
+                      onGifSelect={handleGifSelect}
                       requestClose={closeEmojiBoard}
                     />
                   </div>,
@@ -2373,11 +2429,26 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       onEmojiSelect={handleEmoticonSelect}
                       onCustomEmojiSelect={handleEmoticonSelect}
                       onStickerSelect={handleStickerSelect}
+                      onGifSelect={handleGifSelect}
                       requestClose={closeEmojiBoard}
                     />
                   ) : undefined
                 }
               >
+                <IconButton
+                  aria-pressed={emojiBoardTab === EmojiBoardTab.Gif}
+                  onPointerDownCapture={prepareComposerOverlayTrigger}
+                  onClick={() => void openEmojiBoard(EmojiBoardTab.Gif)}
+                  variant="SurfaceVariant"
+                  size="300"
+                  radii="300"
+                  title="open GIF picker"
+                  aria-label="Open GIF picker"
+                >
+                  {composerIcon(GifIcon, {
+                    weight: emojiBoardTab === EmojiBoardTab.Gif ? 'fill' : 'regular',
+                  })}
+                </IconButton>
                 {!hideStickerBtn && (
                   <IconButton
                     aria-pressed={emojiBoardTab === EmojiBoardTab.Sticker}
@@ -2396,9 +2467,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 )}
                 <IconButton
                   ref={emojiBtnRef}
-                  aria-pressed={
-                    hideStickerBtn ? !!emojiBoardTab : emojiBoardTab === EmojiBoardTab.Emoji
-                  }
+                  aria-pressed={emojiBoardTab === EmojiBoardTab.Emoji}
                   onPointerDownCapture={prepareComposerOverlayTrigger}
                   onClick={() => void openEmojiBoard(EmojiBoardTab.Emoji)}
                   variant="SurfaceVariant"
@@ -2408,13 +2477,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   aria-label="Open emoji picker"
                 >
                   {composerIcon(Smiley, {
-                    weight: hideStickerBtn
-                      ? emojiBoardTab
-                        ? 'fill'
-                        : 'regular'
-                      : emojiBoardTab === EmojiBoardTab.Emoji
-                        ? 'fill'
-                        : 'regular',
+                    weight: emojiBoardTab === EmojiBoardTab.Emoji ? 'fill' : 'regular',
                   })}
                 </IconButton>
               </PopOut>
