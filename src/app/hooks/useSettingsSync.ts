@@ -161,6 +161,14 @@ export function useSettingsSyncEffect(): void {
     resetSettingsSyncRuntime(runtimeRef.current, localUpdatedAtStorageKey, settingsRef.current);
   }, [localUpdatedAtStorageKey]);
 
+  useEffect(() => {
+    if (syncEnabled) return;
+
+    const runtime = runtimeRef.current;
+    runtime.pendingEchoToken = null;
+    setSyncStatus('idle');
+  }, [setSyncStatus, syncEnabled]);
+
   const applyRemoteContent = useCallback(
     (
       rawContent: Record<string, unknown>,
