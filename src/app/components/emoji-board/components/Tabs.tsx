@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { Badge, Box, Text } from 'folds';
+import { Badge, Box, Text, color, config } from 'folds';
 import { EmojiBoardTab } from '$components/emoji-board/types';
 
 const styles: CSSProperties = {
@@ -16,12 +16,20 @@ export function EmojiBoardTabs({
   showGifTab?: boolean;
 }) {
   return (
-    <Box gap="100">
+    <Box
+      gap="100"
+      style={{
+        padding: config.space.S100,
+        borderRadius: config.radii.R300,
+        backgroundColor: color.SurfaceVariant.Container,
+        width: 'fit-content',
+      }}
+    >
       {showGifTab && (
         <Badge
           style={styles}
           as="button"
-          variant="Secondary"
+          variant={tab === EmojiBoardTab.Gif ? 'Primary' : 'Secondary'}
           fill={tab === EmojiBoardTab.Gif ? 'Solid' : 'None'}
           size="500"
           onClick={() => onTabChange(EmojiBoardTab.Gif)}
@@ -34,7 +42,7 @@ export function EmojiBoardTabs({
       <Badge
         style={styles}
         as="button"
-        variant="Secondary"
+        variant={tab === EmojiBoardTab.Sticker ? 'Primary' : 'Secondary'}
         fill={tab === EmojiBoardTab.Sticker ? 'Solid' : 'None'}
         size="500"
         onClick={() => onTabChange(EmojiBoardTab.Sticker)}
@@ -46,7 +54,7 @@ export function EmojiBoardTabs({
       <Badge
         style={styles}
         as="button"
-        variant="Secondary"
+        variant={tab === EmojiBoardTab.Emoji ? 'Primary' : 'Secondary'}
         fill={tab === EmojiBoardTab.Emoji ? 'Solid' : 'None'}
         size="500"
         onClick={() => onTabChange(EmojiBoardTab.Emoji)}

@@ -6,7 +6,7 @@ import type {
   RefObject,
 } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, config, Scroll } from 'folds';
+import { Box, Chip, Text, color, config, Scroll } from 'folds';
 import { AuthenticatedImg } from '$components/AuthenticatedImg';
 import { ClockCounterClockwise } from '$components/icons/phosphor';
 import FocusTrap from 'focus-trap-react';
@@ -65,6 +65,7 @@ import { EmojiBoardTab, EmojiType } from './types';
 import { useClientConfig } from '$hooks/useClientConfig';
 import { gifSearchConfigured } from '$hooks/useClientConfig';
 import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
+import * as componentCss from './components/styles.css';
 
 const RECENT_GROUP_ID = 'recent_group';
 const SEARCH_GROUP_ID = 'search_group';
@@ -804,6 +805,10 @@ export function EmojiBoard({
   const searchedGifItems = showFavoritesOnly
     ? (gifResult?.items.slice(0, 100) ?? favoriteGifs)
     : (gifResult?.items.slice(0, 100) ?? []);
+  const gifQuery = gifResult?.query?.trim() ?? '';
+  const gifSummaryLabel = showFavoritesOnly
+    ? `${favoriteGifs.length} favorite${favoriteGifs.length === 1 ? '' : 's'}`
+    : `${gifs.gifs.length} result${gifs.gifs.length === 1 ? '' : 's'}`;
 
   useEffect(() => {
     if (active && activeTab === EmojiBoardTab.Gif) return;
@@ -985,15 +990,56 @@ export function EmojiBoard({
             {onTabChange && (
               <EmojiBoardTabs tab={activeTab} onTabChange={onTabChange} showGifTab={gifsEnabled} />
             )}
-            <SearchInput
-              key={activeTab}
-              tab={activeTab}
-              query={activeTab === EmojiBoardTab.Gif ? gifResult?.query : emojiResult?.query}
-              onChange={handleOnChange}
-              placeholder={gifTab ? 'Search Klipy GIFs' : undefined}
-              allowTextCustomEmoji={allowTextCustomEmoji}
-              onTextCustomEmojiSelect={handleTextCustomEmojiSelect}
-            />
+            {gifTab ? (
+              <Box direction="Column" gap="200">
+                <Box className={componentCss.GifHero} direction="Column" gap="200">
+                  <Box direction="Column" gap="100">
+                    <Text size="L400">Search GIFs</Text>
+                    <Text size="T200" priority="300">
+                      Search Klipy, keep favorites close, and send replies fast.
+                    </Text>
+                  </Box>
+                  <SearchInput
+                    key={activeTab}
+                    tab={activeTab}
+                    query={gifResult?.query}
+                    onChange={handleOnChange}
+                    placeholder="Search Klipy GIFs"
+                    allowTextCustomEmoji={allowTextCustomEmoji}
+                    onTextCustomEmojiSelect={handleTextCustomEmojiSelect}
+                  />
+                  <Box wrap="Wrap" gap="100" alignItems="Center" justifyContent="SpaceBetween">
+                    <Box wrap="Wrap" gap="100" alignItems="Center">
+                      <Chip variant="Secondary" radii="Pill" size="400" outlined>
+                        <Text size="T200">{gifSummaryLabel}</Text>
+                      </Chip>
+                      {gifQuery && (
+                        <Chip variant="Secondary" radii="Pill" size="400" outlined>
+                          <Text size="T200">"{gifQuery}"</Text>
+                        </Chip>
+                      )}
+                    </Box>
+                    <Text
+                      className={componentCss.GifAttribution}
+                      size="T200"
+                      priority="300"
+                      style={{ color: color.Secondary.Main }}
+                    >
+                      Powered by KLIPY
+                    </Text>
+                  </Box>
+                </Box>
+              </Box>
+            ) : (
+              <SearchInput
+                key={activeTab}
+                tab={activeTab}
+                query={emojiResult?.query}
+                onChange={handleOnChange}
+                allowTextCustomEmoji={allowTextCustomEmoji}
+                onTextCustomEmojiSelect={handleTextCustomEmojiSelect}
+              />
+            )}
           </Box>
         }
         sidebar={
@@ -1024,6 +1070,28 @@ export function EmojiBoard({
             previewAtom={previewAtom}
             onGroupItemClick={handleGroupItemClick}
           >
+            {gifTab && (
+              <Box className={componentCss.GifToolbar} shrink="No">
+                <Box
+                  className={componentCss.GifToolbarBar}
+                  alignItems="Center"
+                  justifyContent="SpaceBetween"
+                  wrap="Wrap"
+                  gap="100"
+                >
+                  <Text size="T200" priority="300">
+                    {showFavoritesOnly
+                      ? 'Your favorited GIFs'
+                      : gifQuery
+                        ? `Results from Klipy for "${gifQuery}"`
+                        : 'Results from Klipy'}
+                  </Text>
+                  <Text className={componentCss.GifAttribution} size="T200" priority="300">
+                    Search and content by KLIPY
+                  </Text>
+                </Box>
+              </Box>
+            )}
             {activeTab !== EmojiBoardTab.Gif && searchedItems && (
               <EmojiGroup
                 id={SEARCH_GROUP_ID}

@@ -40,12 +40,7 @@ import { useMediaUrlCacheContext } from '$hooks/useMediaUrlCacheContext';
 import { bytesToSize } from '$utils/common';
 import { FALLBACK_MIMETYPE } from '$utils/mimeTypes';
 import { stopPropagation } from '$utils/keyboard';
-import {
-  decryptFileSafe,
-  downloadEncryptedMedia,
-  downloadMedia,
-  mxcUrlToHttp,
-} from '$utils/matrix';
+import { decryptFileSafe, downloadEncryptedMedia, downloadMedia } from '$utils/matrix';
 import { getDecryptedBlob, storeDecryptedBlob } from '$hooks/useBlobCache';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { useMediaMetadata } from '$hooks/useMediaMetadata';
@@ -61,6 +56,29 @@ import {
 } from '$unstable/prefixes';
 import { gifSearchConfigured, useClientConfig } from '$hooks/useClientConfig';
 import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
+import { hasControllingServiceWorker } from '$utils/platform';
+
+const ANIMATED_IMAGE_MIME_TYPES = new Set(['image/gif', 'image/apng', 'image/webp']);
+
+const isAnimatedImageContent = (
+  mimeType: string | undefined,
+  body: string,
+  url: string
+): boolean => {
+  const normalizedMime = mimeType?.toLowerCase();
+  if (normalizedMime && ANIMATED_IMAGE_MIME_TYPES.has(normalizedMime)) return true;
+
+  const lowerBody = body.toLowerCase();
+  const lowerUrl = url.toLowerCase();
+  return (
+    lowerBody.endsWith('.gif') ||
+    lowerBody.endsWith('.apng') ||
+    lowerBody.endsWith('.webp') ||
+    lowerUrl.endsWith('.gif') ||
+    lowerUrl.endsWith('.apng') ||
+    lowerUrl.endsWith('.webp')
+  );
+};
 
 function thumbnailDimsForMaxEdge(
   maxEdge: number,
@@ -250,8 +268,8 @@ export const ImageContent = as<'div', ImageContentProps>(
     const [isHovered, setIsHovered] = useState(false);
     const rawMediaUrl = useMemo(() => {
       if (url.startsWith('http')) return url;
-      return mxcUrlToHttp(mx, url, useAuthentication) ?? undefined;
-    }, [mx, url, useAuthentication]);
+      return mediaUrlCache.get(mx, url, useAuthentication) ?? undefined;
+    }, [mediaUrlCache, mx, url, useAuthentication]);
     const mediaMetadataKey = useMemo(() => {
       if (encInfo) return getScopedMediaCacheKey(url);
       return getScopedMediaCacheKey(rawMediaUrl ?? url);
@@ -272,9 +290,16 @@ export const ImageContent = as<'div', ImageContentProps>(
       typeof info?.size === 'number' && Number.isFinite(info.size) && info.size > 0
         ? info.size
         : mediaMetadata?.byteSize;
+    const shouldStreamDirectAnimatedImage =
+      !encInfo &&
+      isAnimatedImageContent(mimeType, body, url) &&
+      (!useAuthentication || hasControllingServiceWorker());
     const [srcState, loadSrc, setSrcState] = useAsyncCallback(
       useCallback(async () => {
         if (url.startsWith('http')) return url;
+        if (shouldStreamDirectAnimatedImage && rawMediaUrl) {
+          return rawMediaUrl;
+        }
 
         if (typeof matrixThumbnailMaxEdge === 'number' && matrixThumbnailMaxEdge > 0 && !encInfo) {
           const { w, h } = imageDimensionsRef.current;
@@ -355,6 +380,7 @@ export const ImageContent = as<'div', ImageContentProps>(
         mimeType,
         mx,
         rawMediaUrl,
+        shouldStreamDirectAnimatedImage,
         url,
         useAuthentication,
       ])

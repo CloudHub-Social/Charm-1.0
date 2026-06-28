@@ -35,6 +35,29 @@ export const Header = style({
   paddingBottom: 0,
 });
 
+export const GifHero = style({
+  padding: config.space.S300,
+  borderRadius: config.radii.R400,
+  border: `${config.borderWidth.B300} solid ${color.Surface.ContainerLine}`,
+  background: `linear-gradient(180deg, ${color.SurfaceVariant.Container} 0%, ${color.Surface.Container} 100%)`,
+});
+
+export const GifToolbar = style({
+  padding: `0 ${config.space.S200} ${config.space.S200}`,
+});
+
+export const GifToolbarBar = style({
+  padding: `${config.space.S100} ${config.space.S200}`,
+  borderRadius: config.radii.R300,
+  backgroundColor: color.SurfaceVariant.Container,
+  color: color.SurfaceVariant.OnContainer,
+});
+
+export const GifAttribution = style({
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+});
+
 /**
  * Sidebar
  */
@@ -129,13 +152,14 @@ export const EmojiGroupContent = style([
 export const GifGroupContent = style([
   DefaultReset,
   {
-    columnCount: 2,
-    columnGap: config.space.S100,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: config.space.S100,
     padding: `0 ${config.space.S200}`,
 
     '@media': {
       'screen and (max-width: 480px)': {
-        columnCount: 1,
+        gridTemplateColumns: 'minmax(0, 1fr)',
       },
     },
   },
@@ -221,23 +245,81 @@ export const GifItem = style([
   FocusOutline,
   {
     width: '100%',
-    marginBottom: toRem(8),
-    breakInside: 'avoid',
     borderRadius: config.radii.R400,
     cursor: 'pointer',
     overflow: 'hidden',
     display: 'block',
     position: 'relative',
+    minHeight: toRem(132),
+    backgroundColor: color.SurfaceVariant.Container,
+    border: `${config.borderWidth.B300} solid ${color.SurfaceVariant.ContainerLine}`,
+    transition: 'transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease',
 
     ':hover': {
-      backgroundColor: color.Surface.ContainerHover,
+      transform: 'translateY(-1px)',
+      borderColor: color.Primary.Main,
+      boxShadow: config.shadow.E200,
     },
   },
 ]);
 
 export const GifImg = style({
+  position: 'absolute',
+  inset: 0,
   width: '100%',
   height: '100%',
   objectFit: 'cover',
-  borderRadius: config.radii.R400,
+  borderRadius: 'inherit',
 });
+
+export const GifScrim = style({
+  position: 'absolute',
+  inset: 0,
+  background:
+    'linear-gradient(180deg, rgba(0, 0, 0, 0.02) 0%, rgba(0, 0, 0, 0.12) 38%, rgba(0, 0, 0, 0.72) 100%)',
+  pointerEvents: 'none',
+});
+
+export const GifMeta = style({
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  bottom: 0,
+  padding: `${config.space.S200} ${config.space.S200} ${config.space.S200}`,
+  color: '#fff',
+});
+
+export const GifMetaTitle = style({
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+});
+
+export const GifMetaBadge = style({
+  padding: `${config.space.S100} ${config.space.S100}`,
+  borderRadius: config.radii.Pill,
+  backgroundColor: 'rgba(0, 0, 0, 0.48)',
+  color: '#fff',
+  width: 'fit-content',
+});
+
+export const GifFavoriteBtn = style([
+  DefaultReset,
+  FocusOutline,
+  {
+    position: 'absolute',
+    top: config.space.S200,
+    right: config.space.S200,
+    width: toRem(32),
+    height: toRem(32),
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: config.radii.Pill,
+    backgroundColor: 'rgba(0, 0, 0, 0.52)',
+    color: '#fff',
+    cursor: 'pointer',
+    border: 'none',
+    backdropFilter: 'blur(6px)',
+  },
+]);
