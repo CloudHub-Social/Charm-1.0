@@ -512,26 +512,32 @@ export function RoomTimeline({
     jumpLockReleaseCleanupRef.current = undefined;
   }, []);
 
-  const scheduleReadyAtBottom = useCallback(() => {
-    initialScrollCleanupRef.current?.();
-    scrollToBottom();
-    initialScrollCleanupRef.current = scheduleAfterNextLayout(() => {
-      initialScrollCleanupRef.current = undefined;
-      if (
-        eventId &&
-        (eventIdLoadInProgressRef.current ||
-          timelineSyncRef.current.focusItem?.scrollTo)
-      ) {
-        return;
-      }
-      if (processedEventsRef.current.length > 0) {
-        scrollToBottom();
-        setIsReady(true);
-      } else {
-        pendingReadyRef.current = true;
-      }
-    });
-  }, [eventId, scheduleAfterNextLayout, scrollToBottom]);
+  const scheduleReadyAtBottom = useCallback(
+    (options?: { recoveryKey?: string }) => {
+      initialScrollCleanupRef.current?.();
+      scrollToBottom();
+      initialScrollCleanupRef.current = scheduleAfterNextLayout(() => {
+        initialScrollCleanupRef.current = undefined;
+        if (
+          eventId &&
+          (eventIdLoadInProgressRef.current ||
+            timelineSyncRef.current.focusItem?.scrollTo)
+        ) {
+          return;
+        }
+        if (options?.recoveryKey) {
+          permalinkRecoveryKeyRef.current = options.recoveryKey;
+        }
+        if (processedEventsRef.current.length > 0) {
+          scrollToBottom();
+          setIsReady(true);
+        } else {
+          pendingReadyRef.current = true;
+        }
+      });
+    },
+    [eventId, scheduleAfterNextLayout, scrollToBottom],
+  );
 
   const handleMarkAsRead = useCallback(() => {
     setUnreadInfo((prev) =>
@@ -658,9 +664,14 @@ export function RoomTimeline({
     jumpLockReleaseCleanupRef.current = scheduleAfterNextLayout(() => {
       jumpLockReleaseCleanupRef.current = undefined;
       if (!jumpLockActiveRef.current) return;
-      if (jumpScrollBlockRef.current) return;
-      if (jumpLayoutReanchorRafRef.current !== undefined) return;
-      if (Date.now() < jumpReanchorScrollUntilRef.current) return;
+      if (
+        jumpScrollBlockRef.current ||
+        jumpLayoutReanchorRafRef.current !== undefined ||
+        Date.now() < jumpReanchorScrollUntilRef.current
+      ) {
+        scheduleJumpLockRelease();
+        return;
+      }
       releaseJumpLock("user_scroll");
     });
   }, [releaseJumpLock, scheduleAfterNextLayout]);
@@ -1114,11 +1125,10 @@ export function RoomTimeline({
     const recoveryKey = `${room.roomId}:${eventId}`;
     if (permalinkRecoveryKeyRef.current === recoveryKey) return;
 
-    permalinkRecoveryKeyRef.current = recoveryKey;
     log.log(
       `[PermalinkJump] Scheduling event-driven recovery scroll: focusItem=${!!timelineSync.focusItem}, isReady=${isReady}, eventsLength=${timelineSync.eventsLength}`,
     );
-    scheduleReadyAtBottom();
+    scheduleReadyAtBottom({ recoveryKey });
   }, [
     eventId,
     isReady,
