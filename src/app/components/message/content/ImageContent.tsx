@@ -53,6 +53,7 @@ import { getScopedMediaCacheKey } from '$utils/mediaTransport';
 import { storeMediaMetadataForBlob } from '$utils/mediaMetadata';
 import { ModalWide } from '$styles/Modal.css';
 import { validBlurHash } from '$utils/blurHash';
+import { isSupportedGifFavoriteUrl } from '$utils/gifs';
 import * as css from './style.css';
 import {
   MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS,
@@ -559,7 +560,7 @@ export const ImageContent = as<'div', ImageContentProps>(
                 >
                   {menuIcon(blurred ? Eye : EyeSlash)}
                 </MenuItem>
-                {info?.mimetype == 'image/gif' && !encInfo && (
+                {info?.mimetype == 'image/gif' && !encInfo && isSupportedGifFavoriteUrl(url) && (
                   <MenuItem
                     size="300"
                     radii="0"

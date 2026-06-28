@@ -6,13 +6,18 @@ import { useAccountData } from './useAccountData';
 export const useFavoriteGifs =
   (): AccountDataEvents[typeof MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS] => {
     const favoritedGifsData = useAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS);
-    const favoritedContent = useMemo(
-      () =>
+    const favoritedContent = useMemo(() => {
+      const content: Partial<AccountDataEvents[typeof MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS]> =
         favoritedGifsData?.getContent<
           AccountDataEvents[typeof MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS]
-        >() ?? { gifs: [] },
-      [favoritedGifsData]
-    );
+        >() ?? {};
+      const gifs = Array.isArray(content.gifs) ? content.gifs : [];
+
+      return {
+        ...content,
+        gifs,
+      };
+    }, [favoritedGifsData]);
 
     return useMemo(
       () => ({

@@ -70,6 +70,7 @@ import { plainToEditorInput } from '$components/editor/input';
 import { htmlToMarkdown } from '$plugins/markdown';
 import type { GifData } from '$components/emoji-board';
 import { EmojiBoard, EmojiBoardTab } from '$components/emoji-board';
+import { getKlipyRemoteId } from '$utils/gifs';
 import type { TUploadContent } from '$utils/matrix';
 import { encryptFile, getImageInfo, mxcUrlToHttp, toggleReaction } from '$utils/matrix';
 import { useTypingStatusUpdater } from '$hooks/useTypingStatusUpdater';
@@ -1916,17 +1917,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       const gifProxyHost = clientConfig.gifs?.proxyUrl?.trim().replace(/\/+$/, '') ?? '';
       let url = gifUrl;
       if (!gifUrl.startsWith('mxc://')) {
-        let remoteId: string | undefined;
-
-        try {
-          const parsedGifUrl = new URL(gifUrl);
-          const normalizedPath = parsedGifUrl.pathname.replace(/^\/+/, '');
-          remoteId = normalizedPath.startsWith('ii/')
-            ? normalizedPath.slice('ii/'.length)
-            : normalizedPath;
-        } catch {
-          // Leave `remoteId` undefined and surface a send error below.
-        }
+        const remoteId = getKlipyRemoteId(gifUrl);
 
         if (!gifProxyHost || !remoteId) {
           setSendError('Failed to send GIF. Please try selecting another GIF.');

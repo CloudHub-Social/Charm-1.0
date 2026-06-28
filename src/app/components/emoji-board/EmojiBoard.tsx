@@ -7,6 +7,7 @@ import type {
 } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, config, Scroll } from 'folds';
+import { AuthenticatedImg } from '$components/AuthenticatedImg';
 import { ClockCounterClockwise } from '$components/icons/phosphor';
 import FocusTrap from 'focus-trap-react';
 import { isKeyHotkey } from 'is-hotkey';
@@ -342,7 +343,7 @@ const useItemRenderer = (tab: EmojiBoardTab, saveStickerEmojiBandwidth: boolean)
           gif={gif}
           style={{ aspectRatio }}
         >
-          <img
+          <AuthenticatedImg
             loading="lazy"
             alt=""
             aria-hidden
