@@ -1061,11 +1061,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         }
 
         if (contents.length > 0) {
-          if (!hasDeferredComposerText) {
-            const replyContent = getReplyContent(replyDraft, room);
-            if (Object.keys(replyContent).length > 0) {
-              contents[0]!['m.relates_to'] = replyContent;
-            }
+          const replyContent = getReplyContent(replyDraft, room);
+          if (Object.keys(replyContent).length > 0) {
+            contents[0]!['m.relates_to'] = replyContent;
           }
 
           const mentionData = sharedCaptionApplied
@@ -1568,6 +1566,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   : undefined,
               perMessageProfile: attachmentPerMessageProfile,
             });
+          } else {
+            setSendError('Please wait for uploads to finish before sending.');
           }
           return;
         }
