@@ -79,6 +79,9 @@ import {
 import { useTimelineEventRenderer } from '$hooks/timeline/useTimelineEventRenderer';
 import { isPhoneLayoutDevice } from '$utils/user-agent';
 import * as css from './RoomTimeline.css';
+import { getTimelineResizeAnchorTarget } from './timelineResizeAnchoring';
+
+const FOCUS_ITEM_SETTLE_MS = 2000;
 
 const TimelineFloat = as<'div', css.TimelineFloatVariants>(
   ({ position, className, ...props }, ref) => (
@@ -260,6 +263,7 @@ export function RoomTimeline({
   // and performs the final scroll + setIsReady when this flag is set.
   const pendingReadyRef = useRef(false);
   const currentRoomIdRef = useRef(room.roomId);
+  const focusAnchorSettleUntilRef = useRef(0);
 
   const [isReady, setIsReady] = useState(false);
 
@@ -320,6 +324,10 @@ export function RoomTimeline({
     const match = events.find((e) => e.itemIndex === rawIndex);
     if (!match) return undefined;
     return events.indexOf(match);
+  }, []);
+
+  const refreshFocusAnchorSettleWindow = useCallback(() => {
+    focusAnchorSettleUntilRef.current = Date.now() + FOCUS_ITEM_SETTLE_MS;
   }, []);
 
   useLayoutEffect(() => {
@@ -432,6 +440,7 @@ export function RoomTimeline({
         if (processedIndex === undefined) return false;
         setIsReady(true);
         vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
+        refreshFocusAnchorSettleWindow();
         timelineSync.setFocusItem((prev) => {
           if (!prev) return undefined;
           if (prev.eventId !== currentFocusItem.eventId) return prev;
@@ -460,7 +469,13 @@ export function RoomTimeline({
       if (timeoutId !== undefined) clearTimeout(timeoutId);
       if (retryIntervalId !== undefined) clearInterval(retryIntervalId);
     };
-  }, [timelineSync.focusItem, timelineSync, reducedMotion, getRawIndexToProcessedIndex]);
+  }, [
+    timelineSync.focusItem,
+    timelineSync,
+    reducedMotion,
+    getRawIndexToProcessedIndex,
+    refreshFocusAnchorSettleWindow,
+  ]);
 
   useEffect(() => {
     if (timelineSync.focusItem) {
@@ -522,10 +537,20 @@ export function RoomTimeline({
     const observer = new ResizeObserver((entries) => {
       const newHeight = entries[0]!.contentRect.height;
       const prev = prevViewportHeightRef.current;
-      const atBottom = atBottomRef.current;
-      const shrank = newHeight < prev;
+      const focusItem = timelineSyncRef.current.focusItem;
+      const anchorTarget = getTimelineResizeAnchorTarget({
+        atBottom: atBottomRef.current,
+        focusItem,
+        focusSettleUntil: focusAnchorSettleUntilRef.current,
+        now: Date.now(),
+      });
 
-      if (shrank && atBottom) {
+      if (anchorTarget === 'focus' && focusItem) {
+        const processedIndex = getRawIndexToProcessedIndex(focusItem.index);
+        if (processedIndex !== undefined) {
+          vListRef.current?.scrollToIndex(processedIndex, { align: 'center' });
+        }
+      } else if (anchorTarget === 'bottom' && newHeight !== prev) {
         vListRef.current?.scrollTo(vListRef.current.scrollSize);
       }
       prevViewportHeightRef.current = newHeight;
@@ -533,7 +558,7 @@ export function RoomTimeline({
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [getRawIndexToProcessedIndex]);
 
   const actions = useTimelineActions({
     room,
@@ -586,6 +611,7 @@ export function RoomTimeline({
         }
         if (vListRef.current && processedIndex !== undefined) {
           vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
+          refreshFocusAnchorSettleWindow();
         }
         timelineSync.setFocusItem({
           index: focusRawIndex,
