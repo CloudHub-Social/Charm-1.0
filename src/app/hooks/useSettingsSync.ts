@@ -81,7 +81,6 @@ export function useSettingsSyncEffect(): void {
     readLocalSettingsSyncUpdatedAt(localUpdatedAtStorageKey)
   );
   const applyingRemoteTimestampRef = useRef<number | null>(null);
-  const initialRemoteApplyPendingRef = useRef(false);
   const previousSyncableSettingsJsonRef = useRef(JSON.stringify(serializeForSync(settings)));
 
   const getFreshnessFloor = useCallback(
@@ -96,7 +95,10 @@ export function useSettingsSyncEffect(): void {
   }, [localUpdatedAtStorageKey]);
 
   const applyRemoteContent = useCallback(
-    (rawContent: Record<string, unknown>): 'updated' | 'unchanged' | 'ignored' => {
+    (
+      rawContent: Record<string, unknown>,
+      options?: { markInitialized?: boolean }
+    ): 'updated' | 'unchanged' | 'ignored' => {
       const { synctoken: _echoField, ...content } = rawContent;
       const remoteUpdatedAt = getSettingsSyncUpdatedAt(content);
       persistExplicitlyClearedSettingsKeys(getExplicitlyClearedSettingsKeysFromSync(content));
@@ -107,6 +109,9 @@ export function useSettingsSyncEffect(): void {
         applyingRemoteTimestampRef.current = remoteUpdatedAt ?? Date.now();
         setSettings(merged);
         setLastSynced(Date.now());
+        if (options?.markInitialized) {
+          setInitialized(true);
+        }
         return 'updated';
       } else if (remoteUpdatedAt !== null) {
         localUpdatedAtRef.current = remoteUpdatedAt;
@@ -116,7 +121,7 @@ export function useSettingsSyncEffect(): void {
       setLastSynced(Date.now());
       return 'unchanged';
     },
-    [localUpdatedAtStorageKey, setLastSynced, setSettings]
+    [localUpdatedAtStorageKey, setInitialized, setLastSynced, setSettings]
   );
 
   useEffect(() => {
@@ -143,12 +148,6 @@ export function useSettingsSyncEffect(): void {
     persistLocalSettingsSyncUpdatedAt(localUpdatedAtStorageKey, updatedAt);
   }, [localUpdatedAtStorageKey, settings, syncEnabled]);
 
-  useEffect(() => {
-    if (!initialRemoteApplyPendingRef.current) return;
-    initialRemoteApplyPendingRef.current = false;
-    setInitialized(true);
-  }, [setInitialized, settings]);
-
   // On mount / when sync is first enabled: load from account data
   // and mark settings initialized once the initial source of truth is known.
   useEffect(() => {
@@ -171,9 +170,8 @@ export function useSettingsSyncEffect(): void {
       (remoteUpdatedAt === null && localUpdatedAtRef.current === 0) ||
       (remoteUpdatedAt !== null && remoteUpdatedAt >= localUpdatedAtRef.current)
     ) {
-      const applyResult = applyRemoteContent(rawContent);
+      const applyResult = applyRemoteContent(rawContent, { markInitialized: true });
       if (applyResult === 'updated') {
-        initialRemoteApplyPendingRef.current = true;
         return undefined;
       }
     }

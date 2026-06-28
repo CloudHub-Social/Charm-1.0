@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { createStore, Provider } from 'jotai';
 import { createElement, type ReactNode } from 'react';
-import { settingsAtom, getSettings } from '$state/settings';
+import { settingsAtom, settingsInitializedAtom, getSettings } from '$state/settings';
 
 import { SETTINGS_SYNC_VERSION } from '$utils/settingsSync';
 import { CustomAccountDataEvent } from '$types/matrix/accountData';
@@ -157,6 +157,17 @@ describe('useSettingsSyncEffect — sync enabled on mount', () => {
     expect(lastSynced).not.toBeNull();
     expect(lastSynced!).toBeGreaterThanOrEqual(before);
     expect(lastSynced!).toBeLessThanOrEqual(after);
+  });
+
+  it('marks settings initialized after applying remote account data on mount', () => {
+    const remoteContent = { v: SETTINGS_SYNC_VERSION, settings: { twitterEmoji: false } };
+    mockMx.getAccountData.mockReturnValueOnce({ getContent: () => remoteContent });
+
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    expect(store.get(settingsAtom).twitterEmoji).toBe(false);
+    expect(store.get(settingsInitializedAtom)).toBe(true);
   });
 
   it('does nothing on mount when account data is absent', () => {
