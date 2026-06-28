@@ -617,6 +617,35 @@ describe('useTimelineSync', () => {
     expect(result.current.timeline.linkedTimelines).toEqual([contextTimeline]);
   });
 
+  it('does not refresh on foreground when the sdk event count shrinks without new live data', async () => {
+    const liveEvents: unknown[] = [{ getId: () => '$one:event' }, { getId: () => '$two:event' }];
+    const { room } = createRoom('!room:test', liveEvents);
+
+    const { result } = renderHook(() =>
+      useTimelineSync({
+        room: room as Room,
+        mx: createMx() as never,
+        isAtBottom: false,
+        isAtBottomRef: { current: false },
+        scrollToBottom: vi.fn<() => void>(),
+        unreadInfo: undefined,
+        setUnreadInfo: vi.fn<() => void>(),
+        hideReadsRef: { current: false },
+        readUptoEventIdRef: { current: undefined },
+      })
+    );
+
+    const timelineBeforeVisibility = result.current.timeline.linkedTimelines;
+    liveEvents.pop();
+
+    await act(async () => {
+      appEvents.emitVisibilityChange(true);
+      await Promise.resolve();
+    });
+
+    expect(result.current.timeline.linkedTimelines).toBe(timelineBeforeVisibility);
+  });
+
   it('keeps an active event-target jump anchored when live timeline refreshes', async () => {
     const targetEvent = { getId: () => '$target:event' };
     const liveEventsOne: unknown[] = [{ getId: () => '$live:one' }];

@@ -148,14 +148,12 @@ const getSdkTimelineRefreshState = ({
   const currentSdkEventCount = getTimelinesEventsCount(currentSdkLinkedTimelines);
   const reactHasEvents = linkedTimelines.length > 0 && getTimelinesEventsCount(linkedTimelines) > 0;
   const liveTimelineChanged = linkedTimelines.at(-1) !== liveTimeline;
-  const eventCountChanged = currentSdkEventCount !== reactEventsLength;
 
   return {
     currentSdkLinkedTimelines,
     reactHasEvents,
     liveTimelineChanged,
-    eventCountChanged,
-    needsRefresh: !reactHasEvents || liveTimelineChanged || eventCountChanged,
+    currentSdkEventCount,
     sdkEventsLength: liveTimeline.getEvents().length,
   };
 };
@@ -1019,7 +1017,11 @@ export function useTimelineSync({
         reactEventsLength: eventsLengthRef.current,
         liveTimeline: getLiveTimeline(room),
       });
-      if (refreshState.sdkEventsLength === 0 || !refreshState.needsRefresh) return;
+      const needsRefresh =
+        !refreshState.reactHasEvents ||
+        refreshState.liveTimelineChanged ||
+        refreshState.currentSdkEventCount !== eventsLengthRef.current;
+      if (refreshState.sdkEventsLength === 0 || !needsRefresh) return;
       // Force timeline update with fresh SDK state. This ensures the React
       // timeline state picks up the newly-injected events after PTR or when
       // the SDK appends events (e.g., room subscription expanded timeline_limit).
@@ -1070,7 +1072,11 @@ export function useTimelineSync({
         reactEventsLength: eventsLengthRef.current,
         liveTimeline: getLiveTimeline(room),
       });
-      if (refreshState.sdkEventsLength === 0 || !refreshState.needsRefresh) return;
+      const needsRefresh =
+        !refreshState.reactHasEvents ||
+        refreshState.liveTimelineChanged ||
+        refreshState.currentSdkEventCount > eventsLengthRef.current;
+      if (refreshState.sdkEventsLength === 0 || !needsRefresh) return;
       setTimeline({ linkedTimelines: refreshState.currentSdkLinkedTimelines });
     };
 
