@@ -1103,8 +1103,7 @@ function SyncNotificationSettingsWithServiceWorker() {
   const [clearNotificationsOnRead] = useSetting(settingsAtom, 'clearNotificationsOnRead');
   const [focusMode] = useSetting(settingsAtom, 'focusMode');
 
-  const postVisibility = useCallback(() => {
-    const visible = document.visibilityState === 'visible';
+  const postVisibility = useCallback((visible = document.visibilityState === 'visible') => {
     const payload = { type: 'setAppVisible', visible };
 
     navigator.serviceWorker.controller?.postMessage(payload);

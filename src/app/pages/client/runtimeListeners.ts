@@ -16,7 +16,7 @@ type VisibilityFocusBlurPageShowOptions = {
 
 type ServiceWorkerVisibilityHeartbeatOptions = {
   enabled?: boolean;
-  postVisibility: () => void;
+  postVisibility: (visible?: boolean) => void;
   intervalMs?: number;
 };
 
@@ -121,6 +121,7 @@ export function useServiceWorkerVisibilityHeartbeat({
 
     return () => {
       stopHeartbeat();
+      postVisibility(false);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
