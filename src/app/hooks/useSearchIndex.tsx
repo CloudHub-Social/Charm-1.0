@@ -94,11 +94,10 @@ const HAS_IDLE_CALLBACK = typeof requestIdleCallback === 'function';
 const MAX_CONCURRENT_BACKFILLS = HAS_IDLE_CALLBACK ? Infinity : 2;
 
 /**
- * How long to wait after the worker is ready before starting the first backfill
- * pass. Gives the initial /sync and room-list load time to settle before we add
- * background pagination pressure.
+ * Keep a short startup pause before background backfill begins so the app does
+ * not immediately compete with initial sync and room-list loading.
  */
-const BACKFILL_STARTUP_DELAY_MS = 30_000;
+const BACKFILL_STARTUP_DELAY_MS = 15_000;
 
 const canRunMobileBackfill = (): boolean =>
   HAS_IDLE_CALLBACK || (document.visibilityState === 'visible' && document.hasFocus());
@@ -192,10 +191,9 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
   // listener to correctly handle rooms that are added after the initial startBackfill call
   // (e.g. rooms loaded by sliding sync after the initial window of 100).
   const backfillStatesRef = useRef<Record<string, BackfillState>>({});
-  // True after the startup delay has elapsed — gates resumeBackfill so we don't
-  // hammer /messages during the initial sync and room-list load.
+  // True once the worker has loaded persisted backfill state and the startup
+  // delay has elapsed, allowing backfill to react to sync/visibility signals.
   const backfillReadyRef = useRef(false);
-  // Handle for the startup-delay timer so we can cancel it on cleanup.
   const backfillStartDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const postToWorker = useCallback((msg: WorkerInMessage) => {
@@ -519,7 +517,6 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
    * never starved by background pagination requests.
    */
   const resumeBackfill = useCallback(() => {
-    // Don't start until the startup grace period has elapsed.
     if (!backfillReadyRef.current) return;
     const s = syncStateRef.current;
     if (s !== SyncState.Syncing && s !== SyncState.Prepared && s !== SyncState.Catchup) return;
@@ -558,8 +555,9 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
       if (backfillQueueRef.current.length > 0 || backfillingRoomsRef.current.size > 0) {
         setIsBackfilling(true);
       }
-      // Delay the first backfill pass so the initial sync and room list have
-      // time to settle before we start paginating history.
+      if (backfillStartDelayRef.current !== null) {
+        clearTimeout(backfillStartDelayRef.current);
+      }
       backfillStartDelayRef.current = setTimeout(() => {
         backfillStartDelayRef.current = null;
         backfillReadyRef.current = true;
@@ -980,7 +978,6 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('focus', handleForegroundFocus);
       window.removeEventListener('pageshow', handleForegroundFocus);
 
-      // Cancel the startup delay and reset the ready gate
       if (backfillStartDelayRef.current !== null) {
         clearTimeout(backfillStartDelayRef.current);
         backfillStartDelayRef.current = null;
