@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import type { MatrixClient, MatrixEvent, Room } from '$types/matrix-sdk';
 import {
   ClientEvent,
@@ -18,7 +17,9 @@ import {
   sessionsAtom,
   activeSessionIdAtom,
   backgroundUnreadCountsAtom,
+  createPendingNotification,
   inAppBannerAtom,
+  pendingNotificationAtom,
   type Session,
 } from '$state/sessions';
 import { useSetting } from '$state/hooks/settings';
@@ -48,8 +49,6 @@ import { startClient, stopClient } from '$client/initMatrix';
 import { useClientConfig } from '$hooks/useClientConfig';
 import { mobileOrTablet } from '$utils/user-agent';
 import { shouldShowNotificationInFocusMode } from '$utils/focusMode';
-import { getToRoomEventPath } from '$pages/pathUtils';
-
 const log = createLogger('BackgroundNotifications');
 const debugLog = createDebugLogger('BackgroundNotifications');
 
@@ -170,7 +169,6 @@ export const waitForSync = (mx: MatrixClient): Promise<void> =>
   });
 
 export function BackgroundNotifications() {
-  const navigate = useNavigate();
   const clientConfig = useClientConfig();
   const sessions = useAtomValue(sessionsAtom);
   const [activeSessionId] = useAtom(activeSessionIdAtom);
@@ -207,7 +205,9 @@ export function BackgroundNotifications() {
   const startingClientsRef = useRef(new Set<string>());
   const notifiedEventsRef = useRef(new Set());
   const setBackgroundUnreads = useSetAtom(backgroundUnreadCountsAtom);
+  const setActiveSessionId = useSetAtom(activeSessionIdAtom);
   const setInAppBanner = useSetAtom(inAppBannerAtom);
+  const setPendingNotification = useSetAtom(pendingNotificationAtom);
   const setBackgroundUnreadsRef = useRef(setBackgroundUnreads);
   setBackgroundUnreadsRef.current = setBackgroundUnreads;
   const setInAppBannerRef = useRef(setInAppBanner);
@@ -682,9 +682,14 @@ export function BackgroundNotifications() {
 
             const notifOnClick = () => {
               window.focus();
-              navigate(
-                getToRoomEventPath(session.userId, room.roomId, eventId, {
+              setActiveSessionId(session.userId);
+              setPendingNotification(
+                createPendingNotification({
+                  roomId: room.roomId,
+                  eventId,
+                  targetSessionId: session.userId,
                   jumpMode: 'notification_live',
+                  source: 'background_notification',
                 })
               );
             };
@@ -862,9 +867,10 @@ export function BackgroundNotifications() {
     clientConfig.slidingSync,
     inactiveSessions,
     shouldRunBackgroundNotifications,
-    navigate,
+    setActiveSessionId,
     setBackgroundUnreads,
     setInAppBanner,
+    setPendingNotification,
   ]);
 
   return null;

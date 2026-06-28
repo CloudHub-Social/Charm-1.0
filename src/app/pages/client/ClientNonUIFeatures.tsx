@@ -44,7 +44,12 @@ import { useInboxNotificationsSelected } from '$hooks/router/useInbox';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { useSettingsLinkBaseUrl } from '$features/settings/useSettingsLinkBaseUrl';
 import { registrationAtom } from '$state/serviceWorkerRegistration';
-import { inAppBannerAtom, activeSessionIdAtom } from '$state/sessions';
+import {
+  inAppBannerAtom,
+  activeSessionIdAtom,
+  createPendingNotification,
+  pendingNotificationAtom,
+} from '$state/sessions';
 import { pushSubscriptionAtom } from '$state/pushSubscription';
 import {
   buildRoomMessageNotification,
@@ -91,7 +96,7 @@ import { useNotificationDeviceScope } from '$hooks/useNotificationDeviceScope';
 import { useInitBookmarks } from '$features/bookmarks/useInitBookmarks';
 import { useReminderSync } from '$features/bookmarks/useReminderSync';
 import { clearLaunchContext } from '../../../launch-context-persistence';
-import { getInboxBookmarksPath, getInboxInvitesPath, getToRoomEventPath } from '$pages/pathUtils';
+import { getInboxBookmarksPath, getInboxInvitesPath } from '$pages/pathUtils';
 import {
   buildNotificationBreadcrumb,
   buildNotificationMetricAttributes,
@@ -175,15 +180,28 @@ function navigateToServiceWorkerUrl(navigate: ReturnType<typeof useNavigate>, ur
   window.location.assign(url);
 }
 
-function navigateToRoomNotificationTarget(
-  navigate: ReturnType<typeof useNavigate>,
+function queueRoomNotificationTarget(
+  setPending: (pending: ReturnType<typeof createPendingNotification>) => void,
   userId: string | undefined,
   roomId: string,
   eventId?: string,
-  options?: { swClickId?: string; jumpMode?: 'notification_live' | 'history_context' }
+  options?: {
+    swClickId?: string;
+    jumpMode?: 'notification_live' | 'history_context';
+    source?: 'foreground_notification' | 'service_worker_click';
+  }
 ): void {
   if (!userId) return;
-  navigate(getToRoomEventPath(userId, roomId, eventId, options));
+  setPending(
+    createPendingNotification({
+      roomId,
+      eventId,
+      jumpMode: options?.jumpMode,
+      targetSessionId: userId,
+      swClickId: options?.swClickId,
+      source: options?.source,
+    })
+  );
 }
 
 function WebPushStartupReconciler() {
@@ -487,8 +505,8 @@ function MessageNotifications() {
   mDirectsRef.current = mDirects;
 
   const setInAppBanner = useSetAtom(inAppBannerAtom);
+  const setPendingNotification = useSetAtom(pendingNotificationAtom);
   const notificationSelected = useInboxNotificationsSelected();
-  const navigate = useNavigate();
 
   const playSound = useCallback(() => {
     const audioElement = audioRef.current;
@@ -663,12 +681,15 @@ function MessageNotifications() {
           const { roomId } = room;
           noti.addEventListener('click', () => {
             window.focus();
-            navigateToRoomNotificationTarget(
-              navigate,
+            queueRoomNotificationTarget(
+              setPendingNotification,
               mx.getUserId() ?? undefined,
               roomId,
               eventId,
-              { jumpMode: 'notification_live' }
+              {
+                jumpMode: 'notification_live',
+                source: 'foreground_notification',
+              }
             );
             noti.close();
           });
@@ -749,9 +770,16 @@ function MessageNotifications() {
         icon: roomAvatar,
         onClick: () => {
           window.focus();
-          navigateToRoomNotificationTarget(navigate, capturedUserId, roomId, capturedEventId, {
-            jumpMode: 'notification_live',
-          });
+          queueRoomNotificationTarget(
+            setPendingNotification,
+            capturedUserId,
+            roomId,
+            capturedEventId,
+            {
+              jumpMode: 'notification_live',
+              source: 'foreground_notification',
+            }
+          );
         },
       });
     };
@@ -774,7 +802,7 @@ function MessageNotifications() {
     focusMode,
     playSound,
     setInAppBanner,
-    navigate,
+    setPendingNotification,
     appBaseUrl,
     useAuthentication,
     isActiveNotificationClient,
@@ -962,6 +990,7 @@ type ClientNonUIFeaturesProps = {
 
 export function HandleNotificationClick() {
   const setActiveSessionId = useSetAtom(activeSessionIdAtom);
+  const setPendingNotification = useSetAtom(pendingNotificationAtom);
   const navigate = useNavigate();
 
   const handleMessage = useCallback(
@@ -1069,9 +1098,10 @@ export function HandleNotificationClick() {
           })
         );
         acknowledgeHandledClick();
-        navigateToRoomNotificationTarget(navigate, userId, roomId, eventId, {
+        queueRoomNotificationTarget(setPendingNotification, userId, roomId, eventId, {
           swClickId: typeof clickId === 'string' ? clickId : undefined,
           jumpMode: 'notification_live',
+          source: 'service_worker_click',
         });
         return;
       }
@@ -1087,7 +1117,7 @@ export function HandleNotificationClick() {
         acknowledgeHandledClick();
       }
     },
-    [navigate, setActiveSessionId]
+    [navigate, setActiveSessionId, setPendingNotification]
   );
   useServiceWorkerMessageListener(handleMessage, !isTauri());
 

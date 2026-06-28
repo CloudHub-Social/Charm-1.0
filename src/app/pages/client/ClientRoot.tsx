@@ -68,6 +68,7 @@ import { SyncStatus } from './SyncStatus';
 import { SpecVersions } from './SpecVersions';
 import { AutoDiscovery } from './AutoDiscovery';
 import { ContainerColor } from '$styles/ContainerColor.css';
+import { getClientRootGuardTarget } from './rootHistoryGuard';
 
 const log = createLogger('ClientRoot');
 const MESSAGE_PREVIEW_LIST_TIMELINE_LIMIT = 5;
@@ -279,6 +280,7 @@ export function ClientRoot({ children }: ClientRootProps) {
       [activeSession?.baseUrl, activeSession?.slidingSyncOptIn, clientConfig.slidingSync]
     )
   );
+  const insertedRootGuardRef = useRef<string>();
 
   useEffect(() => {
     let disposed = false;
@@ -316,6 +318,30 @@ export function ClientRoot({ children }: ClientRootProps) {
   useEffect(() => {
     rememberLastVisitedPath(`${location.pathname}${location.search}`);
   }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!activeSession) return;
+
+    const currentPath = `${location.pathname}${location.search}`;
+    const rootGuardTarget = getClientRootGuardTarget(location.pathname, location.search);
+    const historyIdx = (window.history.state as { idx?: number } | null)?.idx;
+
+    if (
+      !rootGuardTarget ||
+      rootGuardTarget === currentPath ||
+      (historyIdx !== undefined && historyIdx > 0)
+    ) {
+      insertedRootGuardRef.current = undefined;
+      return;
+    }
+
+    const guardKey = `${rootGuardTarget}=>${currentPath}`;
+    if (insertedRootGuardRef.current === guardKey) return;
+
+    insertedRootGuardRef.current = guardKey;
+    navigate(rootGuardTarget, { replace: true });
+    navigate(currentPath);
+  }, [activeSession, location.pathname, location.search, navigate]);
 
   const handleLogout = useCallback(async () => {
     if (!mx || !activeSession) return;

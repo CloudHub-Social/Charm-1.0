@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HomeRouteRoomProvider } from './home/RoomProvider';
+import { DirectRouteRoomProvider } from './direct/RoomProvider';
 import { RouteSpaceProvider } from './space/SpaceProvider';
 import { SpaceRouteRoomProvider } from './space/RoomProvider';
 import { roomToParentsAtom, roomToParentsReadyAtom } from '$state/room/roomToParents';
@@ -15,6 +16,7 @@ const mockUseSelectedRoom = vi.fn<() => string | undefined>();
 const mockUseSearchParamsViaServers = vi.fn<() => string[] | undefined>();
 const mockUseSelectedSpace = vi.fn<() => string | undefined>();
 const mockUseSpaces = vi.fn<() => string[]>();
+const mockUseDirects = vi.fn<() => string[]>();
 const mockUseSpace = vi.fn<() => { roomId: string }>();
 const mockUseSetting = vi.fn<() => [boolean]>();
 const mockUseAtom = vi.fn<(atom: unknown) => unknown>();
@@ -51,6 +53,7 @@ vi.mock('$hooks/router/useSelectedSpace', () => ({
 
 vi.mock('$state/hooks/roomList', () => ({
   useSpaces: () => mockUseSpaces(),
+  useDirects: () => mockUseDirects(),
 }));
 
 vi.mock('$utils/room', () => ({
@@ -119,6 +122,7 @@ describe('room route providers', () => {
     vi.clearAllMocks();
     mockUseSearchParamsViaServers.mockReturnValue(undefined);
     mockUseSetting.mockReturnValue([false]);
+    mockUseDirects.mockReturnValue([]);
     mockGetAllParents.mockReturnValue(new Set());
     mockGetSpaceChildren.mockReturnValue([]);
     mockGetAccountData.mockReturnValue(undefined);
@@ -347,6 +351,51 @@ describe('room route providers', () => {
     expect(screen.getByTestId('room-provider')).toHaveAttribute('data-room-id', '!room:server');
     expect(screen.getByText('Joined room')).toBeInTheDocument();
     expect(screen.queryByTestId('join-fallback')).not.toBeInTheDocument();
+  });
+
+  it('waits for direct-route classifiers before rendering a joined room from empty defaults', () => {
+    mockUseSelectedRoom.mockReturnValue('!dm:server');
+    mockUseMatrixClient.mockReturnValue({
+      getRoom: () => ({
+        roomId: '!dm:server',
+        getMyMembership: () => 'join',
+      }),
+    });
+
+    const { container } = renderWithRoute(
+      '/direct/%21dm%3Aserver',
+      '/direct/:roomIdOrAlias',
+      <DirectRouteRoomProvider>
+        <div>Joined DM</div>
+      </DirectRouteRoomProvider>
+    );
+
+    expect(screen.queryByText('Joined DM')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('join-fallback')).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('keeps joined non-direct rooms out of the direct route once live classification is known', () => {
+    mockUseSelectedRoom.mockReturnValue('!room:server');
+    mockUseMatrixClient.mockReturnValue({
+      getRoom: () => ({
+        roomId: '!room:server',
+        getMyMembership: () => 'join',
+      }),
+    });
+    mockGetAccountData.mockReturnValue({ type: 'm.direct' });
+    mockGetMDirects.mockReturnValue(new Set<string>());
+
+    renderWithRoute(
+      '/direct/%21room%3Aserver',
+      '/direct/:roomIdOrAlias',
+      <DirectRouteRoomProvider>
+        <div>Joined room</div>
+      </DirectRouteRoomProvider>
+    );
+
+    expect(screen.getByTestId('join-fallback')).toHaveTextContent('!room:server');
+    expect(screen.queryByText('Joined room')).not.toBeInTheDocument();
   });
 
   it('honors cached parent spaces on the home route before live state catches up', () => {
