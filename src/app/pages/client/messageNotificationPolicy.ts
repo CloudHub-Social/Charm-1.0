@@ -64,18 +64,24 @@ export const resolveMessageNotificationPolicy = (
 
   const shouldForceDMNotification =
     isDM && notificationType !== NotificationType.MentionsAndKeywords;
-  const shouldNotify = pushActions?.notify === true || shouldForceDMNotification;
+  const shouldForceRoomLoudNotification =
+    !isDM && notificationType === NotificationType.AllMessages;
+  const shouldNotify =
+    pushActions?.notify === true || shouldForceDMNotification || shouldForceRoomLoudNotification;
   if (!shouldNotify || !allowByFocusMode) return null;
 
   const isHighlight = Boolean(pushActions?.tweaks?.highlight);
-  const isLoud = Boolean(pushActions?.tweaks?.sound) || isDM;
+  const isLoud = Boolean(pushActions?.tweaks?.sound) || isDM || shouldForceRoomLoudNotification;
+  const shouldAllowSound = notificationSound && isLoud;
+  const shouldPlaySound = shouldAllowSound && (tabVisible || backgroundNotificationSounds);
+  const silent = !shouldAllowSound || (!tabVisible && !backgroundNotificationSounds);
 
   return {
     isHighlight,
     isLoud,
-    shouldPlaySound: notificationSound && isLoud && (tabVisible || backgroundNotificationSounds),
+    shouldPlaySound,
     shouldShowBanner: tabVisible && showNotifications && (isHighlight || isDM || isLoud),
     shouldShowSystemNotification: !isMobileDevice && showSystemNotifications && hasSystemPermission,
-    silent: !notificationSound || !isLoud,
+    silent,
   };
 };

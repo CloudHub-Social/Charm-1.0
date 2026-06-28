@@ -60,6 +60,31 @@ describe('messageNotificationPolicy', () => {
     });
   });
 
+  it('forces all-messages room notifications when push rules miss', () => {
+    expect(
+      resolveMessageNotificationPolicy({
+        allowByFocusMode: true,
+        backgroundNotificationSounds: false,
+        hasSystemPermission: true,
+        isDM: false,
+        isMobileDevice: false,
+        notificationSound: true,
+        notificationType: NotificationType.AllMessages,
+        pushActions: { notify: false, tweaks: {} },
+        showNotifications: true,
+        showSystemNotifications: true,
+        tabVisible: true,
+      })
+    ).toMatchObject({
+      isHighlight: false,
+      isLoud: true,
+      shouldPlaySound: true,
+      shouldShowBanner: true,
+      shouldShowSystemNotification: true,
+      silent: false,
+    });
+  });
+
   it('keeps mentions-only DMs gated by push-rule notification matches', () => {
     expect(
       resolveMessageNotificationPolicy({
@@ -118,6 +143,31 @@ describe('messageNotificationPolicy', () => {
       shouldShowBanner: false,
       shouldShowSystemNotification: false,
       silent: false,
+    });
+  });
+
+  it('keeps hidden-tab system notifications silent when background sounds are disabled', () => {
+    expect(
+      resolveMessageNotificationPolicy({
+        allowByFocusMode: true,
+        backgroundNotificationSounds: false,
+        hasSystemPermission: true,
+        isDM: false,
+        isMobileDevice: false,
+        notificationSound: true,
+        notificationType: NotificationType.AllMessages,
+        pushActions: { notify: false, tweaks: {} },
+        showNotifications: true,
+        showSystemNotifications: true,
+        tabVisible: false,
+      })
+    ).toEqual({
+      isHighlight: false,
+      isLoud: true,
+      shouldPlaySound: false,
+      shouldShowBanner: false,
+      shouldShowSystemNotification: true,
+      silent: true,
     });
   });
 });
