@@ -14,10 +14,7 @@ export const RoomViewFollowing = recipe({
     DefaultReset,
     {
       minHeight: toRem(28),
-      paddingTop: 0,
-      paddingBottom: 0,
-      paddingLeft: config.space.S400,
-      paddingRight: `max(${config.space.S400}, env(safe-area-inset-right, 0px))`,
+      padding: `0 ${config.space.S400}`,
       width: '100%',
       backgroundColor: color.Surface.Container,
       color: color.Surface.OnContainer,

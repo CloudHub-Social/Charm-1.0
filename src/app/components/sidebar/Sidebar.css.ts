@@ -15,7 +15,6 @@ export const Sidebar = style([
     flexDirection: 'column',
     color: color.Background.OnContainer,
     paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-    paddingLeft: 'env(safe-area-inset-left, 0px)',
   },
 ]);
 
