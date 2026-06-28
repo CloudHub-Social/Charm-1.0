@@ -16,10 +16,19 @@ import {
   Tooltip,
   TooltipProvider,
   as,
+  color,
   config,
   toRem,
 } from 'folds';
-import { Eye, EyeSlash, menuIcon, sizedIcon, Image, Warning } from '$components/icons/phosphor';
+import {
+  Eye,
+  EyeSlash,
+  menuIcon,
+  sizedIcon,
+  Image,
+  Warning,
+  Star,
+} from '$components/icons/phosphor';
 import classNames from 'classnames';
 import { BlurhashCanvas } from 'react-blurhash';
 import FocusTrap from 'focus-trap-react';
@@ -44,8 +53,14 @@ import { getScopedMediaCacheKey } from '$utils/mediaTransport';
 import { storeMediaMetadataForBlob } from '$utils/mediaMetadata';
 import { ModalWide } from '$styles/Modal.css';
 import { validBlurHash } from '$utils/blurHash';
+import { isSupportedGifFavoriteUrl } from '$utils/gifs';
 import * as css from './style.css';
-import { MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME } from '$unstable/prefixes';
+import {
+  MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS,
+  MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME,
+} from '$unstable/prefixes';
+import { gifSearchConfigured, useClientConfig } from '$hooks/useClientConfig';
+import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
 
 function thumbnailDimsForMaxEdge(
   maxEdge: number,
@@ -107,6 +122,95 @@ export type ImageContentProps = {
   onError?: () => void;
   suppressErrorUI?: boolean;
 };
+
+type GifFavoriteActionProps = {
+  body: string;
+  url: string;
+  imageW?: number;
+  imageH?: number;
+  srcState: { status: AsyncStatus };
+};
+
+function GifFavoriteAction({
+  body,
+  url,
+  imageW,
+  imageH,
+  srcState,
+}: Readonly<GifFavoriteActionProps>) {
+  const mx = useMatrixClient();
+  const clientConfig = useClientConfig();
+  const gifsEnabled = gifSearchConfigured(clientConfig);
+  const favoritedContent = useFavoriteGifs();
+  const favoriteGifsRef = useRef(favoritedContent.gifs);
+  const [favorited, setFavorited] = useState(favoritedContent.gifs.some((v) => v.url === url));
+
+  useEffect(() => {
+    favoriteGifsRef.current = favoritedContent.gifs;
+    setFavorited(favoritedContent.gifs.some((v) => v.url === url));
+  }, [favoritedContent, url]);
+
+  if (!gifsEnabled || !isSupportedGifFavoriteUrl(url)) return null;
+
+  return (
+    <MenuItem
+      size="300"
+      radii="0"
+      fill="Soft"
+      variant="Secondary"
+      disabled={srcState.status !== AsyncStatus.Success}
+      title={favorited ? 'Unfavorite gif' : 'Favorite gif'}
+      onClick={async (e) => {
+        e.preventDefault();
+        if (srcState.status !== AsyncStatus.Success) return;
+
+        if (!favorited) {
+          setFavorited(true);
+          const nextFavorites = favoriteGifsRef.current.some((v) => v.url === url)
+            ? favoriteGifsRef.current
+            : [
+                ...favoriteGifsRef.current,
+                {
+                  id: url,
+                  title: body,
+                  url,
+                  width: imageW,
+                  height: imageH,
+                },
+              ];
+          favoriteGifsRef.current = nextFavorites;
+          await mx
+            .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
+              gifs: nextFavorites,
+            })
+            .catch(() => {
+              favoriteGifsRef.current = favoritedContent.gifs;
+              setFavorited(false);
+            });
+          return;
+        }
+
+        setFavorited(false);
+        const nextFavorites = favoriteGifsRef.current.filter((v) => v.url !== url);
+        favoriteGifsRef.current = nextFavorites;
+        await mx
+          .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
+            gifs: nextFavorites,
+          })
+          .catch(() => {
+            favoriteGifsRef.current = favoritedContent.gifs;
+            setFavorited(true);
+          });
+      }}
+    >
+      {menuIcon(Star, {
+        weight: favorited ? 'fill' : 'regular',
+        color: favorited ? color.Warning.MainHover : color.Surface.OnContainer,
+      })}
+    </MenuItem>
+  );
+}
+
 export const ImageContent = as<'div', ImageContentProps>(
   (
     {
@@ -144,7 +248,6 @@ export const ImageContent = as<'div', ImageContentProps>(
     const [viewerFullSrc, setViewerFullSrc] = useState<string | null>(null);
     const [blurred, setBlurred] = useState(markedAsSpoiler ?? false);
     const [isHovered, setIsHovered] = useState(false);
-
     const rawMediaUrl = useMemo(() => {
       if (url.startsWith('http')) return url;
       return mxcUrlToHttp(mx, url, useAuthentication) ?? undefined;
@@ -169,7 +272,6 @@ export const ImageContent = as<'div', ImageContentProps>(
       typeof info?.size === 'number' && Number.isFinite(info.size) && info.size > 0
         ? info.size
         : mediaMetadata?.byteSize;
-
     const [srcState, loadSrc, setSrcState] = useAsyncCallback(
       useCallback(async () => {
         if (url.startsWith('http')) return url;
@@ -522,21 +624,33 @@ export const ImageContent = as<'div', ImageContentProps>(
         {isHovered && (
           <Box style={{ padding: config.space.S200, right: 0, position: 'absolute' }}>
             <Menu style={{ padding: config.space.S0 }}>
-              <MenuItem
-                size="300"
-                after={menuIcon(blurred ? Eye : EyeSlash)}
-                radii="300"
-                fill="Soft"
-                variant="Secondary"
-                title={blurred ? 'Reveal Image' : 'Hide Image'}
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (srcState.status === AsyncStatus.Idle) {
-                    loadSrc();
-                    setBlurred(false);
-                  } else setBlurred(!blurred);
-                }}
-              />
+              <Box>
+                <MenuItem
+                  size="300"
+                  radii="0"
+                  fill="Soft"
+                  variant="Secondary"
+                  title={blurred ? 'Reveal Image' : 'Hide Image'}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (srcState.status === AsyncStatus.Idle) {
+                      loadSrc();
+                      setBlurred(false);
+                    } else setBlurred(!blurred);
+                  }}
+                >
+                  {menuIcon(blurred ? Eye : EyeSlash)}
+                </MenuItem>
+                {info?.mimetype === 'image/gif' && !encInfo && (
+                  <GifFavoriteAction
+                    body={body}
+                    url={url}
+                    imageW={imageW}
+                    imageH={imageH}
+                    srcState={srcState}
+                  />
+                )}
+              </Box>
             </Menu>
           </Box>
         )}

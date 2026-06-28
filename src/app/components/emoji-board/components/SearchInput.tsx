@@ -3,18 +3,23 @@ import { useRef } from 'react';
 import { Input, Chip, Text } from 'folds';
 import { mobileOrTablet } from '$utils/user-agent';
 import { ArrowRight, sizedIcon, MagnifyingGlass } from '$components/icons/phosphor';
+import { EmojiBoardTab } from '$components/emoji-board/types';
 
 type SearchInputProps = {
+  tab: EmojiBoardTab;
   query?: string;
   onChange: ChangeEventHandler<HTMLInputElement>;
   allowTextCustomEmoji?: boolean;
   onTextCustomEmojiSelect?: (text: string) => void;
+  placeholder?: string;
 };
 export function SearchInput({
+  tab,
   query,
   onChange,
   allowTextCustomEmoji,
   onTextCustomEmojiSelect,
+  placeholder,
 }: SearchInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -29,10 +34,13 @@ export function SearchInput({
       ref={inputRef}
       variant="SurfaceVariant"
       size="400"
-      placeholder={allowTextCustomEmoji ? 'Search or Text Reaction ' : 'Search'}
+      placeholder={
+        placeholder ??
+        (allowTextCustomEmoji && tab !== EmojiBoardTab.Gif ? 'Search or Text Reaction' : 'Search')
+      }
       maxLength={50}
       after={
-        allowTextCustomEmoji && query ? (
+        allowTextCustomEmoji && query && tab !== EmojiBoardTab.Gif ? (
           <Chip
             variant="Primary"
             radii="Pill"

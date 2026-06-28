@@ -28,6 +28,9 @@ The runtime configuration is loaded from [`config.json`](config.json). You can
 use it to change default homeservers, featured rooms and spaces, the account
 switcher, push notification settings, and experimental feature toggles.
 
+If you want to enable the GIF picker, follow [`docs/gif-picker-setup.md`](docs/gif-picker-setup.md)
+to deploy the proxy worker and configure a real Klipy API key.
+
 ### Optional default client settings
 
 While the default settings are recommended for most users, you can optionally
