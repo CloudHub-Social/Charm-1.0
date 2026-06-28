@@ -66,7 +66,7 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
             // Paint the safe-area padding with the same surface color as the
             // active header/composer so iOS notch and home-indicator regions
             // blend into the app instead of showing a contrasting bar.
-            backgroundColor: 'var(--sable-surface-container)',
+            backgroundColor: enabled ? 'var(--sable-surface-container)' : undefined,
             paddingTop: enabled ? safeAreaTop : 0,
             paddingBottom: enabled && !needsBottomSystemBar ? safeAreaBottom : 0,
             paddingLeft: enabled ? safeAreaLeft : 0,

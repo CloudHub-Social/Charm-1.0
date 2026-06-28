@@ -67,7 +67,9 @@ describe('android edge-to-edge inset contract', () => {
     // Bottom safe area is zeroed out: iOS home-indicator padding must not push
     // content up off the bottom of the screen.
     expect(systemBarShell).toContain("'--sable-safe-area-bottom': '0px'");
-    expect(systemBarShell).toContain("backgroundColor: 'var(--sable-surface-container)'");
+    expect(systemBarShell).toContain(
+      "backgroundColor: enabled ? 'var(--sable-surface-container)' : undefined"
+    );
     expect(systemBarShell).toContain(
       'paddingBottom: enabled && !needsBottomSystemBar ? safeAreaBottom : 0'
     );
