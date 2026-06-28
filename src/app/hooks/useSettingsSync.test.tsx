@@ -520,6 +520,94 @@ describe('useSettingsSyncEffect — echo-token loop prevention', () => {
     expect(store.get(settingsAtom).twitterEmoji).toBe(false);
   });
 
+  it('drops a pending echo token when the active account changes', () => {
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    const hook = renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    const uploadedContent: Record<string, unknown> | undefined =
+      mockMx.setAccountData.mock.calls[0]?.[1];
+    const staleEchoToken = uploadedContent?.synctoken as string;
+
+    mockMx.getUserId.mockReturnValue('@bob:example.com');
+    hook.rerender();
+
+    act(() => {
+      callbackHolder.current?.(
+        makeSableSettingsEvent({
+          v: SETTINGS_SYNC_VERSION,
+          synctoken: staleEchoToken,
+          settings: { twitterEmoji: false },
+        })
+      );
+    });
+
+    expect(store.get(settingsAtom).twitterEmoji).toBe(false);
+  });
+
+  it('resets sync status when sync is disabled during an in-flight upload', () => {
+    const store = makeStore({ settingsSyncEnabled: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(store.get(settingsSyncStatusAtom)).toBe('syncing');
+
+    act(() => {
+      store.set(settingsAtom, {
+        ...store.get(settingsAtom),
+        settingsSyncEnabled: false,
+      });
+    });
+
+    expect(store.get(settingsSyncStatusAtom)).toBe('idle');
+  });
+
+  it('does not keep treating a stale echo token as ours after sync is re-enabled', () => {
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    const uploadedContent: Record<string, unknown> | undefined =
+      mockMx.setAccountData.mock.calls[0]?.[1];
+    const staleEchoToken = uploadedContent?.synctoken as string;
+
+    act(() => {
+      store.set(settingsAtom, {
+        ...store.get(settingsAtom),
+        settingsSyncEnabled: false,
+      });
+    });
+
+    act(() => {
+      store.set(settingsAtom, {
+        ...store.get(settingsAtom),
+        settingsSyncEnabled: true,
+      });
+    });
+
+    act(() => {
+      callbackHolder.current?.(
+        makeSableSettingsEvent({
+          v: SETTINGS_SYNC_VERSION,
+          synctoken: staleEchoToken,
+          settings: { twitterEmoji: false },
+        })
+      );
+    });
+
+    expect(store.get(settingsAtom).twitterEmoji).toBe(false);
+    expect(store.get(settingsSyncStatusAtom)).toBe('idle');
+  });
+
   it('applies explicit remote theme clears from another device', () => {
     const store = makeStore({
       settingsSyncEnabled: true,
