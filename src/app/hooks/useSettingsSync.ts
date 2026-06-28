@@ -103,6 +103,9 @@ const consumePendingRemoteApply = (runtime: SettingsSyncRuntime, storageKey: str
   return true;
 };
 
+const isCurrentPendingUpload = (runtime: SettingsSyncRuntime, token: string): boolean =>
+  runtime.pendingEchoToken === token;
+
 const getFreshnessFloor = (runtime: SettingsSyncRuntime): number =>
   Math.max(runtime.localUpdatedAt, runtime.applyingRemoteTimestamp ?? 0);
 
@@ -333,6 +336,8 @@ export function useSettingsSyncEffect(): void {
         CustomAccountDataEvent.SableSettings,
         content as Record<string, unknown>
       ).catch(() => {
+        if (!isCurrentPendingUpload(runtime, token)) return;
+
         runtime.pendingEchoToken = null;
         setSyncStatus('error');
       });
