@@ -84,6 +84,11 @@ const getPresenceSyncUpdatedAt = (
   return typeof updatedAt === 'number' && Number.isFinite(updatedAt) ? updatedAt : null;
 };
 
+const shouldIgnoreRemoteIdleWhileLocallyActive = (
+  content: Partial<PresenceState> | Record<string, unknown> | undefined,
+  autoIdled: boolean
+): boolean => content?.autoIdled === true && !autoIdled;
+
 const serializePresenceForSyncComparison = (
   presenceMode: PresenceState['presenceMode'],
   autoIdled: boolean
@@ -206,7 +211,7 @@ export function usePresenceSyncEffect(): void {
         normalizedState.autoIdled !== autoIdledRef.current;
 
       if (!localNeedsUpdate) {
-        if (remoteUpdatedAt !== null) {
+        if (remoteUpdatedAt !== null && remoteUpdatedAt > getFreshnessFloor()) {
           persistRemoteFreshness(remoteUpdatedAt);
         }
         return 'unchanged';
@@ -222,7 +227,7 @@ export function usePresenceSyncEffect(): void {
       }
       return 'updated';
     },
-    [persistRemoteFreshness, setAutoIdled, setSettings]
+    [getFreshnessFloor, persistRemoteFreshness, setAutoIdled, setSettings]
   );
 
   // On mount / when sync is first enabled: load from account data
@@ -282,7 +287,7 @@ export function usePresenceSyncEffect(): void {
         lastRemoteStateRef.current.autoIdled === state.autoIdled &&
         lastRemoteStateRef.current.lastActivityAt === state.lastActivityAt
       ) {
-        if (remoteUpdatedAt !== null) {
+        if (remoteUpdatedAt !== null && remoteUpdatedAt > getFreshnessFloor()) {
           persistRemoteFreshness(remoteUpdatedAt);
           lastRemoteStateRef.current = {
             ...lastRemoteStateRef.current,
@@ -312,36 +317,41 @@ export function usePresenceSyncEffect(): void {
       // Apply state from another device
       debugLog.info('general', 'Received presence update from another device', { state });
 
+      const effectiveRawContent = shouldIgnoreRemoteIdleWhileLocallyActive(
+        rawContent,
+        autoIdledRef.current
+      )
+        ? { ...rawContent, autoIdled: false }
+        : rawContent;
+      const { synctoken: _effectiveEchoField, ...effectiveState } = effectiveRawContent;
+
       // ONLINE TAKES PRECEDENCE: If remote device is active (not auto-idled),
       // immediately clear local auto-idle state. This ensures that when ANY device
       // becomes active, ALL devices switch to online.
-      if (!state.autoIdled && autoIdledRef.current) {
+      if (!effectiveState.autoIdled && autoIdledRef.current) {
         debugLog.info('general', 'Remote device is active — clearing local auto-idle');
-        setAutoIdled(false);
         // Trigger activity event in auto-idle hook to reset its timer
         window.dispatchEvent(
-          new CustomEvent('sable:remote-activity', { detail: { timestamp: state.lastActivityAt } })
+          new CustomEvent('sable:remote-activity', {
+            detail: { timestamp: effectiveState.lastActivityAt },
+          })
         );
       }
 
       // DON'T apply remote idle state if we're currently active locally.
       // This prevents race conditions where remote idle updates overwrite local activity
       // during the debounce window before our activity uploads to account data.
-      if (state.autoIdled && !autoIdledRef.current) {
+      if (shouldIgnoreRemoteIdleWhileLocallyActive(rawContent, autoIdledRef.current)) {
         debugLog.info('general', 'Ignoring remote idle state — we are active locally');
-        applyRemoteContent({ ...rawContent, autoIdled: false });
-        return;
-      } else if (state.autoIdled !== autoIdledRef.current) {
-        setAutoIdled(state.autoIdled);
       }
 
-      applyRemoteContent(rawContent);
+      applyRemoteContent(effectiveRawContent);
 
       // DO NOT send to server here — the remote device already sent it.
       // Sending again causes redundant traffic and can trigger rate limiting,
       // preventing our local state changes from being sent when they should be.
     },
-    [applyRemoteContent, getFreshnessFloor, persistRemoteFreshness, setAutoIdled]
+    [applyRemoteContent, getFreshnessFloor, persistRemoteFreshness]
   );
   useAccountDataCallback(mx, onAccountData);
 
@@ -390,7 +400,13 @@ export function usePresenceSyncEffect(): void {
       }
 
       if (remoteContent && remoteUpdatedAt !== null && remoteUpdatedAt >= localUpdatedAt) {
-        const applyResult = applyRemoteContent(remoteContent);
+        const effectiveRemoteContent = shouldIgnoreRemoteIdleWhileLocallyActive(
+          remoteContent,
+          autoIdledRef.current
+        )
+          ? { ...remoteContent, autoIdled: false }
+          : remoteContent;
+        const applyResult = applyRemoteContent(effectiveRemoteContent);
         if (applyResult !== 'ignored') {
           if (applyResult !== 'updated') sendServerPresence();
           return;
