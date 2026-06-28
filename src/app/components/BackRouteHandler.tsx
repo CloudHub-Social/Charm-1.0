@@ -1,7 +1,13 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSetAtom } from 'jotai';
-import { matchPath, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
+import {
+  matchPath,
+  NavigationType,
+  useLocation,
+  useNavigate,
+  useNavigationType,
+} from 'react-router-dom';
 import {
   getDirectPath,
   getExplorePath,
@@ -24,6 +30,7 @@ import {
   buildEventTargetCleanupTarget,
   shouldCleanNotificationJumpOnBack,
 } from '$features/room/notificationJumpCleanup';
+import type { TimelineJumpMode } from '$hooks/timeline/useTimelineSync';
 
 type BackRouteHandlerProps = {
   children: (onBack: () => void) => ReactNode;
@@ -40,6 +47,13 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
   const roomMatch = roomPaths
     .map((path) => matchPath({ path, end: false }, location.pathname))
     .find((match) => match !== null);
+  const roomIdOrAliasParam = roomMatch?.params.roomIdOrAlias;
+  const eventIdParam = roomMatch?.params.eventId;
+  const searchJumpMode = new URLSearchParams(location.search).get('jumpMode');
+  const jumpMode: TimelineJumpMode | undefined =
+    searchJumpMode === 'notification_live' || searchJumpMode === 'history_context'
+      ? searchJumpMode
+      : undefined;
 
   useEffect(() => {
     if (!pendingCleanupBackTarget) return;
@@ -56,17 +70,14 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
       hasMountedRef.current = true;
       return;
     }
-    if (navigationType !== 'POP' || pendingCleanupBackTarget) return;
+    if (navigationType !== NavigationType.Pop || pendingCleanupBackTarget) return;
 
-    const eventId = roomMatch?.params.eventId
-      ? decodeURIComponent(roomMatch.params.eventId)
-      : undefined;
-    const jumpMode = new URLSearchParams(location.search).get('jumpMode') ?? undefined;
+    const eventId = eventIdParam ? decodeURIComponent(eventIdParam) : undefined;
 
     if (
       !shouldCleanNotificationJumpOnBack({
         eventId,
-        jumpMode: jumpMode === 'notification_live' ? jumpMode : undefined,
+        jumpMode,
         pathname: location.pathname,
       })
     ) {
@@ -82,13 +93,13 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
     navigate,
     navigationType,
     pendingCleanupBackTarget,
-    roomMatch?.params.eventId,
+    eventIdParam,
+    jumpMode,
   ]);
 
   const goBack = useCallback(() => {
-    const currentRoomIdOrAlias = roomMatch?.params.roomIdOrAlias;
-    if (currentRoomIdOrAlias) {
-      setLastRoomId(decodeURIComponent(currentRoomIdOrAlias));
+    if (roomIdOrAliasParam) {
+      setLastRoomId(decodeURIComponent(roomIdOrAliasParam));
     }
 
     // Use a native history pop when there is prior history. This keeps the
@@ -97,15 +108,12 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
     // section and there are no phantom pushes for swipe-back to stumble into.
     const historyIdx = (window.history.state as { idx?: number } | null)?.idx;
     if (historyIdx !== undefined && historyIdx > 0) {
-      const eventId = roomMatch?.params.eventId
-        ? decodeURIComponent(roomMatch.params.eventId)
-        : undefined;
-      const jumpMode = new URLSearchParams(location.search).get('jumpMode') ?? undefined;
+      const eventId = eventIdParam ? decodeURIComponent(eventIdParam) : undefined;
 
       if (
         shouldCleanNotificationJumpOnBack({
           eventId,
-          jumpMode: jumpMode === 'notification_live' ? jumpMode : undefined,
+          jumpMode,
           pathname: location.pathname,
         })
       ) {
@@ -194,7 +202,7 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
     ) {
       navigate(getInboxPath(), { replace: true });
     }
-  }, [navigate, location, setLastRoomId]);
+  }, [eventIdParam, jumpMode, location, navigate, roomIdOrAliasParam, setLastRoomId]);
 
   return children(goBack);
 }
