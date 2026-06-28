@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import FocusTrap from 'focus-trap-react';
 import {
   Box,
   Button,
@@ -8,10 +7,6 @@ import {
   Header,
   IconButton,
   Input,
-  Modal,
-  Overlay,
-  OverlayBackdrop,
-  OverlayCenter,
   Scroll,
   Spinner,
   Text,
@@ -20,8 +15,8 @@ import {
 } from 'folds';
 import { ArrowRight, X, chipIcon, composerIcon } from '$components/icons/phosphor';
 import * as Sentry from '@sentry/react';
+import { Modal500 } from '$components/Modal500';
 import { useCloseBugReportModal, useBugReportModalOpen } from '$state/hooks/bugReportModal';
-import { stopPropagation } from '$utils/keyboard';
 import { getDebugLogger } from '$utils/debugLogger';
 import { scrubMatrixUrl } from '$utils/sentryScrubbers';
 import { fetch } from '$utils/fetch';
@@ -36,6 +31,8 @@ type SimilarIssue = {
 };
 
 const GITHUB_REPO = new URL(APP_SOURCE_URL).pathname.replace(/^\/|\/$/g, '');
+const safeAreaInlineStart = 'var(--sable-safe-area-left, env(safe-area-inset-left, 0px))';
+const safeAreaInlineEnd = 'var(--sable-safe-area-right, env(safe-area-inset-right, 0px))';
 
 async function searchSimilarIssues(query: string, signal: AbortSignal): Promise<SimilarIssue[]> {
   // Split into individual words, drop very short ones, and join with OR so that
@@ -272,299 +269,285 @@ function BugReportModal() {
   };
 
   return (
-    <Overlay open backdrop={<OverlayBackdrop />}>
-      <OverlayCenter>
-        <FocusTrap
-          focusTrapOptions={{
-            initialFocus: false,
-            clickOutsideDeactivates: true,
-            onDeactivate: close,
-            escapeDeactivates: stopPropagation,
+    <Modal500 requestClose={close} fullScreenOnMobile>
+      <Box direction="Column" style={{ height: '100%', maxHeight: '100%', overflow: 'hidden' }}>
+        <Header
+          size="500"
+          style={{
+            paddingTop: config.space.S200,
+            paddingBottom: config.space.S200,
+            paddingLeft: `calc(${safeAreaInlineStart} + ${config.space.S400})`,
+            paddingRight: `calc(${safeAreaInlineEnd} + ${config.space.S200})`,
           }}
         >
-          <Modal size="500" flexHeight variant="Surface" style={{ maxHeight: '90vh' }}>
-            <Box direction="Column" style={{ maxHeight: '90vh', overflow: 'hidden' }}>
-              <Header
-                size="500"
-                style={{
-                  padding: config.space.S200,
-                  paddingLeft: config.space.S400,
-                }}
-              >
-                <Box grow="Yes">
-                  <Text size="H4">Report an Issue</Text>
-                </Box>
-                <IconButton size="300" radii="300" onClick={close}>
-                  {composerIcon(X)}
-                </IconButton>
-              </Header>
-              <Scroll size="300" hideTrack>
-                <Box
-                  style={{
-                    padding: config.space.S400,
-                    paddingRight: config.space.S200,
-                  }}
-                  direction="Column"
-                  gap="500"
+          <Box grow="Yes">
+            <Text size="H4">Report an Issue</Text>
+          </Box>
+          <IconButton size="300" radii="300" onClick={close}>
+            {composerIcon(X)}
+          </IconButton>
+        </Header>
+        <Scroll size="300" hideTrack style={{ minHeight: 0 }}>
+          <Box
+            style={{
+              paddingTop: config.space.S400,
+              paddingBottom: config.space.S400,
+              paddingLeft: `calc(${safeAreaInlineStart} + ${config.space.S400})`,
+              paddingRight: `calc(${safeAreaInlineEnd} + ${config.space.S200})`,
+            }}
+            direction="Column"
+            gap="500"
+          >
+            {/* Type */}
+            <Box direction="Column" gap="100">
+              <Text size="L400">Type</Text>
+              <Box gap="200">
+                <Chip
+                  radii="Pill"
+                  variant={type === 'bug' ? 'Primary' : 'SurfaceVariant'}
+                  aria-pressed={type === 'bug'}
+                  onClick={() => setType('bug')}
                 >
-                  {/* Type */}
-                  <Box direction="Column" gap="100">
-                    <Text size="L400">Type</Text>
-                    <Box gap="200">
-                      <Chip
-                        radii="Pill"
-                        variant={type === 'bug' ? 'Primary' : 'SurfaceVariant'}
-                        aria-pressed={type === 'bug'}
-                        onClick={() => setType('bug')}
-                      >
-                        <Text size="T300">Bug Report</Text>
-                      </Chip>
-                      <Chip
-                        radii="Pill"
-                        variant={type === 'feature' ? 'Primary' : 'SurfaceVariant'}
-                        aria-pressed={type === 'feature'}
-                        onClick={() => setType('feature')}
-                      >
-                        <Text size="T300">Feature Request</Text>
-                      </Chip>
-                    </Box>
-                  </Box>
+                  <Text size="T300">Bug Report</Text>
+                </Chip>
+                <Chip
+                  radii="Pill"
+                  variant={type === 'feature' ? 'Primary' : 'SurfaceVariant'}
+                  aria-pressed={type === 'feature'}
+                  onClick={() => setType('feature')}
+                >
+                  <Text size="T300">Feature Request</Text>
+                </Chip>
+              </Box>
+            </Box>
 
-                  {/* Title + duplicate check */}
-                  <Box direction="Column" gap="100">
-                    <Text size="L400">Title *</Text>
-                    <Input
-                      size="500"
-                      variant="SurfaceVariant"
-                      radii="400"
-                      autoFocus
-                      placeholder="Brief description"
-                      value={title}
-                      onChange={(e) => setTitle((e.target as HTMLInputElement).value)}
-                    />
-                    {searching && (
-                      <Box gap="200" alignItems="Center">
-                        <Spinner size="100" variant="Secondary" />
-                        <Text size="T200">Searching for similar issues…</Text>
-                      </Box>
-                    )}
-                    {!searching && similarIssues.length > 0 && (
-                      <Box direction="Column" gap="100">
-                        <Text size="T200">
-                          Similar open issues — please check before submitting:
-                        </Text>
-                        {similarIssues.map((issue) => (
-                          <Text key={issue.number} size="T200">
-                            {'→ '}
-                            <a href={issue.html_url} target="_blank" rel="noopener noreferrer">
-                              #{issue.number}: {issue.title}
-                            </a>
-                          </Text>
-                        ))}
-                      </Box>
-                    )}
-                  </Box>
-
-                  {/* Description */}
-                  <Box direction="Column" gap="100">
-                    <Text size="L400">
-                      {type === 'bug' ? 'Describe the bug *' : 'Describe the problem *'}
+            {/* Title + duplicate check */}
+            <Box direction="Column" gap="100">
+              <Text size="L400">Title *</Text>
+              <Input
+                size="500"
+                variant="SurfaceVariant"
+                radii="400"
+                autoFocus
+                placeholder="Brief description"
+                value={title}
+                onChange={(e) => setTitle((e.target as HTMLInputElement).value)}
+              />
+              {searching && (
+                <Box gap="200" alignItems="Center">
+                  <Spinner size="100" variant="Secondary" />
+                  <Text size="T200">Searching for similar issues…</Text>
+                </Box>
+              )}
+              {!searching && similarIssues.length > 0 && (
+                <Box direction="Column" gap="100">
+                  <Text size="T200">Similar open issues — please check before submitting:</Text>
+                  {similarIssues.map((issue) => (
+                    <Text key={issue.number} size="T200">
+                      {'→ '}
+                      <a href={issue.html_url} target="_blank" rel="noopener noreferrer">
+                        #{issue.number}: {issue.title}
+                      </a>
                     </Text>
-                    <TextArea
-                      size="500"
-                      variant="SurfaceVariant"
-                      radii="400"
-                      rows={4}
-                      placeholder={
-                        type === 'bug'
-                          ? 'A clear description of what the bug is.'
-                          : 'A clear description of the problem this feature would solve.'
-                      }
-                      value={type === 'bug' ? description : problem}
-                      onChange={(e) =>
-                        type === 'bug'
-                          ? setDescription((e.target as HTMLTextAreaElement).value)
-                          : setProblem((e.target as HTMLTextAreaElement).value)
-                      }
-                    />
+                  ))}
+                </Box>
+              )}
+            </Box>
+
+            {/* Description */}
+            <Box direction="Column" gap="100">
+              <Text size="L400">
+                {type === 'bug' ? 'Describe the bug *' : 'Describe the problem *'}
+              </Text>
+              <TextArea
+                size="500"
+                variant="SurfaceVariant"
+                radii="400"
+                rows={4}
+                placeholder={
+                  type === 'bug'
+                    ? 'A clear description of what the bug is.'
+                    : 'A clear description of the problem this feature would solve.'
+                }
+                value={type === 'bug' ? description : problem}
+                onChange={(e) =>
+                  type === 'bug'
+                    ? setDescription((e.target as HTMLTextAreaElement).value)
+                    : setProblem((e.target as HTMLTextAreaElement).value)
+                }
+              />
+            </Box>
+
+            {/* Bug: steps to reproduce */}
+            {type === 'bug' && (
+              <Box direction="Column" gap="100">
+                <Text size="L400">Steps to reproduce (optional)</Text>
+                <TextArea
+                  size="500"
+                  variant="SurfaceVariant"
+                  radii="400"
+                  rows={3}
+                  placeholder={'1. Go to…\n2. Click on…\n3. See error'}
+                  value={reproduction}
+                  onChange={(e) => setReproduction((e.target as HTMLTextAreaElement).value)}
+                />
+              </Box>
+            )}
+
+            {/* Bug: expected behavior */}
+            {type === 'bug' && (
+              <Box direction="Column" gap="100">
+                <Text size="L400">Expected behavior (optional)</Text>
+                <TextArea
+                  size="500"
+                  variant="SurfaceVariant"
+                  radii="400"
+                  rows={2}
+                  placeholder="A clear description of what you expected to happen."
+                  value={expectedBehavior}
+                  onChange={(e) => setExpectedBehavior((e.target as HTMLTextAreaElement).value)}
+                />
+              </Box>
+            )}
+
+            {/* Feature: solution */}
+            {type === 'feature' && (
+              <Box direction="Column" gap="100">
+                <Text size="L400">Describe the solution you&apos;d like *</Text>
+                <TextArea
+                  size="500"
+                  variant="SurfaceVariant"
+                  radii="400"
+                  rows={3}
+                  placeholder="I would like to…"
+                  value={solution}
+                  onChange={(e) => setSolution((e.target as HTMLTextAreaElement).value)}
+                />
+              </Box>
+            )}
+
+            {/* Feature: alternatives */}
+            {type === 'feature' && (
+              <Box direction="Column" gap="100">
+                <Text size="L400">Alternatives considered (optional)</Text>
+                <TextArea
+                  size="500"
+                  variant="SurfaceVariant"
+                  radii="400"
+                  rows={2}
+                  placeholder="Any alternative solutions or features you've considered."
+                  value={alternatives}
+                  onChange={(e) => setAlternatives((e.target as HTMLTextAreaElement).value)}
+                />
+              </Box>
+            )}
+
+            {/* Platform info for bugs */}
+            {type === 'bug' && (
+              <Box direction="Column" gap="100">
+                <Text size="L400">Platform info (auto-included)</Text>
+                <Text size="T200" style={{ opacity: 0.7, wordBreak: 'break-all' }}>
+                  {`Sable v${APP_VERSION}${IS_RELEASE_TAG ? '' : '-dev'} • ${navigator.userAgent}`}
+                </Text>
+              </Box>
+            )}
+
+            {/* Additional context — shared */}
+            <Box direction="Column" gap="100">
+              <Text size="L400">Additional context (optional)</Text>
+              <TextArea
+                size="500"
+                variant="SurfaceVariant"
+                radii="400"
+                rows={2}
+                placeholder="Any other context or screenshots."
+                value={context}
+                onChange={(e) => setContext((e.target as HTMLTextAreaElement).value)}
+              />
+            </Box>
+
+            {/* Sentry integration options (when Sentry is configured) */}
+            {sentryEnabled && (
+              <Box direction="Column" gap="200">
+                <Text size="L400">Feedback Submission</Text>
+                <Box as="label" gap="200" alignItems="Center" style={{ cursor: 'pointer' }}>
+                  <Checkbox
+                    variant="Primary"
+                    checked={sendToSentry}
+                    onClick={() => setSendToSentry((v) => !v)}
+                  />
+                  <Box direction="Column" gap="100" grow="Yes">
+                    <Text size="T300">Send anonymous report for issue tracking</Text>
+                    <Text size="T200" style={{ opacity: 0.7 }}>
+                      Helps developers identify and fix issues faster. No personal data is sent.
+                    </Text>
                   </Box>
-
-                  {/* Bug: steps to reproduce */}
-                  {type === 'bug' && (
-                    <Box direction="Column" gap="100">
-                      <Text size="L400">Steps to reproduce (optional)</Text>
-                      <TextArea
-                        size="500"
-                        variant="SurfaceVariant"
-                        radii="400"
-                        rows={3}
-                        placeholder={'1. Go to…\n2. Click on…\n3. See error'}
-                        value={reproduction}
-                        onChange={(e) => setReproduction((e.target as HTMLTextAreaElement).value)}
-                      />
-                    </Box>
-                  )}
-
-                  {/* Bug: expected behavior */}
-                  {type === 'bug' && (
-                    <Box direction="Column" gap="100">
-                      <Text size="L400">Expected behavior (optional)</Text>
-                      <TextArea
-                        size="500"
-                        variant="SurfaceVariant"
-                        radii="400"
-                        rows={2}
-                        placeholder="A clear description of what you expected to happen."
-                        value={expectedBehavior}
-                        onChange={(e) =>
-                          setExpectedBehavior((e.target as HTMLTextAreaElement).value)
-                        }
-                      />
-                    </Box>
-                  )}
-
-                  {/* Feature: solution */}
-                  {type === 'feature' && (
-                    <Box direction="Column" gap="100">
-                      <Text size="L400">Describe the solution you&apos;d like *</Text>
-                      <TextArea
-                        size="500"
-                        variant="SurfaceVariant"
-                        radii="400"
-                        rows={3}
-                        placeholder="I would like to…"
-                        value={solution}
-                        onChange={(e) => setSolution((e.target as HTMLTextAreaElement).value)}
-                      />
-                    </Box>
-                  )}
-
-                  {/* Feature: alternatives */}
-                  {type === 'feature' && (
-                    <Box direction="Column" gap="100">
-                      <Text size="L400">Alternatives considered (optional)</Text>
-                      <TextArea
-                        size="500"
-                        variant="SurfaceVariant"
-                        radii="400"
-                        rows={2}
-                        placeholder="Any alternative solutions or features you've considered."
-                        value={alternatives}
-                        onChange={(e) => setAlternatives((e.target as HTMLTextAreaElement).value)}
-                      />
-                    </Box>
-                  )}
-
-                  {/* Platform info for bugs */}
-                  {type === 'bug' && (
-                    <Box direction="Column" gap="100">
-                      <Text size="L400">Platform info (auto-included)</Text>
-                      <Text size="T200" style={{ opacity: 0.7, wordBreak: 'break-all' }}>
-                        {`Sable v${APP_VERSION}${IS_RELEASE_TAG ? '' : '-dev'} • ${navigator.userAgent}`}
+                </Box>
+                {sendToSentry && type === 'bug' && (
+                  <Box
+                    as="label"
+                    gap="200"
+                    alignItems="Center"
+                    style={{
+                      cursor: 'pointer',
+                      paddingLeft: config.space.S400,
+                    }}
+                  >
+                    <Checkbox
+                      variant="Primary"
+                      checked={includeDebugLogs}
+                      onClick={() => setIncludeDebugLogs((v) => !v)}
+                    />
+                    <Box direction="Column" gap="100" grow="Yes">
+                      <Text size="T300">Include recent debug logs (last 100 entries)</Text>
+                      <Text size="T200" style={{ opacity: 0.7 }}>
+                        Provides additional context to help diagnose the issue. Logs are filtered
+                        for sensitive data.
                       </Text>
                     </Box>
-                  )}
-
-                  {/* Additional context — shared */}
-                  <Box direction="Column" gap="100">
-                    <Text size="L400">Additional context (optional)</Text>
-                    <TextArea
-                      size="500"
-                      variant="SurfaceVariant"
-                      radii="400"
-                      rows={2}
-                      placeholder="Any other context or screenshots."
-                      value={context}
-                      onChange={(e) => setContext((e.target as HTMLTextAreaElement).value)}
-                    />
                   </Box>
-
-                  {/* Sentry integration options (when Sentry is configured) */}
-                  {sentryEnabled && (
-                    <Box direction="Column" gap="200">
-                      <Text size="L400">Feedback Submission</Text>
-                      <Box as="label" gap="200" alignItems="Center" style={{ cursor: 'pointer' }}>
-                        <Checkbox
-                          variant="Primary"
-                          checked={sendToSentry}
-                          onClick={() => setSendToSentry((v) => !v)}
-                        />
-                        <Box direction="Column" gap="100" grow="Yes">
-                          <Text size="T300">Send anonymous report for issue tracking</Text>
-                          <Text size="T200" style={{ opacity: 0.7 }}>
-                            Helps developers identify and fix issues faster. No personal data is
-                            sent.
-                          </Text>
-                        </Box>
-                      </Box>
-                      {sendToSentry && type === 'bug' && (
-                        <Box
-                          as="label"
-                          gap="200"
-                          alignItems="Center"
-                          style={{
-                            cursor: 'pointer',
-                            paddingLeft: config.space.S400,
-                          }}
-                        >
-                          <Checkbox
-                            variant="Primary"
-                            checked={includeDebugLogs}
-                            onClick={() => setIncludeDebugLogs((v) => !v)}
-                          />
-                          <Box direction="Column" gap="100" grow="Yes">
-                            <Text size="T300">Include recent debug logs (last 100 entries)</Text>
-                            <Text size="T200" style={{ opacity: 0.7 }}>
-                              Provides additional context to help diagnose the issue. Logs are
-                              filtered for sensitive data.
-                            </Text>
-                          </Box>
-                        </Box>
-                      )}
-                      <Box as="label" gap="200" alignItems="Center" style={{ cursor: 'pointer' }}>
-                        <Checkbox
-                          variant="Primary"
-                          checked={openOnGitHub}
-                          onClick={() => setOpenOnGitHub((v) => !v)}
-                        />
-                        <Box direction="Column" gap="100" grow="Yes">
-                          <Text size="T300">Also create a GitHub issue</Text>
-                          <Text size="T200" style={{ opacity: 0.7 }}>
-                            Opens a pre-filled GitHub issue in addition to the Sentry report.
-                          </Text>
-                        </Box>
-                      </Box>
-                      {!hasDestination && (
-                        <Text size="T200" style={{ opacity: 0.7 }}>
-                          Please select at least one submission method above.
-                        </Text>
-                      )}
-                    </Box>
-                  )}
-
-                  {/* Actions */}
-                  <Box gap="300" justifyContent="End">
-                    <Button size="400" variant="Secondary" fill="None" radii="400" onClick={close}>
-                      <Text size="B400">Cancel</Text>
-                    </Button>
-                    <Button
-                      size="400"
-                      variant="Primary"
-                      radii="400"
-                      disabled={!canSubmit}
-                      onClick={handleSubmit}
-                      after={chipIcon(ArrowRight)}
-                    >
-                      <Text size="B400">{sentryEnabled ? 'Submit Report' : 'Open on GitHub'}</Text>
-                    </Button>
+                )}
+                <Box as="label" gap="200" alignItems="Center" style={{ cursor: 'pointer' }}>
+                  <Checkbox
+                    variant="Primary"
+                    checked={openOnGitHub}
+                    onClick={() => setOpenOnGitHub((v) => !v)}
+                  />
+                  <Box direction="Column" gap="100" grow="Yes">
+                    <Text size="T300">Also create a GitHub issue</Text>
+                    <Text size="T200" style={{ opacity: 0.7 }}>
+                      Opens a pre-filled GitHub issue in addition to the Sentry report.
+                    </Text>
                   </Box>
                 </Box>
-              </Scroll>
+                {!hasDestination && (
+                  <Text size="T200" style={{ opacity: 0.7 }}>
+                    Please select at least one submission method above.
+                  </Text>
+                )}
+              </Box>
+            )}
+
+            {/* Actions */}
+            <Box gap="300" justifyContent="End">
+              <Button size="400" variant="Secondary" fill="None" radii="400" onClick={close}>
+                <Text size="B400">Cancel</Text>
+              </Button>
+              <Button
+                size="400"
+                variant="Primary"
+                radii="400"
+                disabled={!canSubmit}
+                onClick={handleSubmit}
+                after={chipIcon(ArrowRight)}
+              >
+                <Text size="B400">{sentryEnabled ? 'Submit Report' : 'Open on GitHub'}</Text>
+              </Button>
             </Box>
-          </Modal>
-        </FocusTrap>
-      </OverlayCenter>
-    </Overlay>
+          </Box>
+        </Scroll>
+      </Box>
+    </Modal500>
   );
 }
 

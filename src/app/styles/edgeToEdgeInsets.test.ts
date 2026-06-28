@@ -158,6 +158,12 @@ describe('android edge-to-edge inset contract', () => {
     expect(accountSwitcher).toContain('const availableAboveTrigger = Math.max(');
     expect(accountSwitcher).toContain('menuAnchor.y - mobileMenuViewportPadding');
     expect(accountSwitcher).toMatch(/WebkitOverflowScrolling:\s*["']touch["']/);
-    expect(accountSwitcher).toMatch(/<\/Scroll>\s*<Box[\s\S]*App Settings/);
+    expect(accountSwitcher).toContain(
+      'const useModalAccountSwitcher = Boolean(isBottom && isPhoneLayout);'
+    );
+    expect(accountSwitcher).toContain(
+      '<Modal500 requestClose={() => setMenuAnchor(undefined)} fullScreenOnMobile>'
+    );
+    expect(accountSwitcher).toContain('{settingsFooter}');
   });
 });
