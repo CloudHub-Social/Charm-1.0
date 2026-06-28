@@ -438,9 +438,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
     const [uploadBoard, setUploadBoard] = useState(true);
     const [selectedFiles, setSelectedFiles] = useAtom(roomIdToUploadItemsAtomFamily(draftKey));
-    const uploadFamilyObserverAtom = createUploadFamilyObserverAtom(
-      roomUploadAtomFamily,
-      selectedFiles.map((f) => f.file)
+    const uploadFamilyObserverAtom = useMemo(
+      () =>
+        createUploadFamilyObserverAtom(
+          roomUploadAtomFamily,
+          selectedFiles.map((f) => f.file)
+        ),
+      [selectedFiles]
     );
     const uploadStates = useAtomValue(uploadFamilyObserverAtom);
     const uploadBoardHandlers = useRef<UploadBoardImperativeHandlers>();
@@ -896,12 +900,20 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const resetInput = (
       sentReplyDraftSnapshot?: string,
       sentImagePacksSnapshot?: string,
-      options?: { refocus?: boolean }
+      options?: { refocus?: boolean },
+      sentMsgDraftSnapshot?: typeof editor.children
     ) => {
-      setMsgDraft([]);
-      resetEditor(editor);
-      resetEditorHistory(editor);
-      setInputKey((prev) => prev + 1);
+      const shouldClearEditor =
+        sentMsgDraftSnapshot === undefined ||
+        JSON.stringify(editor.children) === JSON.stringify(sentMsgDraftSnapshot);
+
+      if (shouldClearEditor) {
+        setMsgDraft([]);
+        resetEditor(editor);
+        resetEditorHistory(editor);
+        setInputKey((prev) => prev + 1);
+      }
+
       clearSentMessageContext(sentReplyDraftSnapshot, sentImagePacksSnapshot);
       sendTypingStatus(false);
 
@@ -983,13 +995,17 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
     const handleSendUpload = async (
       uploads: UploadSuccess[],
-      options?: { sharedCaption?: ComposerAttachmentCaption }
+      options?: {
+        sharedCaption?: ComposerAttachmentCaption;
+        perMessageProfile?: Awaited<ReturnType<typeof getCurrentlyUsedPerMessageProfileForRoom>>;
+      }
     ) => {
       if (uploadSendInFlightRef.current) return;
       uploadSendInFlightRef.current = true;
 
       try {
         const sharedCaption = options?.sharedCaption ?? getSharedComposerCaption();
+        const sentMsgDraftSnapshot = structuredClone(editor.children);
         const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
         const clearSentUploadReplyDraft = () => {
           if (serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot) {
@@ -1030,7 +1046,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
          * This allows the server to apply the correct profile-based transformations (e.g. font size adjustments) when processing the message,
          * and also allows clients to display an accurate preview of how the message will look with the profile applied while it's being composed.
          */
-        const perMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
+        const perMessageProfile =
+          options?.perMessageProfile ??
+          (await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId));
 
         if (perMessageProfile) {
           contents.forEach((c) => {
@@ -1102,7 +1120,12 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         const successfulUploads: UploadSuccess[] = [];
         const clearConsumedUploadSendContext = (contextOptions?: { refocus?: boolean }) => {
           if (sharedCaptionApplied) {
-            resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot, contextOptions);
+            resetInput(
+              sentReplyDraftSnapshot,
+              sentImagePacksSnapshot,
+              contextOptions,
+              sentMsgDraftSnapshot
+            );
             return;
           }
 
@@ -1151,7 +1174,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             handleCancelUpload(uploads);
             clearConsumedUploadSendContext({ refocus: true });
             setEditingScheduledDelayId(null);
-            setScheduledTime(null);
+            if (!hasDeferredComposerText) {
+              setScheduledTime(null);
+            }
           } catch (error) {
             invalidate();
             handleUploadSendFailure();
@@ -1403,10 +1428,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         }
 
-        if (plainText === '' && selectedFiles.length === 0) return;
-
         // Discord-style edit: when an editDraft is active, send an m.replace event
         // instead of a new message and clear the edit state.
+        if (editDraft && plainText === '') return;
         if (editDraft) {
           const editEvent = room.findEventById(editDraft.eventId);
           if (editEvent) {
@@ -1482,30 +1506,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           return;
         }
 
-        if (selectedFiles.length > 0) {
-          const uploadsReady =
-            uploadStates.length === selectedFiles.length &&
-            uploadStates.every((upload) => upload.status === UploadStatus.Success);
-
-          if (uploadsReady) {
-            const successfulUploads = uploadStates.filter(
-              (upload): upload is UploadSuccess => upload.status === UploadStatus.Success
-            );
-            await handleSendUpload(successfulUploads, {
-              sharedCaption:
-                plainText.length > 0
-                  ? {
-                      body: plainText,
-                      formattedBody: customHtmlEqualsPlainText(customHtml, plainText)
-                        ? undefined
-                        : customHtml,
-                    }
-                  : undefined,
-            });
-          }
-          return;
-        }
-
         // PluralKit-style proxy wrappers (per-message profile proxies) must be stripped
         // *before* building `content`, otherwise we end up sending the wrapper verbatim.
         let proxiedPerMessageProfile:
@@ -1538,6 +1538,41 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             }
           }
         }
+
+        if (selectedFiles.length > 0) {
+          const uploadsReady =
+            uploadStates.length === selectedFiles.length &&
+            uploadStates.every((upload) => upload.status === UploadStatus.Success);
+
+          if (uploadsReady) {
+            let attachmentPerMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(
+              mx,
+              roomId
+            );
+            if (pmpProxyingEnable && proxiedPerMessageProfile) {
+              attachmentPerMessageProfile = proxiedPerMessageProfile;
+            }
+
+            const successfulUploads = uploadStates.filter(
+              (upload): upload is UploadSuccess => upload.status === UploadStatus.Success
+            );
+            await handleSendUpload(successfulUploads, {
+              sharedCaption:
+                plainText.length > 0
+                  ? {
+                      body: plainText,
+                      formattedBody: customHtmlEqualsPlainText(customHtml, plainText)
+                        ? undefined
+                        : customHtml,
+                    }
+                  : undefined,
+              perMessageProfile: attachmentPerMessageProfile,
+            });
+          }
+          return;
+        }
+
+        if (plainText === '') return;
 
         const body = plainText;
         const formattedBody = customHtml;
@@ -2017,7 +2052,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 open={uploadBoard}
                 onToggle={() => setUploadBoard(!uploadBoard)}
                 uploadFamilyObserverAtom={uploadFamilyObserverAtom}
-                onSend={handleSendUpload}
+                onSend={async () => submit()}
                 imperativeHandlerRef={uploadBoardHandlers}
                 onCancel={handleCancelUpload}
               />
