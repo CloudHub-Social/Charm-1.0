@@ -308,7 +308,7 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
               escapeDeactivates: stopPropagation,
             }}
           >
-            <Menu style={{ minWidth: toRem(240) }}>
+            <Menu style={{ minWidth: toRem(240), maxHeight: 'calc(100dvh - 4rem)', overflowY: 'auto' }}>
               <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
                 <Text size="L400" style={{ padding: `${config.space.S100} ${config.space.S200}` }}>
                   Accounts
