@@ -16,6 +16,8 @@ import {
 import { ArrowRight, X, chipIcon, composerIcon } from '$components/icons/phosphor';
 import * as Sentry from '@sentry/react';
 import { Modal500 } from '$components/Modal500';
+import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
+import { isPhoneLayoutDevice } from '$utils/user-agent';
 import { useCloseBugReportModal, useBugReportModalOpen } from '$state/hooks/bugReportModal';
 import { getDebugLogger } from '$utils/debugLogger';
 import { scrubMatrixUrl } from '$utils/sentryScrubbers';
@@ -86,6 +88,7 @@ export function buildGitHubUrl(
 
 function BugReportModal() {
   const close = useCloseBugReportModal();
+  const screenSize = useScreenSizeContext();
   const sentryEnabled = Sentry.isInitialized();
   const [type, setType] = useState<ReportType>('bug');
   const [title, setTitle] = useState('');
@@ -111,6 +114,7 @@ function BugReportModal() {
 
   const [similarIssues, setSimilarIssues] = useState<SimilarIssue[]>([]);
   const [searching, setSearching] = useState(false);
+  const isPhoneLayout = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
 
   useEffect(() => {
     const trimmed = title.trim();
@@ -270,7 +274,10 @@ function BugReportModal() {
 
   return (
     <Modal500 requestClose={close} fullScreenOnMobile>
-      <Box direction="Column" style={{ height: '100%', maxHeight: '100%', overflow: 'hidden' }}>
+      <Box
+        direction="Column"
+        style={{ height: '100%', maxHeight: isPhoneLayout ? '100%' : '90vh', overflow: 'hidden' }}
+      >
         <Header
           size="500"
           style={{
@@ -328,7 +335,6 @@ function BugReportModal() {
                 size="500"
                 variant="SurfaceVariant"
                 radii="400"
-                autoFocus
                 placeholder="Brief description"
                 value={title}
                 onChange={(e) => setTitle((e.target as HTMLInputElement).value)}
