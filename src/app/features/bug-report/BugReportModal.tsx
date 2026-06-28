@@ -35,6 +35,7 @@ type SimilarIssue = {
 const GITHUB_REPO = new URL(APP_SOURCE_URL).pathname.replace(/^\/|\/$/g, '');
 const safeAreaInlineStart = 'var(--sable-safe-area-left, env(safe-area-inset-left, 0px))';
 const safeAreaInlineEnd = 'var(--sable-safe-area-right, env(safe-area-inset-right, 0px))';
+const safeAreaBottomInset = 'var(--sable-safe-area-bottom, env(safe-area-inset-bottom, 0px))';
 
 async function searchSimilarIssues(query: string, signal: AbortSignal): Promise<SimilarIssue[]> {
   // Split into individual words, drop very short ones, and join with OR so that
@@ -298,7 +299,7 @@ function BugReportModal() {
           <Box
             style={{
               paddingTop: config.space.S400,
-              paddingBottom: config.space.S400,
+              paddingBottom: `calc(${config.space.S400} + ${safeAreaBottomInset})`,
               paddingLeft: `calc(${safeAreaInlineStart} + ${config.space.S400})`,
               paddingRight: `calc(${safeAreaInlineEnd} + ${config.space.S200})`,
             }}

@@ -92,6 +92,9 @@ const sectionListStyle = {
 };
 
 const mobileMenuViewportPadding = 12;
+const safeAreaInlineStart = 'var(--sable-safe-area-left, env(safe-area-inset-left, 0px))';
+const safeAreaInlineEnd = 'var(--sable-safe-area-right, env(safe-area-inset-right, 0px))';
+const safeAreaBottomInset = 'var(--sable-safe-area-bottom, env(safe-area-inset-bottom, 0px))';
 
 const getAccountSwitcherMenuMaxHeight = (menuAnchor?: RectCords, isBottom?: boolean): string => {
   const viewportCap =
@@ -531,8 +534,10 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
       direction="Column"
       gap="100"
       style={{
-        padding: config.space.S100,
         paddingTop: 0,
+        paddingBottom: `calc(${config.space.S100} + ${safeAreaBottomInset})`,
+        paddingLeft: `calc(${safeAreaInlineStart} + ${config.space.S100})`,
+        paddingRight: `calc(${safeAreaInlineEnd} + ${config.space.S100})`,
       }}
     >
       <Box direction="Column" gap="100" style={sectionListStyle}>
@@ -580,7 +585,10 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
             >
               <Header
                 style={{
-                  padding: `0 ${config.space.S200} 0 ${config.space.S400}`,
+                  paddingTop: 0,
+                  paddingBottom: 0,
+                  paddingLeft: `calc(${safeAreaInlineStart} + ${config.space.S400})`,
+                  paddingRight: `calc(${safeAreaInlineEnd} + ${config.space.S200})`,
                   borderBottomWidth: config.borderWidth.B300,
                 }}
                 variant="Surface"
@@ -600,7 +608,10 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
                 style={{
                   flex: 1,
                   minHeight: 0,
-                  padding: config.space.S100,
+                  paddingTop: config.space.S100,
+                  paddingBottom: config.space.S100,
+                  paddingLeft: `calc(${safeAreaInlineStart} + ${config.space.S100})`,
+                  paddingRight: `calc(${safeAreaInlineEnd} + ${config.space.S100})`,
                   overscrollBehavior: 'contain',
                   WebkitOverflowScrolling: 'touch',
                 }}

@@ -187,9 +187,24 @@ describe('mobile PWA dogfood contract', () => {
     expect(userRoomProfileRenderer).toContain('<Modal500 requestClose={close} fullScreenOnMobile>');
     expect(userRoomProfileRenderer).toContain('Member Profile');
     expect(bugReportModal).toContain('<Modal500 requestClose={close} fullScreenOnMobile>');
+    expect(bugReportModal).toContain(
+      "const safeAreaBottomInset = 'var(--sable-safe-area-bottom, env(safe-area-inset-bottom, 0px))';"
+    );
+    expect(bugReportModal).toContain(
+      'paddingBottom: `calc(${config.space.S400} + ${safeAreaBottomInset})`'
+    );
     expect(accountSwitcher).toContain('const useModalAccountSwitcher = isPhoneLayout;');
     expect(accountSwitcher).toContain(
       '<Modal500 requestClose={() => setMenuAnchor(undefined)} fullScreenOnMobile>'
+    );
+    expect(accountSwitcher).toContain(
+      "const safeAreaInlineStart = 'var(--sable-safe-area-left, env(safe-area-inset-left, 0px))';"
+    );
+    expect(accountSwitcher).toContain(
+      "const safeAreaInlineEnd = 'var(--sable-safe-area-right, env(safe-area-inset-right, 0px))';"
+    );
+    expect(accountSwitcher).toContain(
+      "const safeAreaBottomInset = 'var(--sable-safe-area-bottom, env(safe-area-inset-bottom, 0px))';"
     );
   });
 
