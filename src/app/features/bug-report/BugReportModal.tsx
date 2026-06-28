@@ -295,7 +295,7 @@ function BugReportModal() {
             {composerIcon(X)}
           </IconButton>
         </Header>
-        <Scroll size="300" hideTrack style={{ minHeight: 0 }}>
+        <Scroll size="300" hideTrack style={{ flex: 1, minHeight: 0 }}>
           <Box
             style={{
               paddingTop: config.space.S400,
