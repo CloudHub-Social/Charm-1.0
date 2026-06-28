@@ -480,7 +480,7 @@ export function RoomTimeline({
         timelineSync.setFocusItem((prev) => {
           if (!prev) return undefined;
           if (prev.eventId !== currentFocusItem.eventId) return prev;
-          return prev.jumpMode === 'notification_live' ? undefined : { ...prev, scrollTo: false };
+          return { ...prev, scrollTo: false };
         });
         return true;
       };

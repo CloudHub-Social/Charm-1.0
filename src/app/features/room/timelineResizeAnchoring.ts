@@ -19,7 +19,7 @@ export const shouldKeepTimelineResizeAnchorLoopRunning = ({
   focusSettleUntil,
   now,
 }: TimelineResizeAnchorState): boolean =>
-  (focusItem?.highlight && now <= focusSettleUntil) || now <= bottomSettleUntil;
+  (Boolean(focusItem) && now <= focusSettleUntil) || now <= bottomSettleUntil;
 
 export const getTimelineResizeAnchorTarget = ({
   atBottom,
@@ -28,7 +28,7 @@ export const getTimelineResizeAnchorTarget = ({
   focusSettleUntil,
   now,
 }: TimelineResizeAnchorTargetState): TimelineResizeAnchorTarget | undefined => {
-  if (focusItem?.highlight && now <= focusSettleUntil) {
+  if (focusItem && now <= focusSettleUntil) {
     return 'focus';
   }
 

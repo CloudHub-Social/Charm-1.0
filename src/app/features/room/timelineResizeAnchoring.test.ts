@@ -17,6 +17,18 @@ describe('timelineResizeAnchoring', () => {
     ).toBe('focus');
   });
 
+  it('keeps a non-highlighted focus item centered while settle protection is active', () => {
+    expect(
+      getTimelineResizeAnchorTarget({
+        atBottom: false,
+        focusItem: { highlight: false },
+        bottomSettleUntil: 0,
+        focusSettleUntil: 2_000,
+        now: 1_500,
+      })
+    ).toBe('focus');
+  });
+
   it('falls back to bottom pinning once the focus settle window expires', () => {
     expect(
       getTimelineResizeAnchorTarget({
@@ -58,6 +70,17 @@ describe('timelineResizeAnchoring', () => {
         focusItem: undefined,
         bottomSettleUntil: 2_000,
         focusSettleUntil: 0,
+        now: 1_500,
+      })
+    ).toBe(true);
+  });
+
+  it('keeps the loop running for non-highlighted focus settles', () => {
+    expect(
+      shouldKeepTimelineResizeAnchorLoopRunning({
+        focusItem: { highlight: false },
+        bottomSettleUntil: 0,
+        focusSettleUntil: 2_000,
         now: 1_500,
       })
     ).toBe(true);
