@@ -15,7 +15,7 @@ type SystemBarStyleState = {
 };
 
 export function SystemBarStyleProvider({ children }: { children: ReactNode }) {
-  const [{ owner, safeAreaFill }, setState] = useState<SystemBarStyleState>({
+  const [{ safeAreaFill }, setState] = useState<SystemBarStyleState>({
     owner: null,
     safeAreaFill: undefined,
   });
@@ -52,10 +52,11 @@ export function useSystemBarSafeAreaFill(fill: string | undefined) {
   const ownerRef = useRef(Symbol('system-bar-safe-area-fill'));
 
   useLayoutEffect(() => {
-    registerSafeAreaFill(ownerRef.current, fill);
+    const owner = ownerRef.current;
+    registerSafeAreaFill(owner, fill);
 
     return () => {
-      unregisterSafeAreaFill(ownerRef.current);
+      unregisterSafeAreaFill(owner);
     };
   }, [fill, registerSafeAreaFill, unregisterSafeAreaFill]);
 }
