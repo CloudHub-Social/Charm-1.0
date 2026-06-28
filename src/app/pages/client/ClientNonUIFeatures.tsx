@@ -114,6 +114,11 @@ import {
   resolvePreferredNotificationTransportProvider,
   type NotificationTransportPlatform,
 } from '$features/settings/notifications/NotificationTransport';
+import {
+  useServiceWorkerMessageListener,
+  useVisibilityAndPageShowListeners,
+  useVisibilityFocusBlurPageShowListeners,
+} from './runtimeListeners';
 const pushRelayLog = createDebugLogger('push-relay');
 const transportLog = createDebugLogger('push-transport');
 function clearMediaSessionQuickly(): void {
@@ -198,19 +203,14 @@ function WebPushStartupReconciler() {
     notificationDeviceScope,
     isActiveNotificationClient
   );
-
-  useEffect(() => {
-    const syncVisibilityState = () => setVisibilityState(document.visibilityState);
-    const handlePageShow = () => syncVisibilityState();
-
-    document.addEventListener('visibilitychange', syncVisibilityState);
-    window.addEventListener('pageshow', handlePageShow);
-
-    return () => {
-      document.removeEventListener('visibilitychange', syncVisibilityState);
-      window.removeEventListener('pageshow', handlePageShow);
-    };
-  }, []);
+  const syncVisibilityState = useCallback(
+    () => setVisibilityState(document.visibilityState),
+    [setVisibilityState]
+  );
+  useVisibilityAndPageShowListeners({
+    onVisibilityChange: syncVisibilityState,
+    onPageShow: syncVisibilityState,
+  });
 
   useEffect(() => {
     if (!usePushNotifications || isTauri()) return;
@@ -892,94 +892,88 @@ const getPushTelemetryLogLevel = (event: string): ServiceWorkerLogLevel => {
  * The SW cannot directly import Sentry, so it posts messages to the main thread.
  */
 function ServiceWorkerMetricsHandler() {
+  const requestTelemetryDrain = useCallback(() => {
+    if (document.visibilityState !== 'visible') return;
+    postToServiceWorker({
+      type: 'drainPushTelemetry',
+      requestId: `push-telemetry-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    });
+  }, []);
+
+  const handleMessage = useCallback((event: MessageEvent) => {
+    if (event.data?.type === 'sentryMetric') {
+      const { metricName, value, attributes } = event.data as {
+        metricName: string;
+        value: number;
+        attributes?: Record<string, string | number | boolean>;
+      };
+
+      Sentry.metrics.distribution(metricName, value, {
+        attributes: attributes ?? {},
+      });
+      return;
+    }
+
+    if (event.data?.type === 'sentryBreadcrumb') {
+      const { category, message, level, data } = event.data as {
+        category: string;
+        message: string;
+        level?: 'debug' | 'info' | 'warning' | 'error';
+        data?: Record<string, string | number | boolean | undefined>;
+      };
+      Sentry.addBreadcrumb({ category, message, level, data });
+      logServiceWorkerMessage(category, message, level ?? 'info', data);
+      return;
+    }
+
+    if (event.data?.type === 'pushTelemetryRecords') {
+      const records: unknown[] = Array.isArray(event.data.records) ? event.data.records : [];
+      records.forEach((record) => {
+        const pushRecord = record as {
+          id?: string;
+          event?: string;
+          timestamp?: number;
+          data?: Record<string, string | number | boolean>;
+        };
+        if (!pushRecord.event) return;
+        const level = getPushTelemetryLogLevel(pushRecord.event);
+        const logData = {
+          push_event: pushRecord.event,
+          push_record_id: pushRecord.id,
+          push_record_timestamp: pushRecord.timestamp,
+          ...pushRecord.data,
+        };
+        Sentry.addBreadcrumb({
+          category: 'service_worker.push',
+          message: `SW push ${pushRecord.event}`,
+          level,
+          data: logData,
+        });
+        logServiceWorkerMessage(
+          'service_worker.push',
+          `SW push ${pushRecord.event}`,
+          level,
+          logData
+        );
+        Sentry.metrics.count('sable.sw.push_telemetry', 1, {
+          attributes: { event: pushRecord.event },
+        });
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return undefined;
-
-    const requestTelemetryDrain = () => {
-      if (document.visibilityState !== 'visible') return;
-      postToServiceWorker({
-        type: 'drainPushTelemetry',
-        requestId: `push-telemetry-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      });
-    };
-
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'sentryMetric') {
-        const { metricName, value, attributes } = event.data as {
-          metricName: string;
-          value: number;
-          attributes?: Record<string, string | number | boolean>;
-        };
-
-        Sentry.metrics.distribution(metricName, value, {
-          attributes: attributes ?? {},
-        });
-        return;
-      }
-
-      if (event.data?.type === 'sentryBreadcrumb') {
-        const { category, message, level, data } = event.data as {
-          category: string;
-          message: string;
-          level?: 'debug' | 'info' | 'warning' | 'error';
-          data?: Record<string, string | number | boolean | undefined>;
-        };
-        Sentry.addBreadcrumb({ category, message, level, data });
-        logServiceWorkerMessage(category, message, level ?? 'info', data);
-        return;
-      }
-
-      if (event.data?.type === 'pushTelemetryRecords') {
-        const records: unknown[] = Array.isArray(event.data.records) ? event.data.records : [];
-        records.forEach((record) => {
-          const pushRecord = record as {
-            id?: string;
-            event?: string;
-            timestamp?: number;
-            data?: Record<string, string | number | boolean>;
-          };
-          if (!pushRecord.event) return;
-          const level = getPushTelemetryLogLevel(pushRecord.event);
-          const logData = {
-            push_event: pushRecord.event,
-            push_record_id: pushRecord.id,
-            push_record_timestamp: pushRecord.timestamp,
-            ...pushRecord.data,
-          };
-          Sentry.addBreadcrumb({
-            category: 'service_worker.push',
-            message: `SW push ${pushRecord.event}`,
-            level,
-            data: logData,
-          });
-          logServiceWorkerMessage(
-            'service_worker.push',
-            `SW push ${pushRecord.event}`,
-            level,
-            logData
-          );
-          Sentry.metrics.count('sable.sw.push_telemetry', 1, {
-            attributes: { event: pushRecord.event },
-          });
-        });
-      }
-    };
-
-    const handleVisibilityChange = () => requestTelemetryDrain();
-    const handlePageShow = () => requestTelemetryDrain();
-
     requestTelemetryDrain();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('pageshow', handlePageShow);
     navigator.serviceWorker.ready.then(requestTelemetryDrain).catch(() => undefined);
-
-    navigator.serviceWorker.addEventListener('message', handleMessage);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('pageshow', handlePageShow);
-      navigator.serviceWorker.removeEventListener('message', handleMessage);
-    };
-  }, []);
+    return undefined;
+  }, [requestTelemetryDrain]);
+  useVisibilityAndPageShowListeners({
+    enabled: 'serviceWorker' in navigator,
+    onVisibilityChange: requestTelemetryDrain,
+    onPageShow: requestTelemetryDrain,
+  });
+  useServiceWorkerMessageListener(handleMessage);
 
   return null;
 }
@@ -992,10 +986,8 @@ export function HandleNotificationClick() {
   const setActiveSessionId = useSetAtom(activeSessionIdAtom);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (!('serviceWorker' in navigator) || isTauri()) return undefined;
-
-    const handleMessage = (ev: MessageEvent) => {
+  const handleMessage = useCallback(
+    (ev: MessageEvent) => {
       const { data } = ev;
       if (!data || data.type !== 'notificationClick') return;
 
@@ -1116,11 +1108,10 @@ export function HandleNotificationClick() {
         navigateToServiceWorkerUrl(navigate, targetUrl ?? navigateUrl ?? '');
         acknowledgeHandledClick();
       }
-    };
-
-    navigator.serviceWorker.addEventListener('message', handleMessage);
-    return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
-  }, [setActiveSessionId, navigate]);
+    },
+    [navigate, setActiveSessionId]
+  );
+  useServiceWorkerMessageListener(handleMessage, !isTauri());
 
   return null;
 }
@@ -1133,61 +1124,59 @@ function SyncNotificationSettingsWithServiceWorker() {
   );
   const [clearNotificationsOnRead] = useSetting(settingsAtom, 'clearNotificationsOnRead');
   const [focusMode] = useSetting(settingsAtom, 'focusMode');
+  const heartbeatIntervalIdRef = useRef<number | undefined>(undefined);
+
+  const postVisibility = useCallback(() => {
+    const visible = document.visibilityState === 'visible';
+    const payload = { type: 'setAppVisible', visible };
+
+    navigator.serviceWorker.controller?.postMessage(payload);
+    navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage(payload));
+  }, []);
+
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatIntervalIdRef.current !== undefined) {
+      window.clearInterval(heartbeatIntervalIdRef.current);
+      heartbeatIntervalIdRef.current = undefined;
+    }
+  }, []);
+
+  const restartHeartbeat = useCallback(() => {
+    stopHeartbeat();
+    postVisibility();
+    if (document.visibilityState === 'visible' && document.hasFocus()) {
+      heartbeatIntervalIdRef.current = window.setInterval(postVisibility, 10_000);
+    }
+  }, [postVisibility, stopHeartbeat]);
+
+  const handleVisibilityChange = useCallback(() => {
+    if (document.visibilityState === 'visible') {
+      restartHeartbeat();
+      return;
+    }
+    postVisibility();
+    stopHeartbeat();
+  }, [postVisibility, restartHeartbeat, stopHeartbeat]);
+
+  const handleFocus = useCallback(() => restartHeartbeat(), [restartHeartbeat]);
+  const handleBlur = useCallback(() => postVisibility(), [postVisibility]);
+  const handlePageShow = useCallback(() => restartHeartbeat(), [restartHeartbeat]);
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return undefined;
-
-    let heartbeatIntervalId: number | undefined;
-
-    const postVisibility = () => {
-      const visible = document.visibilityState === 'visible';
-      const payload = { type: 'setAppVisible', visible };
-
-      navigator.serviceWorker.controller?.postMessage(payload);
-      navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage(payload));
-    };
-
-    const stopHeartbeat = () => {
-      if (heartbeatIntervalId !== undefined) {
-        window.clearInterval(heartbeatIntervalId);
-        heartbeatIntervalId = undefined;
-      }
-    };
-
-    const restartHeartbeat = () => {
-      stopHeartbeat();
-      postVisibility();
-      if (document.visibilityState === 'visible' && document.hasFocus()) {
-        heartbeatIntervalId = window.setInterval(postVisibility, 10_000);
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') restartHeartbeat();
-      else {
-        postVisibility();
-        stopHeartbeat();
-      }
-    };
-
-    const handleFocus = () => restartHeartbeat();
-    const handleBlur = () => postVisibility();
-    const handlePageShow = () => restartHeartbeat();
-
-    restartHeartbeat();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('blur', handleBlur);
-    window.addEventListener('pageshow', handlePageShow);
+    handleVisibilityChange();
 
     return () => {
       stopHeartbeat();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('blur', handleBlur);
-      window.removeEventListener('pageshow', handlePageShow);
     };
-  }, []);
+  }, [handleVisibilityChange, stopHeartbeat]);
+  useVisibilityFocusBlurPageShowListeners({
+    enabled: 'serviceWorker' in navigator,
+    onVisibilityChange: handleVisibilityChange,
+    onFocus: handleFocus,
+    onBlur: handleBlur,
+    onPageShow: handlePageShow,
+  });
 
   useEffect(() => {
     if (!('serviceWorker' in navigator) || isTauri()) return;
@@ -1296,29 +1285,25 @@ function SentryTagsFeature() {
 function HandleDecryptPushEvent() {
   const mx = useMatrixClient();
 
-  useEffect(() => {
-    if (!('serviceWorker' in navigator)) return undefined;
+  const handleMessage = useCallback(
+    async (ev: MessageEvent) => {
+      const RETRYABLE_DECRYPT_ERROR_PATTERNS = [
+        "The sender's device has not sent us the keys",
+        'Unknown inbound session',
+        'Decryption error',
+        'MEGOLM_UNKNOWN_INBOUND_SESSION_ID',
+        'OLM_UNKNOWN_MESSAGE_INDEX',
+      ] as const;
+      const sleep = (ms: number) =>
+        new Promise<void>((resolve) => {
+          window.setTimeout(resolve, ms);
+        });
+      const isRetryablePushDecryptError = (error: unknown): error is Error =>
+        error instanceof Error &&
+        RETRYABLE_DECRYPT_ERROR_PATTERNS.some((pattern) => error.message.includes(pattern));
 
-    const RETRYABLE_DECRYPT_ERROR_PATTERNS = [
-      "The sender's device has not sent us the keys",
-      'Unknown inbound session',
-      'Decryption error',
-      'MEGOLM_UNKNOWN_INBOUND_SESSION_ID',
-      'OLM_UNKNOWN_MESSAGE_INDEX',
-    ] as const;
-    const sleep = (ms: number) =>
-      new Promise<void>((resolve) => {
-        window.setTimeout(resolve, ms);
-      });
-    const isRetryablePushDecryptError = (error: unknown): error is Error =>
-      error instanceof Error &&
-      RETRYABLE_DECRYPT_ERROR_PATTERNS.some((pattern) => error.message.includes(pattern));
-
-    const handleMessage = async (ev: MessageEvent) => {
       const { data } = ev;
-      if (!data) return;
-
-      if (data.type !== 'decryptPushEvent') return;
+      if (!data || data.type !== 'decryptPushEvent') return;
 
       const { rawEvent } = data as { rawEvent: Record<string, unknown> };
       const eventId = rawEvent.event_id as string;
@@ -1497,11 +1482,10 @@ function HandleDecryptPushEvent() {
         };
         if (!postToServiceWorkerSource(ev.source, response)) postToServiceWorker(response);
       }
-    };
-
-    navigator.serviceWorker.addEventListener('message', handleMessage);
-    return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
-  }, [mx]);
+    },
+    [mx]
+  );
+  useServiceWorkerMessageListener(handleMessage);
 
   return null;
 }
@@ -1628,10 +1612,8 @@ function ReminderBanners() {
   const navigate = useNavigate();
   const setInAppBanner = useSetAtom(inAppBannerAtom);
 
-  useEffect(() => {
-    if (!('serviceWorker' in navigator)) return undefined;
-
-    const handler = (event: MessageEvent) => {
+  const handler = useCallback(
+    (event: MessageEvent) => {
       if (event.data?.type !== 'remindersInApp') return;
       const reminders: Array<{
         bookmarkId: string;
@@ -1651,11 +1633,10 @@ function ReminderBanners() {
           navigate(getInboxBookmarksPath());
         },
       });
-    };
-
-    navigator.serviceWorker.addEventListener('message', handler);
-    return () => navigator.serviceWorker.removeEventListener('message', handler);
-  }, [navigate, setInAppBanner]);
+    },
+    [navigate, setInAppBanner]
+  );
+  useServiceWorkerMessageListener(handler);
 
   return null;
 }
