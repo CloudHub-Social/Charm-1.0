@@ -193,6 +193,10 @@ function useGifSearch(
 
       setLoading(true);
       setError(null);
+      setGifs((old) => ({
+        ...old,
+        gifs: [],
+      }));
 
       gifSearch(trimmedQuery);
 
@@ -780,7 +784,6 @@ export function EmojiBoard({
   );
 
   const searchedItems = emojiResult?.items.slice(0, 100);
-  const searchedGifItems = gifResult?.items.slice(0, 100) ?? favoriteGifs;
   const klipyApiKey = clientConfig.gifs?.klipyApiKey ?? '';
   const {
     gifs,
@@ -795,6 +798,9 @@ export function EmojiBoard({
     gifs
   );
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(true);
+  const searchedGifItems = showFavoritesOnly
+    ? (gifResult?.items.slice(0, 100) ?? favoriteGifs)
+    : (gifResult?.items.slice(0, 100) ?? []);
 
   useEffect(() => {
     if (active && activeTab === EmojiBoardTab.Gif) return;
