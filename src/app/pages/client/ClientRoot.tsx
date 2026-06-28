@@ -326,7 +326,11 @@ export function ClientRoot({ children }: ClientRootProps) {
     const rootGuardTarget = getClientRootGuardTarget(location.pathname, location.search);
     const historyIdx = (window.history.state as { idx?: number } | null)?.idx;
 
-    if (!rootGuardTarget || rootGuardTarget === currentPath || (historyIdx !== undefined && historyIdx > 0)) {
+    if (
+      !rootGuardTarget ||
+      rootGuardTarget === currentPath ||
+      (historyIdx !== undefined && historyIdx > 0)
+    ) {
       insertedRootGuardRef.current = undefined;
       return;
     }

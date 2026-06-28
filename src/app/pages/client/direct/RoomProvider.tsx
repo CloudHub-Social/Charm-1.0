@@ -24,7 +24,8 @@ export function DirectRouteRoomProvider({ children }: { children: ReactNode }) {
   const liveDirectEvent = getAccountData(mx, EventType.Direct);
   const liveDirects = liveDirectEvent ? getMDirects(liveDirectEvent) : undefined;
   const isLiveDirectRoom = !!room && liveDirects?.has(room.roomId);
-  const isDirectClassificationPending = !!room && isJoinedRoom && !isKnownDirectRoom && !liveDirects;
+  const isDirectClassificationPending =
+    !!room && isJoinedRoom && !isKnownDirectRoom && !liveDirects;
 
   if (!room) {
     return <JoinBeforeNavigate roomIdOrAlias={roomIdOrAlias!} eventId={eventId} />;

@@ -18,6 +18,8 @@ describe('getClientRootGuardTarget', () => {
   it('does not guard section roots or transient notification restore routes', () => {
     expect(getClientRootGuardTarget('/home/', '')).toBeUndefined();
     expect(getClientRootGuardTarget('/direct/', '')).toBeUndefined();
-    expect(getClientRootGuardTarget('/to/%40alice%3Aexample/!room%3Aexample/%24event', '')).toBeUndefined();
+    expect(
+      getClientRootGuardTarget('/to/%40alice%3Aexample/!room%3Aexample/%24event', '')
+    ).toBeUndefined();
   });
 });
