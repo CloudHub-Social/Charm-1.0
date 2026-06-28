@@ -72,7 +72,7 @@ describe('android edge-to-edge inset contract', () => {
     expect(systemBarShell).toContain("'--sable-safe-area-bottom': '0px'");
     expect(systemBarShell).toContain('backgroundColor: enabled');
     expect(systemBarShell).toContain("safeAreaFill ?? 'var(--sable-bg-container)'");
-    expect(systemBarShell).toContain('`var(--sable-safe-bottom, ${safeAreaBottom})`');
+    expect(systemBarShell).toContain('paddingBottom: 0');
     expect(systemBarStyle).toContain('const [safeAreaFill, setSafeAreaFill] = useState<string>()');
     expect(systemBarStyle).toContain('setSafeAreaFill(fill);');
     expect(room).toContain("useSystemBarSafeAreaFill('var(--sable-surface-container)')");

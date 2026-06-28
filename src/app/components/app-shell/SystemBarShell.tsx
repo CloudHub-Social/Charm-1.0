@@ -71,8 +71,7 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
             // background container color in place.
             backgroundColor: enabled ? (safeAreaFill ?? 'var(--sable-bg-container)') : undefined,
             paddingTop: enabled ? safeAreaTop : 0,
-            paddingBottom:
-              enabled && !needsBottomSystemBar ? `var(--sable-safe-bottom, ${safeAreaBottom})` : 0,
+            paddingBottom: 0,
             paddingLeft: enabled ? safeAreaLeft : 0,
             paddingRight: enabled ? safeAreaRight : 0,
           } as CSSProperties
