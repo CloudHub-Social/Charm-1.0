@@ -5,6 +5,7 @@ import { isKeyHotkey } from 'is-hotkey';
 import { useAtom, useAtomValue } from 'jotai';
 import { useSystemBarSafeAreaFill } from '$components/app-shell/useSystemBarStyle';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
+import { isPhoneLayoutDevice } from '$utils/user-agent';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { PowerLevelsContextProvider, usePowerLevels } from '$hooks/usePowerLevels';
@@ -38,8 +39,10 @@ export function Room() {
   const targetEvent = useRoomEvent(room, eventId ?? '', undefined, Boolean(eventId));
   const jumpMode =
     searchParams.get('jumpMode') === 'notification_live' ? 'notification_live' : 'history_context';
+  const screenSize = useScreenSizeContext();
+  const isSinglePaneRoomLayout = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
 
-  useSystemBarSafeAreaFill('var(--sable-surface-container)');
+  useSystemBarSafeAreaFill(isSinglePaneRoomLayout ? 'var(--sable-surface-container)' : undefined);
 
   // Log room mount
   useEffect(() => {
@@ -52,7 +55,6 @@ export function Room() {
   const [isDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
   const [isWidgetDrawerOpen] = useSetting(settingsAtom, 'isWidgetDrawer');
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
-  const screenSize = useScreenSizeContext();
 
   // Log drawer state changes
   useEffect(() => {

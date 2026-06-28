@@ -1,5 +1,13 @@
 import type { ReactNode } from 'react';
-import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 type SystemBarStyleContextValue = {
   safeAreaFill: string | undefined;
@@ -19,19 +27,21 @@ export function SystemBarStyleProvider({ children }: { children: ReactNode }) {
     owner: null,
     safeAreaFill: undefined,
   });
+  const registerSafeAreaFill = useCallback((nextOwner: symbol, fill: string | undefined) => {
+    setState({ owner: nextOwner, safeAreaFill: fill });
+  }, []);
+  const unregisterSafeAreaFill = useCallback((nextOwner: symbol) => {
+    setState((current) =>
+      current.owner === nextOwner ? { owner: null, safeAreaFill: undefined } : current
+    );
+  }, []);
   const value = useMemo(
     () => ({
       safeAreaFill,
-      registerSafeAreaFill: (nextOwner: symbol, fill: string | undefined) => {
-        setState({ owner: nextOwner, safeAreaFill: fill });
-      },
-      unregisterSafeAreaFill: (nextOwner: symbol) => {
-        setState((current) =>
-          current.owner === nextOwner ? { owner: null, safeAreaFill: undefined } : current
-        );
-      },
+      registerSafeAreaFill,
+      unregisterSafeAreaFill,
     }),
-    [safeAreaFill]
+    [registerSafeAreaFill, safeAreaFill, unregisterSafeAreaFill]
   );
 
   return <SystemBarStyleContext.Provider value={value}>{children}</SystemBarStyleContext.Provider>;

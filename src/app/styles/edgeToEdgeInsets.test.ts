@@ -76,7 +76,13 @@ describe('android edge-to-edge inset contract', () => {
     expect(systemBarShell).toContain("removeProperty('--sable-visible-height')");
     expect(systemBarShell).toContain("removeProperty('--sable-safe-bottom')");
     expect(systemBarStyle).toContain(
-      'registerSafeAreaFill: (nextOwner: symbol, fill: string | undefined) =>'
+      'registerSafeAreaFill: (owner: symbol, fill: string | undefined) => void;'
+    );
+    expect(systemBarStyle).toContain(
+      'const registerSafeAreaFill = useCallback((nextOwner: symbol, fill: string | undefined) => {'
+    );
+    expect(systemBarStyle).toContain(
+      'const unregisterSafeAreaFill = useCallback((nextOwner: symbol) => {'
     );
     expect(systemBarStyle).toContain(
       'current.owner === nextOwner ? { owner: null, safeAreaFill: undefined } : current'
@@ -84,7 +90,10 @@ describe('android edge-to-edge inset contract', () => {
     expect(systemBarStyle).toContain(
       "const ownerRef = useRef(Symbol('system-bar-safe-area-fill'))"
     );
-    expect(room).toContain("useSystemBarSafeAreaFill('var(--sable-surface-container)')");
+    expect(room).toContain(
+      'const isSinglePaneRoomLayout = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice()'
+    );
+    expect(room).toContain("isSinglePaneRoomLayout ? 'var(--sable-surface-container)' : undefined");
     expect(systemBarShell).toContain("const needsBottomSystemBar = tauriOs === 'android'");
     expect(systemBarShell).toContain('var(--sable-bg-container-line)');
     expect(systemBarShell).toContain("borderTop: '1px solid var(--sable-bg-container-line)'");
@@ -104,7 +113,7 @@ describe('android edge-to-edge inset contract', () => {
     expect(pageStyles).not.toContain('--sable-inset-');
     expect(pageStyles).toContain('var(--sable-safe-area-bottom, 0px)');
     expect(sidebarStyles).not.toContain('--sable-inset-');
-    expect(roomView).toContain('var(--sable-safe-bottom, var(--sable-safe-area-bottom, 0px))');
+    expect(roomView).toContain('paddingBottom: 0');
     expect(roomViewTypingStyles).not.toContain('--sable-inset-');
     expect(threadDrawerStyles).not.toContain('--sable-inset-');
   });
