@@ -434,6 +434,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const restoredSilentReplyRef = useRef<boolean | null>(null);
     const isMountedRef = useRef(true);
     const submitInFlightRef = useRef(false);
+    const uploadSendInFlightRef = useRef(false);
 
     const [uploadBoard, setUploadBoard] = useState(true);
     const [selectedFiles, setSelectedFiles] = useAtom(roomIdToUploadItemsAtomFamily(draftKey));
@@ -984,242 +985,252 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       uploads: UploadSuccess[],
       options?: { sharedCaption?: ComposerAttachmentCaption }
     ) => {
-      const sharedCaption = options?.sharedCaption ?? getSharedComposerCaption();
-      const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
-      const clearSentUploadReplyDraft = () => {
-        if (serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot) {
-          setReplyDraft(replyDraftBase);
-        }
-      };
+      if (uploadSendInFlightRef.current) return;
+      uploadSendInFlightRef.current = true;
 
-      const matchingFiles = uploads
-        .map((upload) => selectedFiles.find((f) => f.file === upload.file))
-        .filter((fileItem): fileItem is TUploadItem => !!fileItem);
-      const sendPlan = createAttachmentSendPlan(matchingFiles, sharedCaption);
-      const plannedFiles = applyAttachmentSendPlan(matchingFiles, sharedCaption);
-      const sharedCaptionApplied = sendPlan.some((caption) => !!caption);
-      const hasDeferredComposerText = Boolean(sharedCaption && !sharedCaptionApplied);
+      try {
+        const sharedCaption = options?.sharedCaption ?? getSharedComposerCaption();
+        const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
+        const clearSentUploadReplyDraft = () => {
+          if (serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot) {
+            setReplyDraft(replyDraftBase);
+          }
+        };
 
-      const preparedUploadsPromises = uploads.map(async (upload) => {
-        const fileItem = plannedFiles.find((f) => f.file === upload.file);
-        if (!fileItem) throw new Error('Broken upload');
+        const matchingFiles = uploads
+          .map((upload) => selectedFiles.find((f) => f.file === upload.file))
+          .filter((fileItem): fileItem is TUploadItem => !!fileItem);
+        const sendPlan = createAttachmentSendPlan(matchingFiles, sharedCaption);
+        const plannedFiles = applyAttachmentSendPlan(matchingFiles, sharedCaption);
+        const sharedCaptionApplied = sendPlan.some((caption) => !!caption);
+        const hasDeferredComposerText = Boolean(sharedCaption && !sharedCaptionApplied);
 
-        if (fileItem.file.type.startsWith('image')) {
-          return { upload, content: await getImageMsgContent(mx, fileItem, upload.mxc) };
-        }
-        if (fileItem.file.type.startsWith('video')) {
-          return { upload, content: await getVideoMsgContent(mx, fileItem, upload.mxc) };
-        }
-        if (fileItem.file.type.startsWith('audio')) {
-          return { upload, content: getAudioMsgContent(fileItem, upload.mxc) };
-        }
-        return { upload, content: getFileMsgContent(fileItem, upload.mxc) };
-      });
-      const preparedUploads = fulfilledPromiseSettledResult(
-        await Promise.allSettled(preparedUploadsPromises)
-      );
-      const contents = preparedUploads.map(({ content }) => content);
+        const preparedUploadsPromises = uploads.map(async (upload) => {
+          const fileItem = plannedFiles.find((f) => f.file === upload.file);
+          if (!fileItem) throw new Error('Broken upload');
 
-      /**
-       * the currently with the room associated per-message profile, if any, so that it can be included in the message content when sending.
-       * This allows the server to apply the correct profile-based transformations (e.g. font size adjustments) when processing the message,
-       * and also allows clients to display an accurate preview of how the message will look with the profile applied while it's being composed.
-       */
-      const perMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
-
-      if (perMessageProfile) {
-        contents.forEach((c) => {
-          // We intentionally mutate the objects here to avoid unnecessary copying
-          // mutating should be unproblematic here, since contents isn't a react component,
-          // or used for rendering
-          c[prefix.MATRIX_UNSTABLE_PER_MESSAGE_PROFILE_PROPERTY_NAME] =
-            convertPerMessageProfileToBeeperFormat(perMessageProfile, false);
+          if (fileItem.file.type.startsWith('image')) {
+            return { upload, content: await getImageMsgContent(mx, fileItem, upload.mxc) };
+          }
+          if (fileItem.file.type.startsWith('video')) {
+            return { upload, content: await getVideoMsgContent(mx, fileItem, upload.mxc) };
+          }
+          if (fileItem.file.type.startsWith('audio')) {
+            return { upload, content: getAudioMsgContent(fileItem, upload.mxc) };
+          }
+          return { upload, content: getFileMsgContent(fileItem, upload.mxc) };
         });
-      }
-
-      if (contents.length > 0) {
-        if (!hasDeferredComposerText) {
-          const replyContent = getReplyContent(replyDraft, room);
-          if (Object.keys(replyContent).length > 0) {
-            contents[0]!['m.relates_to'] = replyContent;
-          }
-        }
-
-        const mentionData = sharedCaptionApplied
-          ? getMentions(mx, roomId, editor)
-          : { room: false, users: new Set<string>() };
-        const replyMentions = getReplyMentionData(
-          hasDeferredComposerText ? undefined : replyDraft,
-          replyEvent,
-          silentReply,
-          sharedCaptionApplied ? mentionData.room : false
+        const preparedUploads = fulfilledPromiseSettledResult(
+          await Promise.allSettled(preparedUploadsPromises)
         );
-        if (replyMentions?.user_ids) {
-          replyMentions.user_ids.forEach((id) => mentionData.users.add(id));
+        const contents = preparedUploads.map(({ content }) => content);
+
+        /**
+         * the currently with the room associated per-message profile, if any, so that it can be included in the message content when sending.
+         * This allows the server to apply the correct profile-based transformations (e.g. font size adjustments) when processing the message,
+         * and also allows clients to display an accurate preview of how the message will look with the profile applied while it's being composed.
+         */
+        const perMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
+
+        if (perMessageProfile) {
+          contents.forEach((c) => {
+            // We intentionally mutate the objects here to avoid unnecessary copying
+            // mutating should be unproblematic here, since contents isn't a react component,
+            // or used for rendering
+            c[prefix.MATRIX_UNSTABLE_PER_MESSAGE_PROFILE_PROPERTY_NAME] =
+              convertPerMessageProfileToBeeperFormat(perMessageProfile, false);
+          });
         }
 
-        if (mentionData.users.size > 0 || mentionData.room || replyMentions?.room === true) {
-          contents[0]!['m.mentions'] = getMentionContent(
-            Array.from(mentionData.users),
-            mentionData.room || replyMentions?.room === true
-          );
-        }
-
-        if (sharedCaptionApplied) {
-          contents[0]![prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
-            imagePacksUsedRef.current.toJSON();
-
-          const links = getLinks(editor.children);
-          contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME] = [];
-          links?.forEach((link) =>
-            contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME].push({
-              matched_url: link,
-            })
-          );
-        }
-      }
-
-      const invalidate = () =>
-        queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
-      const sendPreparedUploadsSequentially = async (
-        sendContent: (preparedUpload: { upload: UploadSuccess; content: IContent }) => Promise<void>
-      ) => {
-        await preparedUploads.reduce(
-          (promise, preparedUpload) => promise.then(() => sendContent(preparedUpload)),
-          Promise.resolve()
-        );
-      };
-
-      const sentImagePacksSnapshot = JSON.stringify(imagePacksUsedRef.current.toJSON());
-      const successfulUploads: UploadSuccess[] = [];
-      const clearConsumedUploadSendContext = (contextOptions?: { refocus?: boolean }) => {
-        if (sharedCaptionApplied) {
-          resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot, contextOptions);
-          return;
-        }
-
-        if (hasDeferredComposerText) {
-          if (contextOptions?.refocus) focusComposer();
-          return;
-        }
-
-        clearSentUploadReplyDraft();
-        clearSentMessageContext(sentReplyDraftSnapshot, sentImagePacksSnapshot);
-        sendTypingStatus(false);
-        if (contextOptions?.refocus) focusComposer();
-      };
-      const handlePartialUploadBatchSuccess = () => {
-        if (successfulUploads.length === 0) return;
-
-        handleCancelUpload(successfulUploads);
-        clearConsumedUploadSendContext();
-      };
-      const handleUploadSendFailure = () => {
-        if (successfulUploads.length > 0) {
-          handlePartialUploadBatchSuccess();
-          return;
-        }
-
-        handleCancelUpload(uploads);
-      };
-
-      if (scheduledTime) {
-        try {
-          const delayMs = computeDelayMs(scheduledTime);
-          if (editingScheduledDelayId) {
-            await cancelDelayedEvent(mx, editingScheduledDelayId);
-          }
-
-          await sendPreparedUploadsSequentially(async ({ upload, content }) => {
-            if (isEncrypted) {
-              await sendDelayedMessageE2EE(mx, roomId, room, content, delayMs);
-            } else {
-              await sendDelayedMessage(mx, roomId, content, delayMs);
+        if (contents.length > 0) {
+          if (!hasDeferredComposerText) {
+            const replyContent = getReplyContent(replyDraft, room);
+            if (Object.keys(replyContent).length > 0) {
+              contents[0]!['m.relates_to'] = replyContent;
             }
-            successfulUploads.push(upload);
-          });
+          }
 
-          invalidate();
-          handleCancelUpload(uploads);
-          clearConsumedUploadSendContext({ refocus: true });
-          setEditingScheduledDelayId(null);
-          setScheduledTime(null);
-        } catch (error) {
-          invalidate();
-          handleUploadSendFailure();
-          debugLog.error('message', 'Failed to schedule uploaded file message', {
-            roomId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          log.error('failed to schedule uploaded message', { roomId }, error);
-          throw error;
-        }
-      } else {
-        if (editingScheduledDelayId) {
-          try {
-            await cancelDelayedEvent(mx, editingScheduledDelayId);
-            invalidate();
-            setEditingScheduledDelayId(null);
-          } catch {
-            debugLog.error(
-              'message',
-              'Failed to cancel scheduled event before immediate file send',
-              { roomId }
+          const mentionData = sharedCaptionApplied
+            ? getMentions(mx, roomId, editor)
+            : { room: false, users: new Set<string>() };
+          const replyMentions = getReplyMentionData(
+            hasDeferredComposerText ? undefined : replyDraft,
+            replyEvent,
+            silentReply,
+            sharedCaptionApplied ? mentionData.room : false
+          );
+          if (replyMentions?.user_ids) {
+            replyMentions.user_ids.forEach((id) => mentionData.users.add(id));
+          }
+
+          if (mentionData.users.size > 0 || mentionData.room || replyMentions?.room === true) {
+            contents[0]!['m.mentions'] = getMentionContent(
+              Array.from(mentionData.users),
+              mentionData.room || replyMentions?.room === true
+            );
+          }
+
+          if (sharedCaptionApplied) {
+            contents[0]![prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
+              imagePacksUsedRef.current.toJSON();
+
+            const links = getLinks(editor.children);
+            contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME] = [];
+            links?.forEach((link) =>
+              contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME].push({
+                matched_url: link,
+              })
             );
           }
         }
 
-        try {
-          await sendPreparedUploadsSequentially(async ({ upload, content }) => {
-            const sendStartTime = Date.now();
-            const span = Sentry.startInactiveSpan({
-              name: 'message.send',
-              op: 'message',
-              attributes: {
-                'message.room_id': roomId,
-                'message.type': content.msgtype ?? 'm.text',
-                'message.is_encrypted': isEncrypted,
-                'message.body_length': content.body?.length ?? 0,
-                'message.is_thread': !!threadRootId,
-              },
+        const invalidate = () =>
+          queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
+        const sendPreparedUploadsSequentially = async (
+          sendContent: (preparedUpload: {
+            upload: UploadSuccess;
+            content: IContent;
+          }) => Promise<void>
+        ) => {
+          await preparedUploads.reduce(
+            (promise, preparedUpload) => promise.then(() => sendContent(preparedUpload)),
+            Promise.resolve()
+          );
+        };
+
+        const sentImagePacksSnapshot = JSON.stringify(imagePacksUsedRef.current.toJSON());
+        const successfulUploads: UploadSuccess[] = [];
+        const clearConsumedUploadSendContext = (contextOptions?: { refocus?: boolean }) => {
+          if (sharedCaptionApplied) {
+            resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot, contextOptions);
+            return;
+          }
+
+          if (hasDeferredComposerText) {
+            if (contextOptions?.refocus) focusComposer();
+            return;
+          }
+
+          clearSentUploadReplyDraft();
+          clearSentMessageContext(sentReplyDraftSnapshot, sentImagePacksSnapshot);
+          sendTypingStatus(false);
+          if (contextOptions?.refocus) focusComposer();
+        };
+        const handlePartialUploadBatchSuccess = () => {
+          if (successfulUploads.length === 0) return;
+
+          handleCancelUpload(successfulUploads);
+          clearConsumedUploadSendContext();
+        };
+        const handleUploadSendFailure = () => {
+          if (successfulUploads.length > 0) {
+            handlePartialUploadBatchSuccess();
+            return;
+          }
+
+          handleCancelUpload(uploads);
+        };
+
+        if (scheduledTime) {
+          try {
+            const delayMs = computeDelayMs(scheduledTime);
+            if (editingScheduledDelayId) {
+              await cancelDelayedEvent(mx, editingScheduledDelayId);
+            }
+
+            await sendPreparedUploadsSequentially(async ({ upload, content }) => {
+              if (isEncrypted) {
+                await sendDelayedMessageE2EE(mx, roomId, room, content, delayMs);
+              } else {
+                await sendDelayedMessage(mx, roomId, content, delayMs);
+              }
+              successfulUploads.push(upload);
             });
 
+            invalidate();
+            handleCancelUpload(uploads);
+            clearConsumedUploadSendContext({ refocus: true });
+            setEditingScheduledDelayId(null);
+            setScheduledTime(null);
+          } catch (error) {
+            invalidate();
+            handleUploadSendFailure();
+            debugLog.error('message', 'Failed to schedule uploaded file message', {
+              roomId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            log.error('failed to schedule uploaded message', { roomId }, error);
+            throw error;
+          }
+        } else {
+          if (editingScheduledDelayId) {
             try {
-              const res = await mx.sendMessage(
-                roomId,
-                threadRootId ?? null,
-                content as RoomMessageEventContent
+              await cancelDelayedEvent(mx, editingScheduledDelayId);
+              invalidate();
+              setEditingScheduledDelayId(null);
+            } catch {
+              debugLog.error(
+                'message',
+                'Failed to cancel scheduled event before immediate file send',
+                { roomId }
               );
-              debugLog.info('message', 'Uploaded file message sent', {
-                roomId,
-                eventId: res.event_id,
-                msgtype: content.msgtype,
-              });
-              successfulUploads.push(upload);
-              span.setAttribute('message.event_id', res.event_id);
-              span.setAttribute('message.send_duration_ms', Date.now() - sendStartTime);
-            } catch (error: unknown) {
-              debugLog.error('message', 'Failed to send uploaded file message', {
-                roomId,
-                error: error instanceof Error ? error.message : String(error),
-              });
-              log.error('failed to send uploaded message', { roomId }, error);
-              span.setAttribute(
-                'message.error',
-                error instanceof Error ? error.message : String(error)
-              );
-              throw error;
-            } finally {
-              span.end();
             }
-          });
-        } catch (error) {
-          handleUploadSendFailure();
-          throw error;
-        }
+          }
 
-        handleCancelUpload(uploads);
-        clearConsumedUploadSendContext({ refocus: true });
+          try {
+            await sendPreparedUploadsSequentially(async ({ upload, content }) => {
+              const sendStartTime = Date.now();
+              const span = Sentry.startInactiveSpan({
+                name: 'message.send',
+                op: 'message',
+                attributes: {
+                  'message.room_id': roomId,
+                  'message.type': content.msgtype ?? 'm.text',
+                  'message.is_encrypted': isEncrypted,
+                  'message.body_length': content.body?.length ?? 0,
+                  'message.is_thread': !!threadRootId,
+                },
+              });
+
+              try {
+                const res = await mx.sendMessage(
+                  roomId,
+                  threadRootId ?? null,
+                  content as RoomMessageEventContent
+                );
+                debugLog.info('message', 'Uploaded file message sent', {
+                  roomId,
+                  eventId: res.event_id,
+                  msgtype: content.msgtype,
+                });
+                successfulUploads.push(upload);
+                span.setAttribute('message.event_id', res.event_id);
+                span.setAttribute('message.send_duration_ms', Date.now() - sendStartTime);
+              } catch (error: unknown) {
+                debugLog.error('message', 'Failed to send uploaded file message', {
+                  roomId,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+                log.error('failed to send uploaded message', { roomId }, error);
+                span.setAttribute(
+                  'message.error',
+                  error instanceof Error ? error.message : String(error)
+                );
+                throw error;
+              } finally {
+                span.end();
+              }
+            });
+          } catch (error) {
+            handleUploadSendFailure();
+            throw error;
+          }
+
+          handleCancelUpload(uploads);
+          clearConsumedUploadSendContext({ refocus: true });
+        }
+      } finally {
+        uploadSendInFlightRef.current = false;
       }
     };
 
@@ -1392,7 +1403,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         }
 
-        if (plainText === '') return;
+        if (plainText === '' && selectedFiles.length === 0) return;
 
         // Discord-style edit: when an editDraft is active, send an m.replace event
         // instead of a new message and clear the edit state.
