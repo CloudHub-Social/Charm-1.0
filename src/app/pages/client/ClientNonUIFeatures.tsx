@@ -120,6 +120,7 @@ import {
   useVisibilityAndPageShowListeners,
 } from './runtimeListeners';
 import { resolveWebPushStartupReconcilerPolicy } from './webPushStartupReconcilerPolicy';
+import { useWebPushStartupReconcilerEffect } from './webPushStartupReconcilerEffect';
 const pushRelayLog = createDebugLogger('push-relay');
 const transportLog = createDebugLogger('push-transport');
 function clearMediaSessionQuickly(): void {
@@ -198,7 +199,6 @@ function WebPushStartupReconciler() {
   const { isActiveNotificationClient, notificationDeviceScope } = useNotificationDeviceScope(mx, {
     publishLease: false,
   });
-  const reconciledKeyRef = useRef<string | null>(null);
   const webPushStartupPolicy = useMemo(
     () =>
       resolveWebPushStartupReconcilerPolicy({
@@ -229,25 +229,15 @@ function WebPushStartupReconciler() {
     onPageShow: syncVisibilityState,
   });
 
-  useEffect(() => {
-    if (!webPushStartupPolicy.shouldReconcile || !webPushStartupPolicy.reconcileKey) return;
-    if (reconciledKeyRef.current === webPushStartupPolicy.reconcileKey) return;
-
-    reconciledKeyRef.current = webPushStartupPolicy.reconcileKey;
-    void reconcilePushNotifications(
-      mx,
-      clientConfig,
-      webPushStartupPolicy.shouldEnablePusher,
-      usePushNotifications,
-      pushSubscription
-    ).catch((error) => {
-      reconciledKeyRef.current = null;
-      transportLog.warn('notification', 'Web push startup reconciliation failed', {
-        userId: mx.getUserId() ?? null,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-  }, [mx, clientConfig, pushSubscription, usePushNotifications, webPushStartupPolicy]);
+  useWebPushStartupReconcilerEffect({
+    mx,
+    clientConfig,
+    usePushNotifications,
+    pushSubscription,
+    webPushStartupPolicy,
+    reconcilePushNotifications,
+    transportLog,
+  });
 
   return null;
 }
