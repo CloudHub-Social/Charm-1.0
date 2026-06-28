@@ -11,6 +11,7 @@ import type { ScreenSize } from '$hooks/useScreenSize';
 import { ScreenSizeProvider } from '$hooks/useScreenSize';
 import { isReactQueryDevtoolsEnabled } from '$pages/reactQueryDevtoolsGate';
 import { SystemBarShell } from './SystemBarShell';
+import { SystemBarStyleProvider } from './useSystemBarStyle';
 
 const ReactQueryDevtools = lazy(async () => {
   const { ReactQueryDevtools: Devtools } = await import('@tanstack/react-query-devtools');
@@ -40,32 +41,34 @@ export function AppShell({ children, queryClient, screenSize }: AppShellProps) {
           <ScreenSizeProvider value={screenSize}>
             <QueryClientProvider client={queryClient}>
               <JotaiProvider>
-                <TauriFrontendReady />
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    width: '100%',
-                    minHeight: 0,
-                    overflow: 'hidden',
-                    height: '100%',
-                  }}
-                >
-                  {useCustomWindowsTitleBar && <WindowsTitleBar />}
+                <SystemBarStyleProvider>
+                  <TauriFrontendReady />
                   <div
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
                       width: '100%',
                       minHeight: 0,
-                      height: contentHeight,
+                      overflow: 'hidden',
+                      height: '100%',
                     }}
                   >
-                    <SystemBarShell onPortalContainerChange={setPortalContainer}>
-                      {children}
-                    </SystemBarShell>
+                    {useCustomWindowsTitleBar && <WindowsTitleBar />}
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        width: '100%',
+                        minHeight: 0,
+                        height: contentHeight,
+                      }}
+                    >
+                      <SystemBarShell onPortalContainerChange={setPortalContainer}>
+                        {children}
+                      </SystemBarShell>
+                    </div>
                   </div>
-                </div>
+                </SystemBarStyleProvider>
               </JotaiProvider>
               {reactQueryDevtoolsEnabled && (
                 <Suspense fallback={null}>

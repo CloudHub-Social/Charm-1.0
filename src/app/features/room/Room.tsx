@@ -1,9 +1,9 @@
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect } from 'react';
 import { Box, Line } from 'folds';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { isKeyHotkey } from 'is-hotkey';
 import { useAtom, useAtomValue } from 'jotai';
+import { useSystemBarSafeAreaFill } from '$components/app-shell/useSystemBarStyle';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
@@ -38,6 +38,8 @@ export function Room() {
   const targetEvent = useRoomEvent(room, eventId ?? '', undefined, Boolean(eventId));
   const jumpMode =
     searchParams.get('jumpMode') === 'notification_live' ? 'notification_live' : 'history_context';
+
+  useSystemBarSafeAreaFill('var(--sable-surface-container)');
 
   // Log room mount
   useEffect(() => {
@@ -121,15 +123,7 @@ export function Room() {
   return (
     <PowerLevelsContextProvider value={powerLevels}>
       <RoomAbbreviationsContext.Provider value={abbreviations}>
-        <Box
-          grow="Yes"
-          style={
-            {
-              position: 'relative',
-              '--sable-safe-area-fill': 'var(--sable-surface-container)',
-            } as CSSProperties
-          }
-        >
+        <Box grow="Yes" style={{ position: 'relative' }}>
           {callView && (screenSize === ScreenSize.Desktop || !chat) && (
             <Box grow="Yes" direction="Column">
               <RoomViewHeader callView />

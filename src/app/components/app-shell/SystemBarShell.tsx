@@ -2,6 +2,7 @@ import { type CSSProperties, type ReactNode } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { type as osType } from '@tauri-apps/plugin-os';
 import { mobileOrTablet } from '$utils/user-agent';
+import { useSystemBarStyle } from './useSystemBarStyle';
 
 const safeAreaTop = 'var(--safe-area-inset-top, env(safe-area-inset-top, 0px))';
 const safeAreaBottom = 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))';
@@ -47,6 +48,7 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
   const needsBottomSystemBar = tauriOs === 'android';
   const isBrowserMobile = !isTauri() && mobileOrTablet();
   const enabled = isTauriMobile || isBrowserMobile;
+  const { safeAreaFill } = useSystemBarStyle();
 
   return (
     <>
@@ -64,11 +66,10 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
             minHeight: 0,
             flex: 1,
             // Paint the safe-area padding with the same surface color as the
-            // active route so room views can opt into surface-colored insets
-            // without changing background-colored nav/settings pages.
-            backgroundColor: enabled
-              ? 'var(--sable-safe-area-fill, var(--sable-bg-container))'
-              : undefined,
+            // active route. Room routes register a surface fill through the
+            // shell context while nav/settings pages leave the default
+            // background container color in place.
+            backgroundColor: enabled ? (safeAreaFill ?? 'var(--sable-bg-container)') : undefined,
             paddingTop: enabled ? safeAreaTop : 0,
             paddingBottom:
               enabled && !needsBottomSystemBar ? `var(--sable-safe-bottom, ${safeAreaBottom})` : 0,

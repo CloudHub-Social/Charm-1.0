@@ -49,6 +49,7 @@ describe('android edge-to-edge inset contract', () => {
     const indexCss = readWorkspaceFile('src/index.css');
     const systemBarShell = readWorkspaceFile('src/app/components/app-shell/SystemBarShell.tsx');
     const room = readWorkspaceFile('src/app/features/room/Room.tsx');
+    const systemBarStyle = readWorkspaceFile('src/app/components/app-shell/useSystemBarStyle.tsx');
     const mobileCapability = readWorkspaceFile('src-tauri/capabilities/mobile.json');
 
     // viewport-fit=cover is required for env(safe-area-inset-*) to work in iOS
@@ -61,6 +62,7 @@ describe('android edge-to-edge inset contract', () => {
     expect(appShell).toContain("height: '100%'");
     expect(appShell).toContain('height: contentHeight');
     expect(appShell).toContain('<ScreenSizeProvider value={screenSize}>');
+    expect(appShell).toContain('<SystemBarStyleProvider>');
     expect(indexCss).toContain('height: var(--sable-visible-height, 100%)');
     expect(indexCss).not.toContain('height: var(--sable-visible-height, 100dvh)');
     expect(generalOverrides).toContain("backgroundColor: 'var(--sable-bg-container)'");
@@ -69,9 +71,11 @@ describe('android edge-to-edge inset contract', () => {
     // content up off the bottom of the screen.
     expect(systemBarShell).toContain("'--sable-safe-area-bottom': '0px'");
     expect(systemBarShell).toContain('backgroundColor: enabled');
-    expect(systemBarShell).toContain("'var(--sable-safe-area-fill, var(--sable-bg-container))'");
+    expect(systemBarShell).toContain("safeAreaFill ?? 'var(--sable-bg-container)'");
     expect(systemBarShell).toContain('`var(--sable-safe-bottom, ${safeAreaBottom})`');
-    expect(room).toContain("'--sable-safe-area-fill': 'var(--sable-surface-container)'");
+    expect(systemBarStyle).toContain('const [safeAreaFill, setSafeAreaFill] = useState<string>()');
+    expect(systemBarStyle).toContain('setSafeAreaFill(fill);');
+    expect(room).toContain("useSystemBarSafeAreaFill('var(--sable-surface-container)')");
     expect(systemBarShell).toContain("const needsBottomSystemBar = tauriOs === 'android'");
     expect(systemBarShell).toContain('var(--sable-bg-container-line)');
     expect(systemBarShell).toContain("borderTop: '1px solid var(--sable-bg-container-line)'");
