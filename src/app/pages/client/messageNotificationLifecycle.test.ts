@@ -71,6 +71,39 @@ describe('messageNotificationLifecycle', () => {
         lifecycleStateMap,
       })
     ).toEqual(arrivalState);
+    expect(lifecycleStateMap.has('$event')).toBe(false);
+  });
+
+  it('clears captured encrypted lifecycle state on the first non-encrypted replay', () => {
+    const lifecycleStateMap = new Map();
+    const arrivalState = createMessageNotificationLifecycleState({
+      notificationSelected: false,
+      tabVisible: true,
+      windowFocused: false,
+    });
+
+    getMessageNotificationLifecycleState({
+      currentState: arrivalState,
+      eventId: '$event',
+      isEncryptedArrival: true,
+      lifecycleStateMap,
+    });
+
+    const replayState = createMessageNotificationLifecycleState({
+      notificationSelected: false,
+      tabVisible: false,
+      windowFocused: false,
+    });
+
+    expect(
+      getMessageNotificationLifecycleState({
+        currentState: replayState,
+        eventId: '$event',
+        isEncryptedArrival: false,
+        lifecycleStateMap,
+      })
+    ).toEqual(arrivalState);
+    expect(lifecycleStateMap.has('$event')).toBe(false);
   });
 
   it('falls back to the current lifecycle state for unencrypted events', () => {

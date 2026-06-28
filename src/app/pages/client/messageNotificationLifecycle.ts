@@ -41,6 +41,9 @@ export const getMessageNotificationLifecycleState = ({
   if (!capturedState && eventId && isEncryptedArrival) {
     lifecycleStateMap.set(eventId, currentState);
   }
+  if (capturedState && eventId && !isEncryptedArrival) {
+    lifecycleStateMap.delete(eventId);
+  }
 
   return resolveMessageNotificationLifecycleState({
     capturedState,
