@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildEventTargetCleanupTarget,
+  shouldScheduleEventTargetCleanup,
   shouldClearNotificationJumpRoute,
 } from './notificationJumpCleanup';
 
@@ -51,5 +52,31 @@ describe('notificationJumpCleanup', () => {
         '$event'
       )
     ).toBe('/direct/%21abc?via=push');
+  });
+
+  it('only schedules delayed route cleanup for notification jumps', () => {
+    expect(
+      shouldScheduleEventTargetCleanup({
+        eventId: '$event',
+        focusEventId: '$event',
+        jumpMode: 'notification_live',
+      })
+    ).toBe(true);
+
+    expect(
+      shouldScheduleEventTargetCleanup({
+        eventId: '$event',
+        focusEventId: '$event',
+        jumpMode: 'history_context',
+      })
+    ).toBe(false);
+
+    expect(
+      shouldScheduleEventTargetCleanup({
+        eventId: '$event',
+        focusEventId: '$different',
+        jumpMode: 'notification_live',
+      })
+    ).toBe(false);
   });
 });
