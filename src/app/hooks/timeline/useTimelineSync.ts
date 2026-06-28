@@ -60,7 +60,6 @@ type NotificationLiveResolution = {
 
 type SdkTimelineRefreshState = {
   linkedTimelines: EventTimeline[];
-  reactEventsLength: number;
   liveTimeline: EventTimeline;
 };
 
@@ -141,7 +140,6 @@ const shouldContinueSparsePagination = (
 
 const getSdkTimelineRefreshState = ({
   linkedTimelines,
-  reactEventsLength,
   liveTimeline,
 }: SdkTimelineRefreshState) => {
   const currentSdkLinkedTimelines = getLinkedTimelines(liveTimeline);
@@ -1014,7 +1012,6 @@ export function useTimelineSync({
       }
       const refreshState = getSdkTimelineRefreshState({
         linkedTimelines: timeline.linkedTimelines,
-        reactEventsLength: eventsLengthRef.current,
         liveTimeline: getLiveTimeline(room),
       });
       const needsRefresh =
@@ -1069,7 +1066,6 @@ export function useTimelineSync({
 
       const refreshState = getSdkTimelineRefreshState({
         linkedTimelines: timeline.linkedTimelines,
-        reactEventsLength: eventsLengthRef.current,
         liveTimeline: getLiveTimeline(room),
       });
       const needsRefresh =
