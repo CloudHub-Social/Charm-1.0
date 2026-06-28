@@ -12,7 +12,10 @@ import { settingsAtom } from '$state/settings';
 import { pushSubscriptionAtom } from '$state/pushSubscription';
 import { mobileOrTablet } from '$utils/user-agent';
 import { createDebugLogger } from '$utils/debugLogger';
-import { getSlidingSyncManager } from '$client/initMatrix';
+import {
+  getImmediateSyncRecoveryMetricAttributes,
+  requestImmediateSyncRecovery,
+} from '$utils/syncRecovery';
 import { pushSessionToSW } from '../../sw-session';
 import {
   shouldEnableNotificationPusher,
@@ -74,9 +77,7 @@ const retrySyncOnResume = (mx: MatrixClient | undefined, trigger: ForegroundReco
   if (!mx) return;
   if (document.visibilityState !== 'visible') return;
 
-  const classicRetried = mx.retryImmediately();
-  const slidingSyncManager = getSlidingSyncManager(mx);
-  slidingSyncManager?.retryNow();
+  const result = requestImmediateSyncRecovery(mx);
 
   Sentry.addBreadcrumb({
     category: 'app.visibility',
@@ -84,16 +85,15 @@ const retrySyncOnResume = (mx: MatrixClient | undefined, trigger: ForegroundReco
     level: 'info',
     data: {
       trigger,
-      classicRetried,
-      slidingSync: !!slidingSyncManager,
-      syncState: mx.getSyncState(),
+      classicRetried: result.classicRetried,
+      slidingSync: result.hasSlidingSync,
+      syncState: result.syncState,
     },
   });
   Sentry.metrics.count('sable.app.resume_sync_retry', 1, {
     attributes: {
       trigger,
-      classic_retried: String(classicRetried),
-      sliding_sync: String(!!slidingSyncManager),
+      ...getImmediateSyncRecoveryMetricAttributes(result),
     },
   });
 };
