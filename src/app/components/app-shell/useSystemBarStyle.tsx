@@ -1,16 +1,38 @@
-import type { Dispatch, ReactNode, SetStateAction } from 'react';
-import { createContext, useContext, useLayoutEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 type SystemBarStyleContextValue = {
   safeAreaFill: string | undefined;
-  setSafeAreaFill: Dispatch<SetStateAction<string | undefined>>;
+  registerSafeAreaFill: (owner: symbol, fill: string | undefined) => void;
+  unregisterSafeAreaFill: (owner: symbol) => void;
 };
 
 const SystemBarStyleContext = createContext<SystemBarStyleContextValue | null>(null);
 
+type SystemBarStyleState = {
+  owner: symbol | null;
+  safeAreaFill: string | undefined;
+};
+
 export function SystemBarStyleProvider({ children }: { children: ReactNode }) {
-  const [safeAreaFill, setSafeAreaFill] = useState<string>();
-  const value = useMemo(() => ({ safeAreaFill, setSafeAreaFill }), [safeAreaFill]);
+  const [{ owner, safeAreaFill }, setState] = useState<SystemBarStyleState>({
+    owner: null,
+    safeAreaFill: undefined,
+  });
+  const value = useMemo(
+    () => ({
+      safeAreaFill,
+      registerSafeAreaFill: (nextOwner: symbol, fill: string | undefined) => {
+        setState({ owner: nextOwner, safeAreaFill: fill });
+      },
+      unregisterSafeAreaFill: (nextOwner: symbol) => {
+        setState((current) =>
+          current.owner === nextOwner ? { owner: null, safeAreaFill: undefined } : current
+        );
+      },
+    }),
+    [safeAreaFill]
+  );
 
   return <SystemBarStyleContext.Provider value={value}>{children}</SystemBarStyleContext.Provider>;
 }
@@ -26,15 +48,16 @@ function useSystemBarStyleContext(): SystemBarStyleContextValue {
 }
 
 export function useSystemBarSafeAreaFill(fill: string | undefined) {
-  const { setSafeAreaFill } = useSystemBarStyleContext();
+  const { registerSafeAreaFill, unregisterSafeAreaFill } = useSystemBarStyleContext();
+  const ownerRef = useRef(Symbol('system-bar-safe-area-fill'));
 
   useLayoutEffect(() => {
-    setSafeAreaFill(fill);
+    registerSafeAreaFill(ownerRef.current, fill);
 
     return () => {
-      setSafeAreaFill(undefined);
+      unregisterSafeAreaFill(ownerRef.current);
     };
-  }, [fill, setSafeAreaFill]);
+  }, [fill, registerSafeAreaFill, unregisterSafeAreaFill]);
 }
 
 export function useSystemBarStyle() {

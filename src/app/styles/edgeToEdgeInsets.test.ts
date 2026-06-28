@@ -73,8 +73,15 @@ describe('android edge-to-edge inset contract', () => {
     expect(systemBarShell).toContain('backgroundColor: enabled');
     expect(systemBarShell).toContain("safeAreaFill ?? 'var(--sable-bg-container)'");
     expect(systemBarShell).toContain('paddingBottom: 0');
-    expect(systemBarStyle).toContain('const [safeAreaFill, setSafeAreaFill] = useState<string>()');
-    expect(systemBarStyle).toContain('setSafeAreaFill(fill);');
+    expect(systemBarStyle).toContain(
+      'registerSafeAreaFill: (nextOwner: symbol, fill: string | undefined) =>'
+    );
+    expect(systemBarStyle).toContain(
+      'current.owner === nextOwner ? { owner: null, safeAreaFill: undefined } : current'
+    );
+    expect(systemBarStyle).toContain(
+      "const ownerRef = useRef(Symbol('system-bar-safe-area-fill'))"
+    );
     expect(room).toContain("useSystemBarSafeAreaFill('var(--sable-surface-container)')");
     expect(systemBarShell).toContain("const needsBottomSystemBar = tauriOs === 'android'");
     expect(systemBarShell).toContain('var(--sable-bg-container-line)');
