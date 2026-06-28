@@ -136,4 +136,23 @@ describe('android edge-to-edge inset contract', () => {
     expect(telemetryBannerStyles).toContain("position: 'fixed'");
     expect(telemetryBannerStyles).toContain("bottom: 'env(safe-area-inset-bottom, 0)'");
   });
+
+  it('keeps splash and account-switcher controls inside the mobile viewport', () => {
+    const clientRoot = readWorkspaceFile('src/app/pages/client/ClientRoot.tsx');
+    const accountSwitcher = readWorkspaceFile(
+      'src/app/pages/client/sidebar/AccountSwitcherTab.tsx'
+    );
+
+    expect(clientRoot).toMatch(
+      /const safeAreaTopInset\s*=\s*["']var\(--sable-safe-area-top, env\(safe-area-inset-top, 0px\)\)["']/
+    );
+    expect(clientRoot).toMatch(
+      /const safeAreaRightInset\s*=\s*["']var\(--sable-safe-area-right, env\(safe-area-inset-right, 0px\)\)["']/
+    );
+    expect(clientRoot).toContain('right: `calc(${safeAreaRightInset} + ${config.space.S100})`');
+    expect(accountSwitcher).toContain('const getAccountSwitcherMenuMaxHeight = (');
+    expect(accountSwitcher).toContain('const availableAboveTrigger = Math.max(');
+    expect(accountSwitcher).toContain('menuAnchor.y - mobileMenuViewportPadding');
+    expect(accountSwitcher).toMatch(/WebkitOverflowScrolling:\s*["']touch["']/);
+  });
 });
