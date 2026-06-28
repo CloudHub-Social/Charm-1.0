@@ -279,6 +279,20 @@ export const getReplyContent = (
   return relatesTo;
 };
 
+const getReplyMentionData = (
+  replyDraft: IReplyDraft | undefined,
+  replyEvent: MatrixEvent | undefined,
+  silentReply: boolean,
+  roomMention = false
+) => {
+  if (!replyDraft || silentReply) return undefined;
+
+  return getMentionContent(
+    [replyDraft.userId],
+    roomMention || replyEvent?.getContent()['m.mentions']?.room === true
+  );
+};
+
 const log = createLogger('RoomInput');
 const debugLog = createDebugLogger('RoomInput');
 
@@ -811,6 +825,12 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
     const handleSendUpload = async (uploads: UploadSuccess[]) => {
       const plainText = toPlainText(editor.children).trim();
+      const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
+      const clearSentUploadReplyDraft = () => {
+        if (serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot) {
+          setReplyDraft(replyDraftBase);
+        }
+      };
 
       const contentsPromises = uploads.map(async (upload) => {
         const fileItem = selectedFiles.find((f) => f.file === upload.file);
@@ -852,7 +872,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           plainText?.length === 0 ? getReplyContent(replyDraft, room) : undefined;
         if (replyContent) {
           contents[0]!['m.relates_to'] = replyContent;
-          setReplyDraft(replyDraftBase);
+          const replyMentions = getReplyMentionData(replyDraft, replyEvent, silentReply);
+          if (replyMentions) contents[0]!['m.mentions'] = replyMentions;
         }
       }
 
@@ -876,6 +897,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           );
 
           invalidate();
+          clearSentUploadReplyDraft();
           setEditingScheduledDelayId(null);
           setScheduledTime(null);
         } catch (error) {
@@ -944,6 +966,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               });
           })
         );
+        clearSentUploadReplyDraft();
       }
     };
 
@@ -1272,11 +1295,20 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           body,
         };
 
-        if (replyDraft && !silentReply) {
-          mentionData.users.add(replyDraft.userId);
+        const replyMentions = getReplyMentionData(
+          replyDraft,
+          replyEvent,
+          silentReply,
+          mentionData.room
+        );
+        if (replyMentions?.user_ids) {
+          replyMentions.user_ids.forEach((id) => mentionData.users.add(id));
         }
 
-        content['m.mentions'] = getMentionContent(Array.from(mentionData.users), mentionData.room);
+        content['m.mentions'] = getMentionContent(
+          Array.from(mentionData.users),
+          mentionData.room || replyMentions?.room === true
+        );
         content[prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
           imagePacksUsedRef.current.toJSON();
 
@@ -1849,6 +1881,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
       if (replyDraft) {
         content['m.relates_to'] = getReplyContent(replyDraft, room);
+        const replyMentions = getReplyMentionData(replyDraft, replyEvent, silentReply);
+        if (replyMentions) content['m.mentions'] = replyMentions;
         setReplyDraft(replyDraftBase);
       }
       mx.sendEvent(roomId, EventType.Sticker, content);

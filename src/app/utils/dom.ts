@@ -228,6 +228,65 @@ export const scrollToBottom = (scrollEl: HTMLElement, behavior?: 'auto' | 'insta
   });
 };
 
+async function getBitmap(blob: Blob): Promise<ImageBitmap> {
+  if (!blob.type.startsWith('image/svg+xml')) return createImageBitmap(blob);
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+
+    await new Promise<void>((resolve, reject) => {
+      img.addEventListener('load', () => resolve(), { once: true });
+      img.addEventListener('error', reject, { once: true });
+      img.src = url;
+    });
+
+    return await createImageBitmap(img);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+const getClipboardImageBlob = async (blob: Blob): Promise<Blob> => {
+  const bitmap = await getBitmap(blob);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Failed to acquire a 2D canvas context for clipboard copy.');
+  }
+  ctx.drawImage(bitmap, 0, 0);
+
+  const finalBlob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((result) => {
+      if (result) {
+        resolve(result);
+        return;
+      }
+
+      reject(new Error('Failed to encode image for clipboard.'));
+    }, 'image/png');
+  });
+
+  return finalBlob;
+};
+
+export const copyImageToClipboard = async (blobSource: Blob | Promise<Blob>): Promise<boolean> => {
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'image/png': Promise.resolve(blobSource).then(getClipboardImageBlob),
+      }),
+    ]);
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export const copyToClipboard = async (text: string): Promise<boolean> => {
   if (navigator.clipboard) {
     try {
