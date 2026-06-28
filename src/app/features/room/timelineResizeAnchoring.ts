@@ -1,7 +1,6 @@
 export type TimelineResizeAnchorTarget = 'bottom' | 'focus';
 
 type TimelineResizeAnchorState = {
-  atBottom: boolean;
   focusItem?: {
     highlight: boolean;
   };
@@ -10,13 +9,25 @@ type TimelineResizeAnchorState = {
   now: number;
 };
 
+type TimelineResizeAnchorTargetState = TimelineResizeAnchorState & {
+  atBottom: boolean;
+};
+
+export const shouldKeepTimelineResizeAnchorLoopRunning = ({
+  focusItem,
+  bottomSettleUntil,
+  focusSettleUntil,
+  now,
+}: TimelineResizeAnchorState): boolean =>
+  (focusItem?.highlight && now <= focusSettleUntil) || now <= bottomSettleUntil;
+
 export const getTimelineResizeAnchorTarget = ({
   atBottom,
   focusItem,
   bottomSettleUntil,
   focusSettleUntil,
   now,
-}: TimelineResizeAnchorState): TimelineResizeAnchorTarget | undefined => {
+}: TimelineResizeAnchorTargetState): TimelineResizeAnchorTarget | undefined => {
   if (focusItem?.highlight && now <= focusSettleUntil) {
     return 'focus';
   }

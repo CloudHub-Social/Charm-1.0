@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { getTimelineResizeAnchorTarget } from './timelineResizeAnchoring';
+import {
+  getTimelineResizeAnchorTarget,
+  shouldKeepTimelineResizeAnchorLoopRunning,
+} from './timelineResizeAnchoring';
 
 describe('timelineResizeAnchoring', () => {
   it('keeps a highlighted focus item centered while settle protection is active', () => {
@@ -47,5 +50,16 @@ describe('timelineResizeAnchoring', () => {
         now: 1_500,
       })
     ).toBeUndefined();
+  });
+
+  it('keeps the loop running through the bottom settle window even if atBottom temporarily flips false', () => {
+    expect(
+      shouldKeepTimelineResizeAnchorLoopRunning({
+        focusItem: undefined,
+        bottomSettleUntil: 2_000,
+        focusSettleUntil: 0,
+        now: 1_500,
+      })
+    ).toBe(true);
   });
 });

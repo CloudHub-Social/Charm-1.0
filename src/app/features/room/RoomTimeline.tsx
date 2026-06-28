@@ -80,7 +80,10 @@ import {
 import { useTimelineEventRenderer } from '$hooks/timeline/useTimelineEventRenderer';
 import { isPhoneLayoutDevice } from '$utils/user-agent';
 import * as css from './RoomTimeline.css';
-import { getTimelineResizeAnchorTarget } from './timelineResizeAnchoring';
+import {
+  getTimelineResizeAnchorTarget,
+  shouldKeepTimelineResizeAnchorLoopRunning,
+} from './timelineResizeAnchoring';
 
 const FOCUS_ITEM_SETTLE_MS = 2000;
 const BOTTOM_ANCHOR_SETTLE_MS = 3000;
@@ -611,7 +614,14 @@ export function RoomTimeline({
       }
       lastScrollSize = currentScrollSize;
 
-      if (anchorTarget) {
+      if (
+        shouldKeepTimelineResizeAnchorLoopRunning({
+          focusItem,
+          bottomSettleUntil: bottomAnchorSettleUntilRef.current,
+          focusSettleUntil: focusAnchorSettleUntilRef.current,
+          now,
+        })
+      ) {
         rafId = requestAnimationFrame(tick);
       }
     };
