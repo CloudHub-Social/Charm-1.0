@@ -70,7 +70,7 @@ import {
   getEventIdAbsoluteIndex,
 } from '$utils/timeline';
 import { useTimelineSync } from '$hooks/timeline/useTimelineSync';
-import type { TimelineJumpMode } from '$hooks/timeline/useTimelineSync';
+import type { TimelineFocusItem, TimelineJumpMode } from '$hooks/timeline/useTimelineSync';
 import { useTimelineActions } from '$hooks/timeline/useTimelineActions';
 import {
   useProcessedTimeline,
@@ -269,6 +269,7 @@ export function RoomTimeline({
   const pendingReadyRef = useRef(false);
   const currentRoomIdRef = useRef(room.roomId);
   const focusAnchorSettleUntilRef = useRef(0);
+  const transientFocusAnchorRef = useRef<TimelineFocusItem | undefined>(undefined);
   const bottomAnchorSettleUntilRef = useRef(0);
   const [bottomAnchorRestartToken, restartBottomAnchorTick] = useReducer(
     (count: number) => count + 1,
@@ -394,10 +395,17 @@ export function RoomTimeline({
 
   useEffect(() => {
     focusAnchorSettleUntilRef.current = 0;
+    transientFocusAnchorRef.current = undefined;
     bottomAnchorSettleUntilRef.current = 0;
     prevViewportHeightRef.current = 0;
     setTimelineFocusItem(undefined);
   }, [room.roomId, setTimelineFocusItem]);
+
+  useEffect(() => {
+    if (transientFocusAnchorRef.current?.jumpMode !== 'notification_live') return;
+    transientFocusAnchorRef.current = undefined;
+    focusAnchorSettleUntilRef.current = 0;
+  }, [timelineSync.eventsLength]);
 
   // Cancel the initial-scroll timer on unmount (the useLayoutEffect above
   // intentionally does not cancel it when deps change).
@@ -475,12 +483,15 @@ export function RoomTimeline({
           refreshBottomAnchorSettleWindow();
           restartBottomAnchorTick();
         } else {
+          if (currentFocusItem.jumpMode === 'notification_live') {
+            transientFocusAnchorRef.current = { ...currentFocusItem, scrollTo: false };
+          }
           refreshFocusAnchorSettleWindow();
         }
         timelineSync.setFocusItem((prev) => {
           if (!prev) return undefined;
           if (prev.eventId !== currentFocusItem.eventId) return prev;
-          return { ...prev, scrollTo: false };
+          return prev.jumpMode === 'notification_live' ? undefined : { ...prev, scrollTo: false };
         });
         return true;
       };
@@ -592,7 +603,7 @@ export function RoomTimeline({
       if (!v) return;
 
       const now = Date.now();
-      const focusItem = timelineSyncRef.current.focusItem;
+      const focusItem = transientFocusAnchorRef.current ?? timelineSyncRef.current.focusItem;
       const anchorTarget = getTimelineResizeAnchorTarget({
         atBottom: atBottomRef.current,
         focusItem,
