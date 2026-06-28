@@ -1907,17 +1907,19 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       mx.sendEvent(roomId, EventType.Sticker, content);
     };
 
-    const handleGifSelect = async (gif: GifData) => {
+    const handleGifSelect = async (gif: GifData | null) => {
       if (!gifsEnabled) return;
+      if (!gif) return;
       if (gif.url.trim().length === 0) return;
 
       const gifUrl = gif.url.trim();
       const klipyStaticPrefix = 'https://static.klipy.com/ii/';
+      const gifProxyHost = clientConfig.gifs?.proxyUrl?.trim().replace(/\/+$/, '') ?? '';
       let url = gifUrl;
       if (gifUrl.startsWith('mxc://')) {
         url = gifUrl;
       } else if (gifUrl.startsWith(klipyStaticPrefix)) {
-        url = `mxc://${clientConfig.gifs?.proxyUrl ?? ''}/${toMatrixMediaId(
+        url = `mxc://${gifProxyHost}/${toMatrixMediaId(
           gifUrl.slice(klipyStaticPrefix.length),
           'klipy_'
         )}`;
@@ -2478,7 +2480,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 )}
                 <IconButton
                   ref={emojiBtnRef}
-                  aria-pressed={emojiBoardTab === EmojiBoardTab.Emoji}
+                  aria-pressed={
+                    hideStickerBtn ? !!emojiBoardTab : emojiBoardTab === EmojiBoardTab.Emoji
+                  }
                   onPointerDownCapture={prepareComposerOverlayTrigger}
                   onClick={() => void openEmojiBoard(EmojiBoardTab.Emoji)}
                   variant="SurfaceVariant"

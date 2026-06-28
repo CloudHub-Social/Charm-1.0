@@ -894,7 +894,9 @@ export function EmojiBoard({
     if (emojiInfo.type === EmojiType.Gif) {
       const gifDataStr = targetEl.getAttribute('data-gif-data');
       const gifData = gifDataStr ? JSON.parse(gifDataStr) : null;
-      onGifSelect?.(gifData);
+      if (gifData) {
+        onGifSelect?.(gifData);
+      }
     }
     if (!evt.altKey && !evt.shiftKey) requestClose();
   };
