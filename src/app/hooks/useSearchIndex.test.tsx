@@ -172,7 +172,9 @@ describe('SearchIndexProvider', () => {
     expect(mocks.mx.on).toHaveBeenCalledWith(RoomEvent.Timeline, expect.any(Function));
     expect(mocks.mx.on).toHaveBeenCalledWith(ClientEvent.Room, expect.any(Function));
     expect(mocks.mx.on.mock.calls.filter(([event]) => event === ClientEvent.Sync)).toHaveLength(1);
-    expect(mocks.mx.on.mock.calls.filter(([event]) => event === RoomEvent.Timeline)).toHaveLength(1);
+    expect(mocks.mx.on.mock.calls.filter(([event]) => event === RoomEvent.Timeline)).toHaveLength(
+      1
+    );
     expect(mocks.mx.on.mock.calls.filter(([event]) => event === ClientEvent.Room)).toHaveLength(1);
   });
 
