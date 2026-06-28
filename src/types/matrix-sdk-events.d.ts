@@ -59,6 +59,6 @@ declare module 'matrix-js-sdk/lib/@types/event' {
     [prefix.MATRIX_SABLE_UNSTABLE_ACCOUNT_SETTINGS_PROPERTY_NAME]: Record<string, unknown>;
     [prefix.MATRIX_SABLE_UNSTABLE_DISMISSED_INVITES]: { roomIds: string[] };
     [prefix.MATRIX_SABLE_UNSTABLE_ACCOUNT_ADDED_SERVERS_PROPERTY_NAME]: AddedServersContent;
-    [prefix.MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS]: { gifs: Omit<GifData, 'id'>[] };
+    [prefix.MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS]: { gifs: GifData[] };
   }
 }

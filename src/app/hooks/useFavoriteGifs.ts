@@ -9,5 +9,11 @@ export const useFavoriteGifs =
       AccountDataEvents[typeof MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS]
     >() ?? { gifs: [] };
 
-    return favoritedContent;
+    return {
+      ...favoritedContent,
+      gifs: favoritedContent.gifs.map((gif) => ({
+        ...gif,
+        id: gif.id ?? gif.url,
+      })),
+    };
   };

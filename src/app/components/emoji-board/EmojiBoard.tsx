@@ -323,7 +323,7 @@ const useItemRenderer = (tab: EmojiBoardTab, saveStickerEmojiBandwidth: boolean)
 
       return (
         <GifItem
-          key={gif.id + index}
+          key={`${gif.id ?? gif.url}:${index}`}
           label={gif.title}
           type={EmojiType.Gif}
           data={gif.url}

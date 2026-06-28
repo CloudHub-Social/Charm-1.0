@@ -571,6 +571,7 @@ export const ImageContent = as<'div', ImageContentProps>(
                               gifs: [
                                 ...favoritedContent.gifs,
                                 {
+                                  id: url,
                                   title: body,
                                   url: url,
                                   width: imageW,

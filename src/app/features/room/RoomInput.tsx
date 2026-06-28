@@ -1909,11 +1909,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
     const handleGifSelect = async (gif: GifData) => {
       if (!gifsEnabled) return;
+      if (gif.url.trim().length === 0) return;
 
-      let url = gif.url.startsWith('mxc://')
-        ? gif.url
+      const gifUrl = gif.url.trim();
+      let url = gifUrl.startsWith('mxc://')
+        ? gifUrl
         : `mxc://${clientConfig.gifs?.proxyUrl ?? ''}/${toMatrixMediaId(
-            gif.url.slice('https://static.klipy.com/ii/'.length),
+            gifUrl.slice('https://static.klipy.com/ii/'.length),
             'klipy_'
           )}`;
 
