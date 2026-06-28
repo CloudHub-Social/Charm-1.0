@@ -20,6 +20,7 @@ const ACTIVITY_DEBOUNCE_MS = 500; // 500ms
 
 /** Minimum time between presence updates to avoid rate limiting. */
 const THROTTLE_MS = 25000; // 25 seconds
+const LOCAL_PRESENCE_SYNC_UPDATED_AT_KEY = 'presence-sync-updated-at';
 
 /** Sleep utility for rate limit backoff. */
 const sleep = (ms: number) =>
@@ -29,6 +30,11 @@ const sleep = (ms: number) =>
 
 /** Timestamp (ms) of the last successful presence send. */
 let lastSentTimestamp = 0;
+
+/** @internal Test-only reset for module-level presence throttling state. */
+export const resetPresenceSyncThrottleForTests = (): void => {
+  lastSentTimestamp = 0;
+};
 
 type PresenceState = {
   /** The selected presence mode: 'online' | 'unavailable' | 'dnd' | 'offline' */
@@ -40,6 +46,43 @@ type PresenceState = {
   /** Unix timestamp (ms) of the most recent user activity across all devices. */
   lastActivityAt: number;
 };
+
+const getLocalPresenceSyncUpdatedAtStorageKey = (userId: string | undefined): string =>
+  userId ? `${LOCAL_PRESENCE_SYNC_UPDATED_AT_KEY}:${userId}` : LOCAL_PRESENCE_SYNC_UPDATED_AT_KEY;
+
+const readLocalPresenceSyncUpdatedAt = (storageKey: string): number => {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return 0;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+};
+
+const persistLocalPresenceSyncUpdatedAt = (storageKey: string, updatedAt: number): void => {
+  try {
+    localStorage.setItem(storageKey, String(updatedAt));
+  } catch {
+    // Best-effort metadata write; account data remains the source of truth.
+  }
+};
+
+const getNextLocalPresenceSyncUpdatedAt = (previousUpdatedAt: number): number =>
+  Math.max(Date.now(), previousUpdatedAt + 1);
+
+const getPresenceSyncUpdatedAt = (
+  content: Partial<PresenceState> | Record<string, unknown> | undefined
+): number | null => {
+  const updatedAt = content?.updatedAt;
+  return typeof updatedAt === 'number' && Number.isFinite(updatedAt) ? updatedAt : null;
+};
+
+const serializePresenceForSyncComparison = (
+  presenceMode: PresenceState['presenceMode'],
+  autoIdled: boolean
+) => JSON.stringify({ presenceMode, autoIdled });
 
 /**
  * Side-effect hook that syncs presence state across devices via account data.
@@ -75,46 +118,125 @@ export function usePresenceSyncEffect(): void {
 
   const syncEnabled = settings.sendPresence;
   const presenceMode = settings.presenceMode ?? 'online';
+  const userId = typeof mx.getUserId === 'function' ? (mx.getUserId() ?? undefined) : undefined;
+  const localUpdatedAtStorageKey = getLocalPresenceSyncUpdatedAtStorageKey(userId);
 
   // Echo-detection: track the token of our last upload
   const pendingEchoTokenRef = useRef<string | null>(null);
 
   // Track last-known remote state to avoid unnecessary updates
   const lastRemoteStateRef = useRef<PresenceState | null>(null);
+  const localUpdatedAtRef = useRef<number>(
+    readLocalPresenceSyncUpdatedAt(localUpdatedAtStorageKey)
+  );
+  const applyingRemoteTimestampRef = useRef<number | null>(null);
+  const previousSyncablePresenceJsonRef = useRef(
+    serializePresenceForSyncComparison(presenceMode, autoIdled)
+  );
+
+  const getFreshnessFloor = useCallback(
+    (): number => Math.max(localUpdatedAtRef.current, applyingRemoteTimestampRef.current ?? 0),
+    []
+  );
+
+  useEffect(() => {
+    localUpdatedAtRef.current = readLocalPresenceSyncUpdatedAt(localUpdatedAtStorageKey);
+    applyingRemoteTimestampRef.current = null;
+    pendingEchoTokenRef.current = null;
+    lastRemoteStateRef.current = null;
+    previousSyncablePresenceJsonRef.current = serializePresenceForSyncComparison(
+      settingsRef.current.presenceMode ?? 'online',
+      autoIdledRef.current
+    );
+  }, [localUpdatedAtStorageKey]);
+
+  useEffect(() => {
+    const currentSyncablePresenceJson = serializePresenceForSyncComparison(presenceMode, autoIdled);
+    if (currentSyncablePresenceJson === previousSyncablePresenceJsonRef.current) return;
+
+    previousSyncablePresenceJsonRef.current = currentSyncablePresenceJson;
+
+    if (!syncEnabled) return;
+
+    const appliedRemoteTimestamp = applyingRemoteTimestampRef.current;
+    if (appliedRemoteTimestamp !== null) {
+      localUpdatedAtRef.current = appliedRemoteTimestamp;
+      persistLocalPresenceSyncUpdatedAt(localUpdatedAtStorageKey, appliedRemoteTimestamp);
+      applyingRemoteTimestampRef.current = null;
+      return;
+    }
+
+    const updatedAt = getNextLocalPresenceSyncUpdatedAt(localUpdatedAtRef.current);
+    localUpdatedAtRef.current = updatedAt;
+    persistLocalPresenceSyncUpdatedAt(localUpdatedAtStorageKey, updatedAt);
+  }, [autoIdled, localUpdatedAtStorageKey, presenceMode, syncEnabled]);
+
+  const applyRemoteContent = useCallback(
+    (
+      rawContent: Partial<PresenceState> & { synctoken?: string }
+    ): 'updated' | 'unchanged' | 'ignored' => {
+      const { synctoken: _echoField, ...state } = rawContent;
+      if (!state.presenceMode || typeof state.autoIdled !== 'boolean') return 'ignored';
+
+      const remoteUpdatedAt = getPresenceSyncUpdatedAt(state);
+      const normalizedState: PresenceState = {
+        presenceMode: state.presenceMode,
+        autoIdled: state.autoIdled,
+        updatedAt: remoteUpdatedAt ?? Date.now(),
+        lastActivityAt:
+          typeof state.lastActivityAt === 'number' && Number.isFinite(state.lastActivityAt)
+            ? state.lastActivityAt
+            : (remoteUpdatedAt ?? Date.now()),
+      };
+
+      lastRemoteStateRef.current = normalizedState;
+
+      const localNeedsUpdate =
+        normalizedState.presenceMode !== settingsRef.current.presenceMode ||
+        normalizedState.autoIdled !== autoIdledRef.current;
+
+      if (!localNeedsUpdate) {
+        if (remoteUpdatedAt !== null) {
+          localUpdatedAtRef.current = remoteUpdatedAt;
+          persistLocalPresenceSyncUpdatedAt(localUpdatedAtStorageKey, remoteUpdatedAt);
+        }
+        return 'unchanged';
+      }
+
+      applyingRemoteTimestampRef.current = remoteUpdatedAt ?? Date.now();
+      debugLog.info('general', 'Applying presence from account data', { state: normalizedState });
+      if (normalizedState.presenceMode !== settingsRef.current.presenceMode) {
+        setSettings({ ...settingsRef.current, presenceMode: normalizedState.presenceMode });
+      }
+      if (normalizedState.autoIdled !== autoIdledRef.current) {
+        setAutoIdled(normalizedState.autoIdled);
+      }
+      return 'updated';
+    },
+    [localUpdatedAtStorageKey, setAutoIdled, setSettings]
+  );
 
   // On mount / when sync is first enabled: load from account data
   useEffect(() => {
-    if (!syncEnabled) return;
+    if (!syncEnabled) {
+      pendingEchoTokenRef.current = null;
+      applyingRemoteTimestampRef.current = null;
+      lastRemoteStateRef.current = null;
+      return undefined;
+    }
     const event = mx.getAccountData(CustomAccountDataEvent.SablePresence);
-    if (!event) return;
+    if (!event) return undefined;
 
-    const content = event.getContent<PresenceState & { synctoken?: string }>();
-    const { synctoken: _echoField, ...state } = content;
-
-    if (!state.presenceMode || typeof state.autoIdled !== 'boolean') return;
-
-    // Backcompat: if lastActivityAt is missing, initialize it
-    if (!state.lastActivityAt) {
-      state.lastActivityAt = state.updatedAt || Date.now();
+    const rawContent = event.getContent<PresenceState & { synctoken?: string }>();
+    const remoteUpdatedAt = getPresenceSyncUpdatedAt(rawContent);
+    if (
+      (remoteUpdatedAt === null && localUpdatedAtRef.current === 0) ||
+      (remoteUpdatedAt !== null && remoteUpdatedAt >= localUpdatedAtRef.current)
+    ) {
+      applyRemoteContent(rawContent);
     }
-
-    lastRemoteStateRef.current = state;
-
-    // Apply remote state if it's newer than local or if we haven't initialized yet
-    const localNeedsUpdate =
-      state.presenceMode !== settingsRef.current.presenceMode ||
-      state.autoIdled !== autoIdledRef.current;
-
-    if (localNeedsUpdate) {
-      debugLog.info('general', 'Loading presence from account data on mount', { state });
-      if (state.presenceMode !== settingsRef.current.presenceMode) {
-        setSettings({ ...settingsRef.current, presenceMode: state.presenceMode });
-      }
-      if (state.autoIdled !== autoIdledRef.current) {
-        setAutoIdled(state.autoIdled);
-      }
-    }
-  }, [mx, syncEnabled, setSettings, setAutoIdled]);
+    return undefined;
+  }, [applyRemoteContent, mx, syncEnabled]);
 
   // Live updates from other devices
   const onAccountData = useCallback(
@@ -130,6 +252,11 @@ export function usePresenceSyncEffect(): void {
         rawContent.synctoken === pendingEchoTokenRef.current
       ) {
         pendingEchoTokenRef.current = null;
+        const echoedUpdatedAt = getPresenceSyncUpdatedAt(rawContent);
+        if (echoedUpdatedAt !== null && echoedUpdatedAt > localUpdatedAtRef.current) {
+          localUpdatedAtRef.current = echoedUpdatedAt;
+          persistLocalPresenceSyncUpdatedAt(localUpdatedAtStorageKey, echoedUpdatedAt);
+        }
         debugLog.info('general', 'Received echo of our own presence upload', {
           mode: rawContent.presenceMode,
           autoIdled: rawContent.autoIdled,
@@ -137,18 +264,10 @@ export function usePresenceSyncEffect(): void {
         return;
       }
 
-      // Strip synctoken
       const { synctoken: _echoField, ...state } = rawContent;
-
-      if (!state.presenceMode || typeof state.autoIdled !== 'boolean') return;
-
-      // Backcompat: if lastActivityAt is missing, initialize it
-      if (!state.lastActivityAt) {
-        state.lastActivityAt = state.updatedAt || Date.now();
-      }
-
-      // If this is the same as what we last saw, skip (dedupe)
       if (
+        state.presenceMode &&
+        typeof state.autoIdled === 'boolean' &&
         lastRemoteStateRef.current &&
         lastRemoteStateRef.current.presenceMode === state.presenceMode &&
         lastRemoteStateRef.current.autoIdled === state.autoIdled &&
@@ -157,7 +276,23 @@ export function usePresenceSyncEffect(): void {
         return;
       }
 
-      lastRemoteStateRef.current = state;
+      const remoteUpdatedAt = getPresenceSyncUpdatedAt(rawContent);
+      const freshnessFloor = getFreshnessFloor();
+      if (remoteUpdatedAt !== null && freshnessFloor > 0 && remoteUpdatedAt < freshnessFloor) {
+        debugLog.info('general', 'Ignoring stale presence account data update', {
+          remoteUpdatedAt,
+          freshnessFloor,
+        });
+        Sentry.addBreadcrumb({
+          category: 'presence-sync',
+          message: 'Ignored stale remote presence state',
+          level: 'info',
+          data: { remoteUpdatedAt, freshnessFloor },
+        });
+        return;
+      }
+
+      if (!state.presenceMode || typeof state.autoIdled !== 'boolean') return;
 
       // Apply state from another device
       debugLog.info('general', 'Received presence update from another device', { state });
@@ -184,15 +319,13 @@ export function usePresenceSyncEffect(): void {
         setAutoIdled(state.autoIdled);
       }
 
-      if (state.presenceMode !== settingsRef.current.presenceMode) {
-        setSettings({ ...settingsRef.current, presenceMode: state.presenceMode });
-      }
+      applyRemoteContent(rawContent);
 
       // DO NOT send to server here — the remote device already sent it.
       // Sending again causes redundant traffic and can trigger rate limiting,
       // preventing our local state changes from being sent when they should be.
     },
-    [setSettings, setAutoIdled]
+    [applyRemoteContent, getFreshnessFloor, localUpdatedAtStorageKey, setAutoIdled]
   );
   useAccountDataCallback(mx, onAccountData);
 
@@ -210,6 +343,44 @@ export function usePresenceSyncEffect(): void {
     const debounceMs = isActivityEvent ? ACTIVITY_DEBOUNCE_MS : DEBOUNCE_MS;
 
     timerRef.current = setTimeout(() => {
+      const remoteEvent = mx.getAccountData(CustomAccountDataEvent.SablePresence);
+      const remoteContent = remoteEvent?.getContent() as
+        | (Partial<PresenceState> & { synctoken?: string })
+        | undefined;
+      const remoteUpdatedAt = getPresenceSyncUpdatedAt(remoteContent);
+      const hasLocalUpdatedAt = localUpdatedAtRef.current > 0;
+      if (
+        remoteContent &&
+        remoteUpdatedAt === null &&
+        !hasLocalUpdatedAt &&
+        applyRemoteContent(remoteContent) !== 'ignored'
+      ) {
+        return;
+      }
+
+      let localUpdatedAt = hasLocalUpdatedAt
+        ? localUpdatedAtRef.current
+        : getNextLocalPresenceSyncUpdatedAt(localUpdatedAtRef.current);
+      if (!hasLocalUpdatedAt) {
+        localUpdatedAtRef.current = localUpdatedAt;
+        persistLocalPresenceSyncUpdatedAt(localUpdatedAtStorageKey, localUpdatedAt);
+      }
+
+      if (
+        remoteContent &&
+        remoteUpdatedAt !== null &&
+        remoteUpdatedAt >= localUpdatedAt &&
+        applyRemoteContent(remoteContent) !== 'ignored'
+      ) {
+        return;
+      }
+
+      if (remoteUpdatedAt !== null && remoteUpdatedAt > localUpdatedAt) {
+        localUpdatedAt = remoteUpdatedAt;
+        localUpdatedAtRef.current = remoteUpdatedAt;
+        persistLocalPresenceSyncUpdatedAt(localUpdatedAtStorageKey, remoteUpdatedAt);
+      }
+
       const token = Math.random().toString(36).slice(2, 10);
       pendingEchoTokenRef.current = token;
 
@@ -224,7 +395,7 @@ export function usePresenceSyncEffect(): void {
       const state: PresenceState & { synctoken: string } = {
         presenceMode,
         autoIdled,
-        updatedAt: now,
+        updatedAt: localUpdatedAt,
         lastActivityAt,
         synctoken: token,
       };
@@ -240,7 +411,7 @@ export function usePresenceSyncEffect(): void {
           lastRemoteStateRef.current = {
             presenceMode,
             autoIdled,
-            updatedAt: state.updatedAt,
+            updatedAt: localUpdatedAt,
             lastActivityAt: state.lastActivityAt,
           };
         })
@@ -262,7 +433,15 @@ export function usePresenceSyncEffect(): void {
     }, debounceMs);
 
     return () => clearTimeout(timerRef.current);
-  }, [mx, presenceMode, autoIdled, settings.presenceStatusMsg, syncEnabled]);
+  }, [
+    applyRemoteContent,
+    autoIdled,
+    localUpdatedAtStorageKey,
+    mx,
+    presenceMode,
+    settings.presenceStatusMsg,
+    syncEnabled,
+  ]);
 }
 
 /**
@@ -327,6 +506,11 @@ async function sendPresenceToServer(
     statusMsg,
   });
 
+  // Keep classic and sliding sync presence configuration aligned with the
+  // effective presence even if the immediate network request fails or backs off.
+  mx.setSyncPresence(serverPresence === 'offline' ? SetPresence.Offline : undefined);
+  getSlidingSyncManager(mx)?.setPresenceEnabled(serverPresence !== 'offline');
+
   // Send via matrix-js-sdk with 429 handling and retry
   let retryCount = 0;
   const maxRetries = 3;
@@ -374,10 +558,4 @@ async function sendPresenceToServer(
       return;
     }
   }
-
-  // Also update classic sync presence param
-  mx.setSyncPresence(serverPresence === 'offline' ? SetPresence.Offline : undefined);
-
-  // Also update sliding sync presence extension
-  getSlidingSyncManager(mx)?.setPresenceEnabled(serverPresence !== 'offline');
 }
