@@ -1912,12 +1912,16 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       if (gif.url.trim().length === 0) return;
 
       const gifUrl = gif.url.trim();
-      let url = gifUrl.startsWith('mxc://')
-        ? gifUrl
-        : `mxc://${clientConfig.gifs?.proxyUrl ?? ''}/${toMatrixMediaId(
-            gifUrl.slice('https://static.klipy.com/ii/'.length),
-            'klipy_'
-          )}`;
+      const klipyStaticPrefix = 'https://static.klipy.com/ii/';
+      let url = gifUrl;
+      if (gifUrl.startsWith('mxc://')) {
+        url = gifUrl;
+      } else if (gifUrl.startsWith(klipyStaticPrefix)) {
+        url = `mxc://${clientConfig.gifs?.proxyUrl ?? ''}/${toMatrixMediaId(
+          gifUrl.slice(klipyStaticPrefix.length),
+          'klipy_'
+        )}`;
+      }
 
       const content: RoomMessageEventContent & IContent = {
         body: gif.title,

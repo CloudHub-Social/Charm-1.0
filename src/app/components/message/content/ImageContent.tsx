@@ -185,6 +185,9 @@ export const ImageContent = as<'div', ImageContentProps>(
     const [favorited, setFavorited] = useState(
       favoritedContent.gifs.find((v) => v.url == url) != undefined
     );
+    useEffect(() => {
+      setFavorited(favoritedContent.gifs.some((v) => v.url === url));
+    }, [favoritedContent, url]);
     const [srcState, loadSrc, setSrcState] = useAsyncCallback(
       useCallback(async () => {
         if (url.startsWith('http')) return url;

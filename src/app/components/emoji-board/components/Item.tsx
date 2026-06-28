@@ -166,16 +166,15 @@ export function GifItem({
   children: ReactNode;
 }) {
   const [isHovered, setIsHovered] = useState(false);
-  const initialFavorited = useFavoriteGifs();
-  const [favoritedContent, setFavoritedContent] = useState(initialFavorited);
+  const favoritedContent = useFavoriteGifs();
   const [favorited, setFavorited] = useState(
     favoritedContent.gifs.find((v) => v.url == gif?.url) != undefined
   );
   const mx = useMatrixClient();
 
   useEffect(() => {
-    setFavoritedContent(initialFavorited);
-  }, [initialFavorited]);
+    setFavorited(favoritedContent.gifs.some((v) => v.url === gif?.url));
+  }, [favoritedContent, gif?.url]);
 
   return (
     <Box
@@ -207,6 +206,7 @@ export function GifItem({
                 title={favorited ? 'Unfavorite gif' : 'Favorite gif'}
                 onClick={async (e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   if (!favorited) {
                     setFavorited(true);
                     await mx
