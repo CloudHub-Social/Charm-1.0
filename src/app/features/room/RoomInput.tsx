@@ -197,6 +197,7 @@ import type {
 import { AudioMessageRecorder } from './AudioMessageRecorder';
 import { PollCreator } from './PollCreator';
 import { sendImmediateMessage } from './sendImmediateMessage';
+import { applyAttachmentSendPlan, type ComposerAttachmentCaption } from './attachmentSendPlan';
 import * as prefix from '$unstable/prefixes';
 import { LocationDialog } from './location-modal';
 import {
@@ -436,6 +437,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       roomUploadAtomFamily,
       selectedFiles.map((f) => f.file)
     );
+    const uploadStates = useAtomValue(uploadFamilyObserverAtom);
     const uploadBoardHandlers = useRef<UploadBoardImperativeHandlers>();
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const suppressNextSendClickSequenceRef = useRef<number | null>(null);
@@ -823,8 +825,109 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       handleRemoveUpload(uploads.map((upload) => upload.file));
     };
 
+    const clearSentMessageContext = (
+      sentReplyDraftSnapshot?: string,
+      sentImagePacksSnapshot?: string
+    ) => {
+      if (
+        sentImagePacksSnapshot === undefined ||
+        JSON.stringify(imagePacksUsedRef.current.toJSON()) === sentImagePacksSnapshot
+      ) {
+        imagePacksUsedRef.current.clear();
+      }
+
+      if (
+        sentReplyDraftSnapshot !== undefined &&
+        serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot
+      ) {
+        setReplyDraft(replyDraftBase);
+      }
+    };
+
+    const restoreFailedImmediateSendContext = (
+      sentMsgDraftSnapshot: typeof editor.children,
+      sentReplyDraftSnapshot: string,
+      sentImagePacksSnapshot: string,
+      sentSilentReplySnapshot: boolean
+    ) => {
+      if (!isMountedRef.current) return;
+
+      if (isEmptyEditor(editor)) {
+        const restoredMsgDraft = structuredClone(sentMsgDraftSnapshot);
+        setMsgDraft(restoredMsgDraft);
+        requestAnimationFrame(() => {
+          try {
+            ReactEditor.focus(editor);
+            moveCursor(editor);
+          } catch {
+            // Ignore focus errors
+          }
+        });
+      }
+
+      const currentReplyDraftSnapshot = serializeReplyDraft(latestReplyDraftRef.current);
+      if (
+        currentReplyDraftSnapshot === serializeReplyDraft(replyDraftBase) ||
+        currentReplyDraftSnapshot === sentReplyDraftSnapshot
+      ) {
+        const restoredReplyDraft = JSON.parse(sentReplyDraftSnapshot) as IReplyDraft | null;
+        restoredSilentReplyRef.current = restoredReplyDraft ? sentSilentReplySnapshot : null;
+        setReplyDraft(restoredReplyDraft ?? replyDraftBase);
+      }
+
+      if (imagePacksUsedRef.current.size === 0) {
+        const restoredImagePacks = JSON.parse(sentImagePacksSnapshot) as Record<
+          string,
+          MSC4459ImagePackReference
+        >;
+        Object.entries(restoredImagePacks).forEach(([key, value]) => {
+          imagePacksUsedRef.current.set(key, value);
+        });
+      }
+
+      sendTypingStatus(false);
+    };
+
+    const resetInput = (
+      sentReplyDraftSnapshot?: string,
+      sentImagePacksSnapshot?: string,
+      options?: { refocus?: boolean }
+    ) => {
+      setMsgDraft([]);
+      resetEditor(editor);
+      resetEditorHistory(editor);
+      setInputKey((prev) => prev + 1);
+      clearSentMessageContext(sentReplyDraftSnapshot, sentImagePacksSnapshot);
+      sendTypingStatus(false);
+
+      if (options?.refocus) {
+        requestAnimationFrame(() => {
+          try {
+            ReactEditor.focus(editor);
+            moveCursor(editor);
+          } catch {
+            // Ignore focus errors
+          }
+        });
+      }
+    };
+
     const handleSendUpload = async (uploads: UploadSuccess[]) => {
       const plainText = toPlainText(editor.children).trim();
+      const formattedCaption = trimCustomHtml(
+        toMatrixCustomHTML(editor.children, {
+          room,
+        })
+      );
+      const sharedCaption: ComposerAttachmentCaption | undefined =
+        plainText.length > 0
+          ? {
+              body: plainText,
+              formattedBody: customHtmlEqualsPlainText(formattedCaption, plainText)
+                ? undefined
+                : formattedCaption,
+            }
+          : undefined;
       const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
       const clearSentUploadReplyDraft = () => {
         if (serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot) {
@@ -832,8 +935,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         }
       };
 
+      const matchingFiles = uploads
+        .map((upload) => selectedFiles.find((f) => f.file === upload.file))
+        .filter((fileItem): fileItem is TUploadItem => !!fileItem);
+      const plannedFiles = applyAttachmentSendPlan(matchingFiles, sharedCaption);
+
       const contentsPromises = uploads.map(async (upload) => {
-        const fileItem = selectedFiles.find((f) => f.file === upload.file);
+        const fileItem = plannedFiles.find((f) => f.file === upload.file);
         if (!fileItem) throw new Error('Broken upload');
 
         if (fileItem.file.type.startsWith('image')) {
@@ -847,7 +955,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         }
         return getFileMsgContent(fileItem, upload.mxc);
       });
-      handleCancelUpload(uploads);
       const contents = fulfilledPromiseSettledResult(await Promise.allSettled(contentsPromises));
 
       /**
@@ -868,17 +975,51 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       }
 
       if (contents.length > 0) {
-        const replyContent =
-          plainText?.length === 0 ? getReplyContent(replyDraft, room) : undefined;
-        if (replyContent) {
+        const replyContent = getReplyContent(replyDraft, room);
+        if (Object.keys(replyContent).length > 0) {
           contents[0]!['m.relates_to'] = replyContent;
-          const replyMentions = getReplyMentionData(replyDraft, replyEvent, silentReply);
-          if (replyMentions) contents[0]!['m.mentions'] = replyMentions;
         }
+
+        const mentionData = getMentions(mx, roomId, editor);
+        const replyMentions = getReplyMentionData(
+          replyDraft,
+          replyEvent,
+          silentReply,
+          mentionData.room
+        );
+        if (replyMentions?.user_ids) {
+          replyMentions.user_ids.forEach((id) => mentionData.users.add(id));
+        }
+
+        contents[0]!['m.mentions'] = getMentionContent(
+          Array.from(mentionData.users),
+          mentionData.room || replyMentions?.room === true
+        );
+        contents[0]![prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
+          imagePacksUsedRef.current.toJSON();
+
+        const links = getLinks(editor.children);
+        contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME] = [];
+        links?.forEach((link) =>
+          contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME].push({
+            matched_url: link,
+          })
+        );
       }
 
       const invalidate = () =>
         queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
+      const sendContentsSequentially = async (
+        sendContent: (content: MessageContent) => Promise<void>
+      ) => {
+        await contents.reduce(
+          (promise, content) => promise.then(() => sendContent(content)),
+          Promise.resolve()
+        );
+      };
+
+      const sentImagePacksSnapshot = JSON.stringify(imagePacksUsedRef.current.toJSON());
+      const resetComposerAfterSend = plainText.length > 0;
 
       if (scheduledTime) {
         try {
@@ -887,17 +1028,21 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             await cancelDelayedEvent(mx, editingScheduledDelayId);
           }
 
-          await Promise.all(
-            contents.map((content) => {
-              if (isEncrypted) {
-                return sendDelayedMessageE2EE(mx, roomId, room, content, delayMs);
-              }
-              return sendDelayedMessage(mx, roomId, content, delayMs);
-            })
-          );
+          await sendContentsSequentially(async (content) => {
+            if (isEncrypted) {
+              await sendDelayedMessageE2EE(mx, roomId, room, content, delayMs);
+            } else {
+              await sendDelayedMessage(mx, roomId, content, delayMs);
+            }
+          });
 
           invalidate();
-          clearSentUploadReplyDraft();
+          handleCancelUpload(uploads);
+          if (resetComposerAfterSend) {
+            resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot, { refocus: true });
+          } else {
+            clearSentUploadReplyDraft();
+          }
           setEditingScheduledDelayId(null);
           setScheduledTime(null);
         } catch (error) {
@@ -923,50 +1068,55 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         }
 
-        await Promise.all(
-          contents.map((content) => {
-            const sendStartTime = Date.now();
-            const span = Sentry.startInactiveSpan({
-              name: 'message.send',
-              op: 'message',
-              attributes: {
-                'message.room_id': roomId,
-                'message.type': content.msgtype ?? 'm.text',
-                'message.is_encrypted': isEncrypted,
-                'message.body_length': content.body?.length ?? 0,
-                'message.is_thread': !!threadRootId,
-              },
-            });
+        await sendContentsSequentially(async (content) => {
+          const sendStartTime = Date.now();
+          const span = Sentry.startInactiveSpan({
+            name: 'message.send',
+            op: 'message',
+            attributes: {
+              'message.room_id': roomId,
+              'message.type': content.msgtype ?? 'm.text',
+              'message.is_encrypted': isEncrypted,
+              'message.body_length': content.body?.length ?? 0,
+              'message.is_thread': !!threadRootId,
+            },
+          });
 
-            return mx
-              .sendMessage(roomId, threadRootId ?? null, content as RoomMessageEventContent)
-              .then((res: { event_id: string }) => {
-                debugLog.info('message', 'Uploaded file message sent', {
-                  roomId,
-                  eventId: res.event_id,
-                  msgtype: content.msgtype,
-                });
-                span.setAttribute('message.event_id', res.event_id);
-                span.setAttribute('message.send_duration_ms', Date.now() - sendStartTime);
-                span.end();
-                return res;
-              })
-              .catch((error: unknown) => {
-                debugLog.error('message', 'Failed to send uploaded file message', {
-                  roomId,
-                  error: error instanceof Error ? error.message : String(error),
-                });
-                log.error('failed to send uploaded message', { roomId }, error);
-                span.setAttribute(
-                  'message.error',
-                  error instanceof Error ? error.message : String(error)
-                );
-                span.end();
-                throw error;
-              });
-          })
-        );
-        clearSentUploadReplyDraft();
+          try {
+            const res = await mx.sendMessage(
+              roomId,
+              threadRootId ?? null,
+              content as RoomMessageEventContent
+            );
+            debugLog.info('message', 'Uploaded file message sent', {
+              roomId,
+              eventId: res.event_id,
+              msgtype: content.msgtype,
+            });
+            span.setAttribute('message.event_id', res.event_id);
+            span.setAttribute('message.send_duration_ms', Date.now() - sendStartTime);
+          } catch (error: unknown) {
+            debugLog.error('message', 'Failed to send uploaded file message', {
+              roomId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            log.error('failed to send uploaded message', { roomId }, error);
+            span.setAttribute(
+              'message.error',
+              error instanceof Error ? error.message : String(error)
+            );
+            throw error;
+          } finally {
+            span.end();
+          }
+        });
+
+        handleCancelUpload(uploads);
+        if (resetComposerAfterSend) {
+          resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot, { refocus: true });
+        } else {
+          clearSentUploadReplyDraft();
+        }
       }
     };
 
@@ -1005,7 +1155,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       [editor, handleCloseAutocomplete, mx, room, sendTypingStatus]
     );
 
-    const submit = useCallback(async () => {
+    const submit = async () => {
       if (submitInFlightRef.current) return;
       submitInFlightRef.current = true;
 
@@ -1172,6 +1322,17 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             );
             plainText = nextPlainText;
           }
+        }
+
+        if (selectedFiles.length > 0) {
+          const uploadsReady =
+            uploadStates.length === selectedFiles.length &&
+            uploadStates.every((upload) => upload.status === UploadStatus.Success);
+
+          if (uploadsReady) {
+            await uploadBoardHandlers.current?.handleSend();
+          }
+          return;
         }
 
         if (plainText === '') return;
@@ -1375,93 +1536,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           queryClient.invalidateQueries({
             queryKey: ['delayedEvents', roomId],
           });
-
-        const clearSentMessageContext = (
-          sentReplyDraftSnapshot?: string,
-          sentImagePacksSnapshot?: string
-        ) => {
-          if (
-            sentImagePacksSnapshot === undefined ||
-            JSON.stringify(imagePacksUsedRef.current.toJSON()) === sentImagePacksSnapshot
-          ) {
-            imagePacksUsedRef.current.clear();
-          }
-
-          if (
-            sentReplyDraftSnapshot !== undefined &&
-            serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot
-          ) {
-            setReplyDraft(replyDraftBase);
-          }
-        };
-
-        const restoreFailedImmediateSendContext = (
-          sentMsgDraftSnapshot: typeof editor.children,
-          sentReplyDraftSnapshot: string,
-          sentImagePacksSnapshot: string,
-          sentSilentReplySnapshot: boolean
-        ) => {
-          if (!isMountedRef.current) return;
-
-          if (isEmptyEditor(editor)) {
-            const restoredMsgDraft = structuredClone(sentMsgDraftSnapshot);
-            setMsgDraft(restoredMsgDraft);
-            requestAnimationFrame(() => {
-              try {
-                ReactEditor.focus(editor);
-                moveCursor(editor);
-              } catch {
-                // Ignore focus errors
-              }
-            });
-          }
-
-          const currentReplyDraftSnapshot = serializeReplyDraft(latestReplyDraftRef.current);
-          if (
-            currentReplyDraftSnapshot === serializeReplyDraft(replyDraftBase) ||
-            currentReplyDraftSnapshot === sentReplyDraftSnapshot
-          ) {
-            const restoredReplyDraft = JSON.parse(sentReplyDraftSnapshot) as IReplyDraft | null;
-            restoredSilentReplyRef.current = restoredReplyDraft ? sentSilentReplySnapshot : null;
-            setReplyDraft(restoredReplyDraft ?? replyDraftBase);
-          }
-
-          if (imagePacksUsedRef.current.size === 0) {
-            const restoredImagePacks = JSON.parse(sentImagePacksSnapshot) as Record<
-              string,
-              MSC4459ImagePackReference
-            >;
-            Object.entries(restoredImagePacks).forEach(([key, value]) => {
-              imagePacksUsedRef.current.set(key, value);
-            });
-          }
-
-          sendTypingStatus(false);
-        };
-
-        const resetInput = (
-          sentReplyDraftSnapshot?: string,
-          sentImagePacksSnapshot?: string,
-          options?: { refocus?: boolean }
-        ) => {
-          setMsgDraft([]);
-          resetEditor(editor);
-          resetEditorHistory(editor);
-          setInputKey((prev) => prev + 1);
-          clearSentMessageContext(sentReplyDraftSnapshot, sentImagePacksSnapshot);
-          sendTypingStatus(false);
-
-          if (options?.refocus) {
-            requestAnimationFrame(() => {
-              try {
-                ReactEditor.focus(editor);
-                moveCursor(editor);
-              } catch {
-                // Ignore focus errors
-              }
-            });
-          }
-        };
         if (scheduledTime) {
           try {
             const delayMs = computeDelayMs(scheduledTime);
@@ -1584,174 +1658,122 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       } finally {
         submitInFlightRef.current = false;
       }
-    }, [
-      editor,
-      replyEvent,
-      mx,
-      roomId,
-      canSendReaction,
-      pkCompatEnable,
-      replyDraft,
-      silentReply,
-      pmpProxyingEnable,
-      pluralkitProxyMessageHandler,
-      scheduledTime,
-      editingScheduledDelayId,
-      nicknames,
-      room,
-      handleQuickReact,
-      pluralkitCmdMessageHandler,
-      commands,
-      sendTypingStatus,
-      queryClient,
-      threadRootId,
-      setMsgDraft,
-      setReplyDraft,
-      settingsLinkBaseUrl,
-      isEncrypted,
-      setEditingScheduledDelayId,
-      setScheduledTime,
-      editDraft,
-      setEditDraft,
-      setServerMaxDelayMs,
-      replyDraftBase,
-      emojiAutoExpand,
-      openLocationPicker,
-      openPollCreator,
-      prepareComposerOverlayTrigger,
-    ]);
+    };
 
-    const handleKeyDown: KeyboardEventHandler = useCallback(
-      (evt) => {
-        const autocompleteMenu = document.querySelector('[data-autocomplete-menu]');
-        const isMenuVisible = !!(autocompleteQuery && autocompleteMenu);
+    const handleKeyDown: KeyboardEventHandler = (evt) => {
+      const autocompleteMenu = document.querySelector('[data-autocomplete-menu]');
+      const isMenuVisible = !!(autocompleteQuery && autocompleteMenu);
 
-        if (isMenuVisible) {
-          if (isKeyHotkey('arrowdown', evt)) {
+      if (isMenuVisible) {
+        if (isKeyHotkey('arrowdown', evt)) {
+          evt.preventDefault();
+          autocompleteMenu.dispatchEvent(
+            new CustomEvent('autocomplete-navigate', {
+              detail: { direction: 1 },
+            })
+          );
+          return;
+        }
+        if (isKeyHotkey('arrowup', evt)) {
+          evt.preventDefault();
+          autocompleteMenu.dispatchEvent(
+            new CustomEvent('autocomplete-navigate', {
+              detail: { direction: -1 },
+            })
+          );
+          return;
+        }
+
+        if ((isKeyHotkey('enter', evt) || isKeyHotkey('tab', evt)) && !isComposing(evt)) {
+          const selectedItem =
+            autocompleteMenu.querySelector<HTMLButtonElement>('button[data-selected="true"]') ??
+            autocompleteMenu.querySelector<HTMLButtonElement>('button');
+
+          if (selectedItem) {
             evt.preventDefault();
-            autocompleteMenu.dispatchEvent(
-              new CustomEvent('autocomplete-navigate', {
-                detail: { direction: 1 },
-              })
-            );
+            selectedItem.click();
             return;
           }
-          if (isKeyHotkey('arrowup', evt)) {
-            evt.preventDefault();
-            autocompleteMenu.dispatchEvent(
-              new CustomEvent('autocomplete-navigate', {
-                detail: { direction: -1 },
-              })
-            );
-            return;
-          }
+        }
+      }
 
-          if ((isKeyHotkey('enter', evt) || isKeyHotkey('tab', evt)) && !isComposing(evt)) {
-            const selectedItem =
-              autocompleteMenu.querySelector<HTMLButtonElement>('button[data-selected="true"]') ??
-              autocompleteMenu.querySelector<HTMLButtonElement>('button');
+      if (isKeyHotkey('arrowup', evt) && isEmptyEditor(editor)) {
+        const { selection } = editor;
+        if (selection && Editor.isStart(editor, selection.anchor, [])) {
+          evt.preventDefault();
+          onEditLastMessage?.();
+          return;
+        }
+      }
 
-            if (selectedItem) {
+      if (structuredMarkdownAssist && isKeyHotkey('enter', evt) && !isComposing(evt)) {
+        const { selection } = editor;
+        if (selection && Range.isCollapsed(selection)) {
+          const blockIndex = selection.anchor.path[0];
+          if (typeof blockIndex === 'number') {
+            const lines = editor.children.map((_, index) => Editor.string(editor, [index]));
+            const action = getStructuredMarkdownAction(lines, blockIndex);
+
+            if (action) {
               evt.preventDefault();
-              selectedItem.click();
+              if (action.kind === 'continue') {
+                editor.insertBreak();
+                editor.insertText(action.prefix);
+                return;
+              }
+              if (action.kind === 'continue_fence') {
+                editor.insertBreak();
+                return;
+              }
+
+              const blockPath = [blockIndex];
+              Transforms.select(editor, {
+                anchor: Editor.start(editor, blockPath),
+                focus: Editor.end(editor, blockPath),
+              });
+              Transforms.insertText(editor, action.replacement);
+              if (shouldInsertBreakAfterStructuredReplacement(action)) {
+                editor.insertBreak();
+              }
               return;
             }
           }
         }
-
-        if (isKeyHotkey('arrowup', evt) && isEmptyEditor(editor)) {
-          const { selection } = editor;
-          if (selection && Editor.isStart(editor, selection.anchor, [])) {
-            evt.preventDefault();
-            onEditLastMessage?.();
-            return;
-          }
-        }
-
-        if (structuredMarkdownAssist && isKeyHotkey('enter', evt) && !isComposing(evt)) {
-          const { selection } = editor;
-          if (selection && Range.isCollapsed(selection)) {
-            const blockIndex = selection.anchor.path[0];
-            if (typeof blockIndex === 'number') {
-              const lines = editor.children.map((_, index) => Editor.string(editor, [index]));
-              const action = getStructuredMarkdownAction(lines, blockIndex);
-
-              if (action) {
-                evt.preventDefault();
-                if (action.kind === 'continue') {
-                  editor.insertBreak();
-                  editor.insertText(action.prefix);
-                  return;
-                }
-                if (action.kind === 'continue_fence') {
-                  editor.insertBreak();
-                  return;
-                }
-
-                const blockPath = [blockIndex];
-                Transforms.select(editor, {
-                  anchor: Editor.start(editor, blockPath),
-                  focus: Editor.end(editor, blockPath),
-                });
-                Transforms.insertText(editor, action.replacement);
-                if (shouldInsertBreakAfterStructuredReplacement(action)) {
-                  editor.insertBreak();
-                }
-                return;
-              }
-            }
-          }
-        }
-        if (
-          (isKeyHotkey('mod+enter', evt) || (!enterForNewline && isKeyHotkey('enter', evt))) &&
-          !isComposing(evt)
-        ) {
-          evt.preventDefault();
-          submit().catch((error) => {
-            log.error('submit failed', { roomId }, error);
-          });
+      }
+      if (
+        (isKeyHotkey('mod+enter', evt) || (!enterForNewline && isKeyHotkey('enter', evt))) &&
+        !isComposing(evt)
+      ) {
+        evt.preventDefault();
+        submit().catch((error) => {
+          log.error('submit failed', { roomId }, error);
+        });
+        return;
+      }
+      if (isKeyHotkey('escape', evt)) {
+        evt.preventDefault();
+        if (showAudioRecorder) {
+          audioRecorderRef.current?.cancel();
           return;
         }
-        if (isKeyHotkey('escape', evt)) {
-          evt.preventDefault();
-          if (showAudioRecorder) {
-            audioRecorderRef.current?.cancel();
-            return;
-          }
-          if (autocompleteQuery) {
-            setAutocompleteQuery(undefined);
-            return;
-          }
-          if (editDraft) {
-            setEditDraft(undefined);
-            resetEditor(editor);
-            resetEditorHistory(editor);
-            return;
-          }
-          setReplyDraft(undefined);
+        if (autocompleteQuery) {
+          setAutocompleteQuery(undefined);
+          return;
         }
+        if (editDraft) {
+          setEditDraft(undefined);
+          resetEditor(editor);
+          resetEditorHistory(editor);
+          return;
+        }
+        setReplyDraft(undefined);
+      }
 
-        if (isKeyHotkey('mod+e', evt)) {
-          evt.preventDefault();
-          setEmojiBoardTab(EmojiBoardTab.Sticker);
-        }
-      },
-      [
-        submit,
-        roomId,
-        setReplyDraft,
-        enterForNewline,
-        autocompleteQuery,
-        isComposing,
-        showAudioRecorder,
-        editor,
-        onEditLastMessage,
-        editDraft,
-        setEditDraft,
-        structuredMarkdownAssist,
-        setEmojiBoardTab,
-      ]
-    );
+      if (isKeyHotkey('mod+e', evt)) {
+        evt.preventDefault();
+        setEmojiBoardTab(EmojiBoardTab.Sticker);
+      }
+    };
 
     const handleKeyUp: KeyboardEventHandler = useCallback(
       (evt) => {
