@@ -5,6 +5,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react';
@@ -69,7 +70,7 @@ import {
   getEventIdAbsoluteIndex,
 } from '$utils/timeline';
 import { useTimelineSync } from '$hooks/timeline/useTimelineSync';
-import type { TimelineJumpMode } from '$hooks/timeline/useTimelineSync';
+import type { TimelineFocusItem, TimelineJumpMode } from '$hooks/timeline/useTimelineSync';
 import { useTimelineActions } from '$hooks/timeline/useTimelineActions';
 import {
   useProcessedTimeline,
@@ -79,6 +80,13 @@ import {
 import { useTimelineEventRenderer } from '$hooks/timeline/useTimelineEventRenderer';
 import { isPhoneLayoutDevice } from '$utils/user-agent';
 import * as css from './RoomTimeline.css';
+import {
+  getTimelineResizeAnchorTarget,
+  shouldKeepTimelineResizeAnchorLoopRunning,
+} from './timelineResizeAnchoring';
+
+const FOCUS_ITEM_SETTLE_MS = 2000;
+const BOTTOM_ANCHOR_SETTLE_MS = 3000;
 
 const TimelineFloat = as<'div', css.TimelineFloatVariants>(
   ({ position, className, ...props }, ref) => (
@@ -260,6 +268,13 @@ export function RoomTimeline({
   // and performs the final scroll + setIsReady when this flag is set.
   const pendingReadyRef = useRef(false);
   const currentRoomIdRef = useRef(room.roomId);
+  const focusAnchorSettleUntilRef = useRef(0);
+  const transientFocusAnchorRef = useRef<TimelineFocusItem | undefined>(undefined);
+  const bottomAnchorSettleUntilRef = useRef(0);
+  const [bottomAnchorRestartToken, restartBottomAnchorTick] = useReducer(
+    (count: number) => count + 1,
+    0
+  );
 
   const [isReady, setIsReady] = useState(false);
 
@@ -278,12 +293,18 @@ export function RoomTimeline({
   const processedEventsRef = useRef<ProcessedEvent[]>([]);
   const timelineSyncRef = useRef<typeof timelineSync>(null as unknown as typeof timelineSync);
 
+  const refreshBottomAnchorSettleWindow = useCallback(() => {
+    bottomAnchorSettleUntilRef.current = Date.now() + BOTTOM_ANCHOR_SETTLE_MS;
+  }, []);
+
   const scrollToBottom = useCallback(() => {
     if (!vListRef.current) return;
     const lastIndex = processedEventsRef.current.length - 1;
     if (lastIndex < 0) return;
     vListRef.current.scrollTo(vListRef.current.scrollSize);
-  }, []);
+    refreshBottomAnchorSettleWindow();
+    restartBottomAnchorTick();
+  }, [refreshBottomAnchorSettleWindow]);
 
   const timelineSync = useTimelineSync({
     room,
@@ -299,6 +320,7 @@ export function RoomTimeline({
   });
 
   timelineSyncRef.current = timelineSync;
+  const setTimelineFocusItem = timelineSync.setFocusItem;
 
   const eventsLengthRef = useRef(timelineSync.eventsLength);
   eventsLengthRef.current = timelineSync.eventsLength;
@@ -320,6 +342,10 @@ export function RoomTimeline({
     const match = events.find((e) => e.itemIndex === rawIndex);
     if (!match) return undefined;
     return events.indexOf(match);
+  }, []);
+
+  const refreshFocusAnchorSettleWindow = useCallback(() => {
+    focusAnchorSettleUntilRef.current = Date.now() + FOCUS_ITEM_SETTLE_MS;
   }, []);
 
   useLayoutEffect(() => {
@@ -345,6 +371,7 @@ export function RoomTimeline({
         initialScrollTimerRef.current = undefined;
         if (processedEventsRef.current.length > 0) {
           vListRef.current?.scrollToIndex(processedEventsRef.current.length - 1, { align: 'end' });
+          refreshBottomAnchorSettleWindow();
           // Only mark ready once we've successfully scrolled.  If processedEvents
           // was empty when the timer fired (e.g. the onLifecycle reset cleared the
           // timeline within the 80 ms window), defer setIsReady until the recovery
@@ -358,7 +385,27 @@ export function RoomTimeline({
     }
     // No cleanup return — the timer must survive eventsLength fluctuations.
     // It is cancelled on unmount by the dedicated effect below.
-  }, [timelineSync.eventsLength, timelineSync.liveTimelineLinked, eventId, room.roomId]);
+  }, [
+    timelineSync.eventsLength,
+    timelineSync.liveTimelineLinked,
+    eventId,
+    room.roomId,
+    refreshBottomAnchorSettleWindow,
+  ]);
+
+  useEffect(() => {
+    focusAnchorSettleUntilRef.current = 0;
+    transientFocusAnchorRef.current = undefined;
+    bottomAnchorSettleUntilRef.current = 0;
+    prevViewportHeightRef.current = 0;
+    setTimelineFocusItem(undefined);
+  }, [room.roomId, setTimelineFocusItem]);
+
+  useEffect(() => {
+    if (transientFocusAnchorRef.current?.jumpMode !== 'notification_live') return;
+    transientFocusAnchorRef.current = undefined;
+    focusAnchorSettleUntilRef.current = 0;
+  }, [timelineSync.eventsLength]);
 
   // Cancel the initial-scroll timer on unmount (the useLayoutEffect above
   // intentionally does not cancel it when deps change).
@@ -432,6 +479,15 @@ export function RoomTimeline({
         if (processedIndex === undefined) return false;
         setIsReady(true);
         vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
+        if (currentFocusItem.tail === 'live') {
+          refreshBottomAnchorSettleWindow();
+          restartBottomAnchorTick();
+        } else {
+          if (currentFocusItem.jumpMode === 'notification_live') {
+            transientFocusAnchorRef.current = { ...currentFocusItem, scrollTo: false };
+          }
+          refreshFocusAnchorSettleWindow();
+        }
         timelineSync.setFocusItem((prev) => {
           if (!prev) return undefined;
           if (prev.eventId !== currentFocusItem.eventId) return prev;
@@ -460,7 +516,15 @@ export function RoomTimeline({
       if (timeoutId !== undefined) clearTimeout(timeoutId);
       if (retryIntervalId !== undefined) clearInterval(retryIntervalId);
     };
-  }, [timelineSync.focusItem, timelineSync, reducedMotion, getRawIndexToProcessedIndex]);
+  }, [
+    timelineSync.focusItem,
+    timelineSync,
+    reducedMotion,
+    getRawIndexToProcessedIndex,
+    refreshBottomAnchorSettleWindow,
+    refreshFocusAnchorSettleWindow,
+    restartBottomAnchorTick,
+  ]);
 
   useEffect(() => {
     if (timelineSync.focusItem) {
@@ -516,24 +580,76 @@ export function RoomTimeline({
   ]);
 
   useEffect(() => {
-    const el = messageListRef.current;
-    if (!el) return () => {};
+    const viewport = messageListRef.current;
+    if (!viewport) return () => {};
 
-    const observer = new ResizeObserver((entries) => {
+    const viewportObserver = new ResizeObserver((entries) => {
       const newHeight = entries[0]!.contentRect.height;
       const prev = prevViewportHeightRef.current;
-      const atBottom = atBottomRef.current;
-      const shrank = newHeight < prev;
-
-      if (shrank && atBottom) {
+      prevViewportHeightRef.current = newHeight;
+      if (prev === 0 || newHeight === prev) return;
+      if (newHeight < prev && atBottomRef.current) {
         vListRef.current?.scrollTo(vListRef.current.scrollSize);
       }
-      prevViewportHeightRef.current = newHeight;
     });
 
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+    viewportObserver.observe(viewport);
+
+    let rafId = 0;
+    let lastScrollSize = -1;
+
+    const tick = () => {
+      const v = vListRef.current;
+      if (!v) return;
+
+      const now = Date.now();
+      const focusItem = transientFocusAnchorRef.current ?? timelineSyncRef.current.focusItem;
+      const anchorTarget = getTimelineResizeAnchorTarget({
+        atBottom: atBottomRef.current,
+        focusItem,
+        bottomSettleUntil: bottomAnchorSettleUntilRef.current,
+        focusSettleUntil: focusAnchorSettleUntilRef.current,
+        now,
+      });
+
+      const currentScrollSize = v.scrollSize;
+      if (lastScrollSize >= 0 && currentScrollSize !== lastScrollSize) {
+        if (anchorTarget === 'focus' && focusItem) {
+          const processedIndex = getRawIndexToProcessedIndex(focusItem.index);
+          if (processedIndex !== undefined) {
+            v.scrollToIndex(processedIndex, { align: 'center' });
+          }
+        } else if (anchorTarget === 'bottom') {
+          v.scrollTo(currentScrollSize);
+        }
+      }
+      lastScrollSize = currentScrollSize;
+
+      if (
+        shouldKeepTimelineResizeAnchorLoopRunning({
+          focusItem,
+          bottomSettleUntil: bottomAnchorSettleUntilRef.current,
+          focusSettleUntil: focusAnchorSettleUntilRef.current,
+          now,
+        })
+      ) {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      viewportObserver.disconnect();
+      cancelAnimationFrame(rafId);
+    };
+  }, [
+    bottomAnchorRestartToken,
+    getRawIndexToProcessedIndex,
+    room.roomId,
+    timelineSync.focusItem,
+    isReady,
+  ]);
 
   const actions = useTimelineActions({
     room,
@@ -586,6 +702,7 @@ export function RoomTimeline({
         }
         if (vListRef.current && processedIndex !== undefined) {
           vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
+          refreshFocusAnchorSettleWindow();
         }
         timelineSync.setFocusItem({
           index: focusRawIndex,
@@ -869,8 +986,9 @@ export function RoomTimeline({
     vListRef.current?.scrollToIndex(processedEvents.length - 1, {
       align: 'end',
     });
+    refreshBottomAnchorSettleWindow();
     setIsReady(true);
-  }, [processedEvents.length]);
+  }, [processedEvents.length, refreshBottomAnchorSettleWindow]);
 
   useEffect(() => {
     if (isReady) return;
