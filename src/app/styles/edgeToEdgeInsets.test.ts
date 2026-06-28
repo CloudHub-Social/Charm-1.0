@@ -29,13 +29,17 @@ describe('android edge-to-edge inset contract', () => {
     expect(mainActivity).not.toContain('webView.webViewClient');
   });
 
-  it('moves portal ownership into the app shell', () => {
+  it('keeps upstream web portal ownership while preserving the tauri shell bridge', () => {
     const indexHtml = readWorkspaceFile('index.html');
     const appTsx = readWorkspaceFile('src/app/pages/App.tsx');
     const appShell = readWorkspaceFile('src/app/components/app-shell/AppShell.tsx');
     const systemBarShell = readWorkspaceFile('src/app/components/app-shell/SystemBarShell.tsx');
 
-    expect(indexHtml).not.toContain('id="portalContainer"');
+    expect(indexHtml).toContain('id="portalContainer"');
+    expect(appTsx).toContain(
+      "const portalContainer = document.getElementById('portalContainer') ?? undefined;"
+    );
+    expect(appTsx).toContain('isTauri() ? (');
     expect(appTsx).toContain('<AppShell screenSize={screenSize} queryClient={queryClient}>');
     expect(appShell).toContain('const [portalContainer, setPortalContainer] = useState');
     expect(appShell).toContain('<SystemBarShell onPortalContainerChange={setPortalContainer}>');
