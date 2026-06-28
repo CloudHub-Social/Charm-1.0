@@ -59,6 +59,7 @@ import {
   MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS,
   MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME,
 } from '$unstable/prefixes';
+import { gifSearchConfigured, useClientConfig } from '$hooks/useClientConfig';
 import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
 
 function thumbnailDimsForMaxEdge(
@@ -121,6 +122,95 @@ export type ImageContentProps = {
   onError?: () => void;
   suppressErrorUI?: boolean;
 };
+
+type GifFavoriteActionProps = {
+  body: string;
+  url: string;
+  imageW?: number;
+  imageH?: number;
+  srcState: { status: AsyncStatus };
+};
+
+function GifFavoriteAction({
+  body,
+  url,
+  imageW,
+  imageH,
+  srcState,
+}: Readonly<GifFavoriteActionProps>) {
+  const mx = useMatrixClient();
+  const clientConfig = useClientConfig();
+  const gifsEnabled = gifSearchConfigured(clientConfig);
+  const favoritedContent = useFavoriteGifs();
+  const favoriteGifsRef = useRef(favoritedContent.gifs);
+  const [favorited, setFavorited] = useState(favoritedContent.gifs.some((v) => v.url === url));
+
+  useEffect(() => {
+    favoriteGifsRef.current = favoritedContent.gifs;
+    setFavorited(favoritedContent.gifs.some((v) => v.url === url));
+  }, [favoritedContent, url]);
+
+  if (!gifsEnabled || !isSupportedGifFavoriteUrl(url)) return null;
+
+  return (
+    <MenuItem
+      size="300"
+      radii="0"
+      fill="Soft"
+      variant="Secondary"
+      disabled={srcState.status !== AsyncStatus.Success}
+      title={favorited ? 'Unfavorite gif' : 'Favorite gif'}
+      onClick={async (e) => {
+        e.preventDefault();
+        if (srcState.status !== AsyncStatus.Success) return;
+
+        if (!favorited) {
+          setFavorited(true);
+          const nextFavorites = favoriteGifsRef.current.some((v) => v.url === url)
+            ? favoriteGifsRef.current
+            : [
+                ...favoriteGifsRef.current,
+                {
+                  id: url,
+                  title: body,
+                  url,
+                  width: imageW,
+                  height: imageH,
+                },
+              ];
+          favoriteGifsRef.current = nextFavorites;
+          await mx
+            .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
+              gifs: nextFavorites,
+            })
+            .catch(() => {
+              favoriteGifsRef.current = favoritedContent.gifs;
+              setFavorited(false);
+            });
+          return;
+        }
+
+        setFavorited(false);
+        const nextFavorites = favoriteGifsRef.current.filter((v) => v.url !== url);
+        favoriteGifsRef.current = nextFavorites;
+        await mx
+          .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
+            gifs: nextFavorites,
+          })
+          .catch(() => {
+            favoriteGifsRef.current = favoritedContent.gifs;
+            setFavorited(true);
+          });
+      }}
+    >
+      {menuIcon(Star, {
+        weight: favorited ? 'fill' : 'regular',
+        color: favorited ? color.Warning.MainHover : color.Surface.OnContainer,
+      })}
+    </MenuItem>
+  );
+}
+
 export const ImageContent = as<'div', ImageContentProps>(
   (
     {
@@ -182,15 +272,6 @@ export const ImageContent = as<'div', ImageContentProps>(
       typeof info?.size === 'number' && Number.isFinite(info.size) && info.size > 0
         ? info.size
         : mediaMetadata?.byteSize;
-    const favoritedContent = useFavoriteGifs();
-    const favoriteGifsRef = useRef(favoritedContent.gifs);
-    const [favorited, setFavorited] = useState(
-      favoritedContent.gifs.find((v) => v.url == url) != undefined
-    );
-    useEffect(() => {
-      favoriteGifsRef.current = favoritedContent.gifs;
-      setFavorited(favoritedContent.gifs.some((v) => v.url === url));
-    }, [favoritedContent, url]);
     const [srcState, loadSrc, setSrcState] = useAsyncCallback(
       useCallback(async () => {
         if (url.startsWith('http')) return url;
@@ -560,61 +641,14 @@ export const ImageContent = as<'div', ImageContentProps>(
                 >
                   {menuIcon(blurred ? Eye : EyeSlash)}
                 </MenuItem>
-                {info?.mimetype == 'image/gif' && !encInfo && isSupportedGifFavoriteUrl(url) && (
-                  <MenuItem
-                    size="300"
-                    radii="0"
-                    fill="Soft"
-                    variant="Secondary"
-                    disabled={srcState.status !== AsyncStatus.Success}
-                    title={favorited ? 'Unfavorite gif' : 'Favorite gif'}
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      if (srcState.status === AsyncStatus.Success) {
-                        if (!favorited) {
-                          setFavorited(true);
-                          const nextFavorites = favoriteGifsRef.current.some((v) => v.url === url)
-                            ? favoriteGifsRef.current
-                            : [
-                                ...favoriteGifsRef.current,
-                                {
-                                  id: url,
-                                  title: body,
-                                  url: url,
-                                  width: imageW,
-                                  height: imageH,
-                                },
-                              ];
-                          favoriteGifsRef.current = nextFavorites;
-                          await mx
-                            .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
-                              gifs: nextFavorites,
-                            })
-                            .catch(() => {
-                              favoriteGifsRef.current = favoritedContent.gifs;
-                              setFavorited(false);
-                            });
-                        } else {
-                          setFavorited(false);
-                          const nextFavorites = favoriteGifsRef.current.filter((v) => v.url != url);
-                          favoriteGifsRef.current = nextFavorites;
-                          await mx
-                            .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
-                              gifs: nextFavorites,
-                            })
-                            .catch(() => {
-                              favoriteGifsRef.current = favoritedContent.gifs;
-                              setFavorited(true);
-                            });
-                        }
-                      }
-                    }}
-                  >
-                    {menuIcon(Star, {
-                      weight: favorited ? 'fill' : 'regular',
-                      color: favorited ? color.Warning.MainHover : color.Surface.OnContainer,
-                    })}
-                  </MenuItem>
+                {info?.mimetype === 'image/gif' && !encInfo && (
+                  <GifFavoriteAction
+                    body={body}
+                    url={url}
+                    imageW={imageW}
+                    imageH={imageH}
+                    srcState={srcState}
+                  />
                 )}
               </Box>
             </Menu>

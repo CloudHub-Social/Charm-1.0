@@ -1957,6 +1957,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
 
       try {
+        setSendError(undefined);
         if (scheduledTime) {
           const delayMs = computeDelayMs(scheduledTime);
           if (editingScheduledDelayId) {
