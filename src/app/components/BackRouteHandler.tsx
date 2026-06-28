@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSetAtom } from 'jotai';
 import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -32,6 +32,17 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const setLastRoomId = useSetAtom(lastVisitedRoomIdAtom);
+  const [pendingCleanupBackTarget, setPendingCleanupBackTarget] = useState<string>();
+
+  useEffect(() => {
+    if (!pendingCleanupBackTarget) return;
+
+    const currentTarget = `${location.pathname}${location.search}`;
+    if (currentTarget !== pendingCleanupBackTarget) return;
+
+    setPendingCleanupBackTarget(undefined);
+    navigate(-1);
+  }, [location.pathname, location.search, navigate, pendingCleanupBackTarget]);
 
   const goBack = useCallback(() => {
     const roomPaths = [HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH];
@@ -61,9 +72,16 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
           pathname: location.pathname,
         })
       ) {
-        navigate(buildEventTargetCleanupTarget(location.pathname, location.search, eventId!), {
+        const cleanupTarget = buildEventTargetCleanupTarget(
+          location.pathname,
+          location.search,
+          eventId!
+        );
+        setPendingCleanupBackTarget(cleanupTarget);
+        navigate(cleanupTarget, {
           replace: true,
         });
+        return;
       }
 
       navigate(-1);
