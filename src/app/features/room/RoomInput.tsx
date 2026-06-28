@@ -279,6 +279,20 @@ export const getReplyContent = (
   return relatesTo;
 };
 
+const getReplyMentionData = (
+  replyDraft: IReplyDraft | undefined,
+  replyEvent: MatrixEvent | undefined,
+  silentReply: boolean,
+  roomMention = false
+) => {
+  if (!replyDraft || silentReply) return undefined;
+
+  return getMentionContent(
+    [replyDraft.userId],
+    roomMention || replyEvent?.getContent()['m.mentions']?.room === true
+  );
+};
+
 const log = createLogger('RoomInput');
 const debugLog = createDebugLogger('RoomInput');
 
@@ -852,8 +866,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           plainText?.length === 0 ? getReplyContent(replyDraft, room) : undefined;
         if (replyContent) {
           contents[0]!['m.relates_to'] = replyContent;
-          if (!silentReply && replyDraft)
-            contents[0]!['m.mentions'] = { ['user_ids']: [replyDraft.userId] };
+          const replyMentions = getReplyMentionData(replyDraft, replyEvent, silentReply);
+          if (replyMentions) contents[0]!['m.mentions'] = replyMentions;
           setReplyDraft(replyDraftBase);
         }
       }
@@ -1274,11 +1288,20 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           body,
         };
 
-        if (replyDraft && !silentReply) {
-          mentionData.users.add(replyDraft.userId);
+        const replyMentions = getReplyMentionData(
+          replyDraft,
+          replyEvent,
+          silentReply,
+          mentionData.room
+        );
+        if (replyMentions?.user_ids) {
+          replyMentions.user_ids.forEach((id) => mentionData.users.add(id));
         }
 
-        content['m.mentions'] = getMentionContent(Array.from(mentionData.users), mentionData.room);
+        content['m.mentions'] = getMentionContent(
+          Array.from(mentionData.users),
+          replyMentions?.room === true
+        );
         content[prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
           imagePacksUsedRef.current.toJSON();
 
@@ -1851,8 +1874,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
       if (replyDraft) {
         content['m.relates_to'] = getReplyContent(replyDraft, room);
-        if (!silentReply && replyDraft)
-          content['m.mentions'] = { ['user_ids']: [replyDraft.userId] };
+        const replyMentions = getReplyMentionData(replyDraft, replyEvent, silentReply);
+        if (replyMentions) content['m.mentions'] = replyMentions;
         setReplyDraft(replyDraftBase);
       }
       mx.sendEvent(roomId, EventType.Sticker, content);

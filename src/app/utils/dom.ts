@@ -246,7 +246,7 @@ async function getBitmap(blob: Blob): Promise<ImageBitmap> {
   }
 }
 
-export const copyImageToClipboard = async (blob: Blob): Promise<boolean> => {
+const getClipboardImageBlob = async (blob: Blob): Promise<Blob> => {
   const bitmap = await getBitmap(blob);
 
   const canvas = document.createElement('canvas');
@@ -256,16 +256,25 @@ export const copyImageToClipboard = async (blob: Blob): Promise<boolean> => {
   const ctx = canvas.getContext('2d');
   ctx?.drawImage(bitmap, 0, 0);
 
-  try {
-    const finalBlob = await new Promise<Blob>((resolve) => {
-      canvas.toBlob((result) => {
-        if (result) resolve(result);
-      }, 'image/png');
-    });
+  const finalBlob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((result) => {
+      if (result) {
+        resolve(result);
+        return;
+      }
 
+      reject(new Error('Failed to encode image for clipboard.'));
+    }, 'image/png');
+  });
+
+  return finalBlob;
+};
+
+export const copyImageToClipboard = async (blobSource: Blob | Promise<Blob>): Promise<boolean> => {
+  try {
     await navigator.clipboard.write([
       new ClipboardItem({
-        'image/png': finalBlob,
+        'image/png': Promise.resolve(blobSource).then(getClipboardImageBlob),
       }),
     ]);
 
