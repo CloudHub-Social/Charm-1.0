@@ -95,25 +95,33 @@ export function useSettingsSyncEffect(): void {
   }, [localUpdatedAtStorageKey]);
 
   const applyRemoteContent = useCallback(
-    (rawContent: Record<string, unknown>): boolean => {
+    (
+      rawContent: Record<string, unknown>,
+      options?: { markInitialized?: boolean }
+    ): 'updated' | 'unchanged' | 'ignored' => {
       const { synctoken: _echoField, ...content } = rawContent;
       const remoteUpdatedAt = getSettingsSyncUpdatedAt(content);
       persistExplicitlyClearedSettingsKeys(getExplicitlyClearedSettingsKeysFromSync(content));
       const merged = deserializeFromSync(content, settingsRef.current);
-      if (!merged) return false;
+      if (!merged) return 'ignored';
 
       if (JSON.stringify(merged) !== JSON.stringify(settingsRef.current)) {
         applyingRemoteTimestampRef.current = remoteUpdatedAt ?? Date.now();
         setSettings(merged);
+        setLastSynced(Date.now());
+        if (options?.markInitialized) {
+          setInitialized(true);
+        }
+        return 'updated';
       } else if (remoteUpdatedAt !== null) {
         localUpdatedAtRef.current = remoteUpdatedAt;
         persistLocalSettingsSyncUpdatedAt(localUpdatedAtStorageKey, remoteUpdatedAt);
       }
 
       setLastSynced(Date.now());
-      return true;
+      return 'unchanged';
     },
-    [localUpdatedAtStorageKey, setLastSynced, setSettings]
+    [localUpdatedAtStorageKey, setInitialized, setLastSynced, setSettings]
   );
 
   useEffect(() => {
@@ -141,10 +149,8 @@ export function useSettingsSyncEffect(): void {
   }, [localUpdatedAtStorageKey, settings, syncEnabled]);
 
   // On mount / when sync is first enabled: load from account data
-  // Also marks settings as initialized after checking or timeout
+  // and mark settings initialized once the initial source of truth is known.
   useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout>;
-
     if (!syncEnabled) {
       // If sync is disabled, settings are ready immediately
       setInitialized(true);
@@ -164,16 +170,14 @@ export function useSettingsSyncEffect(): void {
       (remoteUpdatedAt === null && localUpdatedAtRef.current === 0) ||
       (remoteUpdatedAt !== null && remoteUpdatedAt >= localUpdatedAtRef.current)
     ) {
-      applyRemoteContent(rawContent);
+      const applyResult = applyRemoteContent(rawContent, { markInitialized: true });
+      if (applyResult === 'updated') {
+        return undefined;
+      }
     }
 
-    // Mark as initialized after a short delay to allow account data to load
-    // This prevents theme flashing on slow connections
-    timeoutId = setTimeout(() => {
-      setInitialized(true);
-    }, 100);
-
-    return () => clearTimeout(timeoutId);
+    setInitialized(true);
+    return undefined;
   }, [applyRemoteContent, mx, syncEnabled, setInitialized]);
 
   // Echo-detection: track the token of our last upload
@@ -232,7 +236,7 @@ export function useSettingsSyncEffect(): void {
         remoteContent &&
         remoteUpdatedAt === null &&
         !hasLocalUpdatedAt &&
-        applyRemoteContent(remoteContent)
+        applyRemoteContent(remoteContent) !== 'ignored'
       ) {
         setSyncStatus('idle');
         return;
@@ -250,7 +254,7 @@ export function useSettingsSyncEffect(): void {
         remoteContent &&
         remoteUpdatedAt !== null &&
         remoteUpdatedAt >= localUpdatedAt &&
-        applyRemoteContent(remoteContent)
+        applyRemoteContent(remoteContent) !== 'ignored'
       ) {
         setSyncStatus('idle');
         return;
