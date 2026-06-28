@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode } from 'react';
+import { type CSSProperties, type ReactNode, useEffect } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { type as osType } from '@tauri-apps/plugin-os';
 import { mobileOrTablet } from '$utils/user-agent';
@@ -8,6 +8,20 @@ const safeAreaTop = 'var(--safe-area-inset-top, env(safe-area-inset-top, 0px))';
 const safeAreaBottom = 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))';
 const safeAreaLeft = 'var(--safe-area-inset-left, env(safe-area-inset-left, 0px))';
 const safeAreaRight = 'var(--safe-area-inset-right, env(safe-area-inset-right, 0px))';
+
+function isEditableElement(element: Element | null): element is HTMLElement {
+  if (!(element instanceof HTMLElement)) return false;
+
+  const tagName = element.tagName.toLowerCase();
+  return (
+    element.isContentEditable ||
+    tagName === 'textarea' ||
+    (tagName === 'input' &&
+      !['button', 'checkbox', 'file', 'hidden', 'radio', 'range', 'reset', 'submit'].includes(
+        (element as HTMLInputElement).type
+      ))
+  );
+}
 
 type SystemBarStripProps = {
   position: 'top' | 'bottom';
@@ -49,6 +63,30 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
   const isBrowserMobile = !isTauri() && mobileOrTablet();
   const enabled = isTauriMobile || isBrowserMobile;
   const { safeAreaFill } = useSystemBarStyle();
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+
+    const clearStaleKeyboardViewportVars = () => {
+      const keyboardHeight = viewport ? window.innerHeight - viewport.height : 0;
+      if (isEditableElement(document.activeElement) && keyboardHeight >= 30) return;
+
+      document.documentElement.style.removeProperty('--sable-visible-height');
+      document.documentElement.style.removeProperty('--sable-safe-bottom');
+    };
+
+    clearStaleKeyboardViewportVars();
+
+    viewport?.addEventListener('resize', clearStaleKeyboardViewportVars);
+    viewport?.addEventListener('scroll', clearStaleKeyboardViewportVars);
+    window.addEventListener('pageshow', clearStaleKeyboardViewportVars);
+
+    return () => {
+      viewport?.removeEventListener('resize', clearStaleKeyboardViewportVars);
+      viewport?.removeEventListener('scroll', clearStaleKeyboardViewportVars);
+      window.removeEventListener('pageshow', clearStaleKeyboardViewportVars);
+    };
+  }, []);
 
   return (
     <>
