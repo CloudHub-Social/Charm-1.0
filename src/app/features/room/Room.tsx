@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useCallback, useEffect } from 'react';
 import { Box, Line } from 'folds';
 import { useParams, useSearchParams } from 'react-router-dom';
@@ -122,10 +123,12 @@ export function Room() {
       <RoomAbbreviationsContext.Provider value={abbreviations}>
         <Box
           grow="Yes"
-          style={{
-            position: 'relative',
-            '--sable-safe-area-fill': 'var(--sable-surface-container)',
-          }}
+          style={
+            {
+              position: 'relative',
+              '--sable-safe-area-fill': 'var(--sable-surface-container)',
+            } as CSSProperties
+          }
         >
           {callView && (screenSize === ScreenSize.Desktop || !chat) && (
             <Box grow="Yes" direction="Column">
