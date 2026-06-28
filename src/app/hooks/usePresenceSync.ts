@@ -389,11 +389,7 @@ export function usePresenceSyncEffect(): void {
         persistRemoteFreshness(localUpdatedAt);
       }
 
-      if (
-        remoteContent &&
-        remoteUpdatedAt !== null &&
-        remoteUpdatedAt >= localUpdatedAt
-      ) {
+      if (remoteContent && remoteUpdatedAt !== null && remoteUpdatedAt >= localUpdatedAt) {
         const applyResult = applyRemoteContent(remoteContent);
         if (applyResult !== 'ignored') {
           if (applyResult !== 'updated') sendServerPresence();
