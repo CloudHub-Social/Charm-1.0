@@ -468,7 +468,12 @@ export function RoomTimeline({
         if (processedIndex === undefined) return false;
         setIsReady(true);
         vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
-        refreshFocusAnchorSettleWindow();
+        if (currentFocusItem.tail === 'live') {
+          refreshBottomAnchorSettleWindow();
+          restartBottomAnchorTick();
+        } else {
+          refreshFocusAnchorSettleWindow();
+        }
         timelineSync.setFocusItem((prev) => {
           if (!prev) return undefined;
           if (prev.eventId !== currentFocusItem.eventId) return prev;
@@ -502,7 +507,9 @@ export function RoomTimeline({
     timelineSync,
     reducedMotion,
     getRawIndexToProcessedIndex,
+    refreshBottomAnchorSettleWindow,
     refreshFocusAnchorSettleWindow,
+    restartBottomAnchorTick,
   ]);
 
   useEffect(() => {
@@ -619,7 +626,6 @@ export function RoomTimeline({
     bottomAnchorRestartToken,
     getRawIndexToProcessedIndex,
     room.roomId,
-    atBottomState,
     timelineSync.focusItem,
     isReady,
   ]);
