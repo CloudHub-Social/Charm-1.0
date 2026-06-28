@@ -49,6 +49,8 @@ export function useWebPushStartupReconcilerEffect({
   reconcilePushNotifications,
   transportLog,
 }: UseWebPushStartupReconcilerEffectInput): void {
+  const mountedRef = useRef(true);
+  const policyKeyRef = useRef<string | null>(null);
   const reconciledKeyRef = useRef<string | null>(null);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryAttemptRef = useRef(0);
@@ -56,6 +58,7 @@ export function useWebPushStartupReconcilerEffect({
 
   useEffect(
     () => () => {
+      mountedRef.current = false;
       if (retryTimeoutRef.current !== null) {
         clearTimeout(retryTimeoutRef.current);
       }
@@ -64,11 +67,13 @@ export function useWebPushStartupReconcilerEffect({
   );
 
   useEffect(() => {
-    if (
-      !webPushStartupPolicy.shouldReconcile ||
-      !webPushStartupPolicy.reconcileKey ||
-      reconciledKeyRef.current !== webPushStartupPolicy.reconcileKey
-    ) {
+    const nextPolicyKey =
+      webPushStartupPolicy.shouldReconcile && webPushStartupPolicy.reconcileKey
+        ? webPushStartupPolicy.reconcileKey
+        : null;
+
+    if (policyKeyRef.current !== nextPolicyKey) {
+      policyKeyRef.current = nextPolicyKey;
       reconciledKeyRef.current = null;
       retryAttemptRef.current = 0;
       if (retryTimeoutRef.current !== null) {
@@ -84,8 +89,8 @@ export function useWebPushStartupReconcilerEffect({
       return undefined;
     }
 
-    reconciledKeyRef.current = webPushStartupPolicy.reconcileKey;
-    let effectDisposed = false;
+    const reconcileKey = webPushStartupPolicy.reconcileKey;
+    reconciledKeyRef.current = reconcileKey;
 
     void reconcilePushNotifications(
       mx,
@@ -94,7 +99,7 @@ export function useWebPushStartupReconcilerEffect({
       usePushNotifications,
       pushSubscription
     ).catch((error) => {
-      if (effectDisposed) return;
+      if (!mountedRef.current || policyKeyRef.current !== reconcileKey) return;
 
       const attempt = retryAttemptRef.current + 1;
       const nextRetryDelayMs = WEB_PUSH_STARTUP_RETRY_DELAYS_MS[retryAttemptRef.current];
@@ -117,9 +122,7 @@ export function useWebPushStartupReconcilerEffect({
       });
     });
 
-    return () => {
-      effectDisposed = true;
-    };
+    return undefined;
   }, [
     mx,
     clientConfig,
