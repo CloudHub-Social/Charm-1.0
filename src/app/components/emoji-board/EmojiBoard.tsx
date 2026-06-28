@@ -141,6 +141,9 @@ const parseKlipyResult = (klipyResult: KlipyGifResult): GifData => {
   };
 };
 
+const hasUsableGifUrl = (gif: GifData): boolean =>
+  gif.url.trim().length > 0 || !!gif.preview_url?.trim();
+
 function useGifSearch(
   favoriteGifs: GifData[],
   gifSearch: (query: string) => void,
@@ -215,7 +218,7 @@ function useGifSearch(
 
           setGifs((old) => ({
             ...old,
-            gifs: results ? results.map(parseKlipyResult) : [],
+            gifs: results ? results.map(parseKlipyResult).filter(hasUsableGifUrl) : [],
           }));
         } else {
           throw new Error(`HTTP ${response.status}`);
@@ -720,11 +723,11 @@ export function EmojiBoard({
   );
   const activeGroupIdAtom = useMemo(() => atom<string | undefined>(undefined), []);
   const setActiveGroupId = useSetAtom(activeGroupIdAtom);
-  const imagePacks = useRelevantImagePacks(usage, imagePackRooms);
+  const imagePacks = useRelevantImagePacks(usage, gifTab ? [] : imagePackRooms);
   const favoriteGifs = useFavoriteGifs().gifs;
 
   useEffect(() => {
-    if (!active || imagePacks.length === 0) return undefined;
+    if (!active || gifTab || imagePacks.length === 0) return undefined;
 
     const idleWindow = getIdleWindow();
     if (!idleWindow) return undefined;
@@ -762,7 +765,7 @@ export function EmojiBoard({
       idleWindow.clearTimeout(delayId);
       cancelIdleWork(idleId);
     };
-  }, [active, imagePacks, mx, saveStickerEmojiBandwidth, usage, useAuthentication]);
+  }, [active, gifTab, imagePacks, mx, saveStickerEmojiBandwidth, usage, useAuthentication]);
 
   const searchList = useMemo(() => {
     let list: Array<PackImageReader | IEmoji> = [];
@@ -987,6 +990,7 @@ export function EmojiBoard({
               tab={activeTab}
               query={activeTab === EmojiBoardTab.Gif ? gifResult?.query : emojiResult?.query}
               onChange={handleOnChange}
+              placeholder={gifTab ? 'Search Klipy GIFs' : undefined}
               allowTextCustomEmoji={allowTextCustomEmoji}
               onTextCustomEmojiSelect={handleTextCustomEmojiSelect}
             />

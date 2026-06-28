@@ -70,7 +70,7 @@ import { plainToEditorInput } from '$components/editor/input';
 import { htmlToMarkdown } from '$plugins/markdown';
 import type { GifData } from '$components/emoji-board';
 import { EmojiBoard, EmojiBoardTab } from '$components/emoji-board';
-import { getKlipyRemoteId } from '$utils/gifs';
+import { getKlipyRemoteId, normalizeGifProxyHost } from '$utils/gifs';
 import type { TUploadContent } from '$utils/matrix';
 import { encryptFile, getImageInfo, mxcUrlToHttp, toggleReaction } from '$utils/matrix';
 import { useTypingStatusUpdater } from '$hooks/useTypingStatusUpdater';
@@ -1914,7 +1914,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       if (gif.url.trim().length === 0) return;
 
       const gifUrl = gif.url.trim();
-      const gifProxyHost = clientConfig.gifs?.proxyUrl?.trim().replace(/\/+$/, '') ?? '';
+      const gifProxyHost = normalizeGifProxyHost(clientConfig.gifs?.proxyUrl);
       let url = gifUrl;
       if (!gifUrl.startsWith('mxc://')) {
         const remoteId = getKlipyRemoteId(gifUrl);
@@ -1953,11 +1953,42 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         if (replyMentions) content['m.mentions'] = replyMentions;
       }
 
+      const invalidate = () =>
+        queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
+
       try {
-        await mx.sendMessage(roomId, threadRootId ?? null, content);
-        setReplyDraft(replyDraftBase);
+        if (scheduledTime) {
+          const delayMs = computeDelayMs(scheduledTime);
+          if (editingScheduledDelayId) {
+            await cancelDelayedEvent(mx, editingScheduledDelayId);
+          }
+
+          if (isEncrypted) {
+            await sendDelayedMessageE2EE(mx, roomId, room, content, delayMs, threadRootId ?? null);
+          } else {
+            await sendDelayedMessage(mx, roomId, content, delayMs, threadRootId ?? null);
+          }
+
+          invalidate();
+          setEditingScheduledDelayId(null);
+          setScheduledTime(null);
+          setReplyDraft(replyDraftBase);
+        } else if (editingScheduledDelayId) {
+          await cancelDelayedEvent(mx, editingScheduledDelayId);
+          invalidate();
+          setEditingScheduledDelayId(null);
+          await mx.sendMessage(roomId, threadRootId ?? null, content);
+          setReplyDraft(replyDraftBase);
+        } else {
+          await mx.sendMessage(roomId, threadRootId ?? null, content);
+          setReplyDraft(replyDraftBase);
+        }
       } catch {
-        setSendError('Failed to send GIF. Please try again.');
+        setSendError(
+          scheduledTime
+            ? 'Failed to schedule GIF. Please try again.'
+            : 'Failed to send GIF. Please try again.'
+        );
       }
     };
 
@@ -2498,7 +2529,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   aria-label="Open emoji picker"
                 >
                   {composerIcon(Smiley, {
-                    weight: emojiBoardTab === EmojiBoardTab.Emoji ? 'fill' : 'regular',
+                    weight: hideStickerBtn
+                      ? emojiBoardTab
+                        ? 'fill'
+                        : 'regular'
+                      : emojiBoardTab === EmojiBoardTab.Emoji
+                        ? 'fill'
+                        : 'regular',
                   })}
                 </IconButton>
               </PopOut>

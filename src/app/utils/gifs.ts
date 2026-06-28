@@ -1,5 +1,11 @@
 const KLIPY_STATIC_HOSTS = new Set(['static.klipy.com']);
 
+export const normalizeGifProxyHost = (proxyUrl: string | undefined): string =>
+  (proxyUrl ?? '')
+    .trim()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/+$/, '');
+
 export const getKlipyRemoteId = (gifUrl: string): string | undefined => {
   try {
     const parsedGifUrl = new URL(gifUrl);

@@ -1,7 +1,21 @@
 import { useMemo } from 'react';
 import type { AccountDataEvents } from '$types/matrix-sdk';
+import type { GifData } from '$components/emoji-board/types';
 import { MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS } from '../../unstable/prefixes';
 import { useAccountData } from './useAccountData';
+
+const isValidFavoriteGif = (
+  value: unknown
+): value is Partial<GifData> & { url: string; title: string } => {
+  if (!value || typeof value !== 'object') return false;
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.url === 'string' &&
+    candidate.url.length > 0 &&
+    typeof candidate.title === 'string'
+  );
+};
 
 export const useFavoriteGifs =
   (): AccountDataEvents[typeof MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS] => {
@@ -11,7 +25,7 @@ export const useFavoriteGifs =
         favoritedGifsData?.getContent<
           AccountDataEvents[typeof MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS]
         >() ?? {};
-      const gifs = Array.isArray(content.gifs) ? content.gifs : [];
+      const gifs = Array.isArray(content.gifs) ? content.gifs.filter(isValidFavoriteGif) : [];
 
       return {
         ...content,
