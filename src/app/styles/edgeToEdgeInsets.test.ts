@@ -151,8 +151,13 @@ describe('android edge-to-edge inset contract', () => {
     );
     expect(clientRoot).toContain('right: `calc(${safeAreaRightInset} + ${config.space.S100})`');
     expect(accountSwitcher).toContain('const getAccountSwitcherMenuMaxHeight = (');
+    expect(accountSwitcher).toContain('...sectionMenuContentStyle');
+    expect(accountSwitcher).toContain('maxHeight: sectionMenuMaxHeight');
+    expect(accountSwitcher).toContain('flex: 1');
+    expect(accountSwitcher).toContain('minHeight: 0');
     expect(accountSwitcher).toContain('const availableAboveTrigger = Math.max(');
     expect(accountSwitcher).toContain('menuAnchor.y - mobileMenuViewportPadding');
     expect(accountSwitcher).toMatch(/WebkitOverflowScrolling:\s*["']touch["']/);
+    expect(accountSwitcher).toMatch(/<\/Scroll>\s*<Box[\s\S]*App Settings/);
   });
 });
