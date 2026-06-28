@@ -1,7 +1,7 @@
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import * as Sentry from '@sentry/react';
 import type { ReactNode } from 'react';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SearchIndexProvider } from '$hooks/useSearchIndex';
 import type { RoomEventHandlerMap } from '$types/matrix-sdk';
@@ -196,16 +196,27 @@ function WebPushStartupReconciler() {
     publishLease: false,
   });
   const reconciledKeyRef = useRef<string | null>(null);
-  const webPushStartupPolicy = resolveWebPushStartupReconcilerPolicy({
-    userId: mx.getUserId() ?? null,
-    usePushNotifications,
-    isTauriRuntime: isTauri(),
-    webPushSupported: isWebPushSupported(),
-    visibilityState,
-    isMobile,
-    notificationDeviceScope,
-    isActiveNotificationClient,
-  });
+  const webPushStartupPolicy = useMemo(
+    () =>
+      resolveWebPushStartupReconcilerPolicy({
+        userId: mx.getUserId() ?? null,
+        usePushNotifications,
+        isTauriRuntime: isTauri(),
+        webPushSupported: isWebPushSupported(),
+        visibilityState,
+        isMobile,
+        notificationDeviceScope,
+        isActiveNotificationClient,
+      }),
+    [
+      mx,
+      usePushNotifications,
+      visibilityState,
+      isMobile,
+      notificationDeviceScope,
+      isActiveNotificationClient,
+    ]
+  );
   const syncVisibilityState = useCallback(
     () => setVisibilityState(document.visibilityState),
     [setVisibilityState]
