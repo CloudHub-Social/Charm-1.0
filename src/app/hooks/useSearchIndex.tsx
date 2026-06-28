@@ -12,6 +12,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MutableRefObject,
   type ReactNode,
 } from 'react';
 import * as Sentry from '@sentry/react';
@@ -162,6 +163,140 @@ type PendingStats = {
   backfillingRoomCount: number;
   resolve: (stats: SearchIndexStats) => void;
 };
+
+type SearchIndexBackfillRefs = {
+  backfillStartDelayRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  backfillReadyRef: MutableRefObject<boolean>;
+  cancelIdlesRef: MutableRefObject<Array<() => void>>;
+  backfillingRoomsRef: MutableRefObject<Set<string>>;
+  headlessSetsRef: MutableRefObject<Map<string, EventTimelineSet>>;
+  backfillQueueRef: MutableRefObject<Array<{ room: Room; state: BackfillState }>>;
+};
+
+type SearchIndexPendingRefs = {
+  pendingQueriesRef: MutableRefObject<Map<string, PendingQuery>>;
+  pendingStatsRef: MutableRefObject<PendingStats | null>;
+};
+
+type SearchIndexListenerHandlers = {
+  handleSync: (state: SyncState) => void;
+  handleTimeline: (mEvent: MatrixEvent, room: Room | undefined) => void;
+  handleRoomAdded: (room: Room) => void;
+};
+
+function clearBackfillStartupGate({
+  backfillStartDelayRef,
+  backfillReadyRef,
+}: Pick<SearchIndexBackfillRefs, 'backfillReadyRef' | 'backfillStartDelayRef'>): void {
+  if (backfillStartDelayRef.current !== null) {
+    clearTimeout(backfillStartDelayRef.current);
+    backfillStartDelayRef.current = null;
+  }
+  backfillReadyRef.current = false;
+}
+
+function resetBackfillRuntimeState(
+  {
+    cancelIdlesRef,
+    backfillingRoomsRef,
+    headlessSetsRef,
+    backfillQueueRef,
+  }: Pick<
+    SearchIndexBackfillRefs,
+    'cancelIdlesRef' | 'backfillingRoomsRef' | 'headlessSetsRef' | 'backfillQueueRef'
+  >,
+  setIsBackfilling?: (value: boolean) => void
+): void {
+  cancelIdlesRef.current.forEach((cancel) => cancel());
+  cancelIdlesRef.current = [];
+  backfillingRoomsRef.current.clear();
+  headlessSetsRef.current.clear();
+  backfillQueueRef.current = [];
+  setIsBackfilling?.(false);
+}
+
+function settlePendingSearchOperations(
+  { pendingQueriesRef, pendingStatsRef }: SearchIndexPendingRefs,
+  errorMsg: string,
+  options: FailWorkerOptions = {}
+): void {
+  for (const { resolve, reject } of pendingQueriesRef.current.values()) {
+    if (options.settlePendingQueriesWithEmptyResults) {
+      resolve([]);
+      continue;
+    }
+    reject(new Error(errorMsg));
+  }
+  pendingQueriesRef.current.clear();
+
+  if (pendingStatsRef.current) {
+    pendingStatsRef.current.resolve({
+      indexedEventCount: 0,
+      roomCount: 0,
+      estimatedBytes: 0,
+      backfillingRoomCount: 0,
+    });
+    pendingStatsRef.current = null;
+  }
+}
+
+function attachMatrixIndexingListeners(
+  mx: ReturnType<typeof useMatrixClient>,
+  { handleSync, handleTimeline, handleRoomAdded }: SearchIndexListenerHandlers
+): () => void {
+  mx.on(ClientEvent.Sync, handleSync as unknown as (...args: unknown[]) => void);
+  mx.on(RoomEvent.Timeline, handleTimeline as unknown as (...args: unknown[]) => void);
+  mx.on(ClientEvent.Room, handleRoomAdded as unknown as (...args: unknown[]) => void);
+
+  return () => {
+    mx.removeListener(ClientEvent.Sync, handleSync as unknown as (...args: unknown[]) => void);
+    mx.removeListener(
+      RoomEvent.Timeline,
+      handleTimeline as unknown as (...args: unknown[]) => void
+    );
+    mx.removeListener(ClientEvent.Room, handleRoomAdded as unknown as (...args: unknown[]) => void);
+  };
+}
+
+function attachForegroundRecoveryListeners(
+  enabled: boolean,
+  handleForegroundFocus: () => void
+): () => void {
+  if (!enabled) return () => undefined;
+
+  document.addEventListener('visibilitychange', handleForegroundFocus);
+  window.addEventListener('focus', handleForegroundFocus);
+  window.addEventListener('pageshow', handleForegroundFocus);
+
+  return () => {
+    document.removeEventListener('visibilitychange', handleForegroundFocus);
+    window.removeEventListener('focus', handleForegroundFocus);
+    window.removeEventListener('pageshow', handleForegroundFocus);
+  };
+}
+
+function flushAndTerminateWorker(
+  worker: Worker,
+  workerRef: MutableRefObject<Worker | null>,
+  postToWorker: (msg: WorkerInMessage) => void
+): void {
+  postToWorker({ type: 'FLUSH' });
+  const terminateTimeout = setTimeout(() => {
+    worker.terminate();
+    workerRef.current = null;
+  }, 2000);
+  worker.addEventListener(
+    'message',
+    (ev: MessageEvent<WorkerOutMessage>) => {
+      if (ev.data.type === 'FLUSH_DONE') {
+        clearTimeout(terminateTimeout);
+        worker.terminate();
+        workerRef.current = null;
+      }
+    },
+    { once: true }
+  );
+}
 
 export function SearchIndexProvider({ children }: { children: ReactNode }) {
   const mx = useMatrixClient();
@@ -558,6 +693,7 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
       if (backfillQueueRef.current.length > 0 || backfillingRoomsRef.current.size > 0) {
         setIsBackfilling(true);
       }
+      clearBackfillStartupGate({ backfillStartDelayRef, backfillReadyRef });
       // Delay the first backfill pass so the initial sync and room list have
       // time to settle before we start paginating history.
       backfillStartDelayRef.current = setTimeout(() => {
@@ -739,42 +875,26 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
     workerRef.current = worker;
     worker.addEventListener('message', handleWorkerMessage);
 
+    const resetRuntimeState = (errorMsg: string, options?: FailWorkerOptions) => {
+      clearBackfillStartupGate({ backfillStartDelayRef, backfillReadyRef });
+      resetBackfillRuntimeState(
+        {
+          cancelIdlesRef,
+          backfillingRoomsRef,
+          headlessSetsRef,
+          backfillQueueRef,
+        },
+        setIsBackfilling
+      );
+      settlePendingSearchOperations({ pendingQueriesRef, pendingStatsRef }, errorMsg, options);
+    };
+
     const failWorker = (errorMsg: string, options: FailWorkerOptions = {}) => {
       clearTimeout(initTimeout);
       setInitError(errorMsg);
       setIsReady(false);
       setIsBackfilling(false);
-
-      if (backfillStartDelayRef.current !== null) {
-        clearTimeout(backfillStartDelayRef.current);
-        backfillStartDelayRef.current = null;
-      }
-      backfillReadyRef.current = false;
-
-      cancelIdlesRef.current.forEach((cancel) => cancel());
-      cancelIdlesRef.current = [];
-      backfillingRoomsRef.current.clear();
-      headlessSetsRef.current.clear();
-      backfillQueueRef.current = [];
-
-      for (const { resolve, reject } of pendingQueriesRef.current.values()) {
-        if (options.settlePendingQueriesWithEmptyResults) {
-          resolve([]);
-          continue;
-        }
-        reject(new Error(errorMsg));
-      }
-      pendingQueriesRef.current.clear();
-
-      if (pendingStatsRef.current) {
-        pendingStatsRef.current.resolve({
-          indexedEventCount: 0,
-          roomCount: 0,
-          estimatedBytes: 0,
-          backfillingRoomCount: 0,
-        });
-        pendingStatsRef.current = null;
-      }
+      resetRuntimeState(errorMsg, options);
 
       if (workerRef.current === worker) {
         worker.terminate();
@@ -909,115 +1029,39 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
       setIsBackfilling(true);
       resumeBackfill();
     };
-    mx.on(ClientEvent.Room, handleRoomAdded as unknown as (...args: unknown[]) => void);
-
-    // On mobile, resume backfill when the PWA becomes foreground-focused again
-    // after being backgrounded or blurred.
     const handleForegroundFocus = () => {
       if (canRunMobileBackfill()) {
         resumeBackfill();
       }
     };
-    if (!HAS_IDLE_CALLBACK) {
-      document.addEventListener('visibilitychange', handleForegroundFocus);
-      window.addEventListener('focus', handleForegroundFocus);
-      window.addEventListener('pageshow', handleForegroundFocus);
-    }
+    const detachMatrixListeners = attachMatrixIndexingListeners(mx, {
+      handleSync,
+      handleTimeline,
+      handleRoomAdded,
+    });
+    const detachForegroundListeners = attachForegroundRecoveryListeners(
+      !HAS_IDLE_CALLBACK,
+      handleForegroundFocus
+    );
 
     return () => {
       failWorkerRef.current = null;
-      // Ask the worker to flush before terminating. We wait up to 2 s then
-      // force-terminate regardless so the cleanup never hangs.
       clearTimeout(initTimeout);
       worker.removeEventListener('message', wrappedHandler as EventListener);
       worker.removeEventListener('error', handleWorkerError);
+      detachMatrixListeners();
+      detachForegroundListeners();
       if (workerRef.current !== worker) {
         setIsReady(false);
         setIsBackfilling(false);
-        mx.removeListener(ClientEvent.Sync, handleSync as unknown as (...args: unknown[]) => void);
-        mx.removeListener(
-          RoomEvent.Timeline,
-          handleTimeline as unknown as (...args: unknown[]) => void
-        );
-        mx.removeListener(
-          ClientEvent.Room,
-          handleRoomAdded as unknown as (...args: unknown[]) => void
-        );
-        document.removeEventListener('visibilitychange', handleForegroundFocus);
-        window.removeEventListener('focus', handleForegroundFocus);
-        window.removeEventListener('pageshow', handleForegroundFocus);
         return;
       }
-      postToWorker({ type: 'FLUSH' });
-      const terminateTimeout = setTimeout(() => {
-        worker.terminate();
-        workerRef.current = null;
-      }, 2000);
-      worker.addEventListener(
-        'message',
-        (ev: MessageEvent<WorkerOutMessage>) => {
-          if (ev.data.type === 'FLUSH_DONE') {
-            clearTimeout(terminateTimeout);
-            worker.terminate();
-            workerRef.current = null;
-          }
-        },
-        { once: true }
-      );
+
       setIsReady(false);
       setIsBackfilling(false);
       setInitError(null);
-      mx.removeListener(ClientEvent.Sync, handleSync as unknown as (...args: unknown[]) => void);
-      mx.removeListener(
-        RoomEvent.Timeline,
-        handleTimeline as unknown as (...args: unknown[]) => void
-      );
-      mx.removeListener(
-        ClientEvent.Room,
-        handleRoomAdded as unknown as (...args: unknown[]) => void
-      );
-      document.removeEventListener('visibilitychange', handleForegroundFocus);
-      window.removeEventListener('focus', handleForegroundFocus);
-      window.removeEventListener('pageshow', handleForegroundFocus);
-
-      // Cancel the startup delay and reset the ready gate
-      if (backfillStartDelayRef.current !== null) {
-        clearTimeout(backfillStartDelayRef.current);
-        backfillStartDelayRef.current = null;
-      }
-      backfillReadyRef.current = false;
-
-      // Cancel all pending idle callbacks
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- mutable non-DOM refs, current is intentional at cleanup time
-      const cancels = cancelIdlesRef.current;
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- mutable non-DOM refs, current is intentional at cleanup time
-      const backfillingRooms = backfillingRoomsRef.current;
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- mutable non-DOM refs, current is intentional at cleanup time
-      const headlessSets = headlessSetsRef.current;
-      for (const cancel of cancels) cancel();
-      cancelIdlesRef.current = [];
-      backfillingRooms.clear();
-      headlessSets.clear();
-      backfillQueueRef.current = [];
-
-      // Reject any in-flight search/stats promises so callers don't hang forever
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- mutable non-DOM refs, current is intentional at cleanup time
-      const pendingQueries = pendingQueriesRef.current;
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- mutable non-DOM refs, current is intentional at cleanup time
-      const pendingStats = pendingStatsRef.current;
-      for (const { reject } of pendingQueries.values()) {
-        reject(new Error('Search index unmounted'));
-      }
-      pendingQueries.clear();
-      if (pendingStats) {
-        pendingStats.resolve({
-          indexedEventCount: 0,
-          roomCount: 0,
-          estimatedBytes: 0,
-          backfillingRoomCount: 0,
-        });
-        pendingStatsRef.current = null;
-      }
+      resetRuntimeState('Search index unmounted');
+      flushAndTerminateWorker(worker, workerRef, postToWorker);
     };
   }, [
     idbSearchIndex,
