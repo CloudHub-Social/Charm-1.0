@@ -825,6 +825,12 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
     const handleSendUpload = async (uploads: UploadSuccess[]) => {
       const plainText = toPlainText(editor.children).trim();
+      const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
+      const clearSentUploadReplyDraft = () => {
+        if (serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot) {
+          setReplyDraft(replyDraftBase);
+        }
+      };
 
       const contentsPromises = uploads.map(async (upload) => {
         const fileItem = selectedFiles.find((f) => f.file === upload.file);
@@ -868,7 +874,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           contents[0]!['m.relates_to'] = replyContent;
           const replyMentions = getReplyMentionData(replyDraft, replyEvent, silentReply);
           if (replyMentions) contents[0]!['m.mentions'] = replyMentions;
-          setReplyDraft(replyDraftBase);
         }
       }
 
@@ -892,6 +897,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           );
 
           invalidate();
+          clearSentUploadReplyDraft();
           setEditingScheduledDelayId(null);
           setScheduledTime(null);
         } catch (error) {
@@ -960,6 +966,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               });
           })
         );
+        clearSentUploadReplyDraft();
       }
     };
 
