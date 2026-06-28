@@ -89,6 +89,14 @@ describe('last visited path', () => {
 
     expect(getLastVisitedPath()).toBe('/home/room/%21room%3Aexample?homeView=all');
   });
+
+  it('drops transient notification event segments before saving last visited', () => {
+    rememberLastVisitedPath(
+      '/home/%21room%3Aexample/%24event%3Aexample?jumpMode=notification_live&joinCall=true'
+    );
+
+    expect(getLastVisitedPath()).toBe('/home/%21room%3Aexample');
+  });
 });
 
 describe('stripRoomEventSegment', () => {

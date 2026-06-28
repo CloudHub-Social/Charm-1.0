@@ -426,12 +426,17 @@ export function RoomTimeline({
     let retryIntervalId: ReturnType<typeof setInterval> | undefined;
     if (timelineSync.focusItem) {
       const tryScroll = () => {
-        if (!timelineSyncRef.current.focusItem?.scrollTo || !vListRef.current) return false;
-        const processedIndex = getRawIndexToProcessedIndex(timelineSyncRef.current.focusItem.index);
+        const currentFocusItem = timelineSyncRef.current.focusItem;
+        if (!currentFocusItem?.scrollTo || !vListRef.current) return false;
+        const processedIndex = getRawIndexToProcessedIndex(currentFocusItem.index);
         if (processedIndex === undefined) return false;
         setIsReady(true);
         vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
-        timelineSync.setFocusItem((prev) => (prev ? { ...prev, scrollTo: false } : undefined));
+        timelineSync.setFocusItem((prev) => {
+          if (!prev) return undefined;
+          if (prev.eventId !== currentFocusItem.eventId) return prev;
+          return prev.jumpMode === 'notification_live' ? undefined : { ...prev, scrollTo: false };
+        });
         return true;
       };
 

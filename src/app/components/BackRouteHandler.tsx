@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSetAtom } from 'jotai';
-import { matchPath, useLocation, useNavigate } from 'react-router-dom';
+import { matchPath, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import {
   getDirectPath,
   getExplorePath,
@@ -31,8 +31,15 @@ type BackRouteHandlerProps = {
 export function BackRouteHandler({ children }: BackRouteHandlerProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationType = useNavigationType();
   const setLastRoomId = useSetAtom(lastVisitedRoomIdAtom);
   const [pendingCleanupBackTarget, setPendingCleanupBackTarget] = useState<string>();
+  const hasMountedRef = useRef(false);
+
+  const roomPaths = [HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH];
+  const roomMatch = roomPaths
+    .map((path) => matchPath({ path, end: false }, location.pathname))
+    .find((match) => match !== null);
 
   useEffect(() => {
     if (!pendingCleanupBackTarget) return;
@@ -44,13 +51,41 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
     navigate(-1);
   }, [location.pathname, location.search, navigate, pendingCleanupBackTarget]);
 
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+    if (navigationType !== 'POP' || pendingCleanupBackTarget) return;
+
+    const eventId = roomMatch?.params.eventId
+      ? decodeURIComponent(roomMatch.params.eventId)
+      : undefined;
+    const jumpMode = new URLSearchParams(location.search).get('jumpMode') ?? undefined;
+
+    if (
+      !shouldCleanNotificationJumpOnBack({
+        eventId,
+        jumpMode: jumpMode === 'notification_live' ? jumpMode : undefined,
+        pathname: location.pathname,
+      })
+    ) {
+      return;
+    }
+
+    navigate(buildEventTargetCleanupTarget(location.pathname, location.search, eventId!), {
+      replace: true,
+    });
+  }, [
+    location.pathname,
+    location.search,
+    navigate,
+    navigationType,
+    pendingCleanupBackTarget,
+    roomMatch?.params.eventId,
+  ]);
+
   const goBack = useCallback(() => {
-    const roomPaths = [HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH];
-
-    const roomMatch = roomPaths
-      .map((path) => matchPath({ path, end: false }, location.pathname))
-      .find((match) => match !== null);
-
     const currentRoomIdOrAlias = roomMatch?.params.roomIdOrAlias;
     if (currentRoomIdOrAlias) {
       setLastRoomId(decodeURIComponent(currentRoomIdOrAlias));
@@ -62,7 +97,9 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
     // section and there are no phantom pushes for swipe-back to stumble into.
     const historyIdx = (window.history.state as { idx?: number } | null)?.idx;
     if (historyIdx !== undefined && historyIdx > 0) {
-      const eventId = roomMatch?.params.eventId;
+      const eventId = roomMatch?.params.eventId
+        ? decodeURIComponent(roomMatch.params.eventId)
+        : undefined;
       const jumpMode = new URLSearchParams(location.search).get('jumpMode') ?? undefined;
 
       if (
