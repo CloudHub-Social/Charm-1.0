@@ -20,6 +20,10 @@ import {
   SPACE_ROOM_PATH,
 } from '$pages/paths';
 import { lastVisitedRoomIdAtom } from '$state/room/lastRoom';
+import {
+  buildEventTargetCleanupTarget,
+  shouldCleanNotificationJumpOnBack,
+} from '$features/room/notificationJumpCleanup';
 
 type BackRouteHandlerProps = {
   children: (onBack: () => void) => ReactNode;
@@ -47,6 +51,21 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
     // section and there are no phantom pushes for swipe-back to stumble into.
     const historyIdx = (window.history.state as { idx?: number } | null)?.idx;
     if (historyIdx !== undefined && historyIdx > 0) {
+      const eventId = roomMatch?.params.eventId;
+      const jumpMode = new URLSearchParams(location.search).get('jumpMode') ?? undefined;
+
+      if (
+        shouldCleanNotificationJumpOnBack({
+          eventId,
+          jumpMode: jumpMode === 'notification_live' ? jumpMode : undefined,
+          pathname: location.pathname,
+        })
+      ) {
+        navigate(buildEventTargetCleanupTarget(location.pathname, location.search, eventId!), {
+          replace: true,
+        });
+      }
+
       navigate(-1);
       return;
     }
