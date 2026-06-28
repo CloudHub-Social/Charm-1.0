@@ -68,6 +68,17 @@ function makeSableSettingsEvent(content: unknown) {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
 beforeEach(() => {
   localStorage.clear();
   mockMx.getUserId.mockReset().mockReturnValue('@alice:example.com');
@@ -233,6 +244,112 @@ describe('useSettingsSyncEffect — debounced upload', () => {
     });
 
     expect(store.get(settingsSyncStatusAtom)).toBe('error');
+  });
+
+  it('ignores a stale upload rejection after disable and re-enable when a newer upload is active', async () => {
+    const firstUpload = createDeferred<void>();
+    const secondUpload = createDeferred<void>();
+    mockMx.setAccountData
+      .mockImplementationOnce(() => firstUpload.promise)
+      .mockImplementationOnce(() => secondUpload.promise);
+
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    act(() => {
+      store.set(settingsAtom, {
+        ...store.get(settingsAtom),
+        settingsSyncEnabled: false,
+      });
+    });
+
+    act(() => {
+      store.set(settingsAtom, {
+        ...store.get(settingsAtom),
+        settingsSyncEnabled: true,
+        twitterEmoji: false,
+      });
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    const secondUploadContent = mockMx.setAccountData.mock.calls[1]?.[1];
+
+    await act(async () => {
+      firstUpload.reject(new Error('stale network'));
+      await Promise.resolve();
+    });
+
+    expect(store.get(settingsSyncStatusAtom)).toBe('syncing');
+
+    act(() => {
+      callbackHolder.current?.(
+        makeSableSettingsEvent({
+          v: SETTINGS_SYNC_VERSION,
+          updatedAt: secondUploadContent?.updatedAt,
+          synctoken: secondUploadContent?.synctoken,
+          settings: secondUploadContent?.settings,
+        })
+      );
+    });
+
+    expect(store.get(settingsSyncStatusAtom)).toBe('idle');
+    secondUpload.resolve();
+  });
+
+  it('ignores a stale upload rejection after an account switch when a newer upload is active', async () => {
+    const firstUpload = createDeferred<void>();
+    const secondUpload = createDeferred<void>();
+    mockMx.setAccountData
+      .mockImplementationOnce(() => firstUpload.promise)
+      .mockImplementationOnce(() => secondUpload.promise);
+
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    const hook = renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    mockMx.getUserId.mockReturnValue('@bob:example.com');
+    hook.rerender();
+
+    act(() => {
+      store.set(settingsAtom, {
+        ...store.get(settingsAtom),
+        twitterEmoji: false,
+      });
+      vi.advanceTimersByTime(2000);
+    });
+
+    const secondUploadContent = mockMx.setAccountData.mock.calls[1]?.[1];
+
+    await act(async () => {
+      firstUpload.reject(new Error('stale network'));
+      await Promise.resolve();
+    });
+
+    expect(store.get(settingsSyncStatusAtom)).toBe('syncing');
+
+    act(() => {
+      callbackHolder.current?.(
+        makeSableSettingsEvent({
+          v: SETTINGS_SYNC_VERSION,
+          updatedAt: secondUploadContent?.updatedAt,
+          synctoken: secondUploadContent?.synctoken,
+          settings: secondUploadContent?.settings,
+        })
+      );
+    });
+
+    expect(store.get(settingsSyncStatusAtom)).toBe('idle');
+    secondUpload.resolve();
   });
 });
 
