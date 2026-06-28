@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createStore } from 'jotai';
 import {
   getRoomToParentsCacheKey,
+  hasRoomToParentsCache,
   roomToParentsAtom,
   roomToParentsCacheKeyAtom,
   roomToParentsReadyAtom,
@@ -55,6 +56,14 @@ describe('roomToParents cache scoping', () => {
 
     expect(localStorage.getItem(bobCacheKey)).toBe(JSON.stringify([]));
     expect(localStorage.getItem('roomToParents')).toBeNull();
+  });
+
+  it('treats an existing empty scoped cache as a hydrated cache', () => {
+    const bobCacheKey = getRoomToParentsCacheKey('@bob:example.com');
+
+    localStorage.setItem(bobCacheKey, JSON.stringify([]));
+
+    expect(hasRoomToParentsCache(bobCacheKey)).toBe(true);
   });
 
   it('clears stale in-memory hierarchy when a scoped cache initializes empty', () => {
