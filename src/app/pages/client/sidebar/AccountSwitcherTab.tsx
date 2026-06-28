@@ -68,6 +68,11 @@ const sectionMenuStyle = {
   minWidth: toRem(256),
 };
 
+const sectionMenuContentStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+};
+
 const sectionListStyle = {
   padding: config.space.S100,
   borderRadius: config.radii.R400,
@@ -400,13 +405,20 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
               escapeDeactivates: stopPropagation,
             }}
           >
-            <Menu style={sectionMenuStyle}>
+            <Menu
+              style={{
+                ...sectionMenuStyle,
+                ...sectionMenuContentStyle,
+                maxHeight: sectionMenuMaxHeight,
+              }}
+            >
               <Scroll
                 hideTrack
                 size="0"
                 visibility="Hover"
                 style={{
-                  maxHeight: sectionMenuMaxHeight,
+                  flex: 1,
+                  minHeight: 0,
                   padding: config.space.S100,
                   overscrollBehavior: 'contain',
                   WebkitOverflowScrolling: 'touch',
@@ -568,25 +580,27 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
                       })}
                     </Box>
                   </Box>
-                  <Box
-                    direction="Column"
-                    gap="100"
-                    style={{
-                      ...sectionListStyle,
-                      marginTop: config.space.S100,
-                    }}
-                  >
-                    <MenuItem
-                      size="300"
-                      radii="300"
-                      before={menuIcon(GearSix)}
-                      onClick={handleOpenSettings}
-                    >
-                      <Text size="T300">App Settings</Text>
-                    </MenuItem>
-                  </Box>
                 </Box>
               </Scroll>
+              <Box
+                direction="Column"
+                gap="100"
+                style={{
+                  padding: config.space.S100,
+                  paddingTop: 0,
+                }}
+              >
+                <Box direction="Column" gap="100" style={sectionListStyle}>
+                  <MenuItem
+                    size="300"
+                    radii="300"
+                    before={menuIcon(GearSix)}
+                    onClick={handleOpenSettings}
+                  >
+                    <Text size="T300">App Settings</Text>
+                  </MenuItem>
+                </Box>
+              </Box>
             </Menu>
           </FocusTrap>
         }
