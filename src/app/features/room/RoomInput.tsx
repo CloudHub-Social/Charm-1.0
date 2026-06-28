@@ -68,7 +68,9 @@ import {
 } from '$components/editor';
 import { plainToEditorInput } from '$components/editor/input';
 import { htmlToMarkdown } from '$plugins/markdown';
+import type { GifData } from '$components/emoji-board';
 import { EmojiBoard, EmojiBoardTab } from '$components/emoji-board';
+import { getKlipyRemoteId, normalizeGifProxyHost } from '$utils/gifs';
 import type { TUploadContent } from '$utils/matrix';
 import { encryptFile, getImageInfo, mxcUrlToHttp, toggleReaction } from '$utils/matrix';
 import { useTypingStatusUpdater } from '$hooks/useTypingStatusUpdater';
@@ -210,6 +212,8 @@ import {
   getStructuredMarkdownAction,
   shouldInsertBreakAfterStructuredReplacement,
 } from './composerInputAssist';
+import { gifSearchConfigured, useClientConfig } from '$hooks/useClientConfig';
+import { GifIcon } from '@phosphor-icons/react';
 
 // Returns the event ID of the most recent non-reaction/non-edit event in a thread,
 // falling back to the thread root if no replies exist yet.
@@ -311,6 +315,20 @@ interface ReplyEventContent {
 const createUploadItemKey = () =>
   globalThis.crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const toBase64Url = (value: string): string => {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+
+  for (const byte of bytes) {
+    binary += String.fromCodePoint(byte);
+  }
+
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll(/=+$/g, '');
+};
+
+const toMatrixMediaId = (value: string, providerPrefix: string): string =>
+  providerPrefix + toBase64Url(value);
+
 interface RoomInputProps {
   editor: Editor;
   fileDropContainerRef: RefObject<HTMLElement>;
@@ -326,6 +344,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     // don't clobber the main room draft (and vice versa).
     const draftKey = threadRootId ?? roomId;
     const mx = useMatrixClient();
+    const clientConfig = useClientConfig();
+    const gifsEnabled = gifSearchConfigured(clientConfig);
     const useAuthentication = useMediaAuthentication();
     const [enterForNewline] = useSetting(settingsAtom, 'enterForNewline');
     const [editorOldAddFile] = useSetting(settingsAtom, 'editorOldAddFile');
@@ -2037,6 +2057,91 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       mx.sendEvent(roomId, EventType.Sticker, content);
     };
 
+    const handleGifSelect = async (gif: GifData | null) => {
+      if (!gifsEnabled) return;
+      if (!gif) return;
+      if (gif.url.trim().length === 0) return;
+
+      const gifUrl = gif.url.trim();
+      const gifProxyHost = normalizeGifProxyHost(clientConfig.gifs?.proxyUrl);
+      let url = gifUrl;
+      if (!gifUrl.startsWith('mxc://')) {
+        const remoteId = getKlipyRemoteId(gifUrl);
+
+        if (!gifProxyHost || !remoteId) {
+          setSendError('Failed to send GIF. Please try selecting another GIF.');
+          return;
+        }
+
+        url = `mxc://${gifProxyHost}/${toMatrixMediaId(remoteId, 'klipy_')}`;
+      }
+
+      const content: RoomMessageEventContent & IContent = {
+        body: gif.title,
+        url: url,
+        msgtype: MsgType.Image,
+        info: {
+          w: gif.width,
+          h: gif.height,
+          mimetype: 'image/gif',
+        },
+      };
+
+      const perMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
+      if (perMessageProfile) {
+        content[prefix.MATRIX_UNSTABLE_PER_MESSAGE_PROFILE_PROPERTY_NAME] =
+          convertPerMessageProfileToBeeperFormat(perMessageProfile, false);
+      }
+
+      if (replyDraft) {
+        const replyContent = getReplyContent(replyDraft, room);
+        if (Object.keys(replyContent).length > 0) {
+          content['m.relates_to'] = replyContent as RoomMessageEventContent['m.relates_to'];
+        }
+        const replyMentions = getReplyMentionData(replyDraft, replyEvent, silentReply);
+        if (replyMentions) content['m.mentions'] = replyMentions;
+      }
+
+      const invalidate = () =>
+        queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
+
+      try {
+        setSendError(undefined);
+        if (scheduledTime) {
+          const delayMs = computeDelayMs(scheduledTime);
+          if (editingScheduledDelayId) {
+            await cancelDelayedEvent(mx, editingScheduledDelayId);
+          }
+
+          if (isEncrypted) {
+            await sendDelayedMessageE2EE(mx, roomId, room, content, delayMs, threadRootId ?? null);
+          } else {
+            await sendDelayedMessage(mx, roomId, content, delayMs, threadRootId ?? null);
+          }
+
+          invalidate();
+          setEditingScheduledDelayId(null);
+          setScheduledTime(null);
+          setReplyDraft(replyDraftBase);
+        } else if (editingScheduledDelayId) {
+          await cancelDelayedEvent(mx, editingScheduledDelayId);
+          invalidate();
+          setEditingScheduledDelayId(null);
+          await mx.sendMessage(roomId, threadRootId ?? null, content);
+          setReplyDraft(replyDraftBase);
+        } else {
+          await mx.sendMessage(roomId, threadRootId ?? null, content);
+          setReplyDraft(replyDraftBase);
+        }
+      } catch {
+        setSendError(
+          scheduledTime
+            ? 'Failed to schedule GIF. Please try again.'
+            : 'Failed to send GIF. Please try again.'
+        );
+      }
+    };
+
     return (
       // eslint-disable-next-line jsx-a11y/no-static-element-interactions
       <div
@@ -2464,7 +2569,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               </IconButton>
 
               <MarkdownFormattingToolbarToggle variant="SurfaceVariant" />
-
               {isMobileLayout &&
                 emojiBoardAnchorRect &&
                 createPortal(
@@ -2497,6 +2601,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       onEmojiSelect={handleEmoticonSelect}
                       onCustomEmojiSelect={handleEmoticonSelect}
                       onStickerSelect={handleStickerSelect}
+                      onGifSelect={handleGifSelect}
                       requestClose={closeEmojiBoard}
                     />
                   </div>,
@@ -2522,11 +2627,28 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       onEmojiSelect={handleEmoticonSelect}
                       onCustomEmojiSelect={handleEmoticonSelect}
                       onStickerSelect={handleStickerSelect}
+                      onGifSelect={handleGifSelect}
                       requestClose={closeEmojiBoard}
                     />
                   ) : undefined
                 }
               >
+                {gifsEnabled && (
+                  <IconButton
+                    aria-pressed={emojiBoardTab === EmojiBoardTab.Gif}
+                    onPointerDownCapture={prepareComposerOverlayTrigger}
+                    onClick={() => void openEmojiBoard(EmojiBoardTab.Gif)}
+                    variant="SurfaceVariant"
+                    size="300"
+                    radii="300"
+                    title="open GIF picker"
+                    aria-label="Open GIF picker"
+                  >
+                    {composerIcon(GifIcon, {
+                      weight: emojiBoardTab === EmojiBoardTab.Gif ? 'fill' : 'regular',
+                    })}
+                  </IconButton>
+                )}
                 {!hideStickerBtn && (
                   <IconButton
                     aria-pressed={emojiBoardTab === EmojiBoardTab.Sticker}

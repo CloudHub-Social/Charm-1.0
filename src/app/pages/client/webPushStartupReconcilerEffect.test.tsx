@@ -66,9 +66,11 @@ describe('useWebPushStartupReconcilerEffect', () => {
     renderHook(() => useWebPushStartupReconcilerEffect(input));
 
     await vi.waitFor(() => expect(reconcilePushNotifications).toHaveBeenCalledTimes(1));
-    await vi.advanceTimersByTimeAsync(5_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
 
-    expect(reconcilePushNotifications).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(reconcilePushNotifications).toHaveBeenCalledTimes(2));
     expect(input.transportLog.warn).toHaveBeenCalledWith(
       'notification',
       'Web push startup reconciliation failed',

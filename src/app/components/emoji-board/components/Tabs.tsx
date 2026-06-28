@@ -9,12 +9,28 @@ const styles: CSSProperties = {
 export function EmojiBoardTabs({
   tab,
   onTabChange,
+  showGifTab = true,
 }: {
   tab: EmojiBoardTab;
   onTabChange: (tab: EmojiBoardTab) => void;
+  showGifTab?: boolean;
 }) {
   return (
     <Box gap="100">
+      {showGifTab && (
+        <Badge
+          style={styles}
+          as="button"
+          variant="Secondary"
+          fill={tab === EmojiBoardTab.Gif ? 'Solid' : 'None'}
+          size="500"
+          onClick={() => onTabChange(EmojiBoardTab.Gif)}
+        >
+          <Text as="span" size="L400">
+            GIF
+          </Text>
+        </Badge>
+      )}
       <Badge
         style={styles}
         as="button"
