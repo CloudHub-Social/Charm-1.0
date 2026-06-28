@@ -158,7 +158,7 @@ export const useOrphanRooms = (
   const selector: RoomSelector = useCallback(
     (roomId) =>
       isRoom(mx.getRoom(roomId)) &&
-      !mDirects.has(roomId) &&
+      (isShowingAllRoomsInHome || !mDirects.has(roomId)) &&
       (isShowingAllRoomsInHome || !roomToParents.has(roomId)),
     [mx, mDirects, roomToParents, isShowingAllRoomsInHome]
   );

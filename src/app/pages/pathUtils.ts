@@ -1,5 +1,5 @@
 import type { Path } from 'react-router-dom';
-import { generatePath } from 'react-router-dom';
+import { generatePath, matchPath } from 'react-router-dom';
 import { trimLeadingSlash, trimTrailingSlash } from '$utils/common';
 import type { HashRouterConfig } from '$hooks/useClientConfig';
 import type { SettingsPathSearchParams } from './paths';
@@ -113,6 +113,34 @@ export const getResetPasswordPath = (server?: string): string => {
 export const getHomePath = (): string => HOME_PATH;
 
 const LAST_VISITED_PATH_KEY = 'sable_last_visited_path';
+const RESTORABLE_LAST_VISITED_SEARCH_PARAMS = new Set(['homeView']);
+
+const getRestorablePath = (path: string): string => {
+  const [pathname = '', search = ''] = path.split('?');
+  const params = new URLSearchParams(search);
+
+  let restorablePathname = pathname;
+
+  if (params.get('jumpMode') === 'notification_live') {
+    const roomMatch = [HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH]
+      .map((candidatePath) => matchPath({ path: candidatePath, end: true }, pathname))
+      .find((match) => match !== null);
+    const eventId = roomMatch?.params.eventId;
+
+    if (eventId) {
+      restorablePathname = stripRoomEventSegment(pathname, decodeURIComponent(eventId));
+    }
+  }
+
+  Array.from(params.keys()).forEach((key) => {
+    if (!RESTORABLE_LAST_VISITED_SEARCH_PARAMS.has(key)) {
+      params.delete(key);
+    }
+  });
+
+  const nextSearch = params.toString();
+  return nextSearch ? `${restorablePathname}?${nextSearch}` : restorablePathname;
+};
 
 /**
  * Store the current path to localStorage so it can be restored on next app open.
@@ -131,7 +159,7 @@ export const rememberLastVisitedPath = (path: string): void => {
 
   if (isRememberablePath) {
     try {
-      localStorage.setItem(LAST_VISITED_PATH_KEY, path);
+      localStorage.setItem(LAST_VISITED_PATH_KEY, getRestorablePath(path));
     } catch {
       // Ignore storage errors
     }

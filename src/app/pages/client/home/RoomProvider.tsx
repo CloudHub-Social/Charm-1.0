@@ -1,11 +1,14 @@
 import type { ReactNode } from 'react';
+import { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useAtomValue } from 'jotai';
 import { useSelectedRoom } from '$hooks/router/useSelectedRoom';
 import { IsDirectRoomProvider, RoomProvider } from '$hooks/useRoom';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { JoinBeforeNavigate } from '$features/join-before-navigate';
 import { useSearchParamsViaServers } from '$hooks/router/useSearchParamsViaServers';
+import { getRoomSearchParams } from '$pages/pathSearchParam';
 import { EventType } from '$types/matrix-sdk';
 import { getAccountData, getAllParents, getMDirects, getStateEvents, isRoom } from '$utils/room';
 import { roomToParentsAtom, roomToParentsReadyAtom } from '$state/room/roomToParents';
@@ -14,12 +17,14 @@ import { useHomeRooms } from './useHomeRooms';
 
 export function HomeRouteRoomProvider({ children }: { children: ReactNode }) {
   const mx = useMatrixClient();
-  useHomeRooms();
+  const { roomIdOrAlias: encodedRoomIdOrAlias, eventId: encodedEventId } = useParams();
+  const [searchParams] = useSearchParams();
+  const roomSearchParams = useMemo(() => getRoomSearchParams(searchParams), [searchParams]);
+  const isShowingAllRoomsInHome = roomSearchParams.homeView === 'all';
+  useHomeRooms(isShowingAllRoomsInHome);
   const roomToParents = useAtomValue(roomToParentsAtom);
   const roomToParentsReady = useAtomValue(roomToParentsReadyAtom);
   const mDirects = useAtomValue(mDirectAtom);
-
-  const { roomIdOrAlias: encodedRoomIdOrAlias, eventId: encodedEventId } = useParams();
   const roomIdOrAlias = encodedRoomIdOrAlias && decodeURIComponent(encodedRoomIdOrAlias);
   const eventId = encodedEventId && decodeURIComponent(encodedEventId);
   const viaServers = useSearchParamsViaServers();
@@ -40,6 +45,7 @@ export function HomeRouteRoomProvider({ children }: { children: ReactNode }) {
   const isHomeClassificationPending =
     !!room &&
     isJoinedRoom &&
+    !isShowingAllRoomsInHome &&
     !roomToParentsReady &&
     cachedParentSpaceIds.size === 0 &&
     liveParentSpaceIds.size === 0 &&
@@ -47,10 +53,9 @@ export function HomeRouteRoomProvider({ children }: { children: ReactNode }) {
   const isLiveHomeRoom =
     !!room &&
     isRoom(room) &&
-    !mDirects.has(room.roomId) &&
-    !isLiveDirectRoom &&
-    cachedParentSpaceIds.size === 0 &&
-    (roomToParentsReady || liveParentSpaceIds.size === 0);
+    (isShowingAllRoomsInHome || (!mDirects.has(room.roomId) && !isLiveDirectRoom)) &&
+    (isShowingAllRoomsInHome || cachedParentSpaceIds.size === 0) &&
+    (isShowingAllRoomsInHome || roomToParentsReady || liveParentSpaceIds.size === 0);
 
   if (isHomeClassificationPending) {
     return null;
@@ -68,7 +73,9 @@ export function HomeRouteRoomProvider({ children }: { children: ReactNode }) {
 
   return (
     <RoomProvider key={room.roomId} value={room}>
-      <IsDirectRoomProvider value={false}>{children}</IsDirectRoomProvider>
+      <IsDirectRoomProvider value={mDirects.has(room.roomId) || !!isLiveDirectRoom}>
+        {children}
+      </IsDirectRoomProvider>
     </RoomProvider>
   );
 }

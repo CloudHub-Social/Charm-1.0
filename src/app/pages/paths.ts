@@ -46,6 +46,7 @@ export const BOOKMARKS_PATH_SEGMENT = 'bookmarks/';
 export type RoomSearchParams = {
   /* comma separated string of servers */
   viaServers?: string;
+  homeView?: string;
 };
 export const ROOM_PATH_SEGMENT = ':roomIdOrAlias/:eventId?/';
 

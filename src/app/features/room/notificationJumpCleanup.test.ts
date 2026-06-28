@@ -1,51 +1,47 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildNotificationJumpCleanupTarget,
-  shouldClearNotificationJumpRoute,
+  buildEventTargetCleanupTarget,
+  shouldCleanNotificationJumpOnBack,
 } from './notificationJumpCleanup';
 
 describe('notificationJumpCleanup', () => {
-  it('only clears a notification jump route once the room is back at live bottom', () => {
+  it('only cleans transient notification jump routes on back', () => {
     expect(
-      shouldClearNotificationJumpRoute({
+      shouldCleanNotificationJumpOnBack({
         eventId: '$event',
         jumpMode: 'notification_live',
-        atBottom: true,
-        liveTimelineLinked: true,
+        pathname: '/direct/%21abc/%24event',
       })
     ).toBe(true);
 
     expect(
-      shouldClearNotificationJumpRoute({
+      shouldCleanNotificationJumpOnBack({
         eventId: '$event',
         jumpMode: 'notification_live',
-        atBottom: false,
-        liveTimelineLinked: true,
+        pathname: '/direct/%21abc/',
       })
     ).toBe(false);
 
     expect(
-      shouldClearNotificationJumpRoute({
-        eventId: '$event',
-        jumpMode: 'notification_live',
-        atBottom: true,
-        liveTimelineLinked: false,
-      })
-    ).toBe(false);
-
-    expect(
-      shouldClearNotificationJumpRoute({
+      shouldCleanNotificationJumpOnBack({
         eventId: '$event',
         jumpMode: 'history_context',
-        atBottom: true,
-        liveTimelineLinked: true,
+        pathname: '/direct/%21abc/%24event',
+      })
+    ).toBe(false);
+
+    expect(
+      shouldCleanNotificationJumpOnBack({
+        eventId: undefined,
+        jumpMode: 'notification_live',
+        pathname: '/direct/%21abc/%24event',
       })
     ).toBe(false);
   });
 
   it('removes notification-only query params and strips the event segment', () => {
     expect(
-      buildNotificationJumpCleanupTarget(
+      buildEventTargetCleanupTarget(
         '/direct/%21abc/%24event',
         '?jumpMode=notification_live&joinCall=true&via=push',
         '$event'

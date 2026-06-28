@@ -14,6 +14,7 @@ export const MessageBase = as<'div', css.MessageBaseVariants>(
       autoCollapse,
       space,
       contentSpacing,
+      mobile,
       ...props
     },
     ref
@@ -29,6 +30,7 @@ export const MessageBase = as<'div', css.MessageBaseVariants>(
           autoCollapse,
           space,
           contentSpacing,
+          mobile,
         }),
         className
       )}
@@ -60,14 +62,17 @@ export const MessageTextBody = as<'div', css.MessageTextBodyVariants & { notice?
   (
     { as: AsComp = 'div', children, className, preWrap, jumboEmoji, emote, notice, ...props },
     ref
-  ) => (
-    <AsComp
-      className={classNames(css.MessageTextBody({ preWrap, jumboEmoji, emote, notice }), className)}
-      {...props}
-      ref={ref}
-      dir="auto"
-    >
-      {children}
-    </AsComp>
-  )
+  ) => {
+    void notice;
+    return (
+      <AsComp
+        className={classNames(css.MessageTextBody({ preWrap, jumboEmoji, emote }), className)}
+        {...props}
+        ref={ref}
+        dir="auto"
+      >
+        {children}
+      </AsComp>
+    );
+  }
 );
