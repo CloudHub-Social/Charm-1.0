@@ -9,6 +9,7 @@ import {
 } from './useNotificationDeviceScope';
 
 let notificationDeviceScope: 'all_clients' | 'active_client_only' = 'all_clients';
+let focused = true;
 
 vi.mock('$state/hooks/settings', () => ({
   useSetting: () => [notificationDeviceScope, vi.fn()],
@@ -21,6 +22,10 @@ function setVisibilityState(visibilityState: DocumentVisibilityState): void {
   });
 }
 
+function setDocumentFocusState(isFocused: boolean): void {
+  focused = isFocused;
+}
+
 type LeaseContent = {
   deviceId: string;
   updatedAt: number;
@@ -29,7 +34,7 @@ type LeaseContent = {
 
 function createMockMatrixClient(initialLease?: LeaseContent) {
   let lease = initialLease;
-  let accountDataHandler: ((event: { getType: () => string }) => void) | undefined;
+  const accountDataHandlers = new Set<(event: { getType: () => string }) => void>();
 
   const client = {
     getDeviceId: vi.fn(() => 'DEVICE_A'),
@@ -45,10 +50,12 @@ function createMockMatrixClient(initialLease?: LeaseContent) {
     setAccountData: vi.fn(async (_type: string, content: LeaseContent) => {
       lease = content;
     }),
-    on: vi.fn((_event: string, handler: typeof accountDataHandler) => {
-      accountDataHandler = handler;
+    on: vi.fn((_event: string, handler: (event: { getType: () => string }) => void) => {
+      accountDataHandlers.add(handler);
     }),
-    removeListener: vi.fn(),
+    removeListener: vi.fn((_event: string, handler: (event: { getType: () => string }) => void) => {
+      accountDataHandlers.delete(handler);
+    }),
   } as unknown as MatrixClient;
 
   return {
@@ -57,9 +64,11 @@ function createMockMatrixClient(initialLease?: LeaseContent) {
       lease = nextLease;
     },
     emitAccountData: () => {
-      accountDataHandler?.({
-        getType: () => CustomAccountDataEvent.SableNotificationDeviceLease,
-      });
+      accountDataHandlers.forEach((handler) =>
+        handler({
+          getType: () => CustomAccountDataEvent.SableNotificationDeviceLease,
+        })
+      );
     },
   };
 }
@@ -69,10 +78,11 @@ describe('useNotificationDeviceScope', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-18T12:00:00.000Z'));
     notificationDeviceScope = 'all_clients';
+    focused = true;
     setVisibilityState('visible');
     Object.defineProperty(document, 'hasFocus', {
       configurable: true,
-      value: () => true,
+      value: () => focused,
     });
   });
 
@@ -113,10 +123,7 @@ describe('useNotificationDeviceScope', () => {
 
   it('treats a fresh lease held by another client as inactive when this tab is not focused', () => {
     notificationDeviceScope = 'active_client_only';
-    Object.defineProperty(document, 'hasFocus', {
-      configurable: true,
-      value: () => false,
-    });
+    setDocumentFocusState(false);
 
     const now = Date.now();
     const { client } = createMockMatrixClient({
@@ -136,10 +143,7 @@ describe('useNotificationDeviceScope', () => {
 
   it('falls back to active when another client lease expires', () => {
     notificationDeviceScope = 'active_client_only';
-    Object.defineProperty(document, 'hasFocus', {
-      configurable: true,
-      value: () => false,
-    });
+    setDocumentFocusState(false);
 
     const now = Date.now();
     const { client } = createMockMatrixClient({
@@ -179,6 +183,75 @@ describe('useNotificationDeviceScope', () => {
     expect(result.current.lease).toEqual(nextLease);
   });
 
+  it('refreshes an owned lease only after the existing lease ages out', async () => {
+    notificationDeviceScope = 'active_client_only';
+    const { client } = createMockMatrixClient();
+
+    renderHook(() => useNotificationDeviceScope(client));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(90_000);
+    });
+    expect(client.setAccountData).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(client.setAccountData).toHaveBeenCalledTimes(2);
+  });
+
+  it('takes over the lease when visibility and focus return to this client', async () => {
+    notificationDeviceScope = 'active_client_only';
+    setVisibilityState('hidden');
+    setDocumentFocusState(false);
+
+    const now = Date.now();
+    const { client } = createMockMatrixClient({
+      deviceId: 'DEVICE_B',
+      updatedAt: now,
+      expiresAt: now + 60_000,
+    });
+
+    const { result } = renderHook(() => useNotificationDeviceScope(client));
+
+    expect(result.current.isVisible).toBe(false);
+    expect(result.current.isWindowFocused).toBe(false);
+    expect(result.current.isActiveNotificationClient).toBe(false);
+    expect(client.setAccountData).not.toHaveBeenCalled();
+
+    act(() => {
+      setVisibilityState('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(result.current.isVisible).toBe(true);
+    expect(result.current.isWindowFocused).toBe(false);
+    expect(result.current.isActiveNotificationClient).toBe(false);
+    expect(client.setAccountData).not.toHaveBeenCalled();
+
+    act(() => {
+      setDocumentFocusState(true);
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(client.setAccountData).toHaveBeenCalledTimes(1);
+    expect(result.current.isVisible).toBe(true);
+    expect(result.current.isWindowFocused).toBe(true);
+    expect(result.current.isThisClientLeaseHolder).toBe(true);
+    expect(result.current.isActiveNotificationClient).toBe(true);
+    expect(result.current.activeReason).toBe('lease_holder');
+  });
+
   it('can read lease state without publishing duplicate leases', async () => {
     notificationDeviceScope = 'active_client_only';
     const { client } = createMockMatrixClient();
@@ -216,6 +289,45 @@ describe('useNotificationDeviceScope', () => {
     expect(client.setAccountData).toHaveBeenCalledTimes(1);
     expect(observer.result.current.isThisClientLeaseHolder).toBe(true);
     expect(observer.result.current.isActiveNotificationClient).toBe(true);
+
+    owner.unmount();
+    observer.unmount();
+  });
+
+  it('keeps multiple consumers synchronized when account-data updates replace the local lease', async () => {
+    notificationDeviceScope = 'active_client_only';
+    const { client, setLease, emitAccountData } = createMockMatrixClient();
+
+    const owner = renderHook(() => useNotificationDeviceScope(client));
+    const observer = renderHook(() =>
+      useNotificationDeviceScope(client, {
+        publishLease: false,
+      })
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const nextLease = {
+      deviceId: 'DEVICE_B',
+      updatedAt: Date.now(),
+      expiresAt: Date.now() + 120_000,
+    };
+
+    act(() => {
+      setLease(nextLease);
+      emitAccountData();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(owner.result.current.lease).toEqual(nextLease);
+    expect(observer.result.current.lease).toEqual(nextLease);
+    expect(owner.result.current.isActiveNotificationClient).toBe(false);
+    expect(observer.result.current.isActiveNotificationClient).toBe(false);
 
     owner.unmount();
     observer.unmount();
