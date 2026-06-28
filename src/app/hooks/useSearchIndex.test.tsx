@@ -171,6 +171,9 @@ describe('SearchIndexProvider', () => {
     expect(mocks.mx.on).toHaveBeenCalledWith(ClientEvent.Sync, expect.any(Function));
     expect(mocks.mx.on).toHaveBeenCalledWith(RoomEvent.Timeline, expect.any(Function));
     expect(mocks.mx.on).toHaveBeenCalledWith(ClientEvent.Room, expect.any(Function));
+    expect(mocks.mx.on.mock.calls.filter(([event]) => event === ClientEvent.Sync)).toHaveLength(1);
+    expect(mocks.mx.on.mock.calls.filter(([event]) => event === RoomEvent.Timeline)).toHaveLength(1);
+    expect(mocks.mx.on.mock.calls.filter(([event]) => event === ClientEvent.Room)).toHaveLength(1);
   });
 
   it('settles pending queries with empty results when the worker reports an error', async () => {
@@ -218,6 +221,7 @@ describe('SearchIndexProvider', () => {
 
     await act(async () => {
       view.unmount();
+      worker?.emit('message', { type: 'INDEX_BATCH_DONE' });
       worker?.emit('message', { type: 'FLUSH_DONE' });
     });
 

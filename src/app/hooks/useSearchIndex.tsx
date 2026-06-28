@@ -280,22 +280,22 @@ function flushAndTerminateWorker(
   workerRef: MutableRefObject<Worker | null>,
   postToWorker: (msg: WorkerInMessage) => void
 ): void {
+  const handleFlushDone = (ev: MessageEvent<WorkerOutMessage>) => {
+    if (ev.data.type !== 'FLUSH_DONE') return;
+
+    clearTimeout(terminateTimeout);
+    worker.removeEventListener('message', handleFlushDone as EventListener);
+    worker.terminate();
+    workerRef.current = null;
+  };
+
   postToWorker({ type: 'FLUSH' });
   const terminateTimeout = setTimeout(() => {
+    worker.removeEventListener('message', handleFlushDone as EventListener);
     worker.terminate();
     workerRef.current = null;
   }, 2000);
-  worker.addEventListener(
-    'message',
-    (ev: MessageEvent<WorkerOutMessage>) => {
-      if (ev.data.type === 'FLUSH_DONE') {
-        clearTimeout(terminateTimeout);
-        worker.terminate();
-        workerRef.current = null;
-      }
-    },
-    { once: true }
-  );
+  worker.addEventListener('message', handleFlushDone as EventListener);
 }
 
 export function SearchIndexProvider({ children }: { children: ReactNode }) {
@@ -1002,14 +1002,12 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
         resumeBackfill();
       }
     };
-    mx.on(ClientEvent.Sync, handleSync as unknown as (...args: unknown[]) => void);
 
     // Live indexing listener
     const handleTimeline = (mEvent: MatrixEvent, room: Room | undefined) => {
       if (!room) return;
       indexEvent(mEvent, room);
     };
-    mx.on(RoomEvent.Timeline, handleTimeline as unknown as (...args: unknown[]) => void);
 
     // Enqueue rooms added by sliding sync after the initial startBackfill call.
     // Sliding sync starts with an initial window of 100 rooms; additional rooms
