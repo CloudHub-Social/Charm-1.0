@@ -197,6 +197,11 @@ import type {
 import { AudioMessageRecorder } from './AudioMessageRecorder';
 import { PollCreator } from './PollCreator';
 import { sendImmediateMessage } from './sendImmediateMessage';
+import {
+  applyAttachmentSendPlan,
+  createAttachmentSendPlan,
+  type ComposerAttachmentCaption,
+} from './attachmentSendPlan';
 import * as prefix from '$unstable/prefixes';
 import { LocationDialog } from './location-modal';
 import {
@@ -429,13 +434,19 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const restoredSilentReplyRef = useRef<boolean | null>(null);
     const isMountedRef = useRef(true);
     const submitInFlightRef = useRef(false);
+    const uploadSendInFlightRef = useRef(false);
 
     const [uploadBoard, setUploadBoard] = useState(true);
     const [selectedFiles, setSelectedFiles] = useAtom(roomIdToUploadItemsAtomFamily(draftKey));
-    const uploadFamilyObserverAtom = createUploadFamilyObserverAtom(
-      roomUploadAtomFamily,
-      selectedFiles.map((f) => f.file)
+    const uploadFamilyObserverAtom = useMemo(
+      () =>
+        createUploadFamilyObserverAtom(
+          roomUploadAtomFamily,
+          selectedFiles.map((f) => f.file)
+        ),
+      [selectedFiles]
     );
+    const uploadStates = useAtomValue(uploadFamilyObserverAtom);
     const uploadBoardHandlers = useRef<UploadBoardImperativeHandlers>();
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const suppressNextSendClickSequenceRef = useRef<number | null>(null);
@@ -823,135 +834,402 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       handleRemoveUpload(uploads.map((upload) => upload.file));
     };
 
-    const handleSendUpload = async (uploads: UploadSuccess[]) => {
-      const plainText = toPlainText(editor.children).trim();
-      const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
-      const clearSentUploadReplyDraft = () => {
-        if (serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot) {
-          setReplyDraft(replyDraftBase);
-        }
-      };
+    const clearSentMessageContext = (
+      sentReplyDraftSnapshot?: string,
+      sentImagePacksSnapshot?: string
+    ) => {
+      if (
+        sentImagePacksSnapshot === undefined ||
+        JSON.stringify(imagePacksUsedRef.current.toJSON()) === sentImagePacksSnapshot
+      ) {
+        imagePacksUsedRef.current.clear();
+      }
 
-      const contentsPromises = uploads.map(async (upload) => {
-        const fileItem = selectedFiles.find((f) => f.file === upload.file);
-        if (!fileItem) throw new Error('Broken upload');
+      if (
+        sentReplyDraftSnapshot !== undefined &&
+        serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot
+      ) {
+        setReplyDraft(replyDraftBase);
+      }
+    };
 
-        if (fileItem.file.type.startsWith('image')) {
-          return getImageMsgContent(mx, fileItem, upload.mxc);
-        }
-        if (fileItem.file.type.startsWith('video')) {
-          return getVideoMsgContent(mx, fileItem, upload.mxc);
-        }
-        if (fileItem.file.type.startsWith('audio')) {
-          return getAudioMsgContent(fileItem, upload.mxc);
-        }
-        return getFileMsgContent(fileItem, upload.mxc);
-      });
-      handleCancelUpload(uploads);
-      const contents = fulfilledPromiseSettledResult(await Promise.allSettled(contentsPromises));
+    const restoreFailedImmediateSendContext = (
+      sentMsgDraftSnapshot: typeof editor.children,
+      sentReplyDraftSnapshot: string,
+      sentImagePacksSnapshot: string,
+      sentSilentReplySnapshot: boolean
+    ) => {
+      if (!isMountedRef.current) return;
 
-      /**
-       * the currently with the room associated per-message profile, if any, so that it can be included in the message content when sending.
-       * This allows the server to apply the correct profile-based transformations (e.g. font size adjustments) when processing the message,
-       * and also allows clients to display an accurate preview of how the message will look with the profile applied while it's being composed.
-       */
-      const perMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
-
-      if (perMessageProfile) {
-        contents.forEach((c) => {
-          // We intentionally mutate the objects here to avoid unnecessary copying
-          // mutating should be unproblematic here, since contents isn't a react component,
-          // or used for rendering
-          c[prefix.MATRIX_UNSTABLE_PER_MESSAGE_PROFILE_PROPERTY_NAME] =
-            convertPerMessageProfileToBeeperFormat(perMessageProfile, false);
+      if (isEmptyEditor(editor)) {
+        const restoredMsgDraft = structuredClone(sentMsgDraftSnapshot);
+        setMsgDraft(restoredMsgDraft);
+        requestAnimationFrame(() => {
+          try {
+            ReactEditor.focus(editor);
+            moveCursor(editor);
+          } catch {
+            // Ignore focus errors
+          }
         });
       }
 
-      if (contents.length > 0) {
-        const replyContent =
-          plainText?.length === 0 ? getReplyContent(replyDraft, room) : undefined;
-        if (replyContent) {
-          contents[0]!['m.relates_to'] = replyContent;
-          const replyMentions = getReplyMentionData(replyDraft, replyEvent, silentReply);
-          if (replyMentions) contents[0]!['m.mentions'] = replyMentions;
+      const currentReplyDraftSnapshot = serializeReplyDraft(latestReplyDraftRef.current);
+      if (
+        currentReplyDraftSnapshot === serializeReplyDraft(replyDraftBase) ||
+        currentReplyDraftSnapshot === sentReplyDraftSnapshot
+      ) {
+        const restoredReplyDraft = JSON.parse(sentReplyDraftSnapshot) as IReplyDraft | null;
+        restoredSilentReplyRef.current = restoredReplyDraft ? sentSilentReplySnapshot : null;
+        setReplyDraft(restoredReplyDraft ?? replyDraftBase);
+      }
+
+      if (imagePacksUsedRef.current.size === 0) {
+        const restoredImagePacks = JSON.parse(sentImagePacksSnapshot) as Record<
+          string,
+          MSC4459ImagePackReference
+        >;
+        Object.entries(restoredImagePacks).forEach(([key, value]) => {
+          imagePacksUsedRef.current.set(key, value);
+        });
+      }
+
+      sendTypingStatus(false);
+    };
+
+    const resetInput = (
+      sentReplyDraftSnapshot?: string,
+      sentImagePacksSnapshot?: string,
+      options?: { refocus?: boolean },
+      sentMsgDraftSnapshot?: typeof editor.children
+    ) => {
+      const shouldClearEditor =
+        sentMsgDraftSnapshot === undefined ||
+        JSON.stringify(editor.children) === JSON.stringify(sentMsgDraftSnapshot);
+
+      if (shouldClearEditor) {
+        setMsgDraft([]);
+        resetEditor(editor);
+        resetEditorHistory(editor);
+        setInputKey((prev) => prev + 1);
+      }
+
+      clearSentMessageContext(sentReplyDraftSnapshot, sentImagePacksSnapshot);
+      sendTypingStatus(false);
+
+      if (options?.refocus) {
+        requestAnimationFrame(() => {
+          try {
+            ReactEditor.focus(editor);
+            moveCursor(editor);
+          } catch {
+            // Ignore focus errors
+          }
+        });
+      }
+    };
+
+    const focusComposer = () => {
+      requestAnimationFrame(() => {
+        try {
+          ReactEditor.focus(editor);
+          moveCursor(editor);
+        } catch {
+          // Ignore focus errors
+        }
+      });
+    };
+
+    const getNicknameReplacementMap = () => {
+      const nicknameReplacement = new Map<RegExp, string>();
+
+      if (replyEvent) {
+        const senderId = replyEvent.getSender();
+        if (senderId) {
+          const nick = nicknames[senderId];
+          if (typeof nick === 'string' && nick.length > 0) {
+            nicknameReplacement.set(
+              new RegExp(`@?${nick}`, 'g'),
+              room.getMember(senderId)?.rawDisplayName ?? senderId
+            );
+          }
         }
       }
 
-      const invalidate = () =>
-        queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
+      const mentions = getMentions(mx, roomId, editor);
+      if (mentions?.users) {
+        mentions.users.forEach((id) => {
+          const nick = nicknames[id];
+          if (typeof nick === 'string' && nick.length > 0) {
+            nicknameReplacement.set(
+              new RegExp(`@?${nick}`, 'g'),
+              room.getMember(id)?.rawDisplayName ?? id
+            );
+          }
+        });
+      }
 
-      if (scheduledTime) {
-        try {
-          const delayMs = computeDelayMs(scheduledTime);
-          if (editingScheduledDelayId) {
-            await cancelDelayedEvent(mx, editingScheduledDelayId);
+      return nicknameReplacement;
+    };
+
+    const getSharedComposerCaption = (): ComposerAttachmentCaption | undefined => {
+      const nicknameReplacement = getNicknameReplacementMap();
+      const plainText = toPlainText(editor.children, true, nicknameReplacement).trim();
+      if (plainText.length === 0) return undefined;
+
+      const formattedCaption = trimCustomHtml(
+        toMatrixCustomHTML(editor.children, {
+          stripNickname: true,
+          nickNameReplacement: nicknameReplacement,
+          room,
+        })
+      );
+
+      return {
+        body: plainText,
+        formattedBody: customHtmlEqualsPlainText(formattedCaption, plainText)
+          ? undefined
+          : formattedCaption,
+      };
+    };
+
+    const handleSendUpload = async (
+      uploads: UploadSuccess[],
+      options?: {
+        sharedCaption?: ComposerAttachmentCaption;
+        perMessageProfile?: Awaited<ReturnType<typeof getCurrentlyUsedPerMessageProfileForRoom>>;
+      }
+    ) => {
+      if (uploadSendInFlightRef.current) return;
+      uploadSendInFlightRef.current = true;
+
+      try {
+        const sharedCaption = options?.sharedCaption ?? getSharedComposerCaption();
+        const sentMsgDraftSnapshot = structuredClone(editor.children);
+        const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
+        const clearSentUploadReplyDraft = () => {
+          if (serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot) {
+            setReplyDraft(replyDraftBase);
+          }
+        };
+
+        const matchingFiles = uploads
+          .map((upload) => selectedFiles.find((f) => f.file === upload.file))
+          .filter((fileItem): fileItem is TUploadItem => !!fileItem);
+        const sendPlan = createAttachmentSendPlan(matchingFiles, sharedCaption);
+        const plannedFiles = applyAttachmentSendPlan(matchingFiles, sharedCaption);
+        const sharedCaptionApplied = sendPlan.some((caption) => !!caption);
+        const hasDeferredComposerText = Boolean(sharedCaption && !sharedCaptionApplied);
+
+        const preparedUploadsPromises = uploads.map(async (upload) => {
+          const fileItem = plannedFiles.find((f) => f.file === upload.file);
+          if (!fileItem) throw new Error('Broken upload');
+
+          if (fileItem.file.type.startsWith('image')) {
+            return { upload, content: await getImageMsgContent(mx, fileItem, upload.mxc) };
+          }
+          if (fileItem.file.type.startsWith('video')) {
+            return { upload, content: await getVideoMsgContent(mx, fileItem, upload.mxc) };
+          }
+          if (fileItem.file.type.startsWith('audio')) {
+            return { upload, content: getAudioMsgContent(fileItem, upload.mxc) };
+          }
+          return { upload, content: getFileMsgContent(fileItem, upload.mxc) };
+        });
+        const preparedUploads = fulfilledPromiseSettledResult(
+          await Promise.allSettled(preparedUploadsPromises)
+        );
+        const contents = preparedUploads.map(({ content }) => content);
+
+        /**
+         * the currently with the room associated per-message profile, if any, so that it can be included in the message content when sending.
+         * This allows the server to apply the correct profile-based transformations (e.g. font size adjustments) when processing the message,
+         * and also allows clients to display an accurate preview of how the message will look with the profile applied while it's being composed.
+         */
+        const perMessageProfile =
+          options?.perMessageProfile ??
+          (await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId));
+
+        if (perMessageProfile) {
+          contents.forEach((c) => {
+            // We intentionally mutate the objects here to avoid unnecessary copying
+            // mutating should be unproblematic here, since contents isn't a react component,
+            // or used for rendering
+            c[prefix.MATRIX_UNSTABLE_PER_MESSAGE_PROFILE_PROPERTY_NAME] =
+              convertPerMessageProfileToBeeperFormat(perMessageProfile, false);
+          });
+        }
+
+        if (contents.length > 0) {
+          const replyContent = getReplyContent(replyDraft, room);
+          if (Object.keys(replyContent).length > 0) {
+            contents[0]!['m.relates_to'] = replyContent;
           }
 
-          await Promise.all(
-            contents.map((content) => {
-              if (isEncrypted) {
-                return sendDelayedMessageE2EE(mx, roomId, room, content, delayMs);
-              }
-              return sendDelayedMessage(mx, roomId, content, delayMs);
-            })
+          const mentionData = sharedCaptionApplied
+            ? getMentions(mx, roomId, editor)
+            : { room: false, users: new Set<string>() };
+          const replyMentions = getReplyMentionData(
+            hasDeferredComposerText ? undefined : replyDraft,
+            replyEvent,
+            silentReply,
+            sharedCaptionApplied ? mentionData.room : false
           );
+          if (replyMentions?.user_ids) {
+            replyMentions.user_ids.forEach((id) => mentionData.users.add(id));
+          }
 
-          invalidate();
-          clearSentUploadReplyDraft();
-          setEditingScheduledDelayId(null);
-          setScheduledTime(null);
-        } catch (error) {
-          debugLog.error('message', 'Failed to schedule uploaded file message', {
-            roomId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          log.error('failed to schedule uploaded message', { roomId }, error);
-          throw error;
-        }
-      } else {
-        if (editingScheduledDelayId) {
-          try {
-            await cancelDelayedEvent(mx, editingScheduledDelayId);
-            invalidate();
-            setEditingScheduledDelayId(null);
-          } catch {
-            debugLog.error(
-              'message',
-              'Failed to cancel scheduled event before immediate file send',
-              { roomId }
+          if (mentionData.users.size > 0 || mentionData.room || replyMentions?.room === true) {
+            contents[0]!['m.mentions'] = getMentionContent(
+              Array.from(mentionData.users),
+              mentionData.room || replyMentions?.room === true
+            );
+          }
+
+          if (sharedCaptionApplied) {
+            contents[0]![prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
+              imagePacksUsedRef.current.toJSON();
+
+            const links = getLinks(editor.children);
+            contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME] = [];
+            links?.forEach((link) =>
+              contents[0]![prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME].push({
+                matched_url: link,
+              })
             );
           }
         }
 
-        await Promise.all(
-          contents.map((content) => {
-            const sendStartTime = Date.now();
-            const span = Sentry.startInactiveSpan({
-              name: 'message.send',
-              op: 'message',
-              attributes: {
-                'message.room_id': roomId,
-                'message.type': content.msgtype ?? 'm.text',
-                'message.is_encrypted': isEncrypted,
-                'message.body_length': content.body?.length ?? 0,
-                'message.is_thread': !!threadRootId,
-              },
+        const invalidate = () =>
+          queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
+        const sendPreparedUploadsSequentially = async (
+          sendContent: (preparedUpload: {
+            upload: UploadSuccess;
+            content: IContent;
+          }) => Promise<void>
+        ) => {
+          await preparedUploads.reduce(
+            (promise, preparedUpload) => promise.then(() => sendContent(preparedUpload)),
+            Promise.resolve()
+          );
+        };
+
+        const sentImagePacksSnapshot = JSON.stringify(imagePacksUsedRef.current.toJSON());
+        const successfulUploads: UploadSuccess[] = [];
+        const clearConsumedUploadSendContext = (contextOptions?: { refocus?: boolean }) => {
+          if (sharedCaptionApplied) {
+            resetInput(
+              sentReplyDraftSnapshot,
+              sentImagePacksSnapshot,
+              contextOptions,
+              sentMsgDraftSnapshot
+            );
+            return;
+          }
+
+          if (hasDeferredComposerText) {
+            if (contextOptions?.refocus) focusComposer();
+            return;
+          }
+
+          clearSentUploadReplyDraft();
+          clearSentMessageContext(sentReplyDraftSnapshot, sentImagePacksSnapshot);
+          sendTypingStatus(false);
+          if (contextOptions?.refocus) focusComposer();
+        };
+        const handlePartialUploadBatchSuccess = () => {
+          if (successfulUploads.length === 0) return;
+
+          handleCancelUpload(successfulUploads);
+          clearConsumedUploadSendContext();
+        };
+        const handleUploadSendFailure = () => {
+          if (successfulUploads.length > 0) {
+            handlePartialUploadBatchSuccess();
+            return;
+          }
+
+          handleCancelUpload(uploads);
+        };
+
+        if (scheduledTime) {
+          try {
+            const delayMs = computeDelayMs(scheduledTime);
+            if (editingScheduledDelayId) {
+              await cancelDelayedEvent(mx, editingScheduledDelayId);
+            }
+
+            await sendPreparedUploadsSequentially(async ({ upload, content }) => {
+              if (isEncrypted) {
+                await sendDelayedMessageE2EE(mx, roomId, room, content, delayMs);
+              } else {
+                await sendDelayedMessage(mx, roomId, content, delayMs);
+              }
+              successfulUploads.push(upload);
             });
 
-            return mx
-              .sendMessage(roomId, threadRootId ?? null, content as RoomMessageEventContent)
-              .then((res: { event_id: string }) => {
+            invalidate();
+            handleCancelUpload(uploads);
+            clearConsumedUploadSendContext({ refocus: true });
+            setEditingScheduledDelayId(null);
+            if (!hasDeferredComposerText) {
+              setScheduledTime(null);
+            }
+          } catch (error) {
+            invalidate();
+            handleUploadSendFailure();
+            debugLog.error('message', 'Failed to schedule uploaded file message', {
+              roomId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            log.error('failed to schedule uploaded message', { roomId }, error);
+            throw error;
+          }
+        } else {
+          if (editingScheduledDelayId) {
+            try {
+              await cancelDelayedEvent(mx, editingScheduledDelayId);
+              invalidate();
+              setEditingScheduledDelayId(null);
+            } catch {
+              debugLog.error(
+                'message',
+                'Failed to cancel scheduled event before immediate file send',
+                { roomId }
+              );
+            }
+          }
+
+          try {
+            await sendPreparedUploadsSequentially(async ({ upload, content }) => {
+              const sendStartTime = Date.now();
+              const span = Sentry.startInactiveSpan({
+                name: 'message.send',
+                op: 'message',
+                attributes: {
+                  'message.room_id': roomId,
+                  'message.type': content.msgtype ?? 'm.text',
+                  'message.is_encrypted': isEncrypted,
+                  'message.body_length': content.body?.length ?? 0,
+                  'message.is_thread': !!threadRootId,
+                },
+              });
+
+              try {
+                const res = await mx.sendMessage(
+                  roomId,
+                  threadRootId ?? null,
+                  content as RoomMessageEventContent
+                );
                 debugLog.info('message', 'Uploaded file message sent', {
                   roomId,
                   eventId: res.event_id,
                   msgtype: content.msgtype,
                 });
+                successfulUploads.push(upload);
                 span.setAttribute('message.event_id', res.event_id);
                 span.setAttribute('message.send_duration_ms', Date.now() - sendStartTime);
-                span.end();
-                return res;
-              })
-              .catch((error: unknown) => {
+              } catch (error: unknown) {
                 debugLog.error('message', 'Failed to send uploaded file message', {
                   roomId,
                   error: error instanceof Error ? error.message : String(error),
@@ -961,12 +1239,21 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   'message.error',
                   error instanceof Error ? error.message : String(error)
                 );
-                span.end();
                 throw error;
-              });
-          })
-        );
-        clearSentUploadReplyDraft();
+              } finally {
+                span.end();
+              }
+            });
+          } catch (error) {
+            handleUploadSendFailure();
+            throw error;
+          }
+
+          handleCancelUpload(uploads);
+          clearConsumedUploadSendContext({ refocus: true });
+        }
+      } finally {
+        uploadSendInFlightRef.current = false;
       }
     };
 
@@ -1005,12 +1292,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       [editor, handleCloseAutocomplete, mx, room, sendTypingStatus]
     );
 
-    const submit = useCallback(async () => {
+    const submit = async () => {
       if (submitInFlightRef.current) return;
       submitInFlightRef.current = true;
 
       try {
-        uploadBoardHandlers.current?.handleSend();
         const commandName = getBeginCommand(editor);
         /**
          * a map of regex patterns to replace nicknames with,
@@ -1022,41 +1308,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
          * the original user IDs so that the message content remains consistent and
          * mentions are correctly processed by the server and clients.
          */
-        const nicknameReplacement = new Map<RegExp, string>();
-        if (replyEvent) {
-          /**
-           * the id of the user being replied to,
-           * whose nickname (if any) should be stripped
-           * from the message content and replaced with their
-           * user ID for correct mention processing
-           */
-          const senderId = replyEvent.getSender();
-          if (senderId) {
-            const nick = nicknames[senderId];
-            if (typeof nick === 'string' && nick.length > 0) {
-              nicknameReplacement.set(
-                new RegExp(`@?${nick}`, 'g'),
-                room.getMember(senderId)?.rawDisplayName ?? senderId
-              );
-            }
-          }
-        }
-        /**
-         * any other users mentioned in the message being replied to,
-         * whose nicknames should also be stripped and replaced with user IDs
-         */
-        const mentions = getMentions(mx, roomId, editor);
-        if (mentions?.users) {
-          mentions.users.forEach((id) => {
-            const nick = nicknames[id];
-            if (typeof nick === 'string' && nick.length > 0) {
-              nicknameReplacement.set(
-                new RegExp(`@?${nick}`, 'g'),
-                room.getMember(id)?.rawDisplayName ?? id
-              );
-            }
-          });
-        }
+        const nicknameReplacement = getNicknameReplacementMap();
         /**
          * the plain text we will send
          */
@@ -1174,10 +1426,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         }
 
-        if (plainText === '') return;
-
         // Discord-style edit: when an editDraft is active, send an m.replace event
         // instead of a new message and clear the edit state.
+        if (editDraft && plainText === '') return;
         if (editDraft) {
           const editEvent = room.findEventById(editDraft.eventId);
           if (editEvent) {
@@ -1286,6 +1537,43 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         }
 
+        if (selectedFiles.length > 0) {
+          const uploadsReady =
+            uploadStates.length === selectedFiles.length &&
+            uploadStates.every((upload) => upload.status === UploadStatus.Success);
+
+          if (uploadsReady) {
+            let attachmentPerMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(
+              mx,
+              roomId
+            );
+            if (pmpProxyingEnable && proxiedPerMessageProfile) {
+              attachmentPerMessageProfile = proxiedPerMessageProfile;
+            }
+
+            const successfulUploads = uploadStates.filter(
+              (upload): upload is UploadSuccess => upload.status === UploadStatus.Success
+            );
+            await handleSendUpload(successfulUploads, {
+              sharedCaption:
+                plainText.length > 0
+                  ? {
+                      body: plainText,
+                      formattedBody: customHtmlEqualsPlainText(customHtml, plainText)
+                        ? undefined
+                        : customHtml,
+                    }
+                  : undefined,
+              perMessageProfile: attachmentPerMessageProfile,
+            });
+          } else {
+            setSendError('Please wait for uploads to finish before sending.');
+          }
+          return;
+        }
+
+        if (plainText === '') return;
+
         const body = plainText;
         const formattedBody = customHtml;
         const mentionData = getMentions(mx, roomId, editor);
@@ -1375,93 +1663,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           queryClient.invalidateQueries({
             queryKey: ['delayedEvents', roomId],
           });
-
-        const clearSentMessageContext = (
-          sentReplyDraftSnapshot?: string,
-          sentImagePacksSnapshot?: string
-        ) => {
-          if (
-            sentImagePacksSnapshot === undefined ||
-            JSON.stringify(imagePacksUsedRef.current.toJSON()) === sentImagePacksSnapshot
-          ) {
-            imagePacksUsedRef.current.clear();
-          }
-
-          if (
-            sentReplyDraftSnapshot !== undefined &&
-            serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot
-          ) {
-            setReplyDraft(replyDraftBase);
-          }
-        };
-
-        const restoreFailedImmediateSendContext = (
-          sentMsgDraftSnapshot: typeof editor.children,
-          sentReplyDraftSnapshot: string,
-          sentImagePacksSnapshot: string,
-          sentSilentReplySnapshot: boolean
-        ) => {
-          if (!isMountedRef.current) return;
-
-          if (isEmptyEditor(editor)) {
-            const restoredMsgDraft = structuredClone(sentMsgDraftSnapshot);
-            setMsgDraft(restoredMsgDraft);
-            requestAnimationFrame(() => {
-              try {
-                ReactEditor.focus(editor);
-                moveCursor(editor);
-              } catch {
-                // Ignore focus errors
-              }
-            });
-          }
-
-          const currentReplyDraftSnapshot = serializeReplyDraft(latestReplyDraftRef.current);
-          if (
-            currentReplyDraftSnapshot === serializeReplyDraft(replyDraftBase) ||
-            currentReplyDraftSnapshot === sentReplyDraftSnapshot
-          ) {
-            const restoredReplyDraft = JSON.parse(sentReplyDraftSnapshot) as IReplyDraft | null;
-            restoredSilentReplyRef.current = restoredReplyDraft ? sentSilentReplySnapshot : null;
-            setReplyDraft(restoredReplyDraft ?? replyDraftBase);
-          }
-
-          if (imagePacksUsedRef.current.size === 0) {
-            const restoredImagePacks = JSON.parse(sentImagePacksSnapshot) as Record<
-              string,
-              MSC4459ImagePackReference
-            >;
-            Object.entries(restoredImagePacks).forEach(([key, value]) => {
-              imagePacksUsedRef.current.set(key, value);
-            });
-          }
-
-          sendTypingStatus(false);
-        };
-
-        const resetInput = (
-          sentReplyDraftSnapshot?: string,
-          sentImagePacksSnapshot?: string,
-          options?: { refocus?: boolean }
-        ) => {
-          setMsgDraft([]);
-          resetEditor(editor);
-          resetEditorHistory(editor);
-          setInputKey((prev) => prev + 1);
-          clearSentMessageContext(sentReplyDraftSnapshot, sentImagePacksSnapshot);
-          sendTypingStatus(false);
-
-          if (options?.refocus) {
-            requestAnimationFrame(() => {
-              try {
-                ReactEditor.focus(editor);
-                moveCursor(editor);
-              } catch {
-                // Ignore focus errors
-              }
-            });
-          }
-        };
         if (scheduledTime) {
           try {
             const delayMs = computeDelayMs(scheduledTime);
@@ -1584,174 +1785,122 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       } finally {
         submitInFlightRef.current = false;
       }
-    }, [
-      editor,
-      replyEvent,
-      mx,
-      roomId,
-      canSendReaction,
-      pkCompatEnable,
-      replyDraft,
-      silentReply,
-      pmpProxyingEnable,
-      pluralkitProxyMessageHandler,
-      scheduledTime,
-      editingScheduledDelayId,
-      nicknames,
-      room,
-      handleQuickReact,
-      pluralkitCmdMessageHandler,
-      commands,
-      sendTypingStatus,
-      queryClient,
-      threadRootId,
-      setMsgDraft,
-      setReplyDraft,
-      settingsLinkBaseUrl,
-      isEncrypted,
-      setEditingScheduledDelayId,
-      setScheduledTime,
-      editDraft,
-      setEditDraft,
-      setServerMaxDelayMs,
-      replyDraftBase,
-      emojiAutoExpand,
-      openLocationPicker,
-      openPollCreator,
-      prepareComposerOverlayTrigger,
-    ]);
+    };
 
-    const handleKeyDown: KeyboardEventHandler = useCallback(
-      (evt) => {
-        const autocompleteMenu = document.querySelector('[data-autocomplete-menu]');
-        const isMenuVisible = !!(autocompleteQuery && autocompleteMenu);
+    const handleKeyDown: KeyboardEventHandler = (evt) => {
+      const autocompleteMenu = document.querySelector('[data-autocomplete-menu]');
+      const isMenuVisible = !!(autocompleteQuery && autocompleteMenu);
 
-        if (isMenuVisible) {
-          if (isKeyHotkey('arrowdown', evt)) {
+      if (isMenuVisible) {
+        if (isKeyHotkey('arrowdown', evt)) {
+          evt.preventDefault();
+          autocompleteMenu.dispatchEvent(
+            new CustomEvent('autocomplete-navigate', {
+              detail: { direction: 1 },
+            })
+          );
+          return;
+        }
+        if (isKeyHotkey('arrowup', evt)) {
+          evt.preventDefault();
+          autocompleteMenu.dispatchEvent(
+            new CustomEvent('autocomplete-navigate', {
+              detail: { direction: -1 },
+            })
+          );
+          return;
+        }
+
+        if ((isKeyHotkey('enter', evt) || isKeyHotkey('tab', evt)) && !isComposing(evt)) {
+          const selectedItem =
+            autocompleteMenu.querySelector<HTMLButtonElement>('button[data-selected="true"]') ??
+            autocompleteMenu.querySelector<HTMLButtonElement>('button');
+
+          if (selectedItem) {
             evt.preventDefault();
-            autocompleteMenu.dispatchEvent(
-              new CustomEvent('autocomplete-navigate', {
-                detail: { direction: 1 },
-              })
-            );
+            selectedItem.click();
             return;
           }
-          if (isKeyHotkey('arrowup', evt)) {
-            evt.preventDefault();
-            autocompleteMenu.dispatchEvent(
-              new CustomEvent('autocomplete-navigate', {
-                detail: { direction: -1 },
-              })
-            );
-            return;
-          }
+        }
+      }
 
-          if ((isKeyHotkey('enter', evt) || isKeyHotkey('tab', evt)) && !isComposing(evt)) {
-            const selectedItem =
-              autocompleteMenu.querySelector<HTMLButtonElement>('button[data-selected="true"]') ??
-              autocompleteMenu.querySelector<HTMLButtonElement>('button');
+      if (isKeyHotkey('arrowup', evt) && isEmptyEditor(editor)) {
+        const { selection } = editor;
+        if (selection && Editor.isStart(editor, selection.anchor, [])) {
+          evt.preventDefault();
+          onEditLastMessage?.();
+          return;
+        }
+      }
 
-            if (selectedItem) {
+      if (structuredMarkdownAssist && isKeyHotkey('enter', evt) && !isComposing(evt)) {
+        const { selection } = editor;
+        if (selection && Range.isCollapsed(selection)) {
+          const blockIndex = selection.anchor.path[0];
+          if (typeof blockIndex === 'number') {
+            const lines = editor.children.map((_, index) => Editor.string(editor, [index]));
+            const action = getStructuredMarkdownAction(lines, blockIndex);
+
+            if (action) {
               evt.preventDefault();
-              selectedItem.click();
+              if (action.kind === 'continue') {
+                editor.insertBreak();
+                editor.insertText(action.prefix);
+                return;
+              }
+              if (action.kind === 'continue_fence') {
+                editor.insertBreak();
+                return;
+              }
+
+              const blockPath = [blockIndex];
+              Transforms.select(editor, {
+                anchor: Editor.start(editor, blockPath),
+                focus: Editor.end(editor, blockPath),
+              });
+              Transforms.insertText(editor, action.replacement);
+              if (shouldInsertBreakAfterStructuredReplacement(action)) {
+                editor.insertBreak();
+              }
               return;
             }
           }
         }
-
-        if (isKeyHotkey('arrowup', evt) && isEmptyEditor(editor)) {
-          const { selection } = editor;
-          if (selection && Editor.isStart(editor, selection.anchor, [])) {
-            evt.preventDefault();
-            onEditLastMessage?.();
-            return;
-          }
-        }
-
-        if (structuredMarkdownAssist && isKeyHotkey('enter', evt) && !isComposing(evt)) {
-          const { selection } = editor;
-          if (selection && Range.isCollapsed(selection)) {
-            const blockIndex = selection.anchor.path[0];
-            if (typeof blockIndex === 'number') {
-              const lines = editor.children.map((_, index) => Editor.string(editor, [index]));
-              const action = getStructuredMarkdownAction(lines, blockIndex);
-
-              if (action) {
-                evt.preventDefault();
-                if (action.kind === 'continue') {
-                  editor.insertBreak();
-                  editor.insertText(action.prefix);
-                  return;
-                }
-                if (action.kind === 'continue_fence') {
-                  editor.insertBreak();
-                  return;
-                }
-
-                const blockPath = [blockIndex];
-                Transforms.select(editor, {
-                  anchor: Editor.start(editor, blockPath),
-                  focus: Editor.end(editor, blockPath),
-                });
-                Transforms.insertText(editor, action.replacement);
-                if (shouldInsertBreakAfterStructuredReplacement(action)) {
-                  editor.insertBreak();
-                }
-                return;
-              }
-            }
-          }
-        }
-        if (
-          (isKeyHotkey('mod+enter', evt) || (!enterForNewline && isKeyHotkey('enter', evt))) &&
-          !isComposing(evt)
-        ) {
-          evt.preventDefault();
-          submit().catch((error) => {
-            log.error('submit failed', { roomId }, error);
-          });
+      }
+      if (
+        (isKeyHotkey('mod+enter', evt) || (!enterForNewline && isKeyHotkey('enter', evt))) &&
+        !isComposing(evt)
+      ) {
+        evt.preventDefault();
+        submit().catch((error) => {
+          log.error('submit failed', { roomId }, error);
+        });
+        return;
+      }
+      if (isKeyHotkey('escape', evt)) {
+        evt.preventDefault();
+        if (showAudioRecorder) {
+          audioRecorderRef.current?.cancel();
           return;
         }
-        if (isKeyHotkey('escape', evt)) {
-          evt.preventDefault();
-          if (showAudioRecorder) {
-            audioRecorderRef.current?.cancel();
-            return;
-          }
-          if (autocompleteQuery) {
-            setAutocompleteQuery(undefined);
-            return;
-          }
-          if (editDraft) {
-            setEditDraft(undefined);
-            resetEditor(editor);
-            resetEditorHistory(editor);
-            return;
-          }
-          setReplyDraft(undefined);
+        if (autocompleteQuery) {
+          setAutocompleteQuery(undefined);
+          return;
         }
+        if (editDraft) {
+          setEditDraft(undefined);
+          resetEditor(editor);
+          resetEditorHistory(editor);
+          return;
+        }
+        setReplyDraft(undefined);
+      }
 
-        if (isKeyHotkey('mod+e', evt)) {
-          evt.preventDefault();
-          setEmojiBoardTab(EmojiBoardTab.Sticker);
-        }
-      },
-      [
-        submit,
-        roomId,
-        setReplyDraft,
-        enterForNewline,
-        autocompleteQuery,
-        isComposing,
-        showAudioRecorder,
-        editor,
-        onEditLastMessage,
-        editDraft,
-        setEditDraft,
-        structuredMarkdownAssist,
-        setEmojiBoardTab,
-      ]
-    );
+      if (isKeyHotkey('mod+e', evt)) {
+        evt.preventDefault();
+        setEmojiBoardTab(EmojiBoardTab.Sticker);
+      }
+    };
 
     const handleKeyUp: KeyboardEventHandler = useCallback(
       (evt) => {
@@ -1903,7 +2052,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 open={uploadBoard}
                 onToggle={() => setUploadBoard(!uploadBoard)}
                 uploadFamilyObserverAtom={uploadFamilyObserverAtom}
-                onSend={handleSendUpload}
+                onSend={async () => submit()}
                 imperativeHandlerRef={uploadBoardHandlers}
                 onCancel={handleCancelUpload}
               />

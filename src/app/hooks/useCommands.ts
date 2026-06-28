@@ -37,6 +37,7 @@ import { splitWithSpace } from '$utils/common';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { useOpenBugReportModal } from '$state/hooks/bugReportModal';
+import { closeKeyboardBeforeOpeningOverlay } from '$utils/keyboard';
 import { createRoomEncryptionState } from '$components/create-room';
 import { parsePronounsInput } from '$utils/pronouns';
 import { sendFeedback } from '$utils/sendFeedbackToUser';
@@ -1576,6 +1577,7 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
         name: Command.Report,
         description: 'Report a bug or request a feature',
         exe: async () => {
+          await closeKeyboardBeforeOpeningOverlay();
           openBugReport();
         },
       },

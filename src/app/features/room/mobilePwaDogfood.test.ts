@@ -62,6 +62,7 @@ describe('mobile PWA dogfood contract', () => {
 
   it('closes the mobile keyboard before opening composer overlays', () => {
     const roomInput = readWorkspaceFile('src/app/features/room/RoomInput.tsx');
+    const commands = readWorkspaceFile('src/app/hooks/useCommands.ts');
 
     expect(roomInput).toContain('const openComposerOverlay = useCallback(');
     expect(roomInput).toContain('await closeKeyboardBeforeOpeningOverlay();');
@@ -70,6 +71,8 @@ describe('mobile PWA dogfood contract', () => {
     expect(roomInput).toContain('const openPollCreator = useCallback(async () => {');
     expect(roomInput).toContain('const openSchedulePicker = useCallback(async () => {');
     expect(roomInput).toContain('const openEmojiBoard = useCallback(');
+    expect(commands).toContain('await closeKeyboardBeforeOpeningOverlay();');
+    expect(commands).toContain('openBugReport();');
   });
 
   it('keeps the mobile emoji picker centered on phones but trigger-aligned on tablets', () => {
@@ -155,6 +158,10 @@ describe('mobile PWA dogfood contract', () => {
     const userRoomProfileRenderer = readWorkspaceFile(
       'src/app/components/UserRoomProfileRenderer.tsx'
     );
+    const bugReportModal = readWorkspaceFile('src/app/features/bug-report/BugReportModal.tsx');
+    const accountSwitcher = readWorkspaceFile(
+      'src/app/pages/client/sidebar/AccountSwitcherTab.tsx'
+    );
 
     expect(roomSettingsRenderer).toContain(
       '<Modal500 requestClose={closeSettings} fullScreenOnMobile>'
@@ -179,6 +186,29 @@ describe('mobile PWA dogfood contract', () => {
     );
     expect(userRoomProfileRenderer).toContain('<Modal500 requestClose={close} fullScreenOnMobile>');
     expect(userRoomProfileRenderer).toContain('Member Profile');
+    expect(bugReportModal).toContain('<Modal500 requestClose={close} fullScreenOnMobile>');
+    expect(bugReportModal).toContain(
+      '<Scroll size="300" hideTrack style={{ flex: 1, minHeight: 0 }}>'
+    );
+    expect(bugReportModal).toContain(
+      "const safeAreaBottomInset = 'var(--sable-safe-area-bottom, env(safe-area-inset-bottom, 0px))';"
+    );
+    expect(bugReportModal).toContain(
+      'paddingBottom: `calc(${config.space.S400} + ${safeAreaBottomInset})`'
+    );
+    expect(accountSwitcher).toContain('const useModalAccountSwitcher = isPhoneLayout;');
+    expect(accountSwitcher).toContain(
+      '<Modal500 requestClose={() => setMenuAnchor(undefined)} fullScreenOnMobile>'
+    );
+    expect(accountSwitcher).toContain(
+      "const safeAreaInlineStart = 'var(--sable-safe-area-left, env(safe-area-inset-left, 0px))';"
+    );
+    expect(accountSwitcher).toContain(
+      "const safeAreaInlineEnd = 'var(--sable-safe-area-right, env(safe-area-inset-right, 0px))';"
+    );
+    expect(accountSwitcher).toContain(
+      "const safeAreaBottomInset = 'var(--sable-safe-area-bottom, env(safe-area-inset-bottom, 0px))';"
+    );
   });
 
   it('keeps pull-to-refresh from firing before the full threshold is reached', () => {
