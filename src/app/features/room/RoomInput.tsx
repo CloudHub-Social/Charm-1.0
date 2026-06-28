@@ -197,7 +197,11 @@ import type {
 import { AudioMessageRecorder } from './AudioMessageRecorder';
 import { PollCreator } from './PollCreator';
 import { sendImmediateMessage } from './sendImmediateMessage';
-import { applyAttachmentSendPlan, type ComposerAttachmentCaption } from './attachmentSendPlan';
+import {
+  applyAttachmentSendPlan,
+  createAttachmentSendPlan,
+  type ComposerAttachmentCaption,
+} from './attachmentSendPlan';
 import * as prefix from '$unstable/prefixes';
 import { LocationDialog } from './location-modal';
 import {
@@ -912,22 +916,61 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       }
     };
 
-    const handleSendUpload = async (uploads: UploadSuccess[]) => {
-      const plainText = toPlainText(editor.children).trim();
+    const getNicknameReplacementMap = () => {
+      const nicknameReplacement = new Map<RegExp, string>();
+
+      if (replyEvent) {
+        const senderId = replyEvent.getSender();
+        if (senderId) {
+          const nick = nicknames[senderId];
+          if (typeof nick === 'string' && nick.length > 0) {
+            nicknameReplacement.set(
+              new RegExp(`@?${nick}`, 'g'),
+              room.getMember(senderId)?.rawDisplayName ?? senderId
+            );
+          }
+        }
+      }
+
+      const mentions = getMentions(mx, roomId, editor);
+      if (mentions?.users) {
+        mentions.users.forEach((id) => {
+          const nick = nicknames[id];
+          if (typeof nick === 'string' && nick.length > 0) {
+            nicknameReplacement.set(
+              new RegExp(`@?${nick}`, 'g'),
+              room.getMember(id)?.rawDisplayName ?? id
+            );
+          }
+        });
+      }
+
+      return nicknameReplacement;
+    };
+
+    const getSharedComposerCaption = (): ComposerAttachmentCaption | undefined => {
+      const nicknameReplacement = getNicknameReplacementMap();
+      const plainText = toPlainText(editor.children, true, nicknameReplacement).trim();
+      if (plainText.length === 0) return undefined;
+
       const formattedCaption = trimCustomHtml(
         toMatrixCustomHTML(editor.children, {
+          stripNickname: true,
+          nickNameReplacement: nicknameReplacement,
           room,
         })
       );
-      const sharedCaption: ComposerAttachmentCaption | undefined =
-        plainText.length > 0
-          ? {
-              body: plainText,
-              formattedBody: customHtmlEqualsPlainText(formattedCaption, plainText)
-                ? undefined
-                : formattedCaption,
-            }
-          : undefined;
+
+      return {
+        body: plainText,
+        formattedBody: customHtmlEqualsPlainText(formattedCaption, plainText)
+          ? undefined
+          : formattedCaption,
+      };
+    };
+
+    const handleSendUpload = async (uploads: UploadSuccess[]) => {
+      const sharedCaption = getSharedComposerCaption();
       const sentReplyDraftSnapshot = serializeReplyDraft(replyDraft);
       const clearSentUploadReplyDraft = () => {
         if (serializeReplyDraft(latestReplyDraftRef.current) === sentReplyDraftSnapshot) {
@@ -938,6 +981,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       const matchingFiles = uploads
         .map((upload) => selectedFiles.find((f) => f.file === upload.file))
         .filter((fileItem): fileItem is TUploadItem => !!fileItem);
+      const sendPlan = createAttachmentSendPlan(matchingFiles, sharedCaption);
       const plannedFiles = applyAttachmentSendPlan(matchingFiles, sharedCaption);
 
       const preparedUploadsPromises = uploads.map(async (upload) => {
@@ -1022,13 +1066,22 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       };
 
       const sentImagePacksSnapshot = JSON.stringify(imagePacksUsedRef.current.toJSON());
-      const resetComposerAfterSend = plainText.length > 0;
+      const sharedCaptionApplied = sendPlan.some((caption) => !!caption);
       const successfulUploads: UploadSuccess[] = [];
+      const clearConsumedUploadSendContext = (options?: { refocus?: boolean }) => {
+        if (sharedCaptionApplied) {
+          resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot, options);
+          return;
+        }
+
+        clearSentMessageContext(sentReplyDraftSnapshot, sentImagePacksSnapshot);
+        sendTypingStatus(false);
+      };
       const handlePartialUploadBatchSuccess = () => {
         if (successfulUploads.length === 0) return;
 
         handleCancelUpload(successfulUploads);
-        resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot);
+        clearConsumedUploadSendContext();
       };
 
       if (scheduledTime) {
@@ -1049,11 +1102,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
           invalidate();
           handleCancelUpload(uploads);
-          if (resetComposerAfterSend) {
-            resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot, { refocus: true });
-          } else {
-            clearSentUploadReplyDraft();
-          }
+          clearConsumedUploadSendContext({ refocus: true });
+          if (!sharedCaptionApplied) clearSentUploadReplyDraft();
           setEditingScheduledDelayId(null);
           setScheduledTime(null);
         } catch (error) {
@@ -1131,11 +1181,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         }
 
         handleCancelUpload(uploads);
-        if (resetComposerAfterSend) {
-          resetInput(sentReplyDraftSnapshot, sentImagePacksSnapshot, { refocus: true });
-        } else {
-          clearSentUploadReplyDraft();
-        }
+        clearConsumedUploadSendContext({ refocus: true });
+        if (!sharedCaptionApplied) clearSentUploadReplyDraft();
       }
     };
 
@@ -1190,41 +1237,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
          * the original user IDs so that the message content remains consistent and
          * mentions are correctly processed by the server and clients.
          */
-        const nicknameReplacement = new Map<RegExp, string>();
-        if (replyEvent) {
-          /**
-           * the id of the user being replied to,
-           * whose nickname (if any) should be stripped
-           * from the message content and replaced with their
-           * user ID for correct mention processing
-           */
-          const senderId = replyEvent.getSender();
-          if (senderId) {
-            const nick = nicknames[senderId];
-            if (typeof nick === 'string' && nick.length > 0) {
-              nicknameReplacement.set(
-                new RegExp(`@?${nick}`, 'g'),
-                room.getMember(senderId)?.rawDisplayName ?? senderId
-              );
-            }
-          }
-        }
-        /**
-         * any other users mentioned in the message being replied to,
-         * whose nicknames should also be stripped and replaced with user IDs
-         */
-        const mentions = getMentions(mx, roomId, editor);
-        if (mentions?.users) {
-          mentions.users.forEach((id) => {
-            const nick = nicknames[id];
-            if (typeof nick === 'string' && nick.length > 0) {
-              nicknameReplacement.set(
-                new RegExp(`@?${nick}`, 'g'),
-                room.getMember(id)?.rawDisplayName ?? id
-              );
-            }
-          });
-        }
+        const nicknameReplacement = getNicknameReplacementMap();
         /**
          * the plain text we will send
          */
