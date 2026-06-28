@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 import {
   Fragment,
   useCallback,
@@ -7,66 +7,86 @@ import {
   useMemo,
   useRef,
   useState,
-} from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import type { Editor } from 'slate';
-import { useAtomValue, useAtom, useSetAtom } from 'jotai';
-import type { Room } from '$types/matrix-sdk';
-import { PushProcessor, Direction } from '$types/matrix-sdk';
-import classNames from 'classnames';
-import type { VListHandle } from 'virtua';
-import { VList } from 'virtua';
-import type { ContainerColor } from 'folds';
-import { as, Box, Chip, Line, Text, Badge, color, config, toRem, Spinner } from 'folds';
-import * as Sentry from '@sentry/react';
-import { ArrowDown, ChatTeardropDots, Checks, chipIcon } from '$components/icons/phosphor';
-import { MessageBase, CompactPlaceholder, DefaultPlaceholder } from '$components/message';
-import { RoomIntro } from '$components/room-intro';
-import { useMatrixClient } from '$hooks/useMatrixClient';
-import { createLogger } from '$utils/debug';
-import { useAlive } from '$hooks/useAlive';
-import { useMessageEdit } from '$hooks/useMessageEdit';
-import { useDocumentFocusChange } from '$hooks/useDocumentFocusChange';
-import { markAsRead } from '$utils/notifications';
+} from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import type { Editor } from "slate";
+import { useAtomValue, useAtom, useSetAtom } from "jotai";
+import type { Room } from "$types/matrix-sdk";
+import { PushProcessor, Direction } from "$types/matrix-sdk";
+import classNames from "classnames";
+import type { VListHandle } from "virtua";
+import { VList } from "virtua";
+import type { ContainerColor } from "folds";
+import {
+  as,
+  Box,
+  Chip,
+  Line,
+  Text,
+  Badge,
+  color,
+  config,
+  toRem,
+  Spinner,
+} from "folds";
+import * as Sentry from "@sentry/react";
+import {
+  ArrowDown,
+  ChatTeardropDots,
+  Checks,
+  chipIcon,
+} from "$components/icons/phosphor";
+import {
+  MessageBase,
+  CompactPlaceholder,
+  DefaultPlaceholder,
+} from "$components/message";
+import { RoomIntro } from "$components/room-intro";
+import { useMatrixClient } from "$hooks/useMatrixClient";
+import { createLogger } from "$utils/debug";
+import { useAlive } from "$hooks/useAlive";
+import { useMessageEdit } from "$hooks/useMessageEdit";
+import { useDocumentFocusChange } from "$hooks/useDocumentFocusChange";
+import { markAsRead } from "$utils/notifications";
 import {
   getReactCustomHtmlParser,
   LINKIFY_OPTS,
   makeMentionCustomProps,
   renderMatrixMention,
   factoryRenderLinkifyWithMention,
-} from '$plugins/react-custom-html-parser';
-import { today, yesterday, timeDayMonthYear } from '$utils/time';
-import { unwrapRelationJumpTarget, canEditEvent } from '$utils/room';
-import { useMemberEventParser } from '$hooks/useMemberEventParser';
-import { usePowerLevelsContext } from '$hooks/usePowerLevels';
-import { useRoomCreators } from '$hooks/useRoomCreators';
-import { useRoomPermissions } from '$hooks/useRoomPermissions';
-import { useGetMemberPowerTag } from '$hooks/useMemberPowerTag';
-import { useRoomNavigate } from '$hooks/useRoomNavigate';
-import { useMentionClickHandler } from '$hooks/useMentionClickHandler';
-import { useSettingsLinkBaseUrl } from '$features/settings/useSettingsLinkBaseUrl';
-import { useSpoilerClickHandler } from '$hooks/useSpoilerClickHandler';
-import { useOpenUserRoomProfile } from '$state/hooks/userRoomProfile';
-import { useSpaceOptionally } from '$hooks/useSpace';
-import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
-import { useIgnoredUsers } from '$hooks/useIgnoredUsers';
-import { useImagePackRooms } from '$hooks/useImagePackRooms';
-import { useKeyboardHeight } from '$hooks/ios-keyboard-fix';
-import { settingsAtom, MessageLayout } from '$state/settings';
-import { useHiddenEventSettings, useSetting } from '$state/hooks/settings';
-import { nicknamesAtom } from '$state/nicknames';
-import { useRoomAbbreviationsContext } from '$hooks/useRoomAbbreviations';
-import { buildAbbrReplaceTextNode } from '$components/message/RenderBody';
-import { profilesCacheAtom } from '$state/userRoomProfile';
-import { roomToParentsAtom } from '$state/room/roomToParents';
-import { roomToUnreadAtom } from '$state/room/roomToUnread';
+} from "$plugins/react-custom-html-parser";
+import { today, yesterday, timeDayMonthYear } from "$utils/time";
+import { unwrapRelationJumpTarget, canEditEvent } from "$utils/room";
+import { useMemberEventParser } from "$hooks/useMemberEventParser";
+import { usePowerLevelsContext } from "$hooks/usePowerLevels";
+import { useRoomCreators } from "$hooks/useRoomCreators";
+import { useRoomPermissions } from "$hooks/useRoomPermissions";
+import { useGetMemberPowerTag } from "$hooks/useMemberPowerTag";
+import { useRoomNavigate } from "$hooks/useRoomNavigate";
+import { useMentionClickHandler } from "$hooks/useMentionClickHandler";
+import { useSettingsLinkBaseUrl } from "$features/settings/useSettingsLinkBaseUrl";
+import { useSpoilerClickHandler } from "$hooks/useSpoilerClickHandler";
+import { useOpenUserRoomProfile } from "$state/hooks/userRoomProfile";
+import { useSpaceOptionally } from "$hooks/useSpace";
+import { useMediaAuthentication } from "$hooks/useMediaAuthentication";
+import { useIgnoredUsers } from "$hooks/useIgnoredUsers";
+import { useImagePackRooms } from "$hooks/useImagePackRooms";
+import { useKeyboardHeight } from "$hooks/ios-keyboard-fix";
+import { settingsAtom, MessageLayout } from "$state/settings";
+import { useHiddenEventSettings, useSetting } from "$state/hooks/settings";
+import { nicknamesAtom } from "$state/nicknames";
+import { useRoomAbbreviationsContext } from "$hooks/useRoomAbbreviations";
+import { buildAbbrReplaceTextNode } from "$components/message/RenderBody";
+import { profilesCacheAtom } from "$state/userRoomProfile";
+import { roomToParentsAtom } from "$state/room/roomToParents";
+import { roomToUnreadAtom } from "$state/room/roomToUnread";
 import {
   roomIdToReplyDraftAtomFamily,
   roomIdToEditDraftAtomFamily,
   roomIdToEditNavRequestAtomFamily,
-} from '$state/room/roomInputDrafts';
-import { roomIdToOpenThreadAtomFamily } from '$state/room/roomToOpenThread';
-import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
+} from "$state/room/roomInputDrafts";
+import { roomIdToOpenThreadAtomFamily } from "$state/room/roomToOpenThread";
+import { ScreenSize, useScreenSizeContext } from "$hooks/useScreenSize";
 import {
   getRoomUnreadInfo,
   getUnreadInfoAfterJumpToLatest,
@@ -74,45 +94,48 @@ import {
   getFirstLinkedTimeline,
   getEmptyTimeline,
   getEventIdAbsoluteIndex,
-} from '$utils/timeline';
-import { useTimelineSync, type TimelineJumpMode } from '$hooks/timeline/useTimelineSync';
-import { useTimelineActions } from '$hooks/timeline/useTimelineActions';
+} from "$utils/timeline";
+import {
+  useTimelineSync,
+  type TimelineJumpMode,
+} from "$hooks/timeline/useTimelineSync";
+import { useTimelineActions } from "$hooks/timeline/useTimelineActions";
 import {
   useProcessedTimeline,
   getProcessedRowIndexForRawTimelineIndex,
   getProcessedRowIndexForRawTimelineIndexForward,
   type ProcessedEvent,
-} from '$hooks/timeline/useProcessedTimeline';
-import { useTimelineEventRenderer } from '$hooks/timeline/useTimelineEventRenderer';
-import { completeRoomTimelineRender } from '$utils/perfTelemetry';
-import { isPhoneLayoutDevice } from '$utils/user-agent';
+} from "$hooks/timeline/useProcessedTimeline";
+import { useTimelineEventRenderer } from "$hooks/timeline/useTimelineEventRenderer";
+import { completeRoomTimelineRender } from "$utils/perfTelemetry";
+import { isPhoneLayoutDevice } from "$utils/user-agent";
 import {
   didKeyboardJustClose,
   didKeyboardJustOpen,
   isKeyboardBottomSessionScrollKeyTarget,
   shouldRepinBottomAfterKeyboardClose,
   shouldClearKeyboardBottomSessionOnUserIntent,
-} from './keyboardBottomRecovery';
+} from "./keyboardBottomRecovery";
 import {
   buildNotificationJumpCleanupTarget,
   getNotificationJumpCleanupEventId,
   shouldClearNotificationJumpRoute,
   shouldClearNotificationJumpRouteURLOnly,
-} from './notificationJumpCleanup';
-import * as css from './RoomTimeline.css';
+} from "./notificationJumpCleanup";
+import * as css from "./RoomTimeline.css";
 
-const log = createLogger('RoomTimeline');
+const log = createLogger("RoomTimeline");
 
 function findLastOwnEditableProcessedEvent(
   events: ProcessedEvent[],
-  myUserId: string | null | undefined
+  myUserId: string | null | undefined,
 ): ProcessedEvent | undefined {
   for (let i = events.length - 1; i >= 0; i -= 1) {
     const event = events[i];
     if (!event) continue;
     if (
       event.mEvent.getSender() === myUserId &&
-      event.mEvent.getEffectiveEvent()?.type === 'm.room.message' &&
+      event.mEvent.getEffectiveEvent()?.type === "m.room.message" &&
       !event.mEvent.isRedacted()
     ) {
       return event;
@@ -121,7 +144,7 @@ function findLastOwnEditableProcessedEvent(
   return undefined;
 }
 
-const TimelineFloat = as<'div', css.TimelineFloatVariants>(
+const TimelineFloat = as<"div", css.TimelineFloatVariants>(
   ({ position, className, ...props }, ref) => (
     <Box
       className={classNames(css.TimelineFloat({ position }), className)}
@@ -131,22 +154,28 @@ const TimelineFloat = as<'div', css.TimelineFloatVariants>(
       {...props}
       ref={ref}
     />
-  )
+  ),
 );
 
-const TimelineDivider = as<'div', { variant?: ContainerColor | 'Inherit' }>(
+const TimelineDivider = as<"div", { variant?: ContainerColor | "Inherit" }>(
   ({ variant, children, ...props }, ref) => (
-    <Box gap="100" justifyContent="Center" alignItems="Center" {...props} ref={ref}>
+    <Box
+      gap="100"
+      justifyContent="Center"
+      alignItems="Center"
+      {...props}
+      ref={ref}
+    >
       <Line style={{ flexGrow: 1 }} variant={variant} size="300" />
       {children}
       <Line style={{ flexGrow: 1 }} variant={variant} size="300" />
     </Box>
-  )
+  ),
 );
 
 const getDayDividerText = (ts: number) => {
-  if (today(ts)) return 'Today';
-  if (yesterday(ts)) return 'Yesterday';
+  if (today(ts)) return "Today";
+  if (yesterday(ts)) return "Yesterday";
   return timeDayMonthYear(ts);
 };
 
@@ -185,7 +214,7 @@ export function RoomTimeline({
   });
   const { navigateRoom } = useRoomNavigate();
 
-  const [editInInput] = useSetting(settingsAtom, 'editInInput');
+  const [editInInput] = useSetting(settingsAtom, "editInInput");
   const setEditDraft = useSetAtom(roomIdToEditDraftAtomFamily(room.roomId));
   const handleEditCallback = useCallback(
     (id?: string) => {
@@ -195,40 +224,62 @@ export function RoomTimeline({
       }
       handleEdit(id);
     },
-    [editInInput, handleEdit, setEditDraft]
+    [editInInput, handleEdit, setEditDraft],
   );
 
-  const [hideReads] = useSetting(settingsAtom, 'hideReads');
-  const [messageLayout] = useSetting(settingsAtom, 'messageLayout');
-  const [messageSpacing] = useSetting(settingsAtom, 'messageSpacing');
-  const [hideMembershipEvents] = useSetting(settingsAtom, 'hideMembershipEvents');
-  const [hideNickAvatarEvents] = useSetting(settingsAtom, 'hideNickAvatarEvents');
-  const [mediaAutoLoad] = useSetting(settingsAtom, 'mediaAutoLoad');
-  const [showBundledPreview] = useSetting(settingsAtom, 'bundledPreview');
-  const [urlPreview] = useSetting(settingsAtom, 'urlPreview');
-  const [encUrlPreview] = useSetting(settingsAtom, 'encUrlPreview');
-  const [clientUrlPreview] = useSetting(settingsAtom, 'clientUrlPreview');
-  const [encClientUrlPreview] = useSetting(settingsAtom, 'encClientUrlPreview');
+  const [hideReads] = useSetting(settingsAtom, "hideReads");
+  const [messageLayout] = useSetting(settingsAtom, "messageLayout");
+  const [messageSpacing] = useSetting(settingsAtom, "messageSpacing");
+  const [hideMembershipEvents] = useSetting(
+    settingsAtom,
+    "hideMembershipEvents",
+  );
+  const [hideNickAvatarEvents] = useSetting(
+    settingsAtom,
+    "hideNickAvatarEvents",
+  );
+  const [mediaAutoLoad] = useSetting(settingsAtom, "mediaAutoLoad");
+  const [showBundledPreview] = useSetting(settingsAtom, "bundledPreview");
+  const [urlPreview] = useSetting(settingsAtom, "urlPreview");
+  const [encUrlPreview] = useSetting(settingsAtom, "encUrlPreview");
+  const [clientUrlPreview] = useSetting(settingsAtom, "clientUrlPreview");
+  const [encClientUrlPreview] = useSetting(settingsAtom, "encClientUrlPreview");
   const hiddenEvents = useHiddenEventSettings(settingsAtom);
-  const [showDeveloperTools] = useSetting(settingsAtom, 'developerTools');
-  const [reducedMotion] = useSetting(settingsAtom, 'reducedMotion');
-  const [hour24Clock] = useSetting(settingsAtom, 'hour24Clock');
-  const [dateFormatString] = useSetting(settingsAtom, 'dateFormatString');
-  const [autoplayStickers] = useSetting(settingsAtom, 'autoplayStickers');
-  const [autoplayEmojis] = useSetting(settingsAtom, 'autoplayEmojis');
+  const [showDeveloperTools] = useSetting(settingsAtom, "developerTools");
+  const [reducedMotion] = useSetting(settingsAtom, "reducedMotion");
+  const [hour24Clock] = useSetting(settingsAtom, "hour24Clock");
+  const [dateFormatString] = useSetting(settingsAtom, "dateFormatString");
+  const [autoplayStickers] = useSetting(settingsAtom, "autoplayStickers");
+  const [autoplayEmojis] = useSetting(settingsAtom, "autoplayEmojis");
   const [incomingInlineImagesDefaultHeight] = useSetting(
     settingsAtom,
-    'incomingInlineImagesDefaultHeight'
+    "incomingInlineImagesDefaultHeight",
   );
-  const [incomingInlineImagesMaxHeight] = useSetting(settingsAtom, 'incomingInlineImagesMaxHeight');
-  const [hideMemberInReadOnly] = useSetting(settingsAtom, 'hideMembershipInReadOnly');
-  const [messageGroupingThreshold] = useSetting(settingsAtom, 'messageGroupingThreshold');
+  const [incomingInlineImagesMaxHeight] = useSetting(
+    settingsAtom,
+    "incomingInlineImagesMaxHeight",
+  );
+  const [hideMemberInReadOnly] = useSetting(
+    settingsAtom,
+    "hideMembershipInReadOnly",
+  );
+  const [messageGroupingThreshold] = useSetting(
+    settingsAtom,
+    "messageGroupingThreshold",
+  );
 
-  const [showInteractiveMap] = useSetting(settingsAtom, 'showInteractiveMap');
-  const [showEncInteractiveMap] = useSetting(settingsAtom, 'showEncInteractiveMap');
-  const showMaps = room.hasEncryptionStateEvent() ? showEncInteractiveMap : showInteractiveMap;
+  const [showInteractiveMap] = useSetting(settingsAtom, "showInteractiveMap");
+  const [showEncInteractiveMap] = useSetting(
+    settingsAtom,
+    "showEncInteractiveMap",
+  );
+  const showMaps = room.hasEncryptionStateEvent()
+    ? showEncInteractiveMap
+    : showInteractiveMap;
 
-  const showUrlPreview = room.hasEncryptionStateEvent() ? encUrlPreview : urlPreview;
+  const showUrlPreview = room.hasEncryptionStateEvent()
+    ? encUrlPreview
+    : urlPreview;
   const showClientUrlPreview = room.hasEncryptionStateEvent()
     ? clientUrlPreview && encClientUrlPreview
     : clientUrlPreview;
@@ -236,19 +287,28 @@ export function RoomTimeline({
   const nicknames = useAtomValue(nicknamesAtom);
   const globalProfiles = useAtomValue(profilesCacheAtom);
   const ignoredUsersList = useIgnoredUsers();
-  const ignoredUsersSet = useMemo(() => new Set(ignoredUsersList), [ignoredUsersList]);
+  const ignoredUsersSet = useMemo(
+    () => new Set(ignoredUsersList),
+    [ignoredUsersList],
+  );
 
   const powerLevels = usePowerLevelsContext();
   const creators = useRoomCreators(room);
   const getMemberPowerTag = useGetMemberPowerTag(room, creators, powerLevels);
   const permissions = useRoomPermissions(creators, powerLevels);
   const isReadOnly = useMemo(() => {
-    const myPowerLevel = powerLevels?.users?.[mx.getUserId()!] ?? powerLevels?.users_default ?? 0;
-    const sendLevel = powerLevels?.events?.['m.room.message'] ?? powerLevels?.events_default ?? 0;
+    const myPowerLevel =
+      powerLevels?.users?.[mx.getUserId()!] ?? powerLevels?.users_default ?? 0;
+    const sendLevel =
+      powerLevels?.events?.["m.room.message"] ??
+      powerLevels?.events_default ??
+      0;
     return myPowerLevel < sendLevel;
   }, [powerLevels, mx]);
 
-  const [unreadInfo, setUnreadInfo] = useState(() => getRoomUnreadInfo(room, true));
+  const [unreadInfo, setUnreadInfo] = useState(() =>
+    getRoomUnreadInfo(room, true),
+  );
   const roomToUnread = useAtomValue(roomToUnreadAtom);
   const roomUnread = roomToUnread.get(room.roomId);
 
@@ -288,8 +348,11 @@ export function RoomTimeline({
   const openUserRoomProfile = useOpenUserRoomProfile();
   const optionalSpace = useSpaceOptionally();
   const roomParents = useAtomValue(roomToParentsAtom);
-  const isMobileScreen = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
-  const timelineBottomSpacing = hasTypingIndicator ? config.space.S700 : config.space.S600;
+  const isMobileScreen =
+    screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
+  const timelineBottomSpacing = hasTypingIndicator
+    ? config.space.S700
+    : config.space.S600;
   const timelineRightSpacing = isMobileScreen
     ? config.space.S100
     : hasDesktopRightDrawer
@@ -299,12 +362,18 @@ export function RoomTimeline({
   const pushProcessor = useMemo(() => new PushProcessor(mx), [mx]);
   const parseMemberEvent = useMemberEventParser();
 
-  const replyDraftAtom = useMemo(() => roomIdToReplyDraftAtomFamily(room.roomId), [room.roomId]);
+  const replyDraftAtom = useMemo(
+    () => roomIdToReplyDraftAtomFamily(room.roomId),
+    [room.roomId],
+  );
   const activeReplyDraft = useAtomValue(replyDraftAtom);
   const setReplyDraft = useSetAtom(replyDraftAtom);
   const activeReplyId = activeReplyDraft?.eventId;
 
-  const openThreadAtom = useMemo(() => roomIdToOpenThreadAtomFamily(room.roomId), [room.roomId]);
+  const openThreadAtom = useMemo(
+    () => roomIdToOpenThreadAtomFamily(room.roomId),
+    [room.roomId],
+  );
   const openThreadId = useAtomValue(openThreadAtom);
   const setOpenThread = useSetAtom(openThreadAtom);
 
@@ -334,6 +403,7 @@ export function RoomTimeline({
   const jumpScrollBlockRef = useRef(false);
   const jumpReanchorScrollUntilRef = useRef(0);
   const jumpScrollBlockCleanupRef = useRef<(() => void) | undefined>(undefined);
+  const jumpLockReleaseCleanupRef = useRef<(() => void) | undefined>(undefined);
   // Stored in a ref so timeline churn cannot cancel the in-flight layout-settle
   // reveal scroll before it has a chance to complete.
   const initialScrollCleanupRef = useRef<(() => void) | undefined>(undefined);
@@ -349,9 +419,15 @@ export function RoomTimeline({
   const [isReady, setIsReady] = useState(false);
   const isReadyRef = useRef(isReady);
   isReadyRef.current = isReady;
-  const jumpRouteCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const jumpURLOnlyCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const jumpHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const jumpRouteCleanupTimerRef = useRef<
+    ReturnType<typeof setTimeout> | undefined
+  >(undefined);
+  const jumpURLOnlyCleanupTimerRef = useRef<
+    ReturnType<typeof setTimeout> | undefined
+  >(undefined);
+  const jumpHighlightTimeoutRef = useRef<
+    ReturnType<typeof setTimeout> | undefined
+  >(undefined);
   const jumpAnchorKeyRef = useRef<string | undefined>(undefined);
   const jumpLayoutReanchorRafRef = useRef<number | undefined>(undefined);
   const lastJumpLayoutReanchorAtRef = useRef(0);
@@ -370,9 +446,9 @@ export function RoomTimeline({
   // AbortController to cancel in-flight jump operations when a new jump starts.
   // This prevents multiple concurrent jumps from interfering with each other.
   const jumpAbortControllerRef = useRef<AbortController | null>(null);
-  // Track whether the permalink jump succeeded (focusItem was set). Once set,
-  // recovery scroll should never fire for this eventId, even after focusItem
-  // is cleared (highlight ends). Reset only when eventId or room changes.
+  // Track whether the permalink jump actually scrolled to a resolved row.
+  // Recovery should stay armed until the target is on screen. Reset only when
+  // eventId or room changes.
   const jumpSucceededRef = useRef(false);
 
   const lastProgrammaticBottomPinAtRef = useRef(0);
@@ -384,6 +460,8 @@ export function RoomTimeline({
     pendingReadyRef.current = false;
     jumpSucceededRef.current = false;
     permalinkRecoveryKeyRef.current = undefined;
+    jumpLockReleaseCleanupRef.current?.();
+    jumpLockReleaseCleanupRef.current = undefined;
     initialScrollCleanupRef.current?.();
     initialScrollCleanupRef.current = undefined;
     if (jumpLayoutReanchorRafRef.current !== undefined) {
@@ -394,7 +472,9 @@ export function RoomTimeline({
   }
 
   const processedEventsRef = useRef<ProcessedEvent[]>([]);
-  const timelineSyncRef = useRef<typeof timelineSync>(null as unknown as typeof timelineSync);
+  const timelineSyncRef = useRef<typeof timelineSync>(
+    null as unknown as typeof timelineSync,
+  );
   const timelineRenderMetricRoomRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
@@ -408,20 +488,28 @@ export function RoomTimeline({
     vListRef.current.scrollTo(vListRef.current.scrollSize);
   }, []);
 
-  const scheduleAfterNextLayout = useCallback((callback: () => void): (() => void) => {
-    let firstFrame = 0;
-    let secondFrame = 0;
+  const scheduleAfterNextLayout = useCallback(
+    (callback: () => void): (() => void) => {
+      let firstFrame = 0;
+      let secondFrame = 0;
 
-    firstFrame = requestAnimationFrame(() => {
-      secondFrame = requestAnimationFrame(() => {
-        callback();
+      firstFrame = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => {
+          callback();
+        });
       });
-    });
 
-    return () => {
-      if (firstFrame !== 0) cancelAnimationFrame(firstFrame);
-      if (secondFrame !== 0) cancelAnimationFrame(secondFrame);
-    };
+      return () => {
+        if (firstFrame !== 0) cancelAnimationFrame(firstFrame);
+        if (secondFrame !== 0) cancelAnimationFrame(secondFrame);
+      };
+    },
+    [],
+  );
+
+  const cancelPendingJumpLockRelease = useCallback(() => {
+    jumpLockReleaseCleanupRef.current?.();
+    jumpLockReleaseCleanupRef.current = undefined;
   }, []);
 
   const scheduleReadyAtBottom = useCallback(() => {
@@ -429,7 +517,11 @@ export function RoomTimeline({
     scrollToBottom();
     initialScrollCleanupRef.current = scheduleAfterNextLayout(() => {
       initialScrollCleanupRef.current = undefined;
-      if (eventId && (eventIdLoadInProgressRef.current || timelineSyncRef.current.focusItem)) {
+      if (
+        eventId &&
+        (eventIdLoadInProgressRef.current ||
+          timelineSyncRef.current.focusItem?.scrollTo)
+      ) {
         return;
       }
       if (processedEventsRef.current.length > 0) {
@@ -449,7 +541,7 @@ export function RoomTimeline({
             inLiveTimeline: true,
             scrollTo: false,
           }
-        : undefined
+        : undefined,
     );
     void markAsRead(mx, room.roomId, hideReads).finally(() => {
       requestAnimationFrame(() => {
@@ -475,34 +567,35 @@ export function RoomTimeline({
 
   const reanchorJumpTarget = useCallback(
     (
-      reason: 'content_growth' | 'timeline_remeasure' | 'loaded_history_jump',
+      reason: "content_growth" | "timeline_remeasure" | "loaded_history_jump",
       options?: {
         eventId?: string;
-        align?: 'center' | 'end';
+        align?: "center" | "end";
         scrollDelta?: number;
-      }
+      },
     ): boolean => {
       const targetEventId = options?.eventId ?? jumpLockEventIdRef.current;
       if (!targetEventId || !vListRef.current) return false;
 
       const targetIndex = processedEventsRef.current.findIndex(
-        (event) => event.mEvent.getId() === targetEventId
+        (event) => event.mEvent.getId() === targetEventId,
       );
       if (targetIndex < 0) return false;
 
+      cancelPendingJumpLockRelease();
       setAtBottom(false);
       jumpReanchorScrollUntilRef.current = Date.now() + 150;
       startJumpScrollBlock();
       vListRef.current.scrollToIndex(targetIndex, {
-        align: options?.align ?? 'center',
+        align: options?.align ?? "center",
       });
       log.log(
-        `[PermalinkJump] Re-anchored target after ${reason}: eventId=${targetEventId}, processedIndex=${targetIndex}, scrollDelta=${options?.scrollDelta ?? 0}`
+        `[PermalinkJump] Re-anchored target after ${reason}: eventId=${targetEventId}, processedIndex=${targetIndex}, scrollDelta=${options?.scrollDelta ?? 0}`,
       );
       Sentry.addBreadcrumb({
-        category: 'timeline.permalink',
-        message: 'Re-anchored jump target',
-        level: 'info',
+        category: "timeline.permalink",
+        message: "Re-anchored jump target",
+        level: "info",
         data: {
           reason,
           eventId: targetEventId,
@@ -513,39 +606,64 @@ export function RoomTimeline({
       });
       return true;
     },
-    [room.roomId, setAtBottom, startJumpScrollBlock]
+    [
+      cancelPendingJumpLockRelease,
+      room.roomId,
+      setAtBottom,
+      startJumpScrollBlock,
+    ],
   );
 
   const releaseJumpLock = useCallback(
-    (reason: 'missing_target' | 'user_scroll' | 'route_change' | 'jump_to_latest') => {
+    (
+      reason:
+        | "missing_target"
+        | "user_scroll"
+        | "route_change"
+        | "jump_to_latest",
+    ) => {
+      cancelPendingJumpLockRelease();
       if (!jumpLockActiveRef.current && !jumpLockEventIdRef.current) return;
       jumpLockActiveRef.current = false;
       jumpLockEventIdRef.current = undefined;
       Sentry.addBreadcrumb({
-        category: 'timeline.permalink',
-        message: 'Released jump lock',
-        level: 'info',
+        category: "timeline.permalink",
+        message: "Released jump lock",
+        level: "info",
         data: { reason, roomId: room.roomId },
       });
     },
-    [room.roomId]
+    [cancelPendingJumpLockRelease, room.roomId],
   );
 
   const activateJumpLock = useCallback(
     (targetEventId?: string) => {
       if (!targetEventId) return;
+      cancelPendingJumpLockRelease();
       jumpLockEventIdRef.current = targetEventId;
       jumpLockActiveRef.current = true;
       setAtBottom(false);
       Sentry.addBreadcrumb({
-        category: 'timeline.permalink',
-        message: 'Activated jump lock',
-        level: 'info',
+        category: "timeline.permalink",
+        message: "Activated jump lock",
+        level: "info",
         data: { targetEventId, roomId: room.roomId },
       });
     },
-    [room.roomId, setAtBottom]
+    [cancelPendingJumpLockRelease, room.roomId, setAtBottom],
   );
+
+  const scheduleJumpLockRelease = useCallback(() => {
+    if (jumpLockReleaseCleanupRef.current) return;
+    jumpLockReleaseCleanupRef.current = scheduleAfterNextLayout(() => {
+      jumpLockReleaseCleanupRef.current = undefined;
+      if (!jumpLockActiveRef.current) return;
+      if (jumpScrollBlockRef.current) return;
+      if (jumpLayoutReanchorRafRef.current !== undefined) return;
+      if (Date.now() < jumpReanchorScrollUntilRef.current) return;
+      releaseJumpLock("user_scroll");
+    });
+  }, [releaseJumpLock, scheduleAfterNextLayout]);
 
   const timelineSync = useTimelineSync({
     room,
@@ -606,12 +724,15 @@ export function RoomTimeline({
   // the viewport cannot loop indefinitely. Reset on every timeline clear/room jump.
   const autopagAttemptsRef = useRef(0);
 
-  const getRawIndexToProcessedIndex = useCallback((rawIndex: number): number | undefined => {
-    const events = processedEventsRef.current;
-    const match = events.find((e) => e.itemIndex === rawIndex);
-    if (!match) return undefined;
-    return events.indexOf(match);
-  }, []);
+  const getRawIndexToProcessedIndex = useCallback(
+    (rawIndex: number): number | undefined => {
+      const events = processedEventsRef.current;
+      const match = events.find((e) => e.itemIndex === rawIndex);
+      if (!match) return undefined;
+      return events.indexOf(match);
+    },
+    [],
+  );
 
   useLayoutEffect(() => {
     if (
@@ -646,7 +767,7 @@ export function RoomTimeline({
       if (jumpRouteCleanupTimerRef.current !== undefined)
         clearTimeout(jumpRouteCleanupTimerRef.current);
     },
-    []
+    [],
   );
 
   useEffect(() => {
@@ -654,8 +775,14 @@ export function RoomTimeline({
       clearTimeout(jumpRouteCleanupTimerRef.current);
       jumpRouteCleanupTimerRef.current = undefined;
     }
-    releaseJumpLock('route_change');
-  }, [eventId, location.pathname, location.search, room.roomId, releaseJumpLock]);
+    releaseJumpLock("route_change");
+  }, [
+    eventId,
+    location.pathname,
+    location.search,
+    room.roomId,
+    releaseJumpLock,
+  ]);
 
   // If the timeline was blanked while content was already visible — e.g. a
   // TimelineReset fired by mx.retryImmediately() when the app comes back from
@@ -697,202 +824,21 @@ export function RoomTimeline({
   useLayoutEffect(() => {
     const prev = prevBackwardStatusRef.current;
     prevBackwardStatusRef.current = timelineSync.backwardStatus;
-    if (timelineSync.backwardStatus === 'loading') {
+    if (timelineSync.backwardStatus === "loading") {
       wasAtBottomBeforePaginationRef.current = atBottomRef.current;
       if (!atBottomRef.current) setShift(true);
-    } else if (prev === 'loading' && timelineSync.backwardStatus === 'idle') {
+    } else if (prev === "loading" && timelineSync.backwardStatus === "idle") {
       setShift(false);
-      if (wasAtBottomBeforePaginationRef.current && !jumpLockActiveRef.current) {
+      if (
+        wasAtBottomBeforePaginationRef.current &&
+        !jumpLockActiveRef.current
+      ) {
         vListRef.current?.scrollToIndex(processedEventsRef.current.length - 1, {
-          align: 'end',
+          align: "end",
         });
       }
     }
   }, [timelineSync.backwardStatus]);
-
-  useEffect(() => {
-    if (timelineSync.focusItem) {
-      // Mark that the jump succeeded (focusItem was set). This prevents recovery
-      // scroll from firing even after focusItem is cleared (highlight ends).
-      jumpSucceededRef.current = true;
-
-      const {
-        index,
-        eventId: focusEventId,
-        scrollTo,
-        align,
-        jumpMode: focusJumpMode,
-      } = timelineSync.focusItem;
-      log.log(
-        `[PermalinkJump] focusItem set: eventId=${focusEventId}, index=${index}, scrollTo=${scrollTo}, align=${align ?? 'center'}, jumpMode=${focusJumpMode ?? jumpMode ?? 'history_context'}`
-      );
-      Sentry.addBreadcrumb({
-        category: 'timeline.permalink',
-        message: 'focusItem set',
-        level: 'info',
-        data: {
-          eventId: focusEventId,
-          index,
-          scrollTo,
-          align: align ?? 'center',
-          jumpMode: focusJumpMode ?? jumpMode ?? 'history_context',
-          roomId: room.roomId,
-        },
-      });
-
-      const anchorKey = `${focusEventId ?? 'no-event'}:${index}`;
-      const isNewAnchor = jumpAnchorKeyRef.current !== anchorKey;
-      if (isNewAnchor) {
-        jumpAnchorKeyRef.current = anchorKey;
-        if (jumpHighlightTimeoutRef.current !== undefined) {
-          clearTimeout(jumpHighlightTimeoutRef.current);
-          jumpHighlightTimeoutRef.current = undefined;
-        }
-        if (jumpRouteCleanupTimerRef.current !== undefined) {
-          clearTimeout(jumpRouteCleanupTimerRef.current);
-          jumpRouteCleanupTimerRef.current = undefined;
-        }
-      }
-
-      let scrollSucceeded = false;
-      const resolveProcessedIndex = () => {
-        const currentFocusItem = timelineSyncRef.current.focusItem;
-        if (!currentFocusItem) return undefined;
-        if (currentFocusItem.tail === 'live') {
-          const lastRowIndex = processedEventsRef.current.length - 1;
-          if (lastRowIndex < 0) return undefined;
-          return {
-            processedIndex: lastRowIndex,
-            lockEventId: processedEventsRef.current[lastRowIndex]?.mEvent.getId(),
-          };
-        }
-
-        let nextProcessedIndex = getRawIndexToProcessedIndex(currentFocusItem.index);
-        let resolvedEventId =
-          nextProcessedIndex !== undefined
-            ? processedEventsRef.current[nextProcessedIndex]?.mEvent.getId()
-            : undefined;
-        if (nextProcessedIndex === undefined && currentFocusItem.eventId) {
-          const found = processedEventsRef.current.findIndex(
-            (e) => e.mEvent.getId() === currentFocusItem.eventId
-          );
-          if (found >= 0) {
-            nextProcessedIndex = found;
-            resolvedEventId = processedEventsRef.current[found]?.mEvent.getId();
-          }
-        }
-
-        if (nextProcessedIndex !== undefined) {
-          return {
-            processedIndex: nextProcessedIndex,
-            lockEventId: resolvedEventId,
-          };
-        }
-
-        const nearest =
-          (currentFocusItem.align === 'end'
-            ? getProcessedRowIndexForRawTimelineIndex(
-                processedEventsRef.current,
-                currentFocusItem.index
-              )
-            : getProcessedRowIndexForRawTimelineIndexForward(
-                processedEventsRef.current,
-                currentFocusItem.index
-              )) ??
-          getProcessedRowIndexForRawTimelineIndex(
-            processedEventsRef.current,
-            currentFocusItem.index
-          );
-
-        if (!nearest) return undefined;
-
-        return {
-          processedIndex: nearest.rowIndex,
-          lockEventId: processedEventsRef.current[nearest.rowIndex]?.mEvent.getId(),
-        };
-      };
-
-      const attemptScroll = () => {
-        if (!timelineSync.focusItem?.scrollTo || !vListRef.current || scrollSucceeded) return false;
-
-        const resolvedTarget = resolveProcessedIndex();
-
-        if (!resolvedTarget) {
-          if (timelineSync.focusItem.eventId) {
-            log.log(
-              `[PermalinkJump] Event not found in processedEvents yet: eventId=${timelineSync.focusItem.eventId}, processedEvents.length=${processedEventsRef.current.length}`
-            );
-          }
-          return false;
-        }
-
-        log.log(
-          `[PermalinkJump] Scroll succeeded: processedIndex=${resolvedTarget.processedIndex}, eventId=${timelineSync.focusItem.eventId}`
-        );
-        Sentry.addBreadcrumb({
-          category: 'timeline.permalink',
-          message: 'Scroll succeeded',
-          level: 'info',
-          data: {
-            processedIndex: resolvedTarget.processedIndex,
-            eventId: timelineSync.focusItem.eventId,
-            roomId: room.roomId,
-          },
-        });
-
-        // An event-targeted jump should no longer be treated as bottom-pinned.
-        // If we leave atBottom=true from the room's previous state, the scroll
-        // handler can immediately "chase" the live bottom after this jump.
-        setAtBottom(false);
-        startJumpScrollBlock();
-        if (timelineSync.focusItem.tail !== 'live') {
-          activateJumpLock(resolvedTarget.lockEventId ?? focusEventId);
-        }
-
-        // Reveal timeline and scroll in the same frame to avoid flash
-        setIsReady(true);
-        vListRef.current.scrollToIndex(resolvedTarget.processedIndex, {
-          align: timelineSync.focusItem.align ?? 'center',
-        });
-        timelineSync.setFocusItem((prev) => (prev ? { ...prev, scrollTo: false } : undefined));
-
-        scrollSucceeded = true;
-
-        return true;
-      };
-
-      attemptScroll();
-    } else {
-      jumpAnchorKeyRef.current = undefined;
-      if (jumpLayoutReanchorRafRef.current !== undefined) {
-        cancelAnimationFrame(jumpLayoutReanchorRafRef.current);
-        jumpLayoutReanchorRafRef.current = undefined;
-      }
-      if (jumpHighlightTimeoutRef.current !== undefined) {
-        clearTimeout(jumpHighlightTimeoutRef.current);
-        jumpHighlightTimeoutRef.current = undefined;
-      }
-      if (jumpRouteCleanupTimerRef.current !== undefined) {
-        clearTimeout(jumpRouteCleanupTimerRef.current);
-        jumpRouteCleanupTimerRef.current = undefined;
-      }
-    }
-  }, [
-    timelineSync.focusItem,
-    timelineSync,
-    reducedMotion,
-    getRawIndexToProcessedIndex,
-    setAtBottom,
-    startJumpScrollBlock,
-    activateJumpLock,
-    reanchorJumpTarget,
-    room.roomId,
-    jumpMode,
-    eventId,
-    location.pathname,
-    location.search,
-    navigate,
-  ]);
 
   useEffect(() => {
     const cleanupEventId = getNotificationJumpCleanupEventId({
@@ -927,14 +873,18 @@ export function RoomTimeline({
         cancelAnimationFrame(jumpLayoutReanchorRafRef.current);
         jumpLayoutReanchorRafRef.current = undefined;
       }
-      releaseJumpLock('route_change');
+      releaseJumpLock("route_change");
       setFocusItem(undefined);
 
       navigate(
-        buildNotificationJumpCleanupTarget(location.pathname, location.search, cleanupEventId),
+        buildNotificationJumpCleanupTarget(
+          location.pathname,
+          location.search,
+          cleanupEventId,
+        ),
         {
           replace: true,
-        }
+        },
       );
       jumpRouteCleanupTimerRef.current = undefined;
     }, 250);
@@ -968,7 +918,13 @@ export function RoomTimeline({
       jumpURLOnlyCleanupTimerRef.current = undefined;
     }
 
-    if (!shouldClearNotificationJumpRouteURLOnly({ eventId, jumpMode, liveTimelineLinked })) {
+    if (
+      !shouldClearNotificationJumpRouteURLOnly({
+        eventId,
+        jumpMode,
+        liveTimelineLinked,
+      })
+    ) {
       return undefined;
     }
 
@@ -983,9 +939,16 @@ export function RoomTimeline({
       ) {
         return;
       }
-      navigate(buildNotificationJumpCleanupTarget(location.pathname, location.search, eventId!), {
-        replace: true,
-      });
+      navigate(
+        buildNotificationJumpCleanupTarget(
+          location.pathname,
+          location.search,
+          eventId!,
+        ),
+        {
+          replace: true,
+        },
+      );
     }, 2000);
 
     return () => {
@@ -994,7 +957,14 @@ export function RoomTimeline({
         jumpURLOnlyCleanupTimerRef.current = undefined;
       }
     };
-  }, [eventId, jumpMode, liveTimelineLinked, location.pathname, location.search, navigate]);
+  }, [
+    eventId,
+    jumpMode,
+    liveTimelineLinked,
+    location.pathname,
+    location.search,
+    navigate,
+  ]);
 
   useEffect(() => {
     const focusItem = timelineSync.focusItem;
@@ -1007,7 +977,8 @@ export function RoomTimeline({
     }
 
     const paginationLoading =
-      timelineSync.backwardStatus === 'loading' || timelineSync.forwardStatus === 'loading';
+      timelineSync.backwardStatus === "loading" ||
+      timelineSync.forwardStatus === "loading";
 
     if (jumpHighlightTimeoutRef.current !== undefined) {
       clearTimeout(jumpHighlightTimeoutRef.current);
@@ -1039,14 +1010,16 @@ export function RoomTimeline({
 
   useEffect(() => {
     if (!eventId) return;
-    log.log(`[PermalinkJump] Starting load: eventId=${eventId}, roomId=${room.roomId}`);
+    log.log(
+      `[PermalinkJump] Starting load: eventId=${eventId}, roomId=${room.roomId}`,
+    );
     Sentry.addBreadcrumb({
-      category: 'timeline.permalink',
-      message: 'Starting permalink load',
-      level: 'info',
+      category: "timeline.permalink",
+      message: "Starting permalink load",
+      level: "info",
       data: {
         eventId,
-        jumpMode: jumpMode ?? 'history_context',
+        jumpMode: jumpMode ?? "history_context",
         roomId: room.roomId,
       },
     });
@@ -1077,30 +1050,33 @@ export function RoomTimeline({
       .loadEventTimeline(eventId, undefined, { jumpMode })
       .then(() => {
         log.log(
-          `[PermalinkJump] loadEventTimeline succeeded: eventId=${eventId}, eventsLength=${timelineSyncRef.current.eventsLength}`
+          `[PermalinkJump] loadEventTimeline succeeded: eventId=${eventId}, eventsLength=${timelineSyncRef.current.eventsLength}`,
         );
         Sentry.addBreadcrumb({
-          category: 'timeline.permalink',
-          message: 'loadEventTimeline succeeded',
-          level: 'info',
+          category: "timeline.permalink",
+          message: "loadEventTimeline succeeded",
+          level: "info",
           data: {
             eventId,
             eventsLength: timelineSyncRef.current.eventsLength,
-            jumpMode: jumpMode ?? 'history_context',
+            jumpMode: jumpMode ?? "history_context",
             roomId: room.roomId,
           },
         });
       })
       .catch((err) => {
-        log.warn(`[PermalinkJump] loadEventTimeline failed: eventId=${eventId}`, err);
+        log.warn(
+          `[PermalinkJump] loadEventTimeline failed: eventId=${eventId}`,
+          err,
+        );
         Sentry.addBreadcrumb({
-          category: 'timeline.permalink',
-          message: 'loadEventTimeline failed',
-          level: 'error',
+          category: "timeline.permalink",
+          message: "loadEventTimeline failed",
+          level: "error",
           data: {
             eventId,
             error: String(err),
-            jumpMode: jumpMode ?? 'history_context',
+            jumpMode: jumpMode ?? "history_context",
             roomId: room.roomId,
           },
         });
@@ -1124,8 +1100,8 @@ export function RoomTimeline({
     if (!eventId) return;
     if (isReady) return;
     if (timelineSync.eventsLength === 0) return;
-    // Do NOT fire recovery scroll if the jump already succeeded. Once focusItem
-    // was set (even if later cleared after highlight), the jump worked correctly.
+    // Do NOT fire recovery scroll if the jump already resolved to a row and
+    // scrolled there successfully.
     if (jumpSucceededRef.current) return;
     // Do NOT fire recovery scroll while the eventId load is still in progress.
     // The live timeline may receive events from sliding sync before the target
@@ -1140,7 +1116,7 @@ export function RoomTimeline({
 
     permalinkRecoveryKeyRef.current = recoveryKey;
     log.log(
-      `[PermalinkJump] Scheduling event-driven recovery scroll: focusItem=${!!timelineSync.focusItem}, isReady=${isReady}, eventsLength=${timelineSync.eventsLength}`
+      `[PermalinkJump] Scheduling event-driven recovery scroll: focusItem=${!!timelineSync.focusItem}, isReady=${isReady}, eventsLength=${timelineSync.eventsLength}`,
     );
     scheduleReadyAtBottom();
   }, [
@@ -1167,14 +1143,14 @@ export function RoomTimeline({
         ? getEventIdAbsoluteIndex(
             timelineSync.timeline.linkedTimelines,
             evtTimeline,
-            readUptoEventId
+            readUptoEventId,
           )
         : undefined;
 
       if (absoluteIndex !== undefined) {
         const processedIndex = getRawIndexToProcessedIndex(absoluteIndex);
         if (processedIndex !== undefined && vListRef.current) {
-          vListRef.current.scrollToIndex(processedIndex, { align: 'start' });
+          vListRef.current.scrollToIndex(processedIndex, { align: "start" });
         }
         // Always consume the scroll intent once the event is located in the
         // linked timelines, even if its processedIndex is undefined (filtered
@@ -1199,7 +1175,9 @@ export function RoomTimeline({
   }, [eventId, room.roomId]);
 
   useEffect(() => {
-    if (didKeyboardJustOpen(isKeyboardVisible, renderKeyboardVisibleRef.current)) {
+    if (
+      didKeyboardJustOpen(isKeyboardVisible, renderKeyboardVisibleRef.current)
+    ) {
       keyboardSessionBottomPinnedRef.current = atBottomRef.current;
     }
     renderKeyboardVisibleRef.current = isKeyboardVisible;
@@ -1236,7 +1214,7 @@ export function RoomTimeline({
         shouldRepinBottomAfterKeyboardClose(
           keyboardJustClosed,
           keyboardSessionBottomPinnedRef.current,
-          atBottom
+          atBottom,
         )
       ) {
         keyboardSessionBottomPinnedRef.current = false;
@@ -1306,12 +1284,14 @@ export function RoomTimeline({
       userId: string,
       rect: DOMRect,
       undefinedArg?: undefined,
-      options?: unknown
+      options?: unknown,
     ) => void,
     activeReplyId,
     setReplyDraft: setReplyDraft as unknown as (draft: unknown) => void,
     openThreadId,
-    setOpenThread: setOpenThread as unknown as (threadId: string | undefined) => void,
+    setOpenThread: setOpenThread as unknown as (
+      threadId: string | undefined,
+    ) => void,
     handleEdit,
     handleOpenEvent: (id) => {
       const anchorId = unwrapRelationJumpTarget(room, id);
@@ -1325,17 +1305,17 @@ export function RoomTimeline({
         ? getEventIdAbsoluteIndex(
             timelineSync.timeline.linkedTimelines,
             evtTimeline,
-            resolvedForIndex
+            resolvedForIndex,
           )
         : undefined;
 
-      if (typeof absoluteIndex === 'number') {
+      if (typeof absoluteIndex === "number") {
         let processedIndex = getRawIndexToProcessedIndex(absoluteIndex);
         let focusRawIndex = absoluteIndex;
         if (processedIndex === undefined) {
           const nearest = getProcessedRowIndexForRawTimelineIndex(
             processedEventsRef.current,
-            absoluteIndex
+            absoluteIndex,
           );
           if (nearest) {
             processedIndex = nearest.rowIndex;
@@ -1347,7 +1327,7 @@ export function RoomTimeline({
           // as bottom-pinned, otherwise the bottom-follow recovery paths can pull
           // the timeline straight back to latest while this jump is settling.
           setAtBottom(false);
-          vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
+          vListRef.current.scrollToIndex(processedIndex, { align: "center" });
           startJumpScrollBlock();
           activateJumpLock(anchorId);
         }
@@ -1356,14 +1336,14 @@ export function RoomTimeline({
           eventId: anchorId,
           scrollTo: false,
           highlight: true,
-          align: 'center',
-          jumpMode: 'history_context',
+          align: "center",
+          jumpMode: "history_context",
         });
       } else {
         // Cancel any in-flight jump operation to prevent concurrent jumps
         if (jumpAbortControllerRef.current) {
           log.log(
-            `[PermalinkJump] Cancelling previous jump for ${loadingEventIdRef.current || 'unknown'}`
+            `[PermalinkJump] Cancelling previous jump for ${loadingEventIdRef.current || "unknown"}`,
           );
           jumpAbortControllerRef.current.abort();
         }
@@ -1378,21 +1358,26 @@ export function RoomTimeline({
         eventIdLoadInProgressRef.current = true;
         loadingEventIdRef.current = anchorId;
 
-        log.log(`[PermalinkJump] Starting load for ${anchorId} from handleOpenEvent`);
+        log.log(
+          `[PermalinkJump] Starting load for ${anchorId} from handleOpenEvent`,
+        );
         Sentry.addBreadcrumb({
-          category: 'timeline.permalink',
-          message: 'handleOpenEvent initiating load',
-          level: 'info',
+          category: "timeline.permalink",
+          message: "handleOpenEvent initiating load",
+          level: "info",
           data: { eventId: anchorId, roomId: room.roomId },
         });
 
         void timelineSync
           .loadEventTimeline(anchorId, currentAbortController.signal, {
-            jumpMode: 'history_context',
+            jumpMode: "history_context",
           })
           .catch((err) => {
             // Ignore aborted operations
-            if (err?.name === 'AbortError' || currentAbortController.signal.aborted) {
+            if (
+              err?.name === "AbortError" ||
+              currentAbortController.signal.aborted
+            ) {
               log.log(`[PermalinkJump] Jump to ${anchorId} was cancelled`);
               return;
             }
@@ -1422,12 +1407,12 @@ export function RoomTimeline({
             room.roomId,
             href,
             makeMentionCustomProps(mentionClickHandler),
-            nicknames
+            nicknames,
           ),
-        mentionClickHandler
+        mentionClickHandler,
       ),
     }),
-    [mx, room.roomId, mentionClickHandler, nicknames, settingsLinkBaseUrl]
+    [mx, room.roomId, mentionClickHandler, nicknames, settingsLinkBaseUrl],
   );
 
   const abbrMap = useRoomAbbreviationsContext();
@@ -1459,7 +1444,7 @@ export function RoomTimeline({
       spoilerClickHandler,
       settingsLinkBaseUrl,
       abbrMap,
-    ]
+    ],
   );
 
   const renderMatrixEvent = useTimelineEventRenderer({
@@ -1494,10 +1479,13 @@ export function RoomTimeline({
       openThreadId,
     },
     permissions: {
-      canRedact: permissions.action('redact', mx.getSafeUserId()),
-      canDeleteOwn: permissions.event('m.room.redaction', mx.getSafeUserId()),
-      canSendReaction: permissions.event('m.reaction', mx.getSafeUserId()),
-      canPinEvent: permissions.stateEvent('m.room.pinned_events', mx.getSafeUserId()),
+      canRedact: permissions.action("redact", mx.getSafeUserId()),
+      canDeleteOwn: permissions.event("m.room.redaction", mx.getSafeUserId()),
+      canSendReaction: permissions.event("m.reaction", mx.getSafeUserId()),
+      canPinEvent: permissions.stateEvent(
+        "m.room.pinned_events",
+        mx.getSafeUserId(),
+      ),
     },
     callbacks: {
       onUserClick: actions.handleUserClick,
@@ -1524,7 +1512,8 @@ export function RoomTimeline({
       return;
     }
     const evtTimeline = getEventTimeline(room, readUptoEventIdRef.current);
-    const latestTimeline = evtTimeline && getFirstLinkedTimeline(evtTimeline, Direction.Forward);
+    const latestTimeline =
+      evtTimeline && getFirstLinkedTimeline(evtTimeline, Direction.Forward);
     if (latestTimeline === room.getLiveTimeline()) {
       requestAnimationFrame(() => markAsRead(mx, room.roomId, hideReads));
     }
@@ -1535,8 +1524,8 @@ export function RoomTimeline({
       (inFocus) => {
         if (inFocus && atBottomState) tryAutoMarkAsRead();
       },
-      [tryAutoMarkAsRead, atBottomState]
-    )
+      [tryAutoMarkAsRead, atBottomState],
+    ),
   );
 
   useEffect(() => {
@@ -1560,9 +1549,11 @@ export function RoomTimeline({
       // Use extended settle window (500ms) when keyboard just closed to fully
       // suppress the jump button during the close animation. Otherwise use the
       // standard 250ms window.
-      const keyboardCloseRecent = Date.now() - lastKeyboardCloseTimeRef.current < 500;
+      const keyboardCloseRecent =
+        Date.now() - lastKeyboardCloseTimeRef.current < 500;
       const settleMs = keyboardCloseRecent ? 500 : SCROLL_SETTLE_MS;
-      const withinSettleWindow = Date.now() - lastProgrammaticBottomPinAtRef.current < settleMs;
+      const withinSettleWindow =
+        Date.now() - lastProgrammaticBottomPinAtRef.current < settleMs;
 
       // When the user is pinned to the bottom and content grows (images, embeds,
       // video thumbnails loading), scrollSize increases while offset stays put,
@@ -1582,7 +1573,8 @@ export function RoomTimeline({
       // Detect the change here (inside onScroll, race-free) and chase the
       // bottom before setAtBottom(false) is called.
       const viewportChanged =
-        prevVListViewportRef.current > 0 && v.viewportSize !== prevVListViewportRef.current;
+        prevVListViewportRef.current > 0 &&
+        v.viewportSize !== prevVListViewportRef.current;
       if (viewportChanged) {
         lastViewportChangeTimeRef.current = Date.now();
       }
@@ -1610,9 +1602,9 @@ export function RoomTimeline({
         jumpLayoutReanchorRafRef.current = requestAnimationFrame(() => {
           jumpLayoutReanchorRafRef.current = undefined;
           lastJumpLayoutReanchorAtRef.current = Date.now();
-          reanchorJumpTarget('content_growth', {
+          reanchorJumpTarget("content_growth", {
             scrollDelta: scrollSizeDelta,
-            align: timelineSyncRef.current.focusItem?.align ?? 'center',
+            align: timelineSyncRef.current.focusItem?.align ?? "center",
           });
         });
       }
@@ -1622,7 +1614,7 @@ export function RoomTimeline({
         Date.now() >= jumpReanchorScrollUntilRef.current &&
         Date.now() - userScrollIntentAtRef.current < 400
       ) {
-        releaseJumpLock('user_scroll');
+        scheduleJumpLockRelease();
       }
 
       if (
@@ -1647,23 +1639,31 @@ export function RoomTimeline({
       // events to stabilize before re-evaluating atBottom. 500ms window allows
       // for slower devices and multiple rapid viewport changes (keyboard animations,
       // address bar hiding, etc.) to complete before checking scroll position.
-      const withinViewportChangeWindow = Date.now() - lastViewportChangeTimeRef.current < 500;
-      if (isNowAtBottom !== atBottomRef.current && !withinViewportChangeWindow) {
+      const withinViewportChangeWindow =
+        Date.now() - lastViewportChangeTimeRef.current < 500;
+      if (
+        isNowAtBottom !== atBottomRef.current &&
+        !withinViewportChangeWindow
+      ) {
         setAtBottom(isNowAtBottom);
       }
 
-      if (offset < 500 && canPaginateBackRef.current && backwardStatusRef.current === 'idle') {
+      if (
+        offset < 500 &&
+        canPaginateBackRef.current &&
+        backwardStatusRef.current === "idle"
+      ) {
         void timelineSyncRef.current.handleTimelinePagination(true);
       }
       if (
         distanceFromBottom < 500 &&
         !liveTimelineLinkedRef.current &&
-        forwardStatusRef.current === 'idle'
+        forwardStatusRef.current === "idle"
       ) {
         void timelineSyncRef.current.handleTimelinePagination(false);
       }
     },
-    [reanchorJumpTarget, releaseJumpLock, setAtBottom]
+    [reanchorJumpTarget, scheduleJumpLockRelease, setAtBottom],
   );
 
   const showLoadingPlaceholders =
@@ -1671,24 +1671,27 @@ export function RoomTimeline({
     !isReady &&
     (eventIdLoadInProgressRef.current ||
       timelineSync.canPaginateBack ||
-      timelineSync.backwardStatus === 'loading');
+      timelineSync.backwardStatus === "loading");
 
   // Log skeleton visibility for debugging
   useEffect(() => {
     if (eventId && showLoadingPlaceholders) {
       log.log(
-        `[PermalinkJump] Showing loading skeletons: eventsLength=${timelineSync.eventsLength}, isReady=${isReady}, eventIdLoadInProgress=${eventIdLoadInProgressRef.current}`
+        `[PermalinkJump] Showing loading skeletons: eventsLength=${timelineSync.eventsLength}, isReady=${isReady}, eventIdLoadInProgress=${eventIdLoadInProgressRef.current}`,
       );
     }
   }, [eventId, showLoadingPlaceholders, timelineSync.eventsLength, isReady]);
 
   // When showing loading placeholders, provide dummy data so VList renders items.
   // Without this, VList receives an empty array and renders nothing, causing a blank timeline.
-  const placeholderDummyData = useMemo(() => Array(5).fill(null) as ProcessedEvent[], []);
+  const placeholderDummyData = useMemo(
+    () => Array(5).fill(null) as ProcessedEvent[],
+    [],
+  );
 
   let backPaginationJSX: ReactNode | undefined;
-  if (timelineSync.canPaginateBack || timelineSync.backwardStatus !== 'idle') {
-    if (timelineSync.backwardStatus === 'error') {
+  if (timelineSync.canPaginateBack || timelineSync.backwardStatus !== "idle") {
+    if (timelineSync.backwardStatus === "error") {
       backPaginationJSX = (
         <Box
           justifyContent="Center"
@@ -1713,8 +1716,11 @@ export function RoomTimeline({
   }
 
   let frontPaginationJSX: ReactNode | undefined;
-  if (!timelineSync.liveTimelineLinked || timelineSync.forwardStatus !== 'idle') {
-    if (timelineSync.forwardStatus === 'error') {
+  if (
+    !timelineSync.liveTimelineLinked ||
+    timelineSync.forwardStatus !== "idle"
+  ) {
+    if (timelineSync.forwardStatus === "error") {
       frontPaginationJSX = (
         <Box
           justifyContent="Center"
@@ -1739,11 +1745,13 @@ export function RoomTimeline({
   }
 
   const showBackPaginationSpinner =
-    timelineSync.backwardStatus === 'loading' && timelineSync.eventsLength > 0;
+    timelineSync.backwardStatus === "loading" && timelineSync.eventsLength > 0;
   const showFrontPaginationSpinner =
-    timelineSync.forwardStatus === 'loading' && timelineSync.eventsLength > 0;
+    timelineSync.forwardStatus === "loading" && timelineSync.eventsLength > 0;
   const timelineBottomFloatLift =
-    !atBottomState && isReady ? { bottom: `calc(${config.space.S400} + ${toRem(52)})` } : undefined;
+    !atBottomState && isReady
+      ? { bottom: `calc(${config.space.S400} + ${toRem(52)})` }
+      : undefined;
   const timelineTopFloatLift =
     unreadInfo?.readUptoEventId && !unreadInfo?.inLiveTimeline && isReady
       ? { top: `calc(${config.space.S400} + ${toRem(52)})` }
@@ -1751,7 +1759,9 @@ export function RoomTimeline({
 
   const vListItemCount =
     timelineSync.eventsLength === 0 &&
-    (!isReady || timelineSync.canPaginateBack || timelineSync.backwardStatus === 'loading')
+    (!isReady ||
+      timelineSync.canPaginateBack ||
+      timelineSync.backwardStatus === "loading")
       ? 3
       : timelineSync.eventsLength;
   const vListIndices = useMemo(() => {
@@ -1776,6 +1786,204 @@ export function RoomTimeline({
 
   processedEventsRef.current = processedEvents;
 
+  useEffect(() => {
+    if (timelineSync.focusItem) {
+      const {
+        index,
+        eventId: focusEventId,
+        scrollTo,
+        align,
+        jumpMode: focusJumpMode,
+      } = timelineSync.focusItem;
+      log.log(
+        `[PermalinkJump] focusItem set: eventId=${focusEventId}, index=${index}, scrollTo=${scrollTo}, align=${align ?? "center"}, jumpMode=${focusJumpMode ?? jumpMode ?? "history_context"}`,
+      );
+      Sentry.addBreadcrumb({
+        category: "timeline.permalink",
+        message: "focusItem set",
+        level: "info",
+        data: {
+          eventId: focusEventId,
+          index,
+          scrollTo,
+          align: align ?? "center",
+          jumpMode: focusJumpMode ?? jumpMode ?? "history_context",
+          roomId: room.roomId,
+        },
+      });
+
+      const anchorKey = `${focusEventId ?? "no-event"}:${index}`;
+      const isNewAnchor = jumpAnchorKeyRef.current !== anchorKey;
+      if (isNewAnchor) {
+        jumpAnchorKeyRef.current = anchorKey;
+        if (jumpHighlightTimeoutRef.current !== undefined) {
+          clearTimeout(jumpHighlightTimeoutRef.current);
+          jumpHighlightTimeoutRef.current = undefined;
+        }
+        if (jumpRouteCleanupTimerRef.current !== undefined) {
+          clearTimeout(jumpRouteCleanupTimerRef.current);
+          jumpRouteCleanupTimerRef.current = undefined;
+        }
+      }
+
+      let scrollSucceeded = false;
+      const resolveProcessedIndex = () => {
+        const currentFocusItem = timelineSyncRef.current.focusItem;
+        if (!currentFocusItem) return undefined;
+        if (currentFocusItem.tail === "live") {
+          const lastRowIndex = processedEventsRef.current.length - 1;
+          if (lastRowIndex < 0) return undefined;
+          return {
+            processedIndex: lastRowIndex,
+            lockEventId:
+              processedEventsRef.current[lastRowIndex]?.mEvent.getId(),
+          };
+        }
+
+        let nextProcessedIndex = getRawIndexToProcessedIndex(
+          currentFocusItem.index,
+        );
+        let resolvedEventId =
+          nextProcessedIndex !== undefined
+            ? processedEventsRef.current[nextProcessedIndex]?.mEvent.getId()
+            : undefined;
+        if (nextProcessedIndex === undefined && currentFocusItem.eventId) {
+          const found = processedEventsRef.current.findIndex(
+            (e) => e.mEvent.getId() === currentFocusItem.eventId,
+          );
+          if (found >= 0) {
+            nextProcessedIndex = found;
+            resolvedEventId = processedEventsRef.current[found]?.mEvent.getId();
+          }
+        }
+
+        if (nextProcessedIndex !== undefined) {
+          return {
+            processedIndex: nextProcessedIndex,
+            lockEventId: resolvedEventId,
+          };
+        }
+
+        const nearest =
+          (currentFocusItem.align === "end"
+            ? getProcessedRowIndexForRawTimelineIndex(
+                processedEventsRef.current,
+                currentFocusItem.index,
+              )
+            : getProcessedRowIndexForRawTimelineIndexForward(
+                processedEventsRef.current,
+                currentFocusItem.index,
+              )) ??
+          getProcessedRowIndexForRawTimelineIndex(
+            processedEventsRef.current,
+            currentFocusItem.index,
+          );
+
+        if (!nearest) return undefined;
+
+        return {
+          processedIndex: nearest.rowIndex,
+          lockEventId:
+            processedEventsRef.current[nearest.rowIndex]?.mEvent.getId(),
+        };
+      };
+
+      const attemptScroll = () => {
+        if (
+          !timelineSync.focusItem?.scrollTo ||
+          !vListRef.current ||
+          scrollSucceeded
+        )
+          return false;
+
+        const resolvedTarget = resolveProcessedIndex();
+
+        if (!resolvedTarget) {
+          if (timelineSync.focusItem.eventId) {
+            log.log(
+              `[PermalinkJump] Event not found in processedEvents yet: eventId=${timelineSync.focusItem.eventId}, processedEvents.length=${processedEventsRef.current.length}`,
+            );
+          }
+          return false;
+        }
+
+        log.log(
+          `[PermalinkJump] Scroll succeeded: processedIndex=${resolvedTarget.processedIndex}, eventId=${timelineSync.focusItem.eventId}`,
+        );
+        Sentry.addBreadcrumb({
+          category: "timeline.permalink",
+          message: "Scroll succeeded",
+          level: "info",
+          data: {
+            processedIndex: resolvedTarget.processedIndex,
+            eventId: timelineSync.focusItem.eventId,
+            roomId: room.roomId,
+          },
+        });
+
+        // An event-targeted jump should no longer be treated as bottom-pinned.
+        // If we leave atBottom=true from the room's previous state, the scroll
+        // handler can immediately "chase" the live bottom after this jump.
+        setAtBottom(false);
+        startJumpScrollBlock();
+        if (timelineSync.focusItem.tail !== "live") {
+          activateJumpLock(resolvedTarget.lockEventId ?? focusEventId);
+        }
+        jumpSucceededRef.current = true;
+
+        // Reveal timeline and scroll in the same frame to avoid flash
+        setIsReady(true);
+        vListRef.current.scrollToIndex(resolvedTarget.processedIndex, {
+          align: timelineSync.focusItem.align ?? "center",
+        });
+        timelineSync.setFocusItem((prev) =>
+          prev ? { ...prev, scrollTo: false } : undefined,
+        );
+
+        scrollSucceeded = true;
+
+        return true;
+      };
+
+      attemptScroll();
+    } else {
+      cancelPendingJumpLockRelease();
+      jumpAnchorKeyRef.current = undefined;
+      if (jumpLayoutReanchorRafRef.current !== undefined) {
+        cancelAnimationFrame(jumpLayoutReanchorRafRef.current);
+        jumpLayoutReanchorRafRef.current = undefined;
+      }
+      if (jumpHighlightTimeoutRef.current !== undefined) {
+        clearTimeout(jumpHighlightTimeoutRef.current);
+        jumpHighlightTimeoutRef.current = undefined;
+      }
+      if (jumpRouteCleanupTimerRef.current !== undefined) {
+        clearTimeout(jumpRouteCleanupTimerRef.current);
+        jumpRouteCleanupTimerRef.current = undefined;
+      }
+    }
+  }, [
+    timelineSync.focusItem,
+    timelineSync,
+    reducedMotion,
+    getRawIndexToProcessedIndex,
+    processedEvents,
+    setAtBottom,
+    startJumpScrollBlock,
+    activateJumpLock,
+    cancelPendingJumpLockRelease,
+    reanchorJumpTarget,
+    room.roomId,
+    jumpMode,
+    eventId,
+    timelineSync.eventsLength,
+    timelineSync.backwardStatus,
+    timelineSync.forwardStatus,
+    location.pathname,
+    location.search,
+    navigate,
+  ]);
+
   useLayoutEffect(() => {
     if (!jumpLockActiveRef.current) return;
     const targetEventId = jumpLockEventIdRef.current;
@@ -1784,7 +1992,7 @@ export function RoomTimeline({
     if (Date.now() - userScrollIntentAtRef.current < 250) return;
 
     const targetIndex = processedEventsRef.current.findIndex(
-      (e) => e.mEvent.getId() === targetEventId
+      (e) => e.mEvent.getId() === targetEventId,
     );
     if (targetIndex < 0) {
       // Keep the lock alive while the initial jump target is still being
@@ -1792,14 +2000,15 @@ export function RoomTimeline({
       // re-anchors during decrypt/reflow churn even though the target may
       // still appear on the next render pass.
       if (timelineSync.focusItem?.scrollTo) return;
-      releaseJumpLock('missing_target');
+      releaseJumpLock("missing_target");
       return;
     }
 
     setAtBottom(false);
-    reanchorJumpTarget('timeline_remeasure', {
+    cancelPendingJumpLockRelease();
+    reanchorJumpTarget("timeline_remeasure", {
       eventId: targetEventId,
-      align: 'center',
+      align: "center",
     });
   }, [
     processedEvents,
@@ -1807,6 +2016,7 @@ export function RoomTimeline({
     timelineSync.backwardStatus,
     timelineSync.forwardStatus,
     timelineSync.focusItem,
+    cancelPendingJumpLockRelease,
     reanchorJumpTarget,
     releaseJumpLock,
     setAtBottom,
@@ -1834,18 +2044,32 @@ export function RoomTimeline({
       lastProgrammaticBottomPinAtRef.current = Date.now();
       v.scrollTo(v.scrollSize);
     });
-  }, [processedEvents, isReady, timelineSync.liveTimelineLinked, scrollToBottom]);
+  }, [
+    processedEvents,
+    isReady,
+    timelineSync.liveTimelineLinked,
+    scrollToBottom,
+  ]);
 
   // Use dummy data for VList when showing loading placeholders, otherwise use actual events.
-  const vListData = showLoadingPlaceholders ? placeholderDummyData : processedEvents;
+  const vListData = showLoadingPlaceholders
+    ? placeholderDummyData
+    : processedEvents;
 
   useEffect(() => {
     const el = messageListRef.current;
     if (!el) return undefined;
 
-    const markUserScrollIntent = (source: 'pointerdown' | 'wheel' | 'touchmove' | 'keyboard') => {
+    const markUserScrollIntent = (
+      source: "pointerdown" | "wheel" | "touchmove" | "keyboard",
+    ) => {
       userScrollIntentAtRef.current = Date.now();
-      if (shouldClearKeyboardBottomSessionOnUserIntent(source, keyboardVisibleRef.current)) {
+      if (
+        shouldClearKeyboardBottomSessionOnUserIntent(
+          source,
+          keyboardVisibleRef.current,
+        )
+      ) {
         keyboardSessionBottomPinnedRef.current = false;
       }
     };
@@ -1853,32 +2077,32 @@ export function RoomTimeline({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!isKeyboardBottomSessionScrollKeyTarget(event.target)) return;
       if (
-        event.key === 'ArrowUp' ||
-        event.key === 'ArrowDown' ||
-        event.key === 'PageUp' ||
-        event.key === 'PageDown' ||
-        event.key === 'Home' ||
-        event.key === 'End' ||
-        event.key === ' '
+        event.key === "ArrowUp" ||
+        event.key === "ArrowDown" ||
+        event.key === "PageUp" ||
+        event.key === "PageDown" ||
+        event.key === "Home" ||
+        event.key === "End" ||
+        event.key === " "
       ) {
-        markUserScrollIntent('keyboard');
+        markUserScrollIntent("keyboard");
       }
     };
 
-    const handleWheel = () => markUserScrollIntent('wheel');
-    const handleTouchMove = () => markUserScrollIntent('touchmove');
-    const handlePointerDown = () => markUserScrollIntent('pointerdown');
+    const handleWheel = () => markUserScrollIntent("wheel");
+    const handleTouchMove = () => markUserScrollIntent("touchmove");
+    const handlePointerDown = () => markUserScrollIntent("pointerdown");
 
-    el.addEventListener('wheel', handleWheel, { passive: true });
-    el.addEventListener('touchmove', handleTouchMove, { passive: true });
-    el.addEventListener('pointerdown', handlePointerDown, { passive: true });
-    window.addEventListener('keydown', handleKeyDown);
+    el.addEventListener("wheel", handleWheel, { passive: true });
+    el.addEventListener("touchmove", handleTouchMove, { passive: true });
+    el.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      el.removeEventListener('wheel', handleWheel);
-      el.removeEventListener('touchmove', handleTouchMove);
-      el.removeEventListener('pointerdown', handlePointerDown);
-      window.removeEventListener('keydown', handleKeyDown);
+      el.removeEventListener("wheel", handleWheel);
+      el.removeEventListener("touchmove", handleTouchMove);
+      el.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
@@ -1888,7 +2112,11 @@ export function RoomTimeline({
   // guarded by pendingReadyRef so it only acts once per initial-scroll attempt.
   useLayoutEffect(() => {
     if (!pendingReadyRef.current) return;
-    if (eventId && (eventIdLoadInProgressRef.current || timelineSync.focusItem)) return;
+    if (
+      eventId &&
+      (eventIdLoadInProgressRef.current || timelineSync.focusItem?.scrollTo)
+    )
+      return;
     if (processedEvents.length === 0) return;
     pendingReadyRef.current = false;
     scrollToBottom();
@@ -1897,13 +2125,13 @@ export function RoomTimeline({
 
   useEffect(() => {
     if (!isReady || processedEvents.length === 0) return;
-    const renderKey = `${room.roomId}:${eventId ?? 'live'}`;
+    const renderKey = `${room.roomId}:${eventId ?? "live"}`;
     if (timelineRenderMetricRoomRef.current === renderKey) return;
     timelineRenderMetricRoomRef.current = renderKey;
     completeRoomTimelineRender(
       room.roomId,
-      eventId ? 'permalink_context' : 'live_timeline',
-      processedEvents.length
+      eventId ? "permalink_context" : "live_timeline",
+      processedEvents.length,
     );
   }, [eventId, isReady, processedEvents.length, room.roomId]);
 
@@ -1912,7 +2140,10 @@ export function RoomTimeline({
     const ref = onEditLastMessageRef;
     ref.current = () => {
       const myUserId = mx.getUserId();
-      const found = findLastOwnEditableProcessedEvent(processedEventsRef.current, myUserId);
+      const found = findLastOwnEditableProcessedEvent(
+        processedEventsRef.current,
+        myUserId,
+      );
       if (found?.mEvent.getId()) handleEditCallback(found.mEvent.getId());
     };
   }, [onEditLastMessageRef, mx, handleEditCallback]);
@@ -1924,13 +2155,13 @@ export function RoomTimeline({
   handleEditRef.current = handleEdit;
 
   const [editNavRequest, setEditNavRequest] = useAtom(
-    roomIdToEditNavRequestAtomFamily(room.roomId)
+    roomIdToEditNavRequestAtomFamily(room.roomId),
   );
 
   useEffect(() => {
     if (!editNavRequest) return;
     const editableEvents = processedEventsRef.current.filter(
-      (e) => !e.mEvent.isRedacted() && canEditEvent(mx, e.mEvent)
+      (e) => !e.mEvent.isRedacted() && canEditEvent(mx, e.mEvent),
     );
     if (editableEvents.length === 0) {
       setEditNavRequest(undefined);
@@ -1949,9 +2180,11 @@ export function RoomTimeline({
       return;
     }
 
-    const currentIdx = editableEvents.findIndex((e) => e.mEvent.getId() === currentEditId);
+    const currentIdx = editableEvents.findIndex(
+      (e) => e.mEvent.getId() === currentEditId,
+    );
     const next =
-      editNavRequest.dir === 'prev'
+      editNavRequest.dir === "prev"
         ? editableEvents[currentIdx - 1]
         : editableEvents[currentIdx + 1];
     setEditNavRequest(undefined);
@@ -1965,7 +2198,7 @@ export function RoomTimeline({
     if (!v) return;
     if (
       canPaginateBackRef.current &&
-      backwardStatusRef.current === 'idle' &&
+      backwardStatusRef.current === "idle" &&
       v.scrollSize <= v.viewportSize
     ) {
       void timelineSyncRef.current.handleTimelinePagination(true);
@@ -1991,10 +2224,11 @@ export function RoomTimeline({
       }
 
       if (!canPaginateBackRef.current) return;
-      if (backwardStatusRef.current !== 'idle') return;
+      if (backwardStatusRef.current !== "idle") return;
 
       const atTop = v.scrollOffset < 500;
-      const noVisibleGrowth = processedEvents.length === processedLengthAtEffectStart;
+      const noVisibleGrowth =
+        processedEvents.length === processedLengthAtEffectStart;
       const hasRealScrollRoom = v.scrollSize > v.viewportSize + 300;
 
       if (!hasRealScrollRoom || (atTop && noVisibleGrowth)) {
@@ -2007,44 +2241,54 @@ export function RoomTimeline({
 
     rafId = requestAnimationFrame(check);
     return () => cancelAnimationFrame(rafId);
-  }, [timelineSync.eventsLength, timelineSync.backwardStatus, processedEvents.length]);
+  }, [
+    timelineSync.eventsLength,
+    timelineSync.backwardStatus,
+    processedEvents.length,
+  ]);
 
   return (
-    <Box grow="Yes" style={{ position: 'relative' }}>
-      {unreadInfo?.readUptoEventId && !unreadInfo?.inLiveTimeline && isReady && (
-        <TimelineFloat position="Top">
-          <Chip
-            variant="Primary"
-            radii="Pill"
-            before={chipIcon(ChatTeardropDots)}
-            onClick={() =>
-              timelineSync.loadEventTimeline(unreadInfo.readUptoEventId, undefined, {
-                jumpMode: 'history_context',
-                target: 'next',
-              })
-            }
-          >
-            <Text size="L400">Jump to Unread</Text>
-          </Chip>
-          <Chip
-            variant="SurfaceVariant"
-            radii="Pill"
-            outlined
-            before={chipIcon(Checks)}
-            onClick={handleMarkAsRead}
-          >
-            <Text size="L400">Mark as Read</Text>
-          </Chip>
-        </TimelineFloat>
-      )}
+    <Box grow="Yes" style={{ position: "relative" }}>
+      {unreadInfo?.readUptoEventId &&
+        !unreadInfo?.inLiveTimeline &&
+        isReady && (
+          <TimelineFloat position="Top">
+            <Chip
+              variant="Primary"
+              radii="Pill"
+              before={chipIcon(ChatTeardropDots)}
+              onClick={() =>
+                timelineSync.loadEventTimeline(
+                  unreadInfo.readUptoEventId,
+                  undefined,
+                  {
+                    jumpMode: "history_context",
+                    target: "next",
+                  },
+                )
+              }
+            >
+              <Text size="L400">Jump to Unread</Text>
+            </Chip>
+            <Chip
+              variant="SurfaceVariant"
+              radii="Pill"
+              outlined
+              before={chipIcon(Checks)}
+              onClick={handleMarkAsRead}
+            >
+              <Text size="L400">Mark as Read</Text>
+            </Chip>
+          </TimelineFloat>
+        )}
 
       <div
         ref={messageListRef}
         style={{
           flex: 1,
           minHeight: 0,
-          overflow: 'hidden',
-          position: 'relative',
+          overflow: "hidden",
+          position: "relative",
           opacity: isReady || showLoadingPlaceholders ? 1 : 0,
         }}
       >
@@ -2057,11 +2301,12 @@ export function RoomTimeline({
           style={{
             flex: 1,
             minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
+            display: "flex",
+            flexDirection: "column",
             paddingLeft: config.space.S200,
             paddingRight: timelineRightSpacing,
-            paddingTop: topSpacerHeight > 0 ? topSpacerHeight : config.space.S600,
+            paddingTop:
+              topSpacerHeight > 0 ? topSpacerHeight : config.space.S600,
             paddingBottom: timelineBottomSpacing,
           }}
           onScroll={handleVListScroll}
@@ -2089,7 +2334,9 @@ export function RoomTimeline({
                         paddingTop: config.space.S700,
                         paddingBottom: config.space.S600,
                         paddingInlineStart:
-                          messageLayout === MessageLayout.Compact ? config.space.S0 : toRem(64),
+                          messageLayout === MessageLayout.Compact
+                            ? config.space.S0
+                            : toRem(64),
                       }}
                     >
                       <RoomIntro room={room} />
@@ -2097,18 +2344,19 @@ export function RoomTimeline({
                   </Fragment>
                 );
               }
-              if (index === 0) return <Fragment key="first">{backPaginationJSX}</Fragment>;
+              if (index === 0)
+                return <Fragment key="first">{backPaginationJSX}</Fragment>;
               return <Fragment key={index} />;
             }
 
             const renderedEvent = renderMatrixEvent(
               eventData.mEvent.getType(),
-              typeof eventData.mEvent.getStateKey() === 'string',
+              typeof eventData.mEvent.getStateKey() === "string",
               eventData.id,
               eventData.mEvent,
               eventData.itemIndex,
               eventData.timelineSet,
-              eventData.collapsed
+              eventData.collapsed,
             );
 
             const showDividers = renderedEvent !== null;
@@ -2119,8 +2367,16 @@ export function RoomTimeline({
                   <MessageBase space={messageSpacing}>
                     <TimelineDivider variant="Surface">
                       <div className={css.dividerInset}>
-                        <Badge as="span" size="500" variant="Secondary" fill="None" radii="300">
-                          <Text size="L400">{getDayDividerText(eventData.mEvent.getTs())}</Text>
+                        <Badge
+                          as="span"
+                          size="500"
+                          variant="Secondary"
+                          fill="None"
+                          radii="300"
+                        >
+                          <Text size="L400">
+                            {getDayDividerText(eventData.mEvent.getTs())}
+                          </Text>
                         </Badge>
                       </div>
                     </TimelineDivider>
@@ -2128,9 +2384,18 @@ export function RoomTimeline({
                 )}
                 {eventData.willRenderNewDivider && (
                   <MessageBase space={messageSpacing}>
-                    <TimelineDivider style={{ color: color.Success.Main }} variant="Inherit">
+                    <TimelineDivider
+                      style={{ color: color.Success.Main }}
+                      variant="Inherit"
+                    >
                       <div className={css.dividerInset}>
-                        <Badge as="span" size="500" variant="Success" fill="Solid" radii="300">
+                        <Badge
+                          as="span"
+                          size="500"
+                          variant="Success"
+                          fill="Solid"
+                          radii="300"
+                        >
                           <Text size="L400">New Messages</Text>
                         </Badge>
                       </div>
@@ -2149,7 +2414,9 @@ export function RoomTimeline({
                         paddingTop: config.space.S700,
                         paddingBottom: config.space.S600,
                         paddingInlineStart:
-                          messageLayout === MessageLayout.Compact ? config.space.S0 : toRem(64),
+                          messageLayout === MessageLayout.Compact
+                            ? config.space.S0
+                            : toRem(64),
                       }}
                     >
                       <RoomIntro room={room} />
@@ -2194,8 +2461,9 @@ export function RoomTimeline({
               outlined
               before={chipIcon(ArrowDown)}
               onClick={() => {
-                if (eventId) navigateRoom(room.roomId, undefined, { replace: true });
-                releaseJumpLock('jump_to_latest');
+                if (eventId)
+                  navigateRoom(room.roomId, undefined, { replace: true });
+                releaseJumpLock("jump_to_latest");
                 setUnreadInfo((prev) => getUnreadInfoAfterJumpToLatest(prev));
                 timelineSync.jumpToLatest();
               }}
@@ -2208,14 +2476,14 @@ export function RoomTimeline({
       {!isReady && !showLoadingPlaceholders && (
         <div
           style={{
-            position: 'absolute',
+            position: "absolute",
             inset: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'flex-end',
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "flex-end",
             padding: `0 0 ${config.space.S600} 0`,
-            overflow: 'hidden',
-            pointerEvents: 'none',
+            overflow: "hidden",
+            pointerEvents: "none",
           }}
         >
           <MessageBase space={messageSpacing}>
