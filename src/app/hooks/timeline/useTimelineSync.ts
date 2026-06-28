@@ -138,10 +138,7 @@ const shouldContinueSparsePagination = (
   fetched < 5 &&
   typeof tokenTimeline?.getPaginationToken(checkDirection) === 'string';
 
-const getSdkTimelineRefreshState = ({
-  linkedTimelines,
-  liveTimeline,
-}: SdkTimelineRefreshState) => {
+const getSdkTimelineRefreshState = ({ linkedTimelines, liveTimeline }: SdkTimelineRefreshState) => {
   const currentSdkLinkedTimelines = getLinkedTimelines(liveTimeline);
   const currentSdkEventCount = getTimelinesEventsCount(currentSdkLinkedTimelines);
   const reactHasEvents = linkedTimelines.length > 0 && getTimelinesEventsCount(linkedTimelines) > 0;
