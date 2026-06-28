@@ -65,6 +65,8 @@ const sectionHeaderStyle = {
 const sectionMenuStyle = {
   minWidth: toRem(256),
   padding: config.space.S100,
+  maxHeight: '85vh',
+  overflowY: 'auto' as const,
 };
 
 const sectionListStyle = {
@@ -531,7 +533,7 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
                     before={menuIcon(GearSix)}
                     onClick={handleOpenSettings}
                   >
-                    <Text size="T300">Settings</Text>
+                    <Text size="T300">App Settings</Text>
                   </MenuItem>
                 </Box>
               </Box>

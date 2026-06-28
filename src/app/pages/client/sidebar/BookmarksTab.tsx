@@ -29,9 +29,9 @@ export function BookmarksTab() {
     <SidebarItem active={bookmarksSelected}>
       <SidebarItemTooltip tooltip="Bookmarks">
         {(triggerRef) => (
-          <SidebarAvatar as="button" ref={triggerRef} outlined onClick={handleClick} size="300">
+          <SidebarAvatar as="button" ref={triggerRef} outlined onClick={handleClick} size="400">
             <BookmarkSimple
-              size={getPhosphorIconSize('inline')}
+              size={getPhosphorIconSize('toolbar')}
               weight={bookmarksSelected ? 'fill' : 'regular'}
             />
           </SidebarAvatar>
