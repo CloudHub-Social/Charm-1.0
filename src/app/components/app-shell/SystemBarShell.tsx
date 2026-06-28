@@ -69,7 +69,11 @@ export function SystemBarShell({ children, onPortalContainerChange }: SystemBarS
 
     const clearStaleKeyboardViewportVars = () => {
       const keyboardHeight = viewport ? window.innerHeight - viewport.height : 0;
-      if (isEditableElement(document.activeElement) && keyboardHeight >= 30) return;
+      const editableFocused = isEditableElement(document.activeElement);
+      const keyboardVarsApplied =
+        document.documentElement.style.getPropertyValue('--sable-visible-height') !== '' ||
+        document.documentElement.style.getPropertyValue('--sable-safe-bottom') !== '';
+      if (editableFocused && (keyboardHeight >= 30 || keyboardVarsApplied)) return;
 
       document.documentElement.style.removeProperty('--sable-visible-height');
       document.documentElement.style.removeProperty('--sable-safe-bottom');

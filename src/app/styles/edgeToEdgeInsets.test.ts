@@ -75,6 +75,10 @@ describe('android edge-to-edge inset contract', () => {
     expect(systemBarShell).toContain('paddingBottom: 0');
     expect(systemBarShell).toContain("removeProperty('--sable-visible-height')");
     expect(systemBarShell).toContain("removeProperty('--sable-safe-bottom')");
+    expect(systemBarShell).toContain('const keyboardVarsApplied =');
+    expect(systemBarShell).toContain(
+      "document.documentElement.style.getPropertyValue('--sable-visible-height') !== ''"
+    );
     expect(systemBarStyle).toContain(
       'registerSafeAreaFill: (owner: symbol, fill: string | undefined) => void;'
     );
