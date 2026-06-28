@@ -2,4 +2,4 @@
 default: patch
 ---
 
-Restore the upstream web app shell structure for mobile PWAs so overlays and root layout no longer depend on the Charm-only safe-area wrapper.
+Remove the app-wide bottom gap in the mobile PWA shell by restoring the visual-viewport root height fallback.

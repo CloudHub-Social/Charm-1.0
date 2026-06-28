@@ -29,17 +29,13 @@ describe('android edge-to-edge inset contract', () => {
     expect(mainActivity).not.toContain('webView.webViewClient');
   });
 
-  it('keeps upstream web portal ownership while preserving the tauri shell bridge', () => {
+  it('moves portal ownership into the app shell', () => {
     const indexHtml = readWorkspaceFile('index.html');
     const appTsx = readWorkspaceFile('src/app/pages/App.tsx');
     const appShell = readWorkspaceFile('src/app/components/app-shell/AppShell.tsx');
     const systemBarShell = readWorkspaceFile('src/app/components/app-shell/SystemBarShell.tsx');
 
-    expect(indexHtml).toContain('id="portalContainer"');
-    expect(appTsx).toContain(
-      "const portalContainer = document.getElementById('portalContainer') ?? undefined;"
-    );
-    expect(appTsx).toContain('isTauri() ? (');
+    expect(indexHtml).not.toContain('id="portalContainer"');
     expect(appTsx).toContain('<AppShell screenSize={screenSize} queryClient={queryClient}>');
     expect(appShell).toContain('const [portalContainer, setPortalContainer] = useState');
     expect(appShell).toContain('<SystemBarShell onPortalContainerChange={setPortalContainer}>');
@@ -67,8 +63,8 @@ describe('android edge-to-edge inset contract', () => {
     expect(appShell).toContain('height: contentHeight');
     expect(appShell).toContain('<ScreenSizeProvider value={screenSize}>');
     expect(appShell).toContain('<SystemBarStyleProvider>');
-    expect(indexCss).toContain('height: var(--sable-visible-height, 100%)');
-    expect(indexCss).not.toContain('height: var(--sable-visible-height, 100dvh)');
+    expect(indexCss).toContain('height: var(--sable-visible-height, 100dvh)');
+    expect(indexCss).not.toContain('height: var(--sable-visible-height, 100%)');
     expect(generalOverrides).toContain("backgroundColor: 'var(--sable-bg-container)'");
     expect(systemBarShell).toContain('var(--safe-area-inset-top, env(safe-area-inset-top, 0px))');
     // Bottom safe area is zeroed out: iOS home-indicator padding must not push

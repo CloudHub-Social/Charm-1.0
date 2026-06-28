@@ -1,18 +1,16 @@
 import type { ComponentProps, ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
 import { RouterProvider } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient } from '@tanstack/react-query';
 import * as Sentry from '@sentry/react';
-import { Provider as JotaiProvider, useStore } from 'jotai';
-import { OverlayContainerProvider, PopOutContainerProvider, TooltipContainerProvider } from 'folds';
+import { useStore } from 'jotai';
 
 import { ClientConfigLoader } from '$components/ClientConfigLoader';
 import { AppShell } from '$components/app-shell';
 import type { ClientConfig } from '$hooks/useClientConfig';
 import { ClientConfigProvider } from '$hooks/useClientConfig';
 import { setMatrixToBase } from '$plugins/matrix-to';
-import { ScreenSizeProvider, useScreenSize } from '$hooks/useScreenSize';
+import { useScreenSize } from '$hooks/useScreenSize';
 import { useCompositionEndTracking } from '$hooks/useComposingCheck';
 import { bootstrapSettingsStore, primeRuntimeSettingsDefaults } from '$state/settings';
 import { ErrorPage } from '$components/DefaultErrorPage';
@@ -97,32 +95,14 @@ function AppClientConfigLoader({ screenSize }: { screenSize: ReturnType<typeof u
 function App() {
   const screenSize = useScreenSize();
   useCompositionEndTracking();
-  const portalContainer = document.getElementById('portalContainer') ?? undefined;
-  const appContent = (
-    <FeatureCheck>
-      <AppClientConfigLoader screenSize={screenSize} />
-    </FeatureCheck>
-  );
 
   return (
     <Sentry.ErrorBoundary fallback={renderAppErrorFallback}>
-      {isTauri() ? (
-        <AppShell screenSize={screenSize} queryClient={queryClient}>
-          {appContent}
-        </AppShell>
-      ) : (
-        <TooltipContainerProvider value={portalContainer}>
-          <PopOutContainerProvider value={portalContainer}>
-            <OverlayContainerProvider value={portalContainer}>
-              <ScreenSizeProvider value={screenSize}>
-                <QueryClientProvider client={queryClient}>
-                  <JotaiProvider>{appContent}</JotaiProvider>
-                </QueryClientProvider>
-              </ScreenSizeProvider>
-            </OverlayContainerProvider>
-          </PopOutContainerProvider>
-        </TooltipContainerProvider>
-      )}
+      <AppShell screenSize={screenSize} queryClient={queryClient}>
+        <FeatureCheck>
+          <AppClientConfigLoader screenSize={screenSize} />
+        </FeatureCheck>
+      </AppShell>
     </Sentry.ErrorBoundary>
   );
 }
