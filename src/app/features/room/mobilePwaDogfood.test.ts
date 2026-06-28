@@ -188,6 +188,9 @@ describe('mobile PWA dogfood contract', () => {
     expect(userRoomProfileRenderer).toContain('Member Profile');
     expect(bugReportModal).toContain('<Modal500 requestClose={close} fullScreenOnMobile>');
     expect(bugReportModal).toContain(
+      '<Scroll size="300" hideTrack style={{ flex: 1, minHeight: 0 }}>'
+    );
+    expect(bugReportModal).toContain(
       "const safeAreaBottomInset = 'var(--sable-safe-area-bottom, env(safe-area-inset-bottom, 0px))';"
     );
     expect(bugReportModal).toContain(
