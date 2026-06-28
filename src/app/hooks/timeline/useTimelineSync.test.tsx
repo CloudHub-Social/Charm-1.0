@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Room } from '$types/matrix-sdk';
 import { ClientEvent, RoomEvent } from '$types/matrix-sdk';
 import { appEvents } from '$utils/appEvents';
-import { useTimelineSync } from './useTimelineSync';
+import { EVENT_TIMELINE_LOAD_TIMEOUT_MS, useTimelineSync } from './useTimelineSync';
 
 vi.mock('@sentry/react', () => ({
   default: {},
@@ -617,6 +617,35 @@ describe('useTimelineSync', () => {
     expect(result.current.timeline.linkedTimelines).toEqual([contextTimeline]);
   });
 
+  it('does not refresh on foreground when the sdk event count shrinks without new live data', async () => {
+    const liveEvents: unknown[] = [{ getId: () => '$one:event' }, { getId: () => '$two:event' }];
+    const { room } = createRoom('!room:test', liveEvents);
+
+    const { result } = renderHook(() =>
+      useTimelineSync({
+        room: room as Room,
+        mx: createMx() as never,
+        isAtBottom: false,
+        isAtBottomRef: { current: false },
+        scrollToBottom: vi.fn<() => void>(),
+        unreadInfo: undefined,
+        setUnreadInfo: vi.fn<() => void>(),
+        hideReadsRef: { current: false },
+        readUptoEventIdRef: { current: undefined },
+      })
+    );
+
+    const timelineBeforeVisibility = result.current.timeline.linkedTimelines;
+    liveEvents.pop();
+
+    await act(async () => {
+      appEvents.emitVisibilityChange(true);
+      await Promise.resolve();
+    });
+
+    expect(result.current.timeline.linkedTimelines).toBe(timelineBeforeVisibility);
+  });
+
   it('keeps an active event-target jump anchored when live timeline refreshes', async () => {
     const targetEvent = { getId: () => '$target:event' };
     const liveEventsOne: unknown[] = [{ getId: () => '$live:one' }];
@@ -797,6 +826,133 @@ describe('useTimelineSync', () => {
       jumpMode: 'notification_live',
     });
     expect(scrollToBottom).not.toHaveBeenCalled();
+  });
+
+  it('falls back to history context for notification jumps far from the live tail', async () => {
+    const liveEvents = Array.from({ length: 50 }, (_, index) => ({
+      getId: () => (index === 0 ? '$target:event' : `$live:${index}`),
+    }));
+    const { room } = createRoom('!room:test', liveEvents);
+    const contextTimeline = createTimeline([{ getId: () => '$target:event' }]);
+    const mx = {
+      ...createMx(),
+      getEventTimeline: vi.fn<() => Promise<FakeTimeline>>().mockResolvedValue(contextTimeline),
+    };
+
+    const { result } = renderHook(() =>
+      useTimelineSync({
+        room: room as Room,
+        mx: mx as never,
+        eventId: '$target:event',
+        jumpMode: 'notification_live',
+        isAtBottom: false,
+        isAtBottomRef: { current: false },
+        scrollToBottom: vi.fn<() => void>(),
+        unreadInfo: undefined,
+        setUnreadInfo: vi.fn<() => void>(),
+        hideReadsRef: { current: false },
+        readUptoEventIdRef: { current: undefined },
+      })
+    );
+
+    await act(async () => {
+      await result.current.loadEventTimeline('$target:event');
+    });
+
+    expect(mx.getEventTimeline).toHaveBeenCalledTimes(1);
+    expect(result.current.timeline.linkedTimelines).toEqual([contextTimeline]);
+    expect(result.current.focusItem).toEqual({
+      index: 0,
+      eventId: '$target:event',
+      scrollTo: true,
+      highlight: true,
+      align: 'center',
+      jumpMode: 'notification_live',
+    });
+  });
+
+  it('rejects aborted event timeline loads before starting without mutating state', async () => {
+    const { room } = createRoom('!room:test', [{ getId: () => '$live:event' }]);
+    const mx = {
+      ...createMx(),
+      getEventTimeline: vi.fn<() => Promise<FakeTimeline>>(),
+    };
+
+    const { result } = renderHook(() =>
+      useTimelineSync({
+        room: room as Room,
+        mx: mx as never,
+        eventId: '$target:event',
+        isAtBottom: false,
+        isAtBottomRef: { current: false },
+        scrollToBottom: vi.fn<() => void>(),
+        unreadInfo: undefined,
+        setUnreadInfo: vi.fn<() => void>(),
+        hideReadsRef: { current: false },
+        readUptoEventIdRef: { current: undefined },
+      })
+    );
+
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      result.current.loadEventTimeline('$target:event', controller.signal)
+    ).rejects.toMatchObject({
+      name: 'AbortError',
+      message: 'Timeline load aborted before start',
+    });
+
+    expect(mx.getEventTimeline).not.toHaveBeenCalled();
+    expect(result.current.timeline.linkedTimelines).toEqual([]);
+  });
+
+  it('falls back to the live timeline when event context loading times out', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const { room } = createRoom('!room:test', [{ getId: () => '$live:event' }]);
+      const scrollToBottom = vi.fn<() => void>();
+      const mx = {
+        ...createMx(),
+        getEventTimeline: vi
+          .fn<() => Promise<FakeTimeline>>()
+          .mockImplementation(() => new Promise<FakeTimeline>(() => undefined)),
+      };
+
+      const { result } = renderHook(() =>
+        useTimelineSync({
+          room: room as Room,
+          mx: mx as never,
+          eventId: '$target:event',
+          isAtBottom: false,
+          isAtBottomRef: { current: false },
+          scrollToBottom,
+          unreadInfo: undefined,
+          setUnreadInfo: vi.fn<() => void>(),
+          hideReadsRef: { current: false },
+          readUptoEventIdRef: { current: undefined },
+        })
+      );
+
+      let settled = false;
+      const loadPromise = result.current.loadEventTimeline('$target:event').finally(() => {
+        settled = true;
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(EVENT_TIMELINE_LOAD_TIMEOUT_MS);
+        await Promise.resolve();
+      });
+
+      await loadPromise;
+
+      expect(settled).toBe(true);
+      expect(result.current.timeline.linkedTimelines).toEqual([room.getLiveTimeline()]);
+      expect(scrollToBottom).toHaveBeenCalledWith('instant');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not snap a non-bottom user to latest after TimelineReset', async () => {
