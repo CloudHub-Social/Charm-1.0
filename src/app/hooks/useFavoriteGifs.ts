@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { AccountDataEvents } from 'matrix-js-sdk';
+import type { AccountDataEvents } from '$types/matrix-sdk';
 import { MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS } from '../../unstable/prefixes';
 import { useAccountData } from './useAccountData';
 
