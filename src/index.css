@@ -67,8 +67,8 @@ body {
   /* On iOS PWA, --sable-visible-height is set (via RoomInput's useEffect)
      when the keyboard is open, shrinking the root to the visual viewport
      so the whole layout reflows correctly above the keyboard. Falls back
-     to 100dvh when no keyboard is present. */
-  height: var(--sable-visible-height, 100dvh);
+     to 100vh when no keyboard is present. */
+  height: var(--sable-visible-height, 100vh);
   display: flex;
   flex-direction: column;
 }

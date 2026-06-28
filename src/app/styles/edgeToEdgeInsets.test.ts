@@ -63,8 +63,9 @@ describe('android edge-to-edge inset contract', () => {
     expect(appShell).toContain('height: contentHeight');
     expect(appShell).toContain('<ScreenSizeProvider value={screenSize}>');
     expect(appShell).toContain('<SystemBarStyleProvider>');
-    expect(indexCss).toContain('height: var(--sable-visible-height, 100dvh)');
+    expect(indexCss).toContain('height: var(--sable-visible-height, 100vh)');
     expect(indexCss).not.toContain('height: var(--sable-visible-height, 100%)');
+    expect(indexCss).not.toContain('height: var(--sable-visible-height, 100dvh)');
     expect(generalOverrides).toContain("backgroundColor: 'var(--sable-bg-container)'");
     expect(systemBarShell).toContain('var(--safe-area-inset-top, env(safe-area-inset-top, 0px))');
     // Bottom safe area is zeroed out: iOS home-indicator padding must not push
