@@ -52,6 +52,18 @@ export type TimelineState = {
   linkedTimelines: EventTimeline[];
 };
 
+type NotificationLiveResolution = {
+  liveLinkedTimelines: EventTimeline[];
+  liveAbsIndex?: number;
+  distanceFromBottom?: number;
+};
+
+type SdkTimelineRefreshState = {
+  linkedTimelines: EventTimeline[];
+  reactEventsLength: number;
+  liveTimeline: EventTimeline;
+};
+
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
   new Promise<T>((resolve, reject) => {
     const timeoutId = globalThis.setTimeout(() => {
@@ -68,6 +80,85 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T
         reject(error);
       });
   });
+
+const resolveNotificationLiveTarget = (room: Room, eventId: string): NotificationLiveResolution => {
+  const liveTimeline = getLiveTimeline(room);
+  const liveLinkedTimelines = getLinkedTimelines(liveTimeline);
+  const localEventTimeline = getEventTimeline(room, eventId);
+  const liveAbsIndex = localEventTimeline
+    ? getEventIdAbsoluteIndex(liveLinkedTimelines, localEventTimeline, eventId)
+    : undefined;
+
+  if (liveAbsIndex === undefined) {
+    return { liveLinkedTimelines };
+  }
+
+  return {
+    liveLinkedTimelines,
+    liveAbsIndex,
+    distanceFromBottom: Math.max(
+      getTimelinesEventsCount(liveLinkedTimelines) - 1 - liveAbsIndex,
+      0
+    ),
+  };
+};
+
+const getJumpTarget = (
+  linkedTimelines: EventTimeline[],
+  eventId: string,
+  absIndex: number,
+  target: TimelineLoadTarget
+) => {
+  const targetIndex = target === 'next' ? absIndex + 1 : absIndex;
+  return {
+    targetIndex,
+    targetEventId: getTimelineEventAtIndex(linkedTimelines, targetIndex)?.getId() ?? eventId,
+  };
+};
+
+const getPaginationTimelineEdge = (
+  linkedTimelines: EventTimeline[],
+  backwards: boolean
+): EventTimeline | undefined => (backwards ? linkedTimelines[0] : linkedTimelines.at(-1));
+
+const shouldRecalibratePagination = (
+  linkedTimelines: EventTimeline[],
+  timelineToPaginate: EventTimeline,
+  paginationToken: string | null | undefined
+) =>
+  !paginationToken &&
+  getTimelinesEventsCount(linkedTimelines) !==
+    getTimelinesEventsCount(getLinkedTimelines(timelineToPaginate));
+
+const shouldContinueSparsePagination = (
+  fetched: number,
+  tokenTimeline: EventTimeline | undefined,
+  checkDirection: Direction
+) =>
+  fetched > 0 &&
+  fetched < 5 &&
+  typeof tokenTimeline?.getPaginationToken(checkDirection) === 'string';
+
+const getSdkTimelineRefreshState = ({
+  linkedTimelines,
+  reactEventsLength,
+  liveTimeline,
+}: SdkTimelineRefreshState) => {
+  const currentSdkLinkedTimelines = getLinkedTimelines(liveTimeline);
+  const currentSdkEventCount = getTimelinesEventsCount(currentSdkLinkedTimelines);
+  const reactHasEvents = linkedTimelines.length > 0 && getTimelinesEventsCount(linkedTimelines) > 0;
+  const liveTimelineChanged = linkedTimelines.at(-1) !== liveTimeline;
+  const eventCountChanged = currentSdkEventCount !== reactEventsLength;
+
+  return {
+    currentSdkLinkedTimelines,
+    reactHasEvents,
+    liveTimelineChanged,
+    eventCountChanged,
+    needsRefresh: !reactHasEvents || liveTimelineChanged || eventCountChanged,
+    sdkEventsLength: liveTimeline.getEvents().length,
+  };
+};
 
 const useEventTimelineLoader = (
   mx: MatrixClient,
@@ -107,18 +198,10 @@ const useEventTimelineLoader = (
         });
 
         const tryResolveNotificationLiveTimeline = (resolution: 'local' | 'fetched') => {
-          const liveTimeline = getLiveTimeline(room);
-          const liveLinkedTimelines = getLinkedTimelines(liveTimeline);
-          const localEventTimeline = getEventTimeline(room, eventId);
-          const liveAbsIndex = localEventTimeline
-            ? getEventIdAbsoluteIndex(liveLinkedTimelines, localEventTimeline, eventId)
-            : undefined;
+          const { liveLinkedTimelines, liveAbsIndex, distanceFromBottom } =
+            resolveNotificationLiveTarget(room, eventId);
 
-          if (liveAbsIndex !== undefined) {
-            const distanceFromBottom = Math.max(
-              getTimelinesEventsCount(liveLinkedTimelines) - 1 - liveAbsIndex,
-              0
-            );
+          if (liveAbsIndex !== undefined && distanceFromBottom !== undefined) {
             Sentry.addBreadcrumb({
               category: 'timeline.load',
               message: 'Notification jump evaluated live timeline',
@@ -180,7 +263,7 @@ const useEventTimelineLoader = (
               roomId: room.roomId,
               jumpMode,
               resolution,
-              hasLocalEventTimeline: !!localEventTimeline,
+              hasLocalEventTimeline: !!getEventTimeline(room, eventId),
             },
             level: 'info',
           });
@@ -255,9 +338,12 @@ const useEventTimelineLoader = (
           level: 'info',
         });
 
-        const targetIndex = target === 'next' ? absIndex + 1 : absIndex;
-        const targetEventId =
-          getTimelineEventAtIndex(linkedTimelines, targetIndex)?.getId() ?? eventId;
+        const { targetIndex, targetEventId } = getJumpTarget(
+          linkedTimelines,
+          eventId,
+          absIndex,
+          target
+        );
 
         onLoad(targetEventId, linkedTimelines, targetIndex, {
           align: 'center',
@@ -301,18 +387,14 @@ const useTimelinePagination = (
       if (fetchingRef.current[directionKey]) return;
 
       const { linkedTimelines: lTimelines } = timelineRef.current;
-      const timelineToPaginate = backwards ? lTimelines[0] : lTimelines.at(-1);
+      const timelineToPaginate = getPaginationTimelineEdge(lTimelines, backwards);
       if (!timelineToPaginate) return;
 
       const paginationToken = timelineToPaginate.getPaginationToken(
         backwards ? Direction.Backward : Direction.Forward
       );
 
-      if (
-        !paginationToken &&
-        getTimelinesEventsCount(lTimelines) !==
-          getTimelinesEventsCount(getLinkedTimelines(timelineToPaginate))
-      ) {
+      if (shouldRecalibratePagination(lTimelines, timelineToPaginate, paginationToken)) {
         recalibratePagination(lTimelines);
         return;
       }
@@ -383,18 +465,12 @@ const useTimelinePagination = (
           const fetched = countAfter - countBefore;
 
           if (fetched > 0 && fetched < 5) {
-            const checkTimeline = backwards
-              ? freshLTimelines[0]
-              : freshLTimelines[freshLTimelines.length - 1];
+            const checkTimeline = getPaginationTimelineEdge(freshLTimelines, backwards);
             if (!checkTimeline) return;
             const checkDirection = backwards ? Direction.Backward : Direction.Forward;
             const checkLinkedTimelines = getLinkedTimelines(checkTimeline);
-            const tokenTimeline = backwards
-              ? checkLinkedTimelines[0]
-              : checkLinkedTimelines[checkLinkedTimelines.length - 1];
-            const stillHasToken =
-              typeof tokenTimeline?.getPaginationToken(checkDirection) === 'string';
-            if (stillHasToken) {
+            const tokenTimeline = getPaginationTimelineEdge(checkLinkedTimelines, backwards);
+            if (shouldContinueSparsePagination(fetched, tokenTimeline, checkDirection)) {
               // Release lock so inner paginate can claim it, then mark continuing
               // so the finally block below does NOT reset it after inner claims.
               fetchingRef.current[directionKey] = false;
@@ -938,31 +1014,16 @@ export function useTimelineSync({
       if (eventId) {
         if (waitingForEventContext || preservingEventContext) return;
       }
-      // Only update if the live timeline actually has events now — prevents
-      // spurious updates that would reset scroll position during normal sync.
-      const liveEvents = getLiveTimeline(room).getEvents();
-      if (liveEvents.length === 0) return;
-      // After PTR, React's timeline state may reference the correct live timeline
-      // object, but with eventsLength still at 0 (before the re-render). Detect this
-      // by comparing the SDK's current event count with React's last known count.
-      const reactEventsLength = eventsLengthRef.current;
-      const currentLiveTimeline = getLiveTimeline(room);
-      // linkedTimelines is ordered oldest→newest, so live timeline is last
-      const isStale =
-        timeline.linkedTimelines.length === 0 ||
-        timeline.linkedTimelines[timeline.linkedTimelines.length - 1] !== currentLiveTimeline;
-
-      // Calculate actual event count from SDK's current timeline chain to detect
-      // if events were appended without changing the timeline object reference
-      const currentSdkEventCount = getTimelinesEventsCount(getLinkedTimelines(currentLiveTimeline));
-      const eventCountChanged = currentSdkEventCount !== reactEventsLength;
-
-      const needsUpdate = reactEventsLength === 0 || isStale || eventCountChanged;
-      if (!needsUpdate) return;
+      const refreshState = getSdkTimelineRefreshState({
+        linkedTimelines: timeline.linkedTimelines,
+        reactEventsLength: eventsLengthRef.current,
+        liveTimeline: getLiveTimeline(room),
+      });
+      if (refreshState.sdkEventsLength === 0 || !refreshState.needsRefresh) return;
       // Force timeline update with fresh SDK state. This ensures the React
       // timeline state picks up the newly-injected events after PTR or when
       // the SDK appends events (e.g., room subscription expanded timeline_limit).
-      setTimeline({ linkedTimelines: getLinkedTimelines(currentLiveTimeline) });
+      setTimeline({ linkedTimelines: refreshState.currentSdkLinkedTimelines });
     };
     mx.on(ClientEvent.Room, handleRoomInitialized);
     return () => {
@@ -1004,34 +1065,13 @@ export function useTimelineSync({
         if (waitingForEventContext || preservingEventContext) return;
       }
 
-      // Check if SDK has events but React timeline state is empty or stale
-      const liveTimeline = getLiveTimeline(room);
-      const sdkEvents = liveTimeline.getEvents();
-      if (sdkEvents.length === 0) return; // No events to show
-
-      const linkedTimelines = timeline.linkedTimelines;
-      const reactHasEvents =
-        linkedTimelines.length > 0 && getTimelinesEventsCount(linkedTimelines) > 0;
-
-      // If React state is empty but SDK has events, force refresh
-      if (!reactHasEvents) {
-        setTimeline({ linkedTimelines: getLinkedTimelines(liveTimeline) });
-        return;
-      }
-
-      // If React state has events, check if it's stale (references old timeline)
-      const currentLiveTimeline = linkedTimelines[linkedTimelines.length - 1];
-      if (currentLiveTimeline !== liveTimeline) {
-        setTimeline({ linkedTimelines: getLinkedTimelines(liveTimeline) });
-        return;
-      }
-
-      // Check if event count is out of sync (SDK has more events than React knows about)
-      const sdkEventCount = getTimelinesEventsCount(getLinkedTimelines(liveTimeline));
-      const reactEventCount = eventsLengthRef.current;
-      if (sdkEventCount > reactEventCount) {
-        setTimeline({ linkedTimelines: getLinkedTimelines(liveTimeline) });
-      }
+      const refreshState = getSdkTimelineRefreshState({
+        linkedTimelines: timeline.linkedTimelines,
+        reactEventsLength: eventsLengthRef.current,
+        liveTimeline: getLiveTimeline(room),
+      });
+      if (refreshState.sdkEventsLength === 0 || !refreshState.needsRefresh) return;
+      setTimeline({ linkedTimelines: refreshState.currentSdkLinkedTimelines });
     };
 
     const unsubscribe = appEvents.onVisibilityChange(handleVisibilityChange);
