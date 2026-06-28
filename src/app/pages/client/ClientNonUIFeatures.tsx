@@ -88,10 +88,7 @@ import { lastVisitedRoomIdAtom } from '$state/room/lastRoom';
 import { useSettingsSyncEffect } from '$hooks/useSettingsSync';
 import { usePresenceSyncEffect } from '$hooks/usePresenceSync';
 import { usePresenceAutoIdle } from '$hooks/usePresenceAutoIdle';
-import {
-  shouldEnableNotificationPusher,
-  useNotificationDeviceScope,
-} from '$hooks/useNotificationDeviceScope';
+import { useNotificationDeviceScope } from '$hooks/useNotificationDeviceScope';
 import { useInitBookmarks } from '$features/bookmarks/useInitBookmarks';
 import { useReminderSync } from '$features/bookmarks/useReminderSync';
 import { clearLaunchContext } from '../../../launch-context-persistence';
@@ -119,6 +116,7 @@ import {
   useVisibilityAndPageShowListeners,
   useVisibilityFocusBlurPageShowListeners,
 } from './runtimeListeners';
+import { resolveWebPushStartupReconcilerPolicy } from './webPushStartupReconcilerPolicy';
 const pushRelayLog = createDebugLogger('push-relay');
 const transportLog = createDebugLogger('push-transport');
 function clearMediaSessionQuickly(): void {
@@ -190,6 +188,7 @@ function WebPushStartupReconciler() {
   const clientConfig = useClientConfig();
   const [usePushNotifications] = useSetting(settingsAtom, 'usePushNotifications');
   const pushSubscription = useAtom(pushSubscriptionAtom);
+  const isMobile = mobileOrTablet();
   const [visibilityState, setVisibilityState] = useState<DocumentVisibilityState>(
     document.visibilityState
   );
@@ -197,12 +196,16 @@ function WebPushStartupReconciler() {
     publishLease: false,
   });
   const reconciledKeyRef = useRef<string | null>(null);
-  const shouldEnablePusher = shouldEnableNotificationPusher(
-    visibilityState === 'visible',
-    mobileOrTablet(),
+  const webPushStartupPolicy = resolveWebPushStartupReconcilerPolicy({
+    userId: mx.getUserId() ?? null,
+    usePushNotifications,
+    isTauriRuntime: isTauri(),
+    webPushSupported: isWebPushSupported(),
+    visibilityState,
+    isMobile,
     notificationDeviceScope,
-    isActiveNotificationClient
-  );
+    isActiveNotificationClient,
+  });
   const syncVisibilityState = useCallback(
     () => setVisibilityState(document.visibilityState),
     [setVisibilityState]
@@ -213,40 +216,24 @@ function WebPushStartupReconciler() {
   });
 
   useEffect(() => {
-    if (!usePushNotifications || isTauri()) return;
-    if (!isWebPushSupported()) return;
+    if (!webPushStartupPolicy.shouldReconcile || !webPushStartupPolicy.reconcileKey) return;
+    if (reconciledKeyRef.current === webPushStartupPolicy.reconcileKey) return;
 
-    const userId = mx.getUserId() ?? null;
-    if (!userId) return;
-    const reconcileKey = [
-      userId,
-      visibilityState,
-      shouldEnablePusher ? 'enabled' : 'disabled',
-    ].join(':');
-    if (reconciledKeyRef.current === reconcileKey) return;
-
-    reconciledKeyRef.current = reconcileKey;
+    reconciledKeyRef.current = webPushStartupPolicy.reconcileKey;
     void reconcilePushNotifications(
       mx,
       clientConfig,
-      shouldEnablePusher,
+      webPushStartupPolicy.shouldEnablePusher,
       usePushNotifications,
       pushSubscription
     ).catch((error) => {
       reconciledKeyRef.current = null;
       transportLog.warn('notification', 'Web push startup reconciliation failed', {
-        userId,
+        userId: mx.getUserId() ?? null,
         error: error instanceof Error ? error.message : String(error),
       });
     });
-  }, [
-    mx,
-    clientConfig,
-    pushSubscription,
-    usePushNotifications,
-    shouldEnablePusher,
-    visibilityState,
-  ]);
+  }, [mx, clientConfig, pushSubscription, usePushNotifications, webPushStartupPolicy]);
 
   return null;
 }
