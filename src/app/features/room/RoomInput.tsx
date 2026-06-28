@@ -1962,8 +1962,12 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         if (replyMentions) content['m.mentions'] = replyMentions;
       }
 
-      await mx.sendMessage(roomId, threadRootId ?? null, content);
-      setReplyDraft(replyDraftBase);
+      try {
+        await mx.sendMessage(roomId, threadRootId ?? null, content);
+        setReplyDraft(replyDraftBase);
+      } catch {
+        setSendError('Failed to send GIF. Please try again.');
+      }
     };
 
     return (

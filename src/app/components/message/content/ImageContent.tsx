@@ -182,10 +182,12 @@ export const ImageContent = as<'div', ImageContentProps>(
         ? info.size
         : mediaMetadata?.byteSize;
     const favoritedContent = useFavoriteGifs();
+    const favoriteGifsRef = useRef(favoritedContent.gifs);
     const [favorited, setFavorited] = useState(
       favoritedContent.gifs.find((v) => v.url == url) != undefined
     );
     useEffect(() => {
+      favoriteGifsRef.current = favoritedContent.gifs;
       setFavorited(favoritedContent.gifs.some((v) => v.url === url));
     }, [favoritedContent, url]);
     const [srcState, loadSrc, setSrcState] = useAsyncCallback(
@@ -569,10 +571,10 @@ export const ImageContent = as<'div', ImageContentProps>(
                       if (srcState.status === AsyncStatus.Success) {
                         if (!favorited) {
                           setFavorited(true);
-                          await mx
-                            .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
-                              gifs: [
-                                ...favoritedContent.gifs,
+                          const nextFavorites = favoriteGifsRef.current.some((v) => v.url === url)
+                            ? favoriteGifsRef.current
+                            : [
+                                ...favoriteGifsRef.current,
                                 {
                                   id: url,
                                   title: body,
@@ -580,16 +582,28 @@ export const ImageContent = as<'div', ImageContentProps>(
                                   width: imageW,
                                   height: imageH,
                                 },
-                              ],
-                            })
-                            .catch(() => setFavorited(false));
-                        } else {
-                          setFavorited(false);
+                              ];
+                          favoriteGifsRef.current = nextFavorites;
                           await mx
                             .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
-                              gifs: favoritedContent.gifs.filter((v) => v.url != url),
+                              gifs: nextFavorites,
                             })
-                            .catch(() => setFavorited(true));
+                            .catch(() => {
+                              favoriteGifsRef.current = favoritedContent.gifs;
+                              setFavorited(false);
+                            });
+                        } else {
+                          setFavorited(false);
+                          const nextFavorites = favoriteGifsRef.current.filter((v) => v.url != url);
+                          favoriteGifsRef.current = nextFavorites;
+                          await mx
+                            .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
+                              gifs: nextFavorites,
+                            })
+                            .catch(() => {
+                              favoriteGifsRef.current = favoritedContent.gifs;
+                              setFavorited(true);
+                            });
                         }
                       }
                     }}
