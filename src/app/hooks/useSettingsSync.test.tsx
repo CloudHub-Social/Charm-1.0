@@ -520,6 +520,34 @@ describe('useSettingsSyncEffect — echo-token loop prevention', () => {
     expect(store.get(settingsAtom).twitterEmoji).toBe(false);
   });
 
+  it('drops a pending echo token when the active account changes', () => {
+    const store = makeStore({ settingsSyncEnabled: true, twitterEmoji: true });
+    const hook = renderHook(() => useSettingsSyncEffect(), { wrapper: makeWrapper(store) });
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    const uploadedContent: Record<string, unknown> | undefined =
+      mockMx.setAccountData.mock.calls[0]?.[1];
+    const staleEchoToken = uploadedContent?.synctoken as string;
+
+    mockMx.getUserId.mockReturnValue('@bob:example.com');
+    hook.rerender();
+
+    act(() => {
+      callbackHolder.current?.(
+        makeSableSettingsEvent({
+          v: SETTINGS_SYNC_VERSION,
+          synctoken: staleEchoToken,
+          settings: { twitterEmoji: false },
+        })
+      );
+    });
+
+    expect(store.get(settingsAtom).twitterEmoji).toBe(false);
+  });
+
   it('applies explicit remote theme clears from another device', () => {
     const store = makeStore({
       settingsSyncEnabled: true,
