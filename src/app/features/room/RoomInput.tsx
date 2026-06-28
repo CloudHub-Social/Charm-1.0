@@ -206,7 +206,7 @@ import {
   getStructuredMarkdownAction,
   shouldInsertBreakAfterStructuredReplacement,
 } from './composerInputAssist';
-import { useClientConfig } from '$hooks/useClientConfig';
+import { gifSearchConfigured, useClientConfig } from '$hooks/useClientConfig';
 import { GifIcon } from '@phosphor-icons/react';
 
 // Returns the event ID of the most recent non-reaction/non-edit event in a thread,
@@ -339,6 +339,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const draftKey = threadRootId ?? roomId;
     const mx = useMatrixClient();
     const clientConfig = useClientConfig();
+    const gifsEnabled = gifSearchConfigured(clientConfig);
     const useAuthentication = useMediaAuthentication();
     const [enterForNewline] = useSetting(settingsAtom, 'enterForNewline');
     const [editorOldAddFile] = useSetting(settingsAtom, 'editorOldAddFile');
@@ -1907,6 +1908,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     };
 
     const handleGifSelect = async (gif: GifData) => {
+      if (!gifsEnabled) return;
+
       let url = gif.url.startsWith('mxc://')
         ? gif.url
         : `mxc://${clientConfig.gifs?.proxyUrl ?? ''}/${toMatrixMediaId(
@@ -1914,7 +1917,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             'klipy_'
           )}`;
 
-      const content: RoomMessageEventContent & ReplyEventContent & IContent = {
+      const content: RoomMessageEventContent & IContent = {
         body: gif.title,
         url: url,
         msgtype: MsgType.Image,
@@ -1925,23 +1928,23 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         },
       };
 
-      // Handle replies if there's a reply draft
-      if (replyDraft) {
-        content['m.relates_to'] = {
-          'm.in_reply_to': {
-            event_id: replyDraft.eventId,
-          },
-        };
-        if (replyDraft.relation?.rel_type === RelationType.Thread) {
-          content['m.relates_to'].event_id = replyDraft.relation.event_id;
-          content['m.relates_to'].rel_type = RelationType.Thread;
-          content['m.relates_to'].is_falling_back = false;
-        }
+      const perMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
+      if (perMessageProfile) {
+        content[prefix.MATRIX_UNSTABLE_PER_MESSAGE_PROFILE_PROPERTY_NAME] =
+          convertPerMessageProfileToBeeperFormat(perMessageProfile, false);
       }
 
-      // Send the gif as sticker event.
-      await mx.sendEvent(roomId, EventType.RoomMessage, content);
-      setReplyDraft(undefined);
+      if (replyDraft) {
+        const replyContent = getReplyContent(replyDraft, room);
+        if (Object.keys(replyContent).length > 0) {
+          content['m.relates_to'] = replyContent as RoomMessageEventContent['m.relates_to'];
+        }
+        const replyMentions = getReplyMentionData(replyDraft, replyEvent, silentReply);
+        if (replyMentions) content['m.mentions'] = replyMentions;
+      }
+
+      await mx.sendMessage(roomId, threadRootId ?? null, content);
+      setReplyDraft(replyDraftBase);
     };
 
     return (
@@ -2435,20 +2438,22 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   ) : undefined
                 }
               >
-                <IconButton
-                  aria-pressed={emojiBoardTab === EmojiBoardTab.Gif}
-                  onPointerDownCapture={prepareComposerOverlayTrigger}
-                  onClick={() => void openEmojiBoard(EmojiBoardTab.Gif)}
-                  variant="SurfaceVariant"
-                  size="300"
-                  radii="300"
-                  title="open GIF picker"
-                  aria-label="Open GIF picker"
-                >
-                  {composerIcon(GifIcon, {
-                    weight: emojiBoardTab === EmojiBoardTab.Gif ? 'fill' : 'regular',
-                  })}
-                </IconButton>
+                {gifsEnabled && (
+                  <IconButton
+                    aria-pressed={emojiBoardTab === EmojiBoardTab.Gif}
+                    onPointerDownCapture={prepareComposerOverlayTrigger}
+                    onClick={() => void openEmojiBoard(EmojiBoardTab.Gif)}
+                    variant="SurfaceVariant"
+                    size="300"
+                    radii="300"
+                    title="open GIF picker"
+                    aria-label="Open GIF picker"
+                  >
+                    {composerIcon(GifIcon, {
+                      weight: emojiBoardTab === EmojiBoardTab.Gif ? 'fill' : 'regular',
+                    })}
+                  </IconButton>
+                )}
                 {!hideStickerBtn && (
                   <IconButton
                     aria-pressed={emojiBoardTab === EmojiBoardTab.Sticker}

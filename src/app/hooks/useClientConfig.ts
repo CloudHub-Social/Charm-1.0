@@ -99,6 +99,8 @@ export type ExperimentSelection = {
   inExperiment: boolean;
 };
 
+export const GIFS_PLACEHOLDER_API_KEY = 'SET_YOUR_TOKEN_HERE';
+
 const ClientConfigContext = createContext<ClientConfig | null>(null);
 
 export const ClientConfigProvider = ClientConfigContext.Provider;
@@ -199,4 +201,13 @@ export const clientAllowedServer = (clientConfig: ClientConfig, server: string):
   if (allowCustomHomeservers) return true;
 
   return homeserverList?.includes(server) === true;
+};
+
+export const gifSearchConfigured = (clientConfig: ClientConfig): boolean => {
+  const proxyUrl = clientConfig.gifs?.proxyUrl?.trim();
+  const klipyApiKey = clientConfig.gifs?.klipyApiKey?.trim();
+
+  return Boolean(
+    proxyUrl && klipyApiKey && klipyApiKey.length > 0 && klipyApiKey !== GIFS_PLACEHOLDER_API_KEY
+  );
 };

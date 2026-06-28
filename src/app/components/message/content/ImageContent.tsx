@@ -554,7 +554,7 @@ export const ImageContent = as<'div', ImageContentProps>(
                 >
                   {menuIcon(blurred ? Eye : EyeSlash)}
                 </MenuItem>
-                {info?.mimetype == 'image/gif' && (
+                {info?.mimetype == 'image/gif' && !encInfo && (
                   <MenuItem
                     size="300"
                     radii="0"
