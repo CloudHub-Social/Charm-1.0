@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createMessageNotificationLifecycleState,
+  getMessageNotificationLifecycleState,
   resolveMessageNotificationLifecycleState,
 } from './messageNotificationLifecycle';
 
@@ -38,6 +39,40 @@ describe('messageNotificationLifecycle', () => {
     ).toEqual(arrivalState);
   });
 
+  it('stores encrypted arrival state before a suppression return so later replay stays suppressed', () => {
+    const lifecycleStateMap = new Map();
+    const arrivalState = createMessageNotificationLifecycleState({
+      notificationSelected: true,
+      tabVisible: true,
+      windowFocused: true,
+    });
+
+    expect(
+      getMessageNotificationLifecycleState({
+        currentState: arrivalState,
+        eventId: '$event',
+        isEncryptedArrival: true,
+        lifecycleStateMap,
+      })
+    ).toEqual(arrivalState);
+    expect(lifecycleStateMap.get('$event')).toEqual(arrivalState);
+
+    const replayState = createMessageNotificationLifecycleState({
+      notificationSelected: false,
+      tabVisible: false,
+      windowFocused: false,
+    });
+
+    expect(
+      getMessageNotificationLifecycleState({
+        currentState: replayState,
+        eventId: '$event',
+        isEncryptedArrival: false,
+        lifecycleStateMap,
+      })
+    ).toEqual(arrivalState);
+  });
+
   it('falls back to the current lifecycle state for unencrypted events', () => {
     const currentState = createMessageNotificationLifecycleState({
       notificationSelected: false,
@@ -51,5 +86,24 @@ describe('messageNotificationLifecycle', () => {
         currentState,
       })
     ).toEqual(currentState);
+  });
+
+  it('does not store lifecycle state for unencrypted arrivals', () => {
+    const lifecycleStateMap = new Map();
+    const currentState = createMessageNotificationLifecycleState({
+      notificationSelected: false,
+      tabVisible: true,
+      windowFocused: false,
+    });
+
+    expect(
+      getMessageNotificationLifecycleState({
+        currentState,
+        eventId: '$event',
+        isEncryptedArrival: false,
+        lifecycleStateMap,
+      })
+    ).toEqual(currentState);
+    expect(lifecycleStateMap.has('$event')).toBe(false);
   });
 });

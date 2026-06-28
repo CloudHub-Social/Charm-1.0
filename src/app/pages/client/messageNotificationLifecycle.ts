@@ -3,6 +3,8 @@ export type MessageNotificationLifecycleState = {
   tabVisible: boolean;
 };
 
+export type MessageNotificationLifecycleStateMap = Map<string, MessageNotificationLifecycleState>;
+
 export const createMessageNotificationLifecycleState = ({
   notificationSelected,
   tabVisible,
@@ -23,3 +25,25 @@ export const resolveMessageNotificationLifecycleState = ({
   capturedState?: MessageNotificationLifecycleState;
   currentState: MessageNotificationLifecycleState;
 }): MessageNotificationLifecycleState => capturedState ?? currentState;
+
+export const getMessageNotificationLifecycleState = ({
+  currentState,
+  eventId,
+  isEncryptedArrival,
+  lifecycleStateMap,
+}: {
+  currentState: MessageNotificationLifecycleState;
+  eventId?: string | null;
+  isEncryptedArrival: boolean;
+  lifecycleStateMap: MessageNotificationLifecycleStateMap;
+}): MessageNotificationLifecycleState => {
+  const capturedState = eventId ? lifecycleStateMap.get(eventId) : undefined;
+  if (!capturedState && eventId && isEncryptedArrival) {
+    lifecycleStateMap.set(eventId, currentState);
+  }
+
+  return resolveMessageNotificationLifecycleState({
+    capturedState,
+    currentState,
+  });
+};

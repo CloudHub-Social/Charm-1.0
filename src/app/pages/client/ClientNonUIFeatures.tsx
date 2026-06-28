@@ -116,7 +116,7 @@ import {
 } from './messageNotificationPolicy';
 import {
   createMessageNotificationLifecycleState,
-  resolveMessageNotificationLifecycleState,
+  getMessageNotificationLifecycleState,
 } from './messageNotificationLifecycle';
 import {
   useServiceWorkerMessageListener,
@@ -524,6 +524,7 @@ function MessageNotifications() {
       if (!isActiveNotificationClient) return;
 
       const eventId = mEvent.getId();
+      const isEncryptedArrival = mEvent.getType() === 'm.room.encrypted' && mEvent.isEncrypted();
       // Record event arrival time once per eventId (re-entry via handleDecrypted must not reset it)
       if (eventId && !notifyTimerMap.has(eventId)) {
         notifyTimerMap.set(eventId, performance.now());
@@ -533,9 +534,11 @@ function MessageNotifications() {
         tabVisible: document.visibilityState === 'visible',
         windowFocused: document.hasFocus(),
       });
-      const lifecycleState = resolveMessageNotificationLifecycleState({
-        capturedState: eventId ? encryptedArrivalLifecycle.get(eventId) : undefined,
+      const lifecycleState = getMessageNotificationLifecycleState({
         currentState: currentLifecycleState,
+        eventId,
+        isEncryptedArrival,
+        lifecycleStateMap: encryptedArrivalLifecycle,
       });
       if (lifecycleState.suppressForFocusedNotification) return;
 
@@ -551,11 +554,7 @@ function MessageNotifications() {
       // For encrypted events that haven't been decrypted yet, wait for decryption
       // before processing the notification. The SDK's Timeline re-emission after
       // decryption comes with data.liveEvent=false which would wrongly block it.
-      if (mEvent.getType() === 'm.room.encrypted' && mEvent.isEncrypted()) {
-        if (eventId) {
-          encryptedArrivalLifecycle.set(eventId, lifecycleState);
-        }
-
+      if (isEncryptedArrival) {
         const handleDecrypted = () => {
           // After decryption, run the notification logic with the decrypted event
           handleTimelineEvent(mEvent, room, undefined, true, data);
