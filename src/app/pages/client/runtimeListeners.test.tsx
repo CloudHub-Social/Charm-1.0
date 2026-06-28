@@ -133,4 +133,27 @@ describe('runtimeListeners', () => {
     window.dispatchEvent(new PageTransitionEvent('pageshow'));
     expect(postVisibility).toHaveBeenCalledTimes(4);
   });
+
+  it('posts a terminal hidden state when the heartbeat owner unmounts', () => {
+    const postVisibility = vi.fn<(visible?: boolean) => void>();
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'visible',
+    });
+    Object.defineProperty(document, 'hasFocus', {
+      configurable: true,
+      value: vi.fn<() => boolean>(() => true),
+    });
+
+    const { unmount } = renderHook(() =>
+      useServiceWorkerVisibilityHeartbeat({ postVisibility, intervalMs: 1000 })
+    );
+
+    expect(postVisibility).toHaveBeenNthCalledWith(1);
+
+    unmount();
+
+    expect(postVisibility).toHaveBeenNthCalledWith(2, false);
+  });
 });
