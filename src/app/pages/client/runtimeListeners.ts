@@ -14,6 +14,12 @@ type VisibilityFocusBlurPageShowOptions = {
   onPageShow: () => void;
 };
 
+type ServiceWorkerVisibilityHeartbeatOptions = {
+  enabled?: boolean;
+  postVisibility: () => void;
+  intervalMs?: number;
+};
+
 export function useServiceWorkerMessageListener(
   handler: (event: MessageEvent) => void,
   enabled = true
@@ -67,4 +73,58 @@ export function useVisibilityFocusBlurPageShowListeners({
       window.removeEventListener('pageshow', onPageShow);
     };
   }, [enabled, onBlur, onFocus, onPageShow, onVisibilityChange]);
+}
+
+export function useServiceWorkerVisibilityHeartbeat({
+  enabled = true,
+  postVisibility,
+  intervalMs = 10_000,
+}: ServiceWorkerVisibilityHeartbeatOptions): void {
+  useEffect(() => {
+    if (!enabled) return undefined;
+
+    let heartbeatIntervalId: number | undefined;
+
+    const stopHeartbeat = () => {
+      if (heartbeatIntervalId === undefined) return;
+      window.clearInterval(heartbeatIntervalId);
+      heartbeatIntervalId = undefined;
+    };
+
+    const restartHeartbeat = () => {
+      stopHeartbeat();
+      postVisibility();
+      if (document.visibilityState === 'visible' && document.hasFocus()) {
+        heartbeatIntervalId = window.setInterval(postVisibility, intervalMs);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        restartHeartbeat();
+        return;
+      }
+      postVisibility();
+      stopHeartbeat();
+    };
+
+    const handleFocus = () => restartHeartbeat();
+    const handleBlur = () => postVisibility();
+    const handlePageShow = () => restartHeartbeat();
+
+    handleVisibilityChange();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('pageshow', handlePageShow);
+
+    return () => {
+      stopHeartbeat();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('pageshow', handlePageShow);
+    };
+  }, [enabled, intervalMs, postVisibility]);
 }
