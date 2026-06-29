@@ -58,7 +58,8 @@ import { gifSearchConfigured, useClientConfig } from '$hooks/useClientConfig';
 import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
 import { hasControllingServiceWorker } from '$utils/platform';
 
-const ANIMATED_IMAGE_MIME_TYPES = new Set(['image/gif', 'image/apng']);
+// image/webp is included because Klipy proxy GIFs are served as animated WebP.
+const ANIMATED_IMAGE_MIME_TYPES = new Set(['image/gif', 'image/apng', 'image/webp']);
 
 const isAnimatedImageContent = (
   mimeType: string | undefined,

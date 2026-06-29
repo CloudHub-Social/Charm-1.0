@@ -78,7 +78,7 @@ import { plainToEditorInput } from '$components/editor/input';
 import { htmlToMarkdown } from '$plugins/markdown';
 import type { GifData } from '$components/emoji-board';
 import { EmojiBoard, EmojiBoardTab } from '$components/emoji-board';
-import { getKlipyRemoteId, normalizeGifProxyHost } from '$utils/gifs';
+import { getKlipyRemoteId, isKlipyProxyMxc, normalizeGifProxyHost } from '$utils/gifs';
 import type { TUploadContent } from '$utils/matrix';
 import { encryptFile, getImageInfo, mxcUrlToHttp, toggleReaction } from '$utils/matrix';
 import { useTypingStatusUpdater } from '$hooks/useTypingStatusUpdater';
@@ -2117,7 +2117,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       const gifUrl = gif.url.trim();
       const gifProxyHost = normalizeGifProxyHost(clientConfig.gifs?.proxyUrl);
       let url = gifUrl;
-      const isKlipyProxy = !gifUrl.startsWith('mxc://');
+      // Also treat favorited Klipy mxc:// URLs as Klipy proxy — they still
+      // point to WebP media on the proxy host and need the same metadata.
+      const isKlipyProxy =
+        !gifUrl.startsWith('mxc://') || isKlipyProxyMxc(gifUrl, clientConfig.gifs?.proxyUrl);
       if (isKlipyProxy) {
         const remoteId = getKlipyRemoteId(gifUrl);
 
