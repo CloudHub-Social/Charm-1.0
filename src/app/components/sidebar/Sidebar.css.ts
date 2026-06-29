@@ -154,7 +154,7 @@ export const SidebarItemBottom = recipe({
           background: 'CurrentColor',
           opacity: 0,
           pointerEvents: 'none',
-          transition: 'width 200ms linear, opacity 150ms ease',
+          transition: 'width 200ms linear, height 200ms linear, opacity 150ms ease',
         },
         '&:hover::before': {
           opacity: 1,
