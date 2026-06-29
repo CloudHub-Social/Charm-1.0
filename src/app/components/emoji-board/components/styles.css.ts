@@ -30,6 +30,9 @@ export const Base = recipe({
     isGifLayout: {
       true: {
         maxWidth: toRem(480),
+        // On mobile the GIF board uses a 16px viewport gutter (vs 32px for emoji).
+        // Override the base width so the CSS matches the JS positioning calculation.
+        width: `calc(100vw - ${config.space.S400})`,
         height: toRem(520),
         borderRadius: config.radii.R500,
         boxShadow: config.shadow.E300,
@@ -48,7 +51,10 @@ export const GifHeaderShell = style({
 });
 
 export const MobileSheetHandleShell = style({
-  paddingBottom: config.space.S100,
+  paddingTop: config.space.S100,
+  paddingBottom: config.space.S200,
+  touchAction: 'none',
+  userSelect: 'none',
 });
 
 export const MobileSheetHandle = style([
@@ -63,6 +69,7 @@ export const MobileSheetHandle = style([
     margin: '0 auto',
     cursor: 'ns-resize',
     border: 'none',
+    touchAction: 'none',
   },
 ]);
 

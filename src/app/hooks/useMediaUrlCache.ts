@@ -74,7 +74,11 @@ export const useMediaUrlCache = () => {
           useAuthentication
         );
 
-        cacheRef.current.set(key, httpUrl);
+        // Don't cache null — a transient failure (e.g. client not yet initialized)
+        // should be retried on the next render rather than permanently blocked.
+        if (httpUrl !== null) {
+          cacheRef.current.set(key, httpUrl);
+        }
         return httpUrl;
       },
 

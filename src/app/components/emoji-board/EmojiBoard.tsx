@@ -808,6 +808,7 @@ export function EmojiBoard({
     startY: number;
     startHeight: number;
   } | null>(null);
+  const activeTabRef = useRef(activeTab);
 
   const previewAtom = useMemo(
     () =>
@@ -884,6 +885,9 @@ export function EmojiBoard({
   const gifSearchDebounceRef = useRef<number>();
   const mobileSheetPointerMoveRef = useRef<((evt: PointerEvent) => void) | null>(null);
   const mobileSheetPointerUpRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
 
   const searchedItems = emojiResult?.items.slice(0, 100);
   const klipyApiKey = clientConfig.gifs?.klipyApiKey ?? '';
@@ -1118,7 +1122,8 @@ export function EmojiBoard({
 
       evt.preventDefault();
       const currentHeight =
-        mobileSheetHeight ?? getMobileSheetHeights(window.innerHeight, activeTab).initial;
+        mobileSheetHeight ??
+        getMobileSheetHeights(window.innerHeight, activeTabRef.current).initial;
       mobileSheetDragRef.current = {
         currentHeight,
         startY: evt.clientY,
@@ -1129,7 +1134,7 @@ export function EmojiBoard({
         const dragState = mobileSheetDragRef.current;
         if (!dragState) return;
 
-        const heights = getMobileSheetHeights(window.innerHeight, activeTab);
+        const heights = getMobileSheetHeights(window.innerHeight, activeTabRef.current);
         const nextHeight = dragState.startHeight - (moveEvt.clientY - dragState.startY);
         dragState.currentHeight = Math.max(heights.min, Math.min(heights.max, nextHeight));
         setMobileSheetHeight(dragState.currentHeight);
@@ -1145,7 +1150,7 @@ export function EmojiBoard({
 
         if (!dragState) return;
 
-        const heights = getMobileSheetHeights(window.innerHeight, activeTab);
+        const heights = getMobileSheetHeights(window.innerHeight, activeTabRef.current);
         const current = dragState.currentHeight;
         const midpoint = (heights.min + heights.max) / 2;
         setMobileSheetHeight(current >= midpoint ? heights.max : heights.min);
@@ -1156,7 +1161,7 @@ export function EmojiBoard({
       window.addEventListener('pointermove', handlePointerMove);
       window.addEventListener('pointerup', handlePointerUp, { once: true });
     },
-    [activeTab, isMobileSheet, mobileSheetHeight]
+    [isMobileSheet, mobileSheetHeight]
   );
 
   useEffect(
