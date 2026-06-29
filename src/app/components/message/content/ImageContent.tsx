@@ -48,7 +48,7 @@ import { getScopedMediaCacheKey } from '$utils/mediaTransport';
 import { storeMediaMetadataForBlob } from '$utils/mediaMetadata';
 import { ModalWide } from '$styles/Modal.css';
 import { validBlurHash } from '$utils/blurHash';
-import { isSupportedGifFavoriteUrl } from '$utils/gifs';
+import { isKlipyProxyMxc, isSupportedGifFavoriteUrl } from '$utils/gifs';
 import * as css from './style.css';
 import {
   MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS,
@@ -258,6 +258,7 @@ export const ImageContent = as<'div', ImageContentProps>(
     const mx = useMatrixClient();
     const useAuthentication = useMediaAuthentication();
     const mediaUrlCache = useMediaUrlCacheContext();
+    const clientConfig = useClientConfig();
     const blurHash = validBlurHash(info?.[MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME]);
 
     const mediaUseAuthentication = useAuthentication;
@@ -296,6 +297,7 @@ export const ImageContent = as<'div', ImageContentProps>(
       !encInfo &&
       allowDirectAnimatedImage &&
       isAnimatedImageContent(mimeType, body, url) &&
+      !isKlipyProxyMxc(url, clientConfig.gifs?.proxyUrl) &&
       (!mediaUseAuthentication || hasControllingServiceWorker());
     const [srcState, loadSrc, setSrcState] = useAsyncCallback(
       useCallback(async () => {
