@@ -21,9 +21,11 @@ export function MobileFriendlyClientNav({ children }: MobileFriendlyClientNavPro
   const isMobile = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
   const atSectionRoot = !!(homeMatch || directMatch || spaceMatch || exploreMatch || inboxMatch);
 
-  // Keep the nav mounted so it doesn't need to remount when returning from a room.
-  // CSS-hide rather than unmount to avoid a blank-flash during navigation on mobile.
-  return <div style={isMobile && !atSectionRoot ? HIDDEN_STYLE : CONTENTS_STYLE}>{children}</div>;
+  // Desktop: return children unwrapped so we never introduce display:contents there.
+  if (!isMobile) return children;
+  // Mobile: keep the nav mounted so returning from a room doesn't cause a remount.
+  // CSS-hide rather than unmount to avoid a blank-flash during navigation.
+  return <div style={atSectionRoot ? CONTENTS_STYLE : HIDDEN_STYLE}>{children}</div>;
 }
 
 type MobileFriendlyPageNavProps = {
@@ -40,7 +42,9 @@ export function MobileFriendlyPageNav({ path, children }: MobileFriendlyPageNavP
 
   const isMobile = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
 
-  // Keep the room-list nav mounted while in a room so it's ready instantly when
-  // the user swipes back. CSS-hide rather than returning null avoids a blank-flash.
-  return <div style={isMobile && !exactPath ? HIDDEN_STYLE : CONTENTS_STYLE}>{children}</div>;
+  // Desktop: return children unwrapped so we never introduce display:contents there.
+  if (!isMobile) return children;
+  // Mobile: keep the room-list nav mounted while in a room so it's ready instantly
+  // when the user swipes back. CSS-hide rather than returning null avoids a blank-flash.
+  return <div style={exactPath ? CONTENTS_STYLE : HIDDEN_STYLE}>{children}</div>;
 }
