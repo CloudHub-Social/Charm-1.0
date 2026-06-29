@@ -1,5 +1,13 @@
 import type { KeyboardEventHandler, MouseEvent, RefObject } from 'react';
-import { forwardRef, useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useMemo,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 
@@ -432,6 +440,32 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       });
     }, [editor]);
     const micBtnRef = useRef<HTMLButtonElement>(null);
+    const emojiPickerRef = useRef<HTMLDivElement>(null);
+    const prevEmojiBoardTabRef = useRef<EmojiBoardTab | undefined>(emojiBoardTab);
+
+    // Slide-in animation for the mobile emoji/GIF/sticker picker — same motion
+    // as the long-press context menu (220ms, cubic-bezier(0.32, 0.72, 0, 1)).
+    // Only plays when the picker opens (undefined → tab), not on tab switches.
+    useLayoutEffect(() => {
+      const wasOpen = prevEmojiBoardTabRef.current !== undefined;
+      prevEmojiBoardTabRef.current = emojiBoardTab;
+
+      const el = emojiPickerRef.current;
+      if (!el || emojiBoardTab === undefined || wasOpen) return;
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      // On phone layouts the element is centered with translateX(-50%); include
+      // it in both keyframes so the horizontal centering is preserved throughout.
+      const xCenter = isPhoneLayoutDevice() ? ' translateX(-50%)' : '';
+      const anim = el.animate(
+        [
+          { opacity: '0', transform: `translateY(16px)${xCenter}` },
+          { opacity: '1', transform: `translateY(0)${xCenter}` },
+        ],
+        { duration: 220, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'forwards' }
+      );
+      return () => anim.cancel();
+    }, [emojiBoardTab]);
+
     // Preserve stable list keys across metadata/description replacements without
     // storing UI-only IDs in the upload draft state.
     const uploadItemKeysRef = useRef(new WeakMap<TUploadContent, string>());
@@ -2083,7 +2117,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       const gifUrl = gif.url.trim();
       const gifProxyHost = normalizeGifProxyHost(clientConfig.gifs?.proxyUrl);
       let url = gifUrl;
-      if (!gifUrl.startsWith('mxc://')) {
+      const isKlipyProxy = !gifUrl.startsWith('mxc://');
+      if (isKlipyProxy) {
         const remoteId = getKlipyRemoteId(gifUrl);
 
         if (!gifProxyHost || !remoteId) {
@@ -2094,14 +2129,20 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         url = `mxc://${gifProxyHost}/${toMatrixMediaId(remoteId, 'klipy_')}`;
       }
 
+      // For Klipy proxy GIFs, always use .webp body and image/webp MIME.
+      // For favorited GIFs (already mxc://), preserve the stored title and
+      // infer the MIME from the extension so resending doesn't corrupt metadata.
+      const body = isKlipyProxy ? `${gif.title}.webp` : gif.title;
+      const mimetype = isKlipyProxy || gif.title.endsWith('.webp') ? 'image/webp' : 'image/gif';
+
       const content: RoomMessageEventContent & IContent = {
-        body: `${gif.title}.webp`,
+        body,
         url: url,
         msgtype: MsgType.Image,
         info: {
           w: gif.width,
           h: gif.height,
-          mimetype: 'image/webp',
+          mimetype,
         },
       };
 
@@ -2608,6 +2649,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
                     return (
                       <div
+                        ref={emojiPickerRef}
                         style={{
                           position: 'fixed',
                           zIndex: 999,

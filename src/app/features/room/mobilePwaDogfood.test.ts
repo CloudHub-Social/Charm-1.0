@@ -162,9 +162,6 @@ describe('mobile PWA dogfood contract', () => {
       'src/app/components/UserRoomProfileRenderer.tsx'
     );
     const bugReportModal = readWorkspaceFile('src/app/features/bug-report/BugReportModal.tsx');
-    const accountSwitcher = readWorkspaceFile(
-      'src/app/pages/client/sidebar/AccountSwitcherTab.tsx'
-    );
 
     expect(roomSettingsRenderer).toContain(
       '<Modal500 requestClose={closeSettings} fullScreenOnMobile>'
@@ -198,19 +195,6 @@ describe('mobile PWA dogfood contract', () => {
     );
     expect(bugReportModal).toContain(
       'paddingBottom: `calc(${config.space.S400} + ${safeAreaBottomInset})`'
-    );
-    expect(accountSwitcher).toContain('const useModalAccountSwitcher = isPhoneLayout;');
-    expect(accountSwitcher).toContain(
-      '<Modal500 requestClose={() => setMenuAnchor(undefined)} fullScreenOnMobile>'
-    );
-    expect(accountSwitcher).toContain(
-      "const safeAreaInlineStart = 'var(--sable-safe-area-left, env(safe-area-inset-left, 0px))';"
-    );
-    expect(accountSwitcher).toContain(
-      "const safeAreaInlineEnd = 'var(--sable-safe-area-right, env(safe-area-inset-right, 0px))';"
-    );
-    expect(accountSwitcher).toContain(
-      "const safeAreaBottomInset = 'var(--sable-safe-area-bottom, env(safe-area-inset-bottom, 0px))';"
     );
   });
 

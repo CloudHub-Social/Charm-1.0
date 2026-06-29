@@ -297,14 +297,22 @@ export function RoomTimeline({
     bottomAnchorSettleUntilRef.current = Date.now() + BOTTOM_ANCHOR_SETTLE_MS;
   }, []);
 
-  const scrollToBottom = useCallback(() => {
-    if (!vListRef.current) return;
-    const lastIndex = processedEventsRef.current.length - 1;
-    if (lastIndex < 0) return;
-    vListRef.current.scrollTo(vListRef.current.scrollSize);
-    refreshBottomAnchorSettleWindow();
-    restartBottomAnchorTick();
-  }, [refreshBottomAnchorSettleWindow]);
+  const scrollToBottom = useCallback(
+    (behavior?: 'instant' | 'smooth') => {
+      if (!vListRef.current) return;
+      const lastIndex = processedEventsRef.current.length - 1;
+      if (lastIndex < 0) return;
+      // scrollToIndex defers until the item is measured, so the scroll lands
+      // correctly even when the new message's height hasn't been computed yet.
+      vListRef.current.scrollToIndex(lastIndex, {
+        align: 'end',
+        smooth: behavior === 'smooth',
+      });
+      refreshBottomAnchorSettleWindow();
+      restartBottomAnchorTick();
+    },
+    [refreshBottomAnchorSettleWindow]
+  );
 
   const timelineSync = useTimelineSync({
     room,
@@ -436,9 +444,16 @@ export function RoomTimeline({
     if (Math.abs(prev - newH) > 2) {
       topSpacerHeightRef.current = newH;
       setTopSpacerHeight(newH);
-      if (prev > 0 && newH === 0 && processedEventsRef.current.length > 0) {
+      // When the spacer shrinks, content shifts up relative to the scroll
+      // position. If the user was at the bottom, re-anchor so the last message
+      // stays visible instead of jumping upward.
+      if (newH < prev && processedEventsRef.current.length > 0) {
         requestAnimationFrame(() => {
-          vListRef.current?.scrollToIndex(processedEventsRef.current.length - 1, { align: 'end' });
+          if (atBottomRef.current || newH === 0) {
+            vListRef.current?.scrollToIndex(processedEventsRef.current.length - 1, {
+              align: 'end',
+            });
+          }
         });
       }
     }

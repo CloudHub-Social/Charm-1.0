@@ -703,15 +703,16 @@ export const ImageContent = as<'div', ImageContentProps>(
                 >
                   {menuIcon(blurred ? Eye : EyeSlash)}
                 </MenuItem>
-                {info?.mimetype === 'image/gif' && !encInfo && (
-                  <GifFavoriteAction
-                    body={body || 'GIF'}
-                    url={url}
-                    imageW={imageW}
-                    imageH={imageH}
-                    srcState={srcState}
-                  />
-                )}
+                {(info?.mimetype === 'image/gif' || info?.mimetype === 'image/webp') &&
+                  !encInfo && (
+                    <GifFavoriteAction
+                      body={body || 'GIF'}
+                      url={url}
+                      imageW={imageW}
+                      imageH={imageH}
+                      srcState={srcState}
+                    />
+                  )}
               </Box>
             </Menu>
           </Box>
