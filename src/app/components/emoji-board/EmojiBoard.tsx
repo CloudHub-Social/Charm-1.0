@@ -937,6 +937,10 @@ export function EmojiBoard({
       return;
     }
 
+    if (gifSearchDebounceRef.current !== undefined) {
+      clearTimeout(gifSearchDebounceRef.current);
+      gifSearchDebounceRef.current = undefined;
+    }
     setGifInputValue('');
     resetGifSearch();
     resetSearchGifs();
@@ -1117,7 +1121,12 @@ export function EmojiBoard({
       const gifData = gifDataStr ? JSON.parse(gifDataStr) : null;
       if (gifData) {
         rememberGifSearch(gifQuery);
-        addGifSentBreadcrumb(gifQuery ? 'search' : isGifDiscovery ? 'discovery' : 'favorites');
+        const gifSource = gifQuery
+          ? 'search'
+          : favoriteGifs.some((f) => f.url === gifData.url)
+            ? 'favorites'
+            : 'discovery';
+        addGifSentBreadcrumb(gifSource);
         onGifSelect?.(gifData);
       }
     }
