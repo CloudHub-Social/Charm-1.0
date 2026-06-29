@@ -56,6 +56,11 @@ const NavItemBase = style({
   color: OnContainer,
   outline: 'none',
   minHeight: toRem(36),
+  '@media': {
+    '(pointer: coarse)': {
+      minHeight: toRem(44),
+    },
+  },
 
   selectors: {
     '&:hover, &:focus-visible': {

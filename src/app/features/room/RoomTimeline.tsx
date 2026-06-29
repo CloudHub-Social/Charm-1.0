@@ -297,14 +297,28 @@ export function RoomTimeline({
     bottomAnchorSettleUntilRef.current = Date.now() + BOTTOM_ANCHOR_SETTLE_MS;
   }, []);
 
-  const scrollToBottom = useCallback(() => {
-    if (!vListRef.current) return;
-    const lastIndex = processedEventsRef.current.length - 1;
-    if (lastIndex < 0) return;
-    vListRef.current.scrollTo(vListRef.current.scrollSize);
-    refreshBottomAnchorSettleWindow();
-    restartBottomAnchorTick();
-  }, [refreshBottomAnchorSettleWindow]);
+  const scrollToBottom = useCallback(
+    (behavior?: 'instant' | 'smooth') => {
+      // Start the settle window immediately so the tick loop anchors at the
+      // bottom while we wait for the new event to be added.
+      refreshBottomAnchorSettleWindow();
+      restartBottomAnchorTick();
+      // Defer the index read until after React re-renders with the new event.
+      // Without this, scrollToBottom is called by useLiveEventArrive before
+      // processedEventsRef is updated, so lastIndex points at the previous last
+      // message rather than the newly arrived one.
+      requestAnimationFrame(() => {
+        if (!vListRef.current) return;
+        const lastIndex = processedEventsRef.current.length - 1;
+        if (lastIndex < 0) return;
+        vListRef.current.scrollToIndex(lastIndex, {
+          align: 'end',
+          smooth: behavior === 'smooth',
+        });
+      });
+    },
+    [refreshBottomAnchorSettleWindow]
+  );
 
   const timelineSync = useTimelineSync({
     room,
@@ -436,9 +450,16 @@ export function RoomTimeline({
     if (Math.abs(prev - newH) > 2) {
       topSpacerHeightRef.current = newH;
       setTopSpacerHeight(newH);
-      if (prev > 0 && newH === 0 && processedEventsRef.current.length > 0) {
+      // When the spacer shrinks, content shifts up relative to the scroll
+      // position. If the user was at the bottom, re-anchor so the last message
+      // stays visible instead of jumping upward.
+      if (newH < prev && processedEventsRef.current.length > 0) {
         requestAnimationFrame(() => {
-          vListRef.current?.scrollToIndex(processedEventsRef.current.length - 1, { align: 'end' });
+          if (atBottomRef.current || newH === 0) {
+            vListRef.current?.scrollToIndex(processedEventsRef.current.length - 1, {
+              align: 'end',
+            });
+          }
         });
       }
     }

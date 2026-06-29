@@ -1,5 +1,13 @@
 import type { KeyboardEventHandler, MouseEvent, RefObject } from 'react';
-import { forwardRef, useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useMemo,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 
@@ -70,7 +78,7 @@ import { plainToEditorInput } from '$components/editor/input';
 import { htmlToMarkdown } from '$plugins/markdown';
 import type { GifData } from '$components/emoji-board';
 import { EmojiBoard, EmojiBoardTab } from '$components/emoji-board';
-import { getKlipyRemoteId, normalizeGifProxyHost } from '$utils/gifs';
+import { getKlipyRemoteId, isKlipyProxyMxc, normalizeGifProxyHost } from '$utils/gifs';
 import type { TUploadContent } from '$utils/matrix';
 import { encryptFile, getImageInfo, mxcUrlToHttp, toggleReaction } from '$utils/matrix';
 import { useTypingStatusUpdater } from '$hooks/useTypingStatusUpdater';
@@ -432,6 +440,32 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       });
     }, [editor]);
     const micBtnRef = useRef<HTMLButtonElement>(null);
+    const emojiPickerRef = useRef<HTMLDivElement>(null);
+    const prevEmojiBoardTabRef = useRef<EmojiBoardTab | undefined>(emojiBoardTab);
+
+    // Slide-in animation for the mobile emoji/GIF/sticker picker — same motion
+    // as the long-press context menu (220ms, cubic-bezier(0.32, 0.72, 0, 1)).
+    // Only plays when the picker opens (undefined → tab), not on tab switches.
+    useLayoutEffect(() => {
+      const wasOpen = prevEmojiBoardTabRef.current !== undefined;
+      prevEmojiBoardTabRef.current = emojiBoardTab;
+
+      const el = emojiPickerRef.current;
+      if (!el || emojiBoardTab === undefined || wasOpen) return;
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      // On phone layouts the element is centered with translateX(-50%); include
+      // it in both keyframes so the horizontal centering is preserved throughout.
+      const xCenter = isPhoneLayoutDevice() ? ' translateX(-50%)' : '';
+      const anim = el.animate(
+        [
+          { opacity: '0', transform: `translateY(16px)${xCenter}` },
+          { opacity: '1', transform: `translateY(0)${xCenter}` },
+        ],
+        { duration: 220, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'forwards' }
+      );
+      return () => anim.cancel();
+    }, [emojiBoardTab]);
+
     // Preserve stable list keys across metadata/description replacements without
     // storing UI-only IDs in the upload draft state.
     const uploadItemKeysRef = useRef(new WeakMap<TUploadContent, string>());
@@ -2083,7 +2117,16 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       const gifUrl = gif.url.trim();
       const gifProxyHost = normalizeGifProxyHost(clientConfig.gifs?.proxyUrl);
       let url = gifUrl;
-      if (!gifUrl.startsWith('mxc://')) {
+      // Fresh Klipy CDN pick: convert CDN URL → mxc://. getKlipyRemoteId only
+      // works on CDN HTTP URLs, so the conversion block must NOT run for
+      // favorited Klipy GIFs whose gif.url is already an mxc:// URL.
+      const isKlipyFreshCdn = !gifUrl.startsWith('mxc://');
+      // Favorited Klipy GIFs arrive as mxc://<proxyHost>/klipy_* — detect them
+      // so we can apply the same body/MIME treatment as fresh picks.
+      const isKlipyProxyFavorite =
+        !isKlipyFreshCdn && isKlipyProxyMxc(gifUrl, clientConfig.gifs?.proxyUrl);
+      const isKlipyProxy = isKlipyFreshCdn || isKlipyProxyFavorite;
+      if (isKlipyFreshCdn) {
         const remoteId = getKlipyRemoteId(gifUrl);
 
         if (!gifProxyHost || !remoteId) {
@@ -2094,14 +2137,22 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         url = `mxc://${gifProxyHost}/${toMatrixMediaId(remoteId, 'klipy_')}`;
       }
 
+      // For Klipy proxy GIFs (both fresh CDN picks and mxc:// favorites), append
+      // .webp to the body for Discord bridge compat and advertise the correct
+      // image/webp MIME. Strip any existing image extension first so a title like
+      // "name.gif" or a re-favorited "name.webp" never produces a double-suffix.
+      const baseTitle = gif.title.replace(/\.(gif|webp)$/i, '');
+      const body = isKlipyProxy ? `${baseTitle}.webp` : gif.title;
+      const mimetype = isKlipyProxy ? 'image/webp' : 'image/gif';
+
       const content: RoomMessageEventContent & IContent = {
-        body: `${gif.title}.webp`,
+        body,
         url: url,
         msgtype: MsgType.Image,
         info: {
           w: gif.width,
           h: gif.height,
-          mimetype: 'image/webp',
+          mimetype,
         },
       };
 
@@ -2608,6 +2659,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
                     return (
                       <div
+                        ref={emojiPickerRef}
                         style={{
                           position: 'fixed',
                           zIndex: 999,

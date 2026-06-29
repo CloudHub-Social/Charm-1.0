@@ -20,8 +20,7 @@ const SettingsRoute = lazy(() =>
 import { Room } from '$features/room';
 import { Lobby } from '$features/lobby';
 import { PageRoot } from '$components/page';
-import { ScreenSize } from '$hooks/useScreenSize';
-import { isPhoneLayoutDevice } from '$utils/user-agent';
+
 import { ReceiveSelfDeviceVerification } from '$components/DeviceVerification';
 import { AutoRestoreBackupOnVerification } from '$components/BackupRestore';
 import { RoomSettingsRenderer } from '$features/room-settings';
@@ -123,9 +122,8 @@ const getFirstSession = () => {
   return getFallbackSession();
 };
 
-export const createRouter = (clientConfig: ClientConfig, screenSize: ScreenSize) => {
+export const createRouter = (clientConfig: ClientConfig, mobile: boolean) => {
   const { hashRouter } = clientConfig;
-  const mobile = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
 
   const routes = createRoutesFromElements(
     <Route>
@@ -163,6 +161,15 @@ export const createRouter = (clientConfig: ClientConfig, screenSize: ScreenSize)
           loader={({ request }) => {
             const url = new URL(request.url);
             if (url.searchParams.get('addAccount') === '1') return null;
+            // Let SSO token callbacks through so Login can process the token
+            // even when the user already has an active session. In hash-router
+            // mode Matrix appends loginToken to the outer query string, which
+            // React Router ignores, so check window.location.search as well.
+            if (
+              url.searchParams.has('loginToken') ||
+              new URLSearchParams(window.location.search).has('loginToken')
+            )
+              return null;
             if (hasStoredSession()) return redirect(getHomePath());
             return null;
           }}
