@@ -1,4 +1,4 @@
-import { Box, color, config, Menu, MenuItem } from 'folds';
+import { Box, color, Text } from 'folds';
 import type { MatrixClient } from '$types/matrix-sdk';
 import type { PackImageReader } from '$plugins/custom-emoji';
 import type { IEmoji } from '$plugins/emoji';
@@ -178,6 +178,37 @@ export function GifItem({
     setFavorited(favoritedContent.gifs.some((v) => v.url === gif?.url));
   }, [favoritedContent, gif?.url]);
 
+  const toggleFavorite = async () => {
+    if (!favorited) {
+      setFavorited(true);
+      const nextFavorites = favoriteGifsRef.current.some((v) => v.url === gif.url)
+        ? favoriteGifsRef.current
+        : [...favoriteGifsRef.current, gif];
+      favoriteGifsRef.current = nextFavorites;
+      await mx
+        .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
+          gifs: nextFavorites,
+        })
+        .catch(() => {
+          favoriteGifsRef.current = favoritedContent.gifs;
+          setFavorited(false);
+        });
+      return;
+    }
+
+    setFavorited(false);
+    const nextFavorites = favoriteGifsRef.current.filter((v) => v.url != gif.url);
+    favoriteGifsRef.current = nextFavorites;
+    await mx
+      .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
+        gifs: nextFavorites,
+      })
+      .catch(() => {
+        favoriteGifsRef.current = favoritedContent.gifs;
+        setFavorited(true);
+      });
+  };
+
   return (
     <Box
       as="button"
@@ -196,57 +227,81 @@ export function GifItem({
       onPointerLeave={() => setIsHovered(false)}
     >
       {children}
-      {isHovered && (
-        <Box style={{ padding: config.space.S200, right: 0, top: 0, position: 'absolute' }}>
-          <Menu style={{ padding: config.space.S0 }}>
-            <Box>
-              <MenuItem
-                size="300"
-                radii="0"
-                fill="Soft"
-                variant="Secondary"
-                title={favorited ? 'Unfavorite gif' : 'Favorite gif'}
-                onClick={async (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (!favorited) {
-                    setFavorited(true);
-                    const nextFavorites = favoriteGifsRef.current.some((v) => v.url === gif.url)
-                      ? favoriteGifsRef.current
-                      : [...favoriteGifsRef.current, gif];
-                    favoriteGifsRef.current = nextFavorites;
-                    await mx
-                      .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
-                        gifs: nextFavorites,
-                      })
-                      .catch(() => {
-                        favoriteGifsRef.current = favoritedContent.gifs;
-                        setFavorited(false);
-                      });
-                  } else {
-                    setFavorited(false);
-                    const nextFavorites = favoriteGifsRef.current.filter((v) => v.url != gif.url);
-                    favoriteGifsRef.current = nextFavorites;
-                    await mx
-                      .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
-                        gifs: nextFavorites,
-                      })
-                      .catch(() => {
-                        favoriteGifsRef.current = favoritedContent.gifs;
-                        setFavorited(true);
-                      });
-                  }
-                }}
-              >
-                {menuIcon(Star, {
-                  weight: favorited ? 'fill' : 'regular',
-                  color: favorited ? color.Warning.MainHover : color.Surface.OnContainer,
-                })}
-              </MenuItem>
-            </Box>
-          </Menu>
-        </Box>
+      <div className={css.GifScrim} />
+      <Box className={css.GifMeta} direction="Column" gap="100">
+        <Text className={css.GifMetaBadge} size="T200">
+          GIF
+        </Text>
+        <Text className={css.GifMetaTitle} size="L400">
+          {label}
+        </Text>
+      </Box>
+      {(isHovered || favorited) && (
+        <span
+          className={css.GifFavoriteBtn}
+          role="button"
+          tabIndex={0}
+          title={favorited ? 'Unfavorite gif' : 'Favorite gif'}
+          onClick={async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            await toggleFavorite();
+          }}
+          onKeyDown={async (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            e.stopPropagation();
+            await toggleFavorite();
+          }}
+        >
+          {menuIcon(Star, {
+            weight: favorited ? 'fill' : 'regular',
+            color: favorited ? color.Warning.MainHover : '#fff',
+          })}
+        </span>
       )}
+    </Box>
+  );
+}
+
+export function GifSearchItem({
+  label,
+  previewUrl,
+  style,
+  onClick,
+}: {
+  label: string;
+  previewUrl?: string;
+  style?: CSSProperties;
+  onClick: () => void;
+}) {
+  return (
+    <Box
+      as="button"
+      className={css.GifSearchItem}
+      type="button"
+      style={style}
+      alignItems="Center"
+      justifyContent="Center"
+      title={`Search GIFs for ${label}`}
+      aria-label={`Search GIFs for ${label}`}
+      onClick={onClick}
+    >
+      {previewUrl && (
+        <AuthenticatedImg
+          loading="lazy"
+          alt=""
+          aria-hidden
+          src={previewUrl}
+          style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
+      <div className={css.GifScrim} />
+      <Box className={css.GifSearchMetaOverlay}>
+        <Text className={css.GifMetaTitle} size="B500">
+          {label}
+        </Text>
+      </Box>
     </Box>
   );
 }

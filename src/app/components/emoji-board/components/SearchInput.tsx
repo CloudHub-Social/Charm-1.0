@@ -1,14 +1,16 @@
 import type { ChangeEventHandler } from 'react';
 import { useRef } from 'react';
-import { Input, Chip, Text } from 'folds';
+import { Input, Chip, Text, Box } from 'folds';
 import { mobileOrTablet } from '$utils/user-agent';
-import { ArrowRight, sizedIcon, MagnifyingGlass } from '$components/icons/phosphor';
+import { ArrowRight, sizedIcon, MagnifyingGlass, X } from '$components/icons/phosphor';
 import { EmojiBoardTab } from '$components/emoji-board/types';
 
 type SearchInputProps = {
   tab: EmojiBoardTab;
   query?: string;
+  value?: string;
   onChange: ChangeEventHandler<HTMLInputElement>;
+  onClear?: () => void;
   allowTextCustomEmoji?: boolean;
   onTextCustomEmojiSelect?: (text: string) => void;
   placeholder?: string;
@@ -16,7 +18,9 @@ type SearchInputProps = {
 export function SearchInput({
   tab,
   query,
+  value,
   onChange,
+  onClear,
   allowTextCustomEmoji,
   onTextCustomEmojiSelect,
   placeholder,
@@ -38,7 +42,9 @@ export function SearchInput({
         placeholder ??
         (allowTextCustomEmoji && tab !== EmojiBoardTab.Gif ? 'Search or Text Reaction' : 'Search')
       }
+      value={value}
       maxLength={50}
+      before={sizedIcon(MagnifyingGlass, '50')}
       after={
         allowTextCustomEmoji && query && tab !== EmojiBoardTab.Gif ? (
           <Chip
@@ -50,9 +56,19 @@ export function SearchInput({
           >
             <Text size="L400">React</Text>
           </Chip>
-        ) : (
-          sizedIcon(MagnifyingGlass, '50')
-        )
+        ) : onClear && value ? (
+          <Box
+            as="button"
+            type="button"
+            alignItems="Center"
+            justifyContent="Center"
+            style={{ cursor: 'pointer' }}
+            aria-label="Clear search"
+            onClick={onClear}
+          >
+            {sizedIcon(X, '50')}
+          </Box>
+        ) : undefined
       }
       onChange={onChange}
       autoFocus={!mobileOrTablet()}

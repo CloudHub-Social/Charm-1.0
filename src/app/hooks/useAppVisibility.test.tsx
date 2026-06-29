@@ -160,6 +160,42 @@ describe('useAppVisibility', () => {
     expect(mocks.getSlidingSyncManager).toHaveBeenCalledWith(mx);
   });
 
+  it('requests a lazy service worker claim on initial visible mount when uncontrolled', async () => {
+    const postMessage = vi.fn<(message: unknown) => void>();
+    const activeWorker = {
+      state: 'activated',
+      postMessage,
+    } as unknown as ServiceWorker;
+    const ready = Promise.resolve({
+      active: activeWorker,
+    } satisfies Partial<ServiceWorkerRegistration>);
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        controller: undefined,
+        ready,
+      },
+    });
+
+    const mx = createMockMatrixClient();
+
+    renderHook(() =>
+      useAppVisibility(mx, {
+        baseUrl: 'https://example.com',
+        accessToken: 'token',
+        userId: '@user:example.com',
+      } as never)
+    );
+
+    await act(async () => {
+      await ready;
+    });
+
+    expect(postMessage).toHaveBeenCalledWith({ type: 'CLAIM_CLIENTS' });
+    expect(mx.retryImmediately).toHaveBeenCalledTimes(1);
+  });
+
   it('requests a lazy service worker claim on persisted pageshow restore', async () => {
     const postMessage = vi.fn<(message: unknown) => void>();
     const activeWorker = {
@@ -289,6 +325,10 @@ describe('useAppVisibility', () => {
         userId: '@user:example.com',
       } as never)
     );
+
+    postMessage.mockClear();
+    vi.mocked(mx.retryImmediately).mockClear();
+    retryNow.mockClear();
 
     await act(async () => {
       vi.advanceTimersByTime(10 * 60_000 + 1);

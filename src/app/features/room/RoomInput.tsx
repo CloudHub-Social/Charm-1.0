@@ -2572,39 +2572,54 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               {isMobileLayout &&
                 emojiBoardAnchorRect &&
                 createPortal(
-                  <div
-                    style={{
-                      position: 'fixed',
-                      zIndex: 999,
-                      // Position above the emoji button (mirrors PopOut position="Top" offset=16).
-                      bottom: window.innerHeight - emojiBoardAnchorRect.top + 16,
-                      ...(isPhoneLayoutDevice()
-                        ? {
-                            left: (window.innerWidth - getEmojiBoardWidth(window.innerWidth)) / 2,
-                            width: getEmojiBoardWidth(window.innerWidth),
-                          }
-                        : {
-                            right: getEmojiBoardRightOffset(
-                              emojiBoardAnchorRect.right,
-                              window.innerWidth
-                            ),
+                  (() => {
+                    const isWideGifBoard = emojiBoardTab === EmojiBoardTab.Gif;
+                    const mobileBoardWidth = getEmojiBoardWidth(window.innerWidth, isWideGifBoard);
+                    // Phone: center via transform so JS/CSS width rounding never causes drift.
+                    const phoneBoardPosition = {
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                    };
+                    const tabletBoardPosition = {
+                      right: getEmojiBoardRightOffset(
+                        emojiBoardAnchorRect.right,
+                        window.innerWidth,
+                        isWideGifBoard
+                      ),
+                    };
+
+                    return (
+                      <div
+                        style={{
+                          position: 'fixed',
+                          zIndex: 999,
+                          // Position above the emoji button (mirrors PopOut position="Top" offset=16).
+                          bottom: window.innerHeight - emojiBoardAnchorRect.top + 16,
+                          ...(isPhoneLayoutDevice() ? phoneBoardPosition : tabletBoardPosition),
+                          ...(isPhoneLayoutDevice() && {
+                            width: isWideGifBoard
+                              ? mobileBoardWidth
+                              : getEmojiBoardWidth(window.innerWidth),
                           }),
-                      display: emojiBoardTab !== undefined ? undefined : 'none',
-                    }}
-                  >
-                    <EmojiBoard
-                      active={emojiBoardTab !== undefined}
-                      tab={emojiBoardTab ?? EmojiBoardTab.Emoji}
-                      onTabChange={setEmojiBoardTab}
-                      imagePackRooms={imagePackRooms}
-                      returnFocusOnDeactivate={false}
-                      onEmojiSelect={handleEmoticonSelect}
-                      onCustomEmojiSelect={handleEmoticonSelect}
-                      onStickerSelect={handleStickerSelect}
-                      onGifSelect={handleGifSelect}
-                      requestClose={closeEmojiBoard}
-                    />
-                  </div>,
+                          display: emojiBoardTab !== undefined ? undefined : 'none',
+                        }}
+                      >
+                        <EmojiBoard
+                          active={emojiBoardTab !== undefined}
+                          tab={emojiBoardTab ?? EmojiBoardTab.Emoji}
+                          onTabChange={setEmojiBoardTab}
+                          imagePackRooms={imagePackRooms}
+                          returnFocusOnDeactivate={false}
+                          onEmojiSelect={handleEmoticonSelect}
+                          onCustomEmojiSelect={handleEmoticonSelect}
+                          onStickerSelect={handleStickerSelect}
+                          onGifSelect={handleGifSelect}
+                          isMobileSheet
+                          requestClose={closeEmojiBoard}
+                        />
+                      </div>
+                    );
+                  })(),
                   document.body
                 )}
               <PopOut
@@ -2633,22 +2648,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   ) : undefined
                 }
               >
-                {gifsEnabled && (
-                  <IconButton
-                    aria-pressed={emojiBoardTab === EmojiBoardTab.Gif}
-                    onPointerDownCapture={prepareComposerOverlayTrigger}
-                    onClick={() => void openEmojiBoard(EmojiBoardTab.Gif)}
-                    variant="SurfaceVariant"
-                    size="300"
-                    radii="300"
-                    title="open GIF picker"
-                    aria-label="Open GIF picker"
-                  >
-                    {composerIcon(GifIcon, {
-                      weight: emojiBoardTab === EmojiBoardTab.Gif ? 'fill' : 'regular',
-                    })}
-                  </IconButton>
-                )}
                 {!hideStickerBtn && (
                   <IconButton
                     aria-pressed={emojiBoardTab === EmojiBoardTab.Sticker}
@@ -2662,6 +2661,22 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   >
                     {composerIcon(Sticker, {
                       weight: emojiBoardTab === EmojiBoardTab.Sticker ? 'fill' : 'regular',
+                    })}
+                  </IconButton>
+                )}
+                {gifsEnabled && (
+                  <IconButton
+                    aria-pressed={emojiBoardTab === EmojiBoardTab.Gif}
+                    onPointerDownCapture={prepareComposerOverlayTrigger}
+                    onClick={() => void openEmojiBoard(EmojiBoardTab.Gif)}
+                    variant="SurfaceVariant"
+                    size="300"
+                    radii="300"
+                    title="open GIF picker"
+                    aria-label="Open GIF picker"
+                  >
+                    {composerIcon(GifIcon, {
+                      weight: emojiBoardTab === EmojiBoardTab.Gif ? 'fill' : 'regular',
                     })}
                   </IconButton>
                 )}

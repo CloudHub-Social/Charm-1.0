@@ -2,11 +2,12 @@ import type {
   ChangeEventHandler,
   FocusEventHandler,
   MouseEventHandler,
+  PointerEventHandler,
   ReactNode,
   RefObject,
 } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, config, Scroll } from 'folds';
+import { Box, Chip, Text, config, Scroll } from 'folds';
 import { AuthenticatedImg } from '$components/AuthenticatedImg';
 import { ClockCounterClockwise } from '$components/icons/phosphor';
 import FocusTrap from 'focus-trap-react';
@@ -25,7 +26,6 @@ import { isUserId, mxcUrlToHttp } from '$utils/matrix';
 import { editableActiveElement, targetFromEvent } from '$utils/dom';
 import type { UseAsyncSearchOptions } from '$hooks/useAsyncSearch';
 import { useAsyncSearch } from '$hooks/useAsyncSearch';
-import { useDebounce } from '$hooks/useDebounce';
 import { useThrottle } from '$hooks/useThrottle';
 import { addRecentEmoji } from '$plugins/recent-emoji';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
@@ -52,6 +52,7 @@ import {
   EmojiItem,
   StickerItem,
   GifItem,
+  GifSearchItem,
   CustomEmojiItem,
   ImageGroupIcon,
   GroupIcon,
@@ -62,9 +63,20 @@ import {
 } from './components';
 import type { GifData } from './types';
 import { EmojiBoardTab, EmojiType } from './types';
+import { getMobileSheetHeights } from './mobileSheetHeights';
+import {
+  addGifSentBreadcrumb,
+  addGifTabOpenedBreadcrumb,
+  captureGifDiscoveryError,
+  captureGifSearchError,
+  recordGifDiscoveryMs,
+  recordGifSearchMs,
+} from '$utils/gifTelemetry';
 import { useClientConfig } from '$hooks/useClientConfig';
 import { gifSearchConfigured } from '$hooks/useClientConfig';
 import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
+import * as componentCss from './components/styles.css';
+import { addRecentGifSearch, getRecentGifSearches } from '$utils/recentGifSearches';
 
 const RECENT_GROUP_ID = 'recent_group';
 const SEARCH_GROUP_ID = 'search_group';
@@ -83,6 +95,11 @@ type GifGroupItem = {
   id: string;
   name: string;
   items: GifData[];
+};
+
+type GifDiscoveryItem = {
+  term: string;
+  gif?: GifData;
 };
 
 type KlipyGifVariant = {
@@ -144,6 +161,17 @@ const parseKlipyResult = (klipyResult: KlipyGifResult): GifData => {
 const hasUsableGifUrl = (gif: GifData): boolean =>
   gif.url.trim().length > 0 || !!gif.preview_url?.trim();
 
+const POPULAR_GIF_SEARCH_TERMS = [
+  'kiss',
+  'love',
+  'happy',
+  'lol',
+  'good morning',
+  'good night',
+  'confused',
+  'sad',
+] as const;
+
 function useGifSearch(
   favoriteGifs: GifData[],
   gifSearch: (query: string) => void,
@@ -203,6 +231,7 @@ function useGifSearch(
 
       gifSearch(trimmedQuery);
 
+      const searchStartedAt = performance.now();
       try {
         const url = new URL('https://api.klipy.com');
         url.pathname = `/api/v1/${klipyApiKey}/gifs/search`;
@@ -214,8 +243,12 @@ function useGifSearch(
         if (response.status === 200) {
           const data = await response.json();
           const results = data.data.data as KlipyGifResult[] | undefined;
-          if (requestIdRef.current !== requestId) return;
+          if (requestIdRef.current !== requestId) {
+            recordGifSearchMs(performance.now() - searchStartedAt, { result: 'cancelled' });
+            return;
+          }
 
+          recordGifSearchMs(performance.now() - searchStartedAt, { result: 'ok' });
           setGifs((old) => ({
             ...old,
             gifs: results ? results.map(parseKlipyResult).filter(hasUsableGifUrl) : [],
@@ -223,8 +256,10 @@ function useGifSearch(
         } else {
           throw new Error(`HTTP ${response.status}`);
         }
-      } catch {
+      } catch (err) {
         if (requestIdRef.current !== requestId) return;
+        recordGifSearchMs(performance.now() - searchStartedAt, { result: 'error' });
+        captureGifSearchError(err, trimmedQuery);
         setError('Failed to search GIFs');
         setGifs((old) => ({
           ...old,
@@ -240,6 +275,68 @@ function useGifSearch(
   );
 
   return { gifs, loading, error, searchGifs, resetSearchGifs };
+}
+
+// Module-level cache so discovery results survive tab switches and re-mounts.
+const gifDiscoveryCache = new Map<string, GifDiscoveryItem[]>();
+
+function useGifDiscovery(klipyApiKey: string, gifsEnabled: boolean, active: boolean) {
+  const [items, setItems] = useState<GifDiscoveryItem[]>(
+    POPULAR_GIF_SEARCH_TERMS.map((term) => ({ term }))
+  );
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!active || !gifsEnabled) {
+      setItems(POPULAR_GIF_SEARCH_TERMS.map((term) => ({ term })));
+      return undefined;
+    }
+
+    const cached = gifDiscoveryCache.get(klipyApiKey);
+    if (cached) {
+      recordGifDiscoveryMs(0, { cached: true });
+      setItems(cached);
+      return undefined;
+    }
+
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    let cancelled = false;
+    const discoveryStartedAt = performance.now();
+
+    Promise.all(
+      POPULAR_GIF_SEARCH_TERMS.map(async (term) => {
+        try {
+          const url = new URL('https://api.klipy.com');
+          url.pathname = `/api/v1/${klipyApiKey}/gifs/search`;
+          url.searchParams.set('q', term);
+          url.searchParams.set('per_page', '1');
+
+          const response = await fetch(url.toString());
+          if (response.status !== 200) return { term };
+
+          const data = await response.json();
+          const result = (data.data.data as KlipyGifResult[] | undefined)?.[0];
+          const gif = result ? parseKlipyResult(result) : undefined;
+          return gif && hasUsableGifUrl(gif) ? { term, gif } : { term };
+        } catch (err) {
+          captureGifDiscoveryError(err, term);
+          return { term };
+        }
+      })
+    ).then((results) => {
+      if (cancelled || requestIdRef.current !== requestId) return;
+      recordGifDiscoveryMs(performance.now() - discoveryStartedAt, { cached: false });
+      gifDiscoveryCache.set(klipyApiKey, results);
+      setItems(results);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [active, gifsEnabled, klipyApiKey]);
+
+  return items;
 }
 
 const useGroups = (
@@ -686,9 +783,12 @@ type EmojiBoardProps = {
   allowTextCustomEmoji?: boolean;
   addToRecentEmoji?: boolean;
   isFullWidth?: boolean;
+  isMobileSheet?: boolean;
 };
 
 const getGifName = (v: GifData) => v.title;
+
+// getMobileSheetHeights is defined in ./mobileSheetHeights and imported above.
 
 export function EmojiBoard({
   tab = EmojiBoardTab.Emoji,
@@ -704,6 +804,7 @@ export function EmojiBoard({
   allowTextCustomEmoji,
   addToRecentEmoji = true,
   isFullWidth,
+  isMobileSheet = false,
 }: Readonly<EmojiBoardProps>) {
   const mx = useMatrixClient();
   const [saveStickerEmojiBandwidth] = useSetting(settingsAtom, 'saveStickerEmojiBandwidth');
@@ -715,6 +816,15 @@ export function EmojiBoard({
   const emojiTab = activeTab === EmojiBoardTab.Emoji;
   const gifTab = activeTab === EmojiBoardTab.Gif;
   const usage = emojiTab ? ImageUsage.Emoticon : ImageUsage.Sticker;
+  const [mobileSheetHeight, setMobileSheetHeight] = useState<number>();
+  const mobileSheetHeightRef = useRef(mobileSheetHeight);
+  mobileSheetHeightRef.current = mobileSheetHeight;
+  const mobileSheetDragRef = useRef<{
+    currentHeight: number;
+    startY: number;
+    startHeight: number;
+  } | null>(null);
+  const activeTabRef = useRef(activeTab);
 
   const previewAtom = useMemo(
     () =>
@@ -779,12 +889,21 @@ export function EmojiBoard({
     getEmoticonSearchStr,
     SEARCH_OPTIONS
   );
+  const [gifInputValue, setGifInputValue] = useState('');
+  const userId = mx.getSafeUserId();
+  const [recentGifSearches, setRecentGifSearches] = useState(() => getRecentGifSearches(userId));
 
   const [gifResult, gifSearch, resetGifSearch] = useAsyncSearch(
     favoriteGifs,
     getGifName,
     SEARCH_OPTIONS
   );
+  const gifSearchDebounceRef = useRef<number>();
+  const mobileSheetPointerMoveRef = useRef<((evt: PointerEvent) => void) | null>(null);
+  const mobileSheetPointerUpRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
 
   const searchedItems = emojiResult?.items.slice(0, 100);
   const klipyApiKey = clientConfig.gifs?.klipyApiKey ?? '';
@@ -795,29 +914,101 @@ export function EmojiBoard({
     searchGifs,
     resetSearchGifs,
   } = useGifSearch(favoriteGifs, gifSearch, klipyApiKey, gifsEnabled);
+  const gifDiscoveryItems = useGifDiscovery(
+    klipyApiKey,
+    gifsEnabled,
+    active && activeTab === EmojiBoardTab.Gif
+  );
   const [emojiGroupItems, stickerGroupItems, gifGroupItems] = useGroups(
     activeTab,
     imagePacks,
     gifs
   );
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(true);
-  const searchedGifItems = showFavoritesOnly
+  const isGifDiscovery = gifInputValue.trim().length === 0;
+  const searchedGifItems = isGifDiscovery
     ? (gifResult?.items.slice(0, 100) ?? favoriteGifs)
     : (gifResult?.items.slice(0, 100) ?? []);
+  const gifQuery = gifInputValue.trim();
+  const visibleGifCount = isGifDiscovery
+    ? favoriteGifs.length
+    : searchedGifItems.length + gifs.gifs.length;
 
   useEffect(() => {
-    if (active && activeTab === EmojiBoardTab.Gif) return;
+    if (active && activeTab === EmojiBoardTab.Gif) {
+      addGifTabOpenedBreadcrumb();
+      return;
+    }
 
-    setShowFavoritesOnly(true);
+    if (gifSearchDebounceRef.current !== undefined) {
+      clearTimeout(gifSearchDebounceRef.current);
+      gifSearchDebounceRef.current = undefined;
+    }
+    setGifInputValue('');
     resetGifSearch();
     resetSearchGifs();
   }, [active, activeTab, resetGifSearch, resetSearchGifs]);
+
+  useEffect(() => {
+    setRecentGifSearches(getRecentGifSearches(userId));
+  }, [userId]);
+
+  useEffect(() => {
+    if (!isMobileSheet) return undefined;
+
+    const applyHeight = () => {
+      const heights = getMobileSheetHeights(window.innerHeight, activeTab);
+      setMobileSheetHeight(heights.initial);
+    };
+
+    applyHeight();
+    window.addEventListener('resize', applyHeight);
+    return () => {
+      window.removeEventListener('resize', applyHeight);
+    };
+  }, [activeTab, isMobileSheet]);
+
+  const rememberGifSearch = useCallback(
+    (term: string) => {
+      const normalized = term.trim();
+      if (!normalized) return;
+      setRecentGifSearches(addRecentGifSearch(userId, normalized));
+    },
+    [userId]
+  );
+
+  const applyGifSearch = useCallback(
+    (term: string) => {
+      const normalized = term.trim();
+      if (gifSearchDebounceRef.current !== undefined) {
+        clearTimeout(gifSearchDebounceRef.current);
+        gifSearchDebounceRef.current = undefined;
+      }
+      setGifInputValue(normalized);
+      if (!normalized) {
+        resetGifSearch();
+        resetSearchGifs();
+        return;
+      }
+      rememberGifSearch(normalized);
+      searchGifs(normalized);
+    },
+    [rememberGifSearch, resetGifSearch, resetSearchGifs, searchGifs]
+  );
+
+  useEffect(
+    () => () => {
+      if (gifSearchDebounceRef.current !== undefined) {
+        clearTimeout(gifSearchDebounceRef.current);
+      }
+    },
+    []
+  );
 
   const groupsByTab = {
     [EmojiBoardTab.Emoji]: emojiGroupItems,
     [EmojiBoardTab.Sticker]: stickerGroupItems,
     [EmojiBoardTab.Gif]:
-      showFavoritesOnly && gifs.favorites.length > 0
+      isGifDiscovery && gifs.favorites.length > 0
         ? [
             {
               id: 'favorites_group',
@@ -833,33 +1024,50 @@ export function EmojiBoard({
                 items: searchedGifItems,
               },
             ].concat(gifGroupItems)
-          : gifGroupItems,
+          : isGifDiscovery
+            ? []
+            : gifGroupItems,
   };
   const groups = groupsByTab[activeTab];
   const renderItem = useItemRenderer(activeTab, saveStickerEmojiBandwidth);
 
-  const handleOnChange: ChangeEventHandler<HTMLInputElement> = useDebounce(
-    useCallback(
-      (evt) => {
-        const term = evt.target.value;
-        if (activeTab === EmojiBoardTab.Gif) {
-          if (term) {
-            setShowFavoritesOnly(false);
-            searchGifs(term);
+  const handleOnChange: ChangeEventHandler<HTMLInputElement> = useCallback(
+    (evt) => {
+      const term = evt.target.value;
+      if (activeTab === EmojiBoardTab.Gif) {
+        setGifInputValue(term);
+        if (gifSearchDebounceRef.current !== undefined) {
+          clearTimeout(gifSearchDebounceRef.current);
+        }
+        gifSearchDebounceRef.current = window.setTimeout(() => {
+          const normalized = term.trim();
+          if (normalized) {
+            rememberGifSearch(normalized);
+            searchGifs(normalized);
           } else {
-            setShowFavoritesOnly(true);
             resetGifSearch();
             resetSearchGifs();
           }
-        } else if (term) {
-          emojiSearch(term);
-        } else {
-          resetEmojiSearch();
-        }
-      },
-      [activeTab, emojiSearch, resetEmojiSearch, searchGifs, resetGifSearch, resetSearchGifs]
-    ),
-    { wait: 200 }
+          gifSearchDebounceRef.current = undefined;
+        }, 200);
+        return;
+      }
+
+      if (term) {
+        emojiSearch(term);
+      } else {
+        resetEmojiSearch();
+      }
+    },
+    [
+      activeTab,
+      emojiSearch,
+      rememberGifSearch,
+      resetEmojiSearch,
+      resetGifSearch,
+      resetSearchGifs,
+      searchGifs,
+    ]
   );
 
   const contentScrollRef = useRef<HTMLDivElement>(null);
@@ -914,6 +1122,13 @@ export function EmojiBoard({
       const gifDataStr = targetEl.getAttribute('data-gif-data');
       const gifData = gifDataStr ? JSON.parse(gifDataStr) : null;
       if (gifData) {
+        rememberGifSearch(gifQuery);
+        const gifSource = gifQuery
+          ? 'search'
+          : favoriteGifs.some((f) => f.url === gifData.url)
+            ? 'favorites'
+            : 'discovery';
+        addGifSentBreadcrumb(gifSource);
         onGifSelect?.(gifData);
       }
     }
@@ -929,6 +1144,69 @@ export function EmojiBoard({
     const groupIndex = groups.findIndex((group) => group.id === groupId);
     virtualizer.scrollToIndex(groupIndex, { align: 'start' });
   };
+
+  const handleMobileSheetPointerDown: PointerEventHandler<HTMLButtonElement> = useCallback(
+    (evt) => {
+      if (!isMobileSheet) return;
+
+      evt.preventDefault();
+      const currentHeight =
+        mobileSheetHeightRef.current ??
+        getMobileSheetHeights(window.innerHeight, activeTabRef.current).initial;
+      mobileSheetDragRef.current = {
+        currentHeight,
+        startY: evt.clientY,
+        startHeight: currentHeight,
+      };
+
+      const handlePointerMove = (moveEvt: PointerEvent) => {
+        const dragState = mobileSheetDragRef.current;
+        if (!dragState) return;
+
+        const heights = getMobileSheetHeights(window.innerHeight, activeTabRef.current);
+        const nextHeight = dragState.startHeight - (moveEvt.clientY - dragState.startY);
+        dragState.currentHeight = Math.max(heights.min, Math.min(heights.max, nextHeight));
+        setMobileSheetHeight(dragState.currentHeight);
+      };
+
+      const handlePointerUp = () => {
+        const dragState = mobileSheetDragRef.current;
+        mobileSheetDragRef.current = null;
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerUp);
+        mobileSheetPointerMoveRef.current = null;
+        mobileSheetPointerUpRef.current = null;
+
+        if (!dragState) return;
+
+        const heights = getMobileSheetHeights(window.innerHeight, activeTabRef.current);
+        const current = dragState.currentHeight;
+        const midpoint = (heights.min + heights.max) / 2;
+        setMobileSheetHeight(current >= midpoint ? heights.max : heights.min);
+      };
+
+      mobileSheetPointerMoveRef.current = handlePointerMove;
+      mobileSheetPointerUpRef.current = handlePointerUp;
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp, { once: true });
+    },
+    [isMobileSheet]
+  );
+
+  useEffect(
+    () => () => {
+      if (mobileSheetPointerMoveRef.current) {
+        window.removeEventListener('pointermove', mobileSheetPointerMoveRef.current);
+        mobileSheetPointerMoveRef.current = null;
+      }
+      if (mobileSheetPointerUpRef.current) {
+        window.removeEventListener('pointerup', mobileSheetPointerUpRef.current);
+        mobileSheetPointerUpRef.current = null;
+      }
+      mobileSheetDragRef.current = null;
+    },
+    []
+  );
 
   // sync active sidebar tab with scroll
   useEffect(() => {
@@ -985,16 +1263,59 @@ export function EmojiBoard({
             {onTabChange && (
               <EmojiBoardTabs tab={activeTab} onTabChange={onTabChange} showGifTab={gifsEnabled} />
             )}
-            <SearchInput
-              key={activeTab}
-              tab={activeTab}
-              query={activeTab === EmojiBoardTab.Gif ? gifResult?.query : emojiResult?.query}
-              onChange={handleOnChange}
-              placeholder={gifTab ? 'Search Klipy GIFs' : undefined}
-              allowTextCustomEmoji={allowTextCustomEmoji}
-              onTextCustomEmojiSelect={handleTextCustomEmojiSelect}
-            />
+            {gifTab ? (
+              <Box className={componentCss.GifHeader} direction="Column" gap="200">
+                <SearchInput
+                  key={activeTab}
+                  tab={activeTab}
+                  query={gifQuery}
+                  value={gifInputValue}
+                  onChange={handleOnChange}
+                  onClear={() => applyGifSearch('')}
+                  placeholder="Search Klipy"
+                  allowTextCustomEmoji={allowTextCustomEmoji}
+                  onTextCustomEmojiSelect={handleTextCustomEmojiSelect}
+                />
+                <Box
+                  className={componentCss.GifSearchMeta}
+                  alignItems="Center"
+                  justifyContent="SpaceBetween"
+                  wrap="Wrap"
+                  gap="100"
+                >
+                  <Text size="T200" priority="300">
+                    {isGifDiscovery
+                      ? `${favoriteGifs.length} favorite${favoriteGifs.length === 1 ? '' : 's'} ready`
+                      : `${visibleGifCount} result${visibleGifCount === 1 ? '' : 's'}`}
+                  </Text>
+                  <Text className={componentCss.GifAttribution} size="T200" priority="300">
+                    Search and content by Klipy
+                  </Text>
+                </Box>
+              </Box>
+            ) : (
+              <SearchInput
+                key={activeTab}
+                tab={activeTab}
+                query={emojiResult?.query}
+                onChange={handleOnChange}
+                allowTextCustomEmoji={allowTextCustomEmoji}
+                onTextCustomEmojiSelect={handleTextCustomEmojiSelect}
+              />
+            )}
           </Box>
+        }
+        mobileSheetHandle={
+          isMobileSheet ? (
+            <Box className={componentCss.MobileSheetHandleShell}>
+              <button
+                type="button"
+                className={componentCss.MobileSheetHandle}
+                aria-label="Resize picker"
+                onPointerDown={handleMobileSheetPointerDown}
+              />
+            </Box>
+          ) : undefined
         }
         sidebar={
           emojiTab ? (
@@ -1016,6 +1337,8 @@ export function EmojiBoard({
           )
         }
         isFullWidth={isFullWidth}
+        isGifLayout={gifTab}
+        style={isMobileSheet && mobileSheetHeight ? { height: mobileSheetHeight } : undefined}
       >
         <Box grow="Yes">
           <EmojiGroupHolder
@@ -1024,6 +1347,59 @@ export function EmojiBoard({
             previewAtom={previewAtom}
             onGroupItemClick={handleGroupItemClick}
           >
+            {gifTab && isGifDiscovery && (
+              <Box className={componentCss.GifDiscovery} direction="Column" gap="300" shrink="No">
+                {recentGifSearches.length > 0 && (
+                  <Box className={componentCss.GifDiscoverySection} direction="Column" gap="100">
+                    <Text size="T200" priority="300">
+                      Recent searches
+                    </Text>
+                    <div className={componentCss.GifChipRow}>
+                      {recentGifSearches.map((search) => (
+                        <Chip
+                          key={search}
+                          variant="Secondary"
+                          radii="Pill"
+                          size="400"
+                          outlined
+                          before={<ClockCounterClockwise size={14} />}
+                          onClick={() => applyGifSearch(search)}
+                        >
+                          <Text size="T200">{search}</Text>
+                        </Chip>
+                      ))}
+                    </div>
+                  </Box>
+                )}
+                <Box className={componentCss.GifDiscoverySection} direction="Column" gap="100">
+                  <Text size="T200" priority="300">
+                    Popular searches
+                  </Text>
+                  <div className={componentCss.GifPromptGrid}>
+                    {gifDiscoveryItems.map(({ term, gif }) => {
+                      const previewUrl = gif?.preview_url ?? gif?.url;
+                      const initialGifUrl = previewUrl?.startsWith('mxc://')
+                        ? (mxcUrlToHttp(mx, previewUrl, useAuthentication) ?? '')
+                        : (previewUrl ?? '');
+                      const aspectRatio =
+                        gif?.width && gif.height && gif.width > 0 && gif.height > 0
+                          ? `${gif.width} / ${gif.height}`
+                          : '1.55 / 1';
+
+                      return (
+                        <GifSearchItem
+                          key={term}
+                          label={term}
+                          previewUrl={initialGifUrl}
+                          style={{ aspectRatio }}
+                          onClick={() => applyGifSearch(term)}
+                        />
+                      );
+                    })}
+                  </div>
+                </Box>
+              </Box>
+            )}
             {activeTab !== EmojiBoardTab.Gif && searchedItems && (
               <EmojiGroup
                 id={SEARCH_GROUP_ID}
@@ -1062,7 +1438,7 @@ export function EmojiBoard({
                 loading={gifsLoading}
                 error={gifsError}
                 isEmpty={groups.every((group) => group.items.length === 0)}
-                showEmptyState={!showFavoritesOnly}
+                showEmptyState={!isGifDiscovery}
               />
             )}
           </EmojiGroupHolder>

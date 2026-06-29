@@ -514,9 +514,14 @@ export const UrlPreviewCard = as<
               onAuxClick={handleAuxClick}
               body={prev['og:title']}
               url={prev['og:image']}
+              mimeType={(typeof prev['og:image:type'] === 'string'
+                ? prev['og:image:type']
+                : (ogImageInfo?.mimetype ?? '')
+              ).trim()}
               info={ogImageInfo}
               matrixThumbnailMaxEdge={previewThumbMaxEdge}
               cacheThumbnailMetadataAsMedia
+              allowDirectAnimatedImage={autoplayGifs}
               onError={() => setImageError(true)}
               suppressErrorUI
               renderViewer={(p) => <ImageViewer {...p} />}
