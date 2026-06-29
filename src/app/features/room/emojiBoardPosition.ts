@@ -10,13 +10,18 @@ export const getEmojiBoardWidth = (viewportWidth: number, preferWide = false): n
   return Math.min(maxWidth, Math.max(0, viewportWidth - gutter));
 };
 
-export const getEmojiBoardRightOffset = (anchorRight: number, viewportWidth: number): number => {
-  const boardWidth = getEmojiBoardWidth(viewportWidth);
+export const getEmojiBoardRightOffset = (
+  anchorRight: number,
+  viewportWidth: number,
+  preferWide = false
+): number => {
+  const boardWidth = getEmojiBoardWidth(viewportWidth, preferWide);
+  const maxWidth = preferWide ? GIF_BOARD_MAX_WIDTH : EMOJI_BOARD_MAX_WIDTH;
   const availableSlack = Math.max(0, viewportWidth - boardWidth);
 
   // On narrow viewports the responsive picker already fills the screen minus a
   // fixed gutter, so centering it preserves even left/right spacing.
-  if (boardWidth < EMOJI_BOARD_MAX_WIDTH) {
+  if (boardWidth < maxWidth) {
     return availableSlack / 2;
   }
 

@@ -2434,7 +2434,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     const tabletBoardPosition = {
                       right: getEmojiBoardRightOffset(
                         emojiBoardAnchorRect.right,
-                        window.innerWidth
+                        window.innerWidth,
+                        isWideGifBoard
                       ),
                     };
 

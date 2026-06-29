@@ -261,6 +261,9 @@ function useGifSearch(
   return { gifs, loading, error, searchGifs, resetSearchGifs };
 }
 
+// Module-level cache so discovery results survive tab switches and re-mounts.
+const gifDiscoveryCache = new Map<string, GifDiscoveryItem[]>();
+
 function useGifDiscovery(klipyApiKey: string, gifsEnabled: boolean, active: boolean) {
   const [items, setItems] = useState<GifDiscoveryItem[]>(
     POPULAR_GIF_SEARCH_TERMS.map((term) => ({ term }))
@@ -270,6 +273,12 @@ function useGifDiscovery(klipyApiKey: string, gifsEnabled: boolean, active: bool
   useEffect(() => {
     if (!active || !gifsEnabled) {
       setItems(POPULAR_GIF_SEARCH_TERMS.map((term) => ({ term })));
+      return undefined;
+    }
+
+    const cached = gifDiscoveryCache.get(klipyApiKey);
+    if (cached) {
+      setItems(cached);
       return undefined;
     }
 
@@ -298,6 +307,7 @@ function useGifDiscovery(klipyApiKey: string, gifsEnabled: boolean, active: bool
       })
     ).then((results) => {
       if (cancelled || requestIdRef.current !== requestId) return;
+      gifDiscoveryCache.set(klipyApiKey, results);
       setItems(results);
     });
 
@@ -762,17 +772,22 @@ const getMobileSheetHeights = (viewportHeight: number, tab: EmojiBoardTab) => {
   const maxHeight = Math.max(360, Math.min(viewportHeight - 72, viewportHeight * 0.9));
 
   if (tab === EmojiBoardTab.Gif) {
+    const max = maxHeight;
+    const min = Math.max(340, Math.min(max - 80, viewportHeight * 0.58));
     return {
-      min: Math.max(340, Math.min(maxHeight - 80, viewportHeight * 0.58)),
-      max: maxHeight,
-      initial: Math.max(380, Math.min(maxHeight, viewportHeight * 0.78)),
+      min,
+      max,
+      // Clamp initial to [min, max] — on short viewports max can be < 380.
+      initial: Math.max(min, Math.min(max, Math.max(380, viewportHeight * 0.78))),
     };
   }
 
+  const max = Math.max(340, Math.min(maxHeight, viewportHeight * 0.7));
+  const min = Math.max(300, Math.min(max - 60, viewportHeight * 0.46));
   return {
-    min: Math.max(300, Math.min(maxHeight - 60, viewportHeight * 0.46)),
-    max: Math.max(340, Math.min(maxHeight, viewportHeight * 0.7)),
-    initial: Math.max(320, Math.min(maxHeight, viewportHeight * 0.56)),
+    min,
+    max,
+    initial: Math.max(min, Math.min(max, Math.max(320, viewportHeight * 0.56))),
   };
 };
 
