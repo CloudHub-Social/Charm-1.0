@@ -58,16 +58,20 @@ import { gifSearchConfigured, useClientConfig } from '$hooks/useClientConfig';
 import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
 import { hasControllingServiceWorker } from '$utils/platform';
 
-// image/webp is included because Klipy proxy GIFs are served as animated WebP.
-const ANIMATED_IMAGE_MIME_TYPES = new Set(['image/gif', 'image/apng', 'image/webp']);
+const ANIMATED_IMAGE_MIME_TYPES = new Set(['image/gif', 'image/apng']);
 
 const isAnimatedImageContent = (
   mimeType: string | undefined,
   body: string | undefined,
-  url: string
+  url: string,
+  klipyProxyUrl?: string
 ): boolean => {
   const normalizedMime = mimeType?.toLowerCase();
   if (normalizedMime && ANIMATED_IMAGE_MIME_TYPES.has(normalizedMime)) return true;
+  // image/webp is only animated for Klipy proxy GIFs; guard with isKlipyProxyMxc
+  // so static WebP images don't get the direct-stream treatment.
+  if (normalizedMime === 'image/webp' && klipyProxyUrl && isKlipyProxyMxc(url, klipyProxyUrl))
+    return true;
 
   const lowerBody = body?.toLowerCase() ?? '';
   const lowerUrl = url.toLowerCase();
@@ -262,6 +266,7 @@ export const ImageContent = as<'div', ImageContentProps>(
     ref
   ) => {
     const mx = useMatrixClient();
+    const clientConfig = useClientConfig();
     const useAuthentication = useMediaAuthentication();
     const mediaUrlCache = useMediaUrlCacheContext();
     const blurHash = validBlurHash(info?.[MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME]);
@@ -304,7 +309,7 @@ export const ImageContent = as<'div', ImageContentProps>(
     const shouldStreamDirectAnimatedImage =
       !encInfo &&
       allowDirectAnimatedImage &&
-      isAnimatedImageContent(mimeType, body, url) &&
+      isAnimatedImageContent(mimeType, body, url, clientConfig.gifs?.proxyUrl) &&
       (!mediaUseAuthentication || hasServiceWorkerControl);
     const [srcState, loadSrc, setSrcState] = useAsyncCallback(
       useCallback(async () => {
