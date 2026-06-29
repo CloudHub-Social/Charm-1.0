@@ -2447,9 +2447,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                           // Position above the emoji button (mirrors PopOut position="Top" offset=16).
                           bottom: window.innerHeight - emojiBoardAnchorRect.top + 16,
                           ...(isPhoneLayoutDevice() ? phoneBoardPosition : tabletBoardPosition),
-                          width: isWideGifBoard
-                            ? mobileBoardWidth
-                            : getEmojiBoardWidth(window.innerWidth),
+                          ...(isPhoneLayoutDevice() && {
+                            width: isWideGifBoard
+                              ? mobileBoardWidth
+                              : getEmojiBoardWidth(window.innerWidth),
+                          }),
                           display: emojiBoardTab !== undefined ? undefined : 'none',
                         }}
                       >
