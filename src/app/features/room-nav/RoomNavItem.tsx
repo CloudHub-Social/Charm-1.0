@@ -526,13 +526,21 @@ export function RoomNavItem({
                     ) : (
                       <AvatarPresence
                         badge={
-                          presence &&
-                          presence.presence !== Presence.Offline && (
-                            <PresenceBadge
-                              presence={presence.presence}
-                              size={hideText ? '300' : '200'}
-                            />
-                          )
+                          isGroupDM
+                            ? groupPresence &&
+                              groupPresence !== Presence.Offline && (
+                                <PresenceBadge
+                                  presence={groupPresence}
+                                  size={hideText ? '300' : '200'}
+                                />
+                              )
+                            : presence &&
+                              presence.presence !== Presence.Offline && (
+                                <PresenceBadge
+                                  presence={presence.presence}
+                                  size={hideText ? '300' : '200'}
+                                />
+                              )
                         }
                         style={hideTextStyling(hideText)}
                       >
