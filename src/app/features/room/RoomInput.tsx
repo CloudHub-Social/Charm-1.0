@@ -2129,13 +2129,12 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         url = `mxc://${gifProxyHost}/${toMatrixMediaId(remoteId, 'klipy_')}`;
       }
 
-      // For Klipy proxy GIFs, append .webp to the body for Discord bridge compat.
-      // Strip any existing image extension first so a title like "name.gif" or a
-      // re-favorited "name.webp" never produces a double-suffix. For mxc:// favorites
-      // (isKlipyProxy = false) the body is kept verbatim — it already carries the
-      // correct extension from when the GIF was originally sent.
+      // Discord only auto-animates images with a .gif extension; .webp files
+      // render as stills. Strip any existing image extension and always append
+      // .gif so both fresh Klipy sends and re-sends from the favorites board
+      // arrive with the right filename for Discord's bridge to animate.
       const baseTitle = gif.title.replace(/\.(gif|webp)$/i, '');
-      const body = isKlipyProxy ? `${baseTitle}.webp` : gif.title;
+      const body = `${baseTitle}.gif`;
       const mimetype = 'image/gif';
 
       const content: RoomMessageEventContent & IContent = {
