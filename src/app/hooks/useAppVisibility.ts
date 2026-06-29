@@ -149,6 +149,10 @@ export function useAppVisibility(mx: MatrixClient | undefined, activeSession?: S
       retrySyncOnResume(mx, trigger);
     };
 
+    if (document.visibilityState === 'visible') {
+      requestForegroundRecovery('visibilitychange', { initialMount: true });
+    }
+
     const handleVisibilityChange = () => {
       const isVisible = document.visibilityState === 'visible';
       debugLog.info(
