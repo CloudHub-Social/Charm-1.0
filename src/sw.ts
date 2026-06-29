@@ -2380,6 +2380,11 @@ cleanupOutdatedCaches();
 self.addEventListener('fetch', (event: FetchEvent) => {
   const { request } = event;
   if (request.mode !== 'navigate') return;
+  // Skip non-SPA document paths (e.g. the Element Call iframe at /public/element-call/).
+  // request.mode === 'navigate' fires for same-origin iframe navigations too, so we must
+  // not intercept widget URLs or they would receive index.html instead of their own page.
+  const url = new URL(request.url);
+  if (url.pathname.startsWith('/public/')) return;
 
   event.respondWith(
     (async () => {
