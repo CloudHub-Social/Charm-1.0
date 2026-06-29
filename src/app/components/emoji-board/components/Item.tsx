@@ -263,3 +263,45 @@ export function GifItem({
     </Box>
   );
 }
+
+export function GifSearchItem({
+  label,
+  previewUrl,
+  style,
+  onClick,
+}: {
+  label: string;
+  previewUrl?: string;
+  style?: CSSProperties;
+  onClick: () => void;
+}) {
+  return (
+    <Box
+      as="button"
+      className={css.GifSearchItem}
+      type="button"
+      style={style}
+      alignItems="Center"
+      justifyContent="Center"
+      title={`Search GIFs for ${label}`}
+      aria-label={`Search GIFs for ${label}`}
+      onClick={onClick}
+    >
+      {previewUrl && (
+        <AuthenticatedImg
+          loading="lazy"
+          alt=""
+          aria-hidden
+          src={previewUrl}
+          style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
+      <div className={css.GifScrim} />
+      <Box className={css.GifSearchMetaOverlay}>
+        <Text className={css.GifMetaTitle} size="B500">
+          {label}
+        </Text>
+      </Box>
+    </Box>
+  );
+}

@@ -6,7 +6,7 @@ import type {
   RefObject,
 } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Chip, Text, color, config, Scroll } from 'folds';
+import { Box, Chip, Text, config, Scroll } from 'folds';
 import { AuthenticatedImg } from '$components/AuthenticatedImg';
 import { ClockCounterClockwise } from '$components/icons/phosphor';
 import FocusTrap from 'focus-trap-react';
@@ -52,6 +52,7 @@ import {
   EmojiItem,
   StickerItem,
   GifItem,
+  GifSearchItem,
   CustomEmojiItem,
   ImageGroupIcon,
   GroupIcon,
@@ -66,6 +67,7 @@ import { useClientConfig } from '$hooks/useClientConfig';
 import { gifSearchConfigured } from '$hooks/useClientConfig';
 import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
 import * as componentCss from './components/styles.css';
+import { addRecentGifSearch, getRecentGifSearches } from '$utils/recentGifSearches';
 
 const RECENT_GROUP_ID = 'recent_group';
 const SEARCH_GROUP_ID = 'search_group';
@@ -84,6 +86,11 @@ type GifGroupItem = {
   id: string;
   name: string;
   items: GifData[];
+};
+
+type GifDiscoveryItem = {
+  term: string;
+  gif?: GifData;
 };
 
 type KlipyGifVariant = {
@@ -144,6 +151,17 @@ const parseKlipyResult = (klipyResult: KlipyGifResult): GifData => {
 
 const hasUsableGifUrl = (gif: GifData): boolean =>
   gif.url.trim().length > 0 || !!gif.preview_url?.trim();
+
+const POPULAR_GIF_SEARCH_TERMS = [
+  'kiss',
+  'love',
+  'happy',
+  'lol',
+  'good morning',
+  'good night',
+  'confused',
+  'sad',
+] as const;
 
 function useGifSearch(
   favoriteGifs: GifData[],
@@ -241,6 +259,54 @@ function useGifSearch(
   );
 
   return { gifs, loading, error, searchGifs, resetSearchGifs };
+}
+
+function useGifDiscovery(klipyApiKey: string, gifsEnabled: boolean, active: boolean) {
+  const [items, setItems] = useState<GifDiscoveryItem[]>(
+    POPULAR_GIF_SEARCH_TERMS.map((term) => ({ term }))
+  );
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!active || !gifsEnabled) {
+      setItems(POPULAR_GIF_SEARCH_TERMS.map((term) => ({ term })));
+      return undefined;
+    }
+
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    let cancelled = false;
+
+    Promise.all(
+      POPULAR_GIF_SEARCH_TERMS.map(async (term) => {
+        try {
+          const url = new URL('https://api.klipy.com');
+          url.pathname = `/api/v1/${klipyApiKey}/gifs/search`;
+          url.searchParams.set('q', term);
+          url.searchParams.set('per_page', '1');
+
+          const response = await fetch(url.toString());
+          if (response.status !== 200) return { term };
+
+          const data = await response.json();
+          const result = (data.data.data as KlipyGifResult[] | undefined)?.[0];
+          const gif = result ? parseKlipyResult(result) : undefined;
+          return gif && hasUsableGifUrl(gif) ? { term, gif } : { term };
+        } catch {
+          return { term };
+        }
+      })
+    ).then((results) => {
+      if (cancelled || requestIdRef.current !== requestId) return;
+      setItems(results);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [active, gifsEnabled, klipyApiKey]);
+
+  return items;
 }
 
 const useGroups = (
@@ -780,6 +846,9 @@ export function EmojiBoard({
     getEmoticonSearchStr,
     SEARCH_OPTIONS
   );
+  const [gifInputValue, setGifInputValue] = useState('');
+  const userId = mx.getSafeUserId();
+  const [recentGifSearches, setRecentGifSearches] = useState(() => getRecentGifSearches(userId));
 
   const [gifResult, gifSearch, resetGifSearch] = useAsyncSearch(
     favoriteGifs,
@@ -796,36 +865,66 @@ export function EmojiBoard({
     searchGifs,
     resetSearchGifs,
   } = useGifSearch(favoriteGifs, gifSearch, klipyApiKey, gifsEnabled);
+  const gifDiscoveryItems = useGifDiscovery(
+    klipyApiKey,
+    gifsEnabled,
+    active && activeTab === EmojiBoardTab.Gif
+  );
   const [emojiGroupItems, stickerGroupItems, gifGroupItems] = useGroups(
     activeTab,
     imagePacks,
     gifs
   );
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(true);
-  const searchedGifItems = showFavoritesOnly
+  const isGifDiscovery = gifInputValue.trim().length === 0;
+  const searchedGifItems = isGifDiscovery
     ? (gifResult?.items.slice(0, 100) ?? favoriteGifs)
     : (gifResult?.items.slice(0, 100) ?? []);
-  const gifQuery = gifResult?.query?.trim() ?? '';
-  const visibleGifCount = showFavoritesOnly
+  const gifQuery = gifInputValue.trim();
+  const visibleGifCount = isGifDiscovery
     ? favoriteGifs.length
     : searchedGifItems.length + gifs.gifs.length;
-  const gifSummaryLabel = showFavoritesOnly
-    ? `${favoriteGifs.length} favorite${favoriteGifs.length === 1 ? '' : 's'}`
-    : `${visibleGifCount} result${visibleGifCount === 1 ? '' : 's'}`;
 
   useEffect(() => {
     if (active && activeTab === EmojiBoardTab.Gif) return;
 
-    setShowFavoritesOnly(true);
+    setGifInputValue('');
     resetGifSearch();
     resetSearchGifs();
   }, [active, activeTab, resetGifSearch, resetSearchGifs]);
+
+  useEffect(() => {
+    setRecentGifSearches(getRecentGifSearches(userId));
+  }, [userId]);
+
+  const rememberGifSearch = useCallback(
+    (term: string) => {
+      const normalized = term.trim();
+      if (!normalized) return;
+      setRecentGifSearches(addRecentGifSearch(userId, normalized));
+    },
+    [userId]
+  );
+
+  const applyGifSearch = useCallback(
+    (term: string) => {
+      const normalized = term.trim();
+      setGifInputValue(normalized);
+      if (!normalized) {
+        resetGifSearch();
+        resetSearchGifs();
+        return;
+      }
+      rememberGifSearch(normalized);
+      searchGifs(normalized);
+    },
+    [rememberGifSearch, resetGifSearch, resetSearchGifs, searchGifs]
+  );
 
   const groupsByTab = {
     [EmojiBoardTab.Emoji]: emojiGroupItems,
     [EmojiBoardTab.Sticker]: stickerGroupItems,
     [EmojiBoardTab.Gif]:
-      showFavoritesOnly && gifs.favorites.length > 0
+      isGifDiscovery && gifs.favorites.length > 0
         ? [
             {
               id: 'favorites_group',
@@ -851,11 +950,10 @@ export function EmojiBoard({
       (evt) => {
         const term = evt.target.value;
         if (activeTab === EmojiBoardTab.Gif) {
-          if (term) {
-            setShowFavoritesOnly(false);
+          setGifInputValue(term);
+          if (term.trim()) {
             searchGifs(term);
           } else {
-            setShowFavoritesOnly(true);
             resetGifSearch();
             resetSearchGifs();
           }
@@ -922,6 +1020,7 @@ export function EmojiBoard({
       const gifDataStr = targetEl.getAttribute('data-gif-data');
       const gifData = gifDataStr ? JSON.parse(gifDataStr) : null;
       if (gifData) {
+        rememberGifSearch(gifQuery);
         onGifSelect?.(gifData);
       }
     }
@@ -994,43 +1093,33 @@ export function EmojiBoard({
               <EmojiBoardTabs tab={activeTab} onTabChange={onTabChange} showGifTab={gifsEnabled} />
             )}
             {gifTab ? (
-              <Box direction="Column" gap="200">
-                <Box className={componentCss.GifHero} direction="Column" gap="200">
-                  <Box direction="Column" gap="100">
-                    <Text size="L400">Search GIFs</Text>
-                    <Text size="T200" priority="300">
-                      Search Klipy, keep favorites close, and send replies fast.
-                    </Text>
-                  </Box>
-                  <SearchInput
-                    key={activeTab}
-                    tab={activeTab}
-                    query={gifResult?.query}
-                    onChange={handleOnChange}
-                    placeholder="Search Klipy GIFs"
-                    allowTextCustomEmoji={allowTextCustomEmoji}
-                    onTextCustomEmojiSelect={handleTextCustomEmojiSelect}
-                  />
-                  <Box wrap="Wrap" gap="100" alignItems="Center" justifyContent="SpaceBetween">
-                    <Box wrap="Wrap" gap="100" alignItems="Center">
-                      <Chip variant="Secondary" radii="Pill" size="400" outlined>
-                        <Text size="T200">{gifSummaryLabel}</Text>
-                      </Chip>
-                      {gifQuery && (
-                        <Chip variant="Secondary" radii="Pill" size="400" outlined>
-                          <Text size="T200">"{gifQuery}"</Text>
-                        </Chip>
-                      )}
-                    </Box>
-                    <Text
-                      className={componentCss.GifAttribution}
-                      size="T200"
-                      priority="300"
-                      style={{ color: color.Secondary.Main }}
-                    >
-                      Powered by KLIPY
-                    </Text>
-                  </Box>
+              <Box className={componentCss.GifHeader} direction="Column" gap="200">
+                <SearchInput
+                  key={activeTab}
+                  tab={activeTab}
+                  query={gifQuery}
+                  value={gifInputValue}
+                  onChange={handleOnChange}
+                  onClear={() => applyGifSearch('')}
+                  placeholder="Search Klipy"
+                  allowTextCustomEmoji={allowTextCustomEmoji}
+                  onTextCustomEmojiSelect={handleTextCustomEmojiSelect}
+                />
+                <Box
+                  className={componentCss.GifSearchMeta}
+                  alignItems="Center"
+                  justifyContent="SpaceBetween"
+                  wrap="Wrap"
+                  gap="100"
+                >
+                  <Text size="T200" priority="300">
+                    {isGifDiscovery
+                      ? `${favoriteGifs.length} favorite${favoriteGifs.length === 1 ? '' : 's'} ready`
+                      : `${visibleGifCount} result${visibleGifCount === 1 ? '' : 's'}`}
+                  </Text>
+                  <Text className={componentCss.GifAttribution} size="T200" priority="300">
+                    Search and content by Klipy
+                  </Text>
                 </Box>
               </Box>
             ) : (
@@ -1073,25 +1162,56 @@ export function EmojiBoard({
             previewAtom={previewAtom}
             onGroupItemClick={handleGroupItemClick}
           >
-            {gifTab && (
-              <Box className={componentCss.GifToolbar} shrink="No">
-                <Box
-                  className={componentCss.GifToolbarBar}
-                  alignItems="Center"
-                  justifyContent="SpaceBetween"
-                  wrap="Wrap"
-                  gap="100"
-                >
+            {gifTab && isGifDiscovery && (
+              <Box className={componentCss.GifDiscovery} direction="Column" gap="300" shrink="No">
+                {recentGifSearches.length > 0 && (
+                  <Box className={componentCss.GifDiscoverySection} direction="Column" gap="100">
+                    <Text size="T200" priority="300">
+                      Recent searches
+                    </Text>
+                    <div className={componentCss.GifChipRow}>
+                      {recentGifSearches.map((search) => (
+                        <Chip
+                          key={search}
+                          variant="Secondary"
+                          radii="Pill"
+                          size="400"
+                          outlined
+                          before={<ClockCounterClockwise size={14} />}
+                          onClick={() => applyGifSearch(search)}
+                        >
+                          <Text size="T200">{search}</Text>
+                        </Chip>
+                      ))}
+                    </div>
+                  </Box>
+                )}
+                <Box className={componentCss.GifDiscoverySection} direction="Column" gap="100">
                   <Text size="T200" priority="300">
-                    {showFavoritesOnly
-                      ? 'Your favorited GIFs'
-                      : gifQuery
-                        ? `Results from Klipy for "${gifQuery}"`
-                        : 'Results from Klipy'}
+                    Popular searches
                   </Text>
-                  <Text className={componentCss.GifAttribution} size="T200" priority="300">
-                    Search and content by KLIPY
-                  </Text>
+                  <div className={componentCss.GifPromptGrid}>
+                    {gifDiscoveryItems.map(({ term, gif }) => {
+                      const previewUrl = gif?.preview_url ?? gif?.url;
+                      const initialGifUrl = previewUrl?.startsWith('mxc://')
+                        ? (mxcUrlToHttp(mx, previewUrl, useAuthentication) ?? '')
+                        : (previewUrl ?? '');
+                      const aspectRatio =
+                        gif?.width && gif.height && gif.width > 0 && gif.height > 0
+                          ? `${gif.width} / ${gif.height}`
+                          : '1.55 / 1';
+
+                      return (
+                        <GifSearchItem
+                          key={term}
+                          label={term}
+                          previewUrl={initialGifUrl}
+                          style={{ aspectRatio }}
+                          onClick={() => applyGifSearch(term)}
+                        />
+                      );
+                    })}
+                  </div>
                 </Box>
               </Box>
             )}
@@ -1133,7 +1253,7 @@ export function EmojiBoard({
                 loading={gifsLoading}
                 error={gifsError}
                 isEmpty={groups.every((group) => group.items.length === 0)}
-                showEmptyState={!showFavoritesOnly}
+                showEmptyState={!isGifDiscovery}
               />
             )}
           </EmojiGroupHolder>

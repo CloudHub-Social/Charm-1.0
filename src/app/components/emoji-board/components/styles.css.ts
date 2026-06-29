@@ -35,22 +35,34 @@ export const Header = style({
   paddingBottom: 0,
 });
 
-export const GifHero = style({
-  padding: config.space.S300,
+export const GifHeader = style({
+  padding: config.space.S200,
   borderRadius: config.radii.R400,
-  border: `${config.borderWidth.B300} solid ${color.Surface.ContainerLine}`,
-  background: `linear-gradient(180deg, ${color.SurfaceVariant.Container} 0%, ${color.Surface.Container} 100%)`,
+  background: color.SurfaceVariant.Container,
 });
 
-export const GifToolbar = style({
-  padding: `0 ${config.space.S200} ${config.space.S200}`,
+export const GifSearchMeta = style({
+  padding: `0 ${config.space.S100}`,
 });
 
-export const GifToolbarBar = style({
-  padding: `${config.space.S100} ${config.space.S200}`,
-  borderRadius: config.radii.R300,
-  backgroundColor: color.SurfaceVariant.Container,
-  color: color.SurfaceVariant.OnContainer,
+export const GifDiscovery = style({
+  padding: `${config.space.S100} ${config.space.S200} ${config.space.S300}`,
+});
+
+export const GifDiscoverySection = style({
+  paddingTop: config.space.S100,
+});
+
+export const GifChipRow = style({
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: config.space.S100,
+});
+
+export const GifPromptGrid = style({
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  gap: config.space.S100,
 });
 
 export const GifAttribution = style({
@@ -156,12 +168,6 @@ export const GifGroupContent = style([
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
     gap: config.space.S100,
     padding: `0 ${config.space.S200}`,
-
-    '@media': {
-      'screen and (max-width: 480px)': {
-        gridTemplateColumns: 'minmax(0, 1fr)',
-      },
-    },
   },
 ]);
 
@@ -263,6 +269,13 @@ export const GifItem = style([
   },
 ]);
 
+export const GifSearchItem = style([
+  GifItem,
+  {
+    minHeight: toRem(104),
+  },
+]);
+
 export const GifImg = style({
   position: 'absolute',
   inset: 0,
@@ -288,6 +301,19 @@ export const GifMeta = style({
   padding: `${config.space.S200} ${config.space.S200} ${config.space.S200}`,
   color: '#fff',
 });
+
+export const GifSearchMetaOverlay = style([
+  GifMeta,
+  {
+    top: 0,
+    bottom: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: config.space.S300,
+    textAlign: 'center',
+  },
+]);
 
 export const GifMetaTitle = style({
   overflow: 'hidden',

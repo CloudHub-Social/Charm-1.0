@@ -48,7 +48,7 @@ import { getScopedMediaCacheKey } from '$utils/mediaTransport';
 import { storeMediaMetadataForBlob } from '$utils/mediaMetadata';
 import { ModalWide } from '$styles/Modal.css';
 import { validBlurHash } from '$utils/blurHash';
-import { isSupportedGifFavoriteUrl } from '$utils/gifs';
+import { isKlipyProxyMxc, isSupportedGifFavoriteUrl } from '$utils/gifs';
 import * as css from './style.css';
 import {
   MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS,
@@ -257,9 +257,12 @@ export const ImageContent = as<'div', ImageContentProps>(
   ) => {
     const mx = useMatrixClient();
     const useAuthentication = useMediaAuthentication();
+    const clientConfig = useClientConfig();
     const mediaUrlCache = useMediaUrlCacheContext();
     const blurHash = validBlurHash(info?.[MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME]);
 
+    const preferUnauthenticatedProxyMedia = isKlipyProxyMxc(url, clientConfig.gifs?.proxyUrl);
+    const mediaUseAuthentication = preferUnauthenticatedProxyMedia ? false : useAuthentication;
     const [load, setLoad] = useState(false);
     const [error, setError] = useState(false);
     const [viewer, setViewer] = useState(false);
@@ -268,8 +271,8 @@ export const ImageContent = as<'div', ImageContentProps>(
     const [isHovered, setIsHovered] = useState(false);
     const rawMediaUrl = useMemo(() => {
       if (url.startsWith('http')) return url;
-      return mediaUrlCache.get(mx, url, useAuthentication) ?? undefined;
-    }, [mediaUrlCache, mx, url, useAuthentication]);
+      return mediaUrlCache.get(mx, url, mediaUseAuthentication) ?? undefined;
+    }, [mediaUrlCache, mediaUseAuthentication, mx, url]);
     const safeBody = body ?? 'Image';
     const mediaMetadataKey = useMemo(() => {
       if (encInfo) return getScopedMediaCacheKey(url);
@@ -295,7 +298,7 @@ export const ImageContent = as<'div', ImageContentProps>(
       !encInfo &&
       allowDirectAnimatedImage &&
       isAnimatedImageContent(mimeType, body, url) &&
-      (!useAuthentication || hasControllingServiceWorker());
+      (!mediaUseAuthentication || hasControllingServiceWorker());
     const [srcState, loadSrc, setSrcState] = useAsyncCallback(
       useCallback(async () => {
         if (url.startsWith('http')) return url;
@@ -305,7 +308,7 @@ export const ImageContent = as<'div', ImageContentProps>(
 
         if (typeof matrixThumbnailMaxEdge === 'number' && matrixThumbnailMaxEdge > 0 && !encInfo) {
           const { w, h } = imageDimensionsRef.current;
-          const requestKey = `${url}|${useAuthentication ? 'auth' : 'noauth'}|${matrixThumbnailMaxEdge}|${w ?? 'auto'}x${h ?? 'auto'}`;
+          const requestKey = `${url}|${mediaUseAuthentication ? 'auth' : 'noauth'}|${matrixThumbnailMaxEdge}|${w ?? 'auto'}x${h ?? 'auto'}`;
           let request = thumbnailRequestRef.current;
           if (request?.key !== requestKey) {
             const { tw, th } = thumbnailDimsForMaxEdge(matrixThumbnailMaxEdge, w, h);
@@ -318,7 +321,15 @@ export const ImageContent = as<'div', ImageContentProps>(
             thumbnailRequestRef.current = request;
           }
           const { tw, th, cacheParam } = request;
-          const thumbUrl = mediaUrlCache.get(mx, url, useAuthentication, tw, th, 'scale', false);
+          const thumbUrl = mediaUrlCache.get(
+            mx,
+            url,
+            mediaUseAuthentication,
+            tw,
+            th,
+            'scale',
+            false
+          );
           if (thumbUrl) {
             const cachedBlob = mediaUrlCache.getBlob(url, false, cacheParam);
             if (cachedBlob) return cachedBlob;
@@ -384,7 +395,7 @@ export const ImageContent = as<'div', ImageContentProps>(
         rawMediaUrl,
         shouldStreamDirectAnimatedImage,
         url,
-        useAuthentication,
+        mediaUseAuthentication,
       ])
     );
 
