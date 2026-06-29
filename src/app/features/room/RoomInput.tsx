@@ -2095,13 +2095,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       }
 
       const content: RoomMessageEventContent & IContent = {
-        body: gif.title,
+        body: `${gif.title}.webp`,
         url: url,
         msgtype: MsgType.Image,
         info: {
           w: gif.width,
           h: gif.height,
-          mimetype: 'image/gif',
+          mimetype: 'image/webp',
         },
       };
 
