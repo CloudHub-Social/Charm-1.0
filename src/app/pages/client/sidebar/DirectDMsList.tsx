@@ -52,8 +52,11 @@ function DMItem({ room, selected }: DMItemProps) {
   const dmPresence = useUserPresence(dmUserId ?? '');
 
   // Get member info for group DMs using m.direct and profile API (doesn't require full room state)
-  // Members are sorted by who last sent messages (most recent first)
-  const groupMembers = useGroupDMMembers(mx, room, MAX_GROUP_MEMBERS);
+  // Members are sorted by who last sent messages (most recent first).
+  // Only pass the room for actual group DMs — for 1:1 DMs the hook would fire a
+  // profile-API round-trip, trigger a re-render, and transiently make dmUserId undefined,
+  // clearing the presence dot. RoomNavItem uses the same guard.
+  const groupMembers = useGroupDMMembers(mx, isGroupDM ? room : undefined, MAX_GROUP_MEMBERS);
   const groupPresence = useGroupPresence(groupMembers.map((m) => m.userId));
 
   // Get unread info for badge

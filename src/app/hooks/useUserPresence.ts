@@ -51,6 +51,13 @@ export const useUserPresence = (userId: string): UserPresence | undefined => {
 
   useEffect(() => {
     if (!user) {
+      if (!userId) {
+        // Empty userId is a sentinel meaning "no user selected" — don't clear
+        // whatever presence state was already in the hook.  This prevents a
+        // transient undefined dmUserId (e.g. getAvatarFallbackMember() returning
+        // null during a re-render) from wiping the presence dot.
+        return undefined;
+      }
       setPresence(undefined);
 
       // When the user isn't in the SDK store yet (e.g., presence arrived before
