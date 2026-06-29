@@ -61,7 +61,8 @@
 
   "features": {
     "encryptedSearch": true,
-    "polls": true
+    "polls": true,
+    "groupPresenceRing": true
   },
   "gifs": {
     "proxyUrl": "gifs.sable.moe",
