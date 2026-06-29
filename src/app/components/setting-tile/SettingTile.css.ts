@@ -44,6 +44,7 @@ export const settingTileSettingLinkActionDesktopHidden = style([
   {
     opacity: 0,
     pointerEvents: 'none',
+    transition: 'opacity 0.15s ease',
     selectors: {
       [`${settingTileRoot}:hover &`]: {
         opacity: 1,

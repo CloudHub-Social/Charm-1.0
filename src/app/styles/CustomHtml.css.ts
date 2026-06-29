@@ -329,8 +329,10 @@ export const EmoticonImg = style([
 export const highlightText = style([
   DefaultReset,
   {
-    backgroundColor: 'yellow',
-    color: 'black',
+    backgroundColor: color.Warning.Container,
+    color: color.Warning.OnContainer,
+    borderRadius: config.radii.R300,
+    padding: `0 ${toRem(2)}`,
   },
 ]);
 
