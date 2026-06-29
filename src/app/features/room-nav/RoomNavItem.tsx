@@ -10,6 +10,7 @@ import {
   Text,
   Menu,
   MenuItem,
+  color,
   config,
   PopOut,
   toRem,
@@ -90,6 +91,13 @@ import { useRoomLastMessage } from '$hooks/useRoomLastMessage';
 import { RoomNavUser } from './RoomNavUser';
 import { SidebarUnreadBadge } from '$components/sidebar';
 import { CompactMessagePreview } from '$components/message/CompactMessagePreview';
+
+const PresenceRingColor: Record<Presence, string | undefined> = {
+  [Presence.Online]: color.Success.Main,
+  [Presence.Unavailable]: color.Warning.Main,
+  [Presence.Dnd]: color.Critical.Main,
+  [Presence.Offline]: undefined,
+};
 
 /**
  * Reactively checks whether a room has unread messages.
@@ -321,6 +329,10 @@ export function RoomNavItem({
   const hasCompleteGroupAvatar =
     groupMembers.length > 1 && groupMemberAvatarSrcs.every((src) => !!src);
   const groupPresence = useGroupPresence(groupMembers.map((m) => m.userId));
+  const groupRingColor =
+    groupPresence && groupPresence !== Presence.Offline
+      ? PresenceRingColor[groupPresence]
+      : undefined;
 
   const [roomIconOverlay] = useSetting(settingsAtom, 'roomIconOverlay');
   const nicknames = useAtomValue(nicknamesAtom);
@@ -486,19 +498,15 @@ export function RoomNavItem({
                       // Group DM: triangle layout of mini avatars.
                       // In hideText (icon-only) mode the Avatar slot is 32px (size="300");
                       // use the larger container+mini variant so the composite scales properly.
-                      <AvatarPresence
-                        badge={
-                          groupPresence &&
-                          groupPresence !== Presence.Offline && (
-                            <PresenceBadge
-                              presence={groupPresence}
-                              size={hideText ? '300' : '200'}
-                            />
-                          )
-                        }
-                        style={hideTextStyling(hideText)}
-                      >
-                        <div className={hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow}>
+                      <AvatarPresence badge={null} style={hideTextStyling(hideText)}>
+                        <div
+                          className={hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow}
+                          style={
+                            groupRingColor
+                              ? { boxShadow: `0 0 0 2px ${groupRingColor}` }
+                              : undefined
+                          }
+                        >
                           {groupMembers.map((member, index) => {
                             const memberAvatarSrc = groupMemberAvatarSrcs[index];
                             return (
