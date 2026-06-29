@@ -10,7 +10,8 @@ import { AppShell } from '$components/app-shell';
 import type { ClientConfig } from '$hooks/useClientConfig';
 import { ClientConfigProvider } from '$hooks/useClientConfig';
 import { setMatrixToBase } from '$plugins/matrix-to';
-import { useScreenSize } from '$hooks/useScreenSize';
+import { ScreenSize, useScreenSize } from '$hooks/useScreenSize';
+import { isPhoneLayoutDevice } from '$utils/user-agent';
 import { useCompositionEndTracking } from '$hooks/useComposingCheck';
 import { bootstrapSettingsStore, primeRuntimeSettingsDefaults } from '$state/settings';
 import { ErrorPage } from '$components/DefaultErrorPage';
@@ -67,7 +68,13 @@ function AppWithClientConfig({
     bootstrappedDefaultsRef.current = clientConfig.settingsDefaults;
   }
 
-  const router = useMemo(() => createRouter(clientConfig, screenSize), [clientConfig, screenSize]);
+  // Derive the mobile flag here so the router is only recreated when the
+  // mobile/desktop split actually changes — not on every viewport resize.
+  // On phone devices isPhoneLayoutDevice() is always true, so screenSize
+  // fluctuating between Mobile and Tablet (e.g. on rotation or keyboard show)
+  // no longer tears down and remounts ClientRoot.
+  const mobile = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
+  const router = useMemo(() => createRouter(clientConfig, mobile), [clientConfig, mobile]);
 
   useEffect(() => {
     setMatrixToBase(clientConfig.matrixToBaseUrl);
