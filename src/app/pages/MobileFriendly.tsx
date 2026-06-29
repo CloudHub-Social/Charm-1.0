@@ -22,9 +22,7 @@ export function MobileFriendlyClientNav({ children }: MobileFriendlyClientNavPro
 
   // Keep the nav mounted so it doesn't need to remount when returning from a room.
   // CSS-hide rather than unmount to avoid a blank-flash during navigation on mobile.
-  return (
-    <div style={isMobile && !atSectionRoot ? HIDDEN_STYLE : undefined}>{children}</div>
-  );
+  return <div style={isMobile && !atSectionRoot ? HIDDEN_STYLE : undefined}>{children}</div>;
 }
 
 type MobileFriendlyPageNavProps = {
@@ -43,7 +41,5 @@ export function MobileFriendlyPageNav({ path, children }: MobileFriendlyPageNavP
 
   // Keep the room-list nav mounted while in a room so it's ready instantly when
   // the user swipes back. CSS-hide rather than returning null avoids a blank-flash.
-  return (
-    <div style={isMobile && !exactPath ? HIDDEN_STYLE : undefined}>{children}</div>
-  );
+  return <div style={isMobile && !exactPath ? HIDDEN_STYLE : undefined}>{children}</div>;
 }
