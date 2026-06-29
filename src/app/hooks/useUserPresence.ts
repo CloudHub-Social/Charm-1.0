@@ -174,20 +174,15 @@ export const useGroupPresence = (userIds: string[]): Presence | undefined => {
         unknownIds.push(userId);
       }
     }
-    // Merge into previous state: carry over any REST-fetched entries for users
-    // still in the new ID set, then overlay with fresh SDK data. This prevents
-    // flickering when userIdsKey changes and REST-fetched users aren't in the SDK
-    // store yet (they'd be wiped by a wholesale replace).
-    setPresenceMap((prev) => {
-      const next = new Map<string, Presence>();
-      for (const userId of ids) {
-        if (prev.has(userId)) next.set(userId, prev.get(userId)!);
-      }
-      for (const [userId, p] of initialMap) {
-        next.set(userId, p);
-      }
-      return next;
-    });
+    // Merge into previous state so REST-fetched presence (stored only in React
+    // state, not the SDK store) survives a userIdsKey change. SDK data takes
+    // priority; users absent from both maps are simply omitted.
+    setPresenceMap((prev) =>
+      new Map(ids.flatMap((id) => {
+        const p = initialMap.get(id) ?? prev.get(id);
+        return p !== undefined ? [[id, p] as [string, Presence]] : [];
+      }))
+    );
 
     const handlePresenceUpdate: UserEventHandlerMap[UserEvent.Presence] = (_e, u) => {
       setPresenceMap((prev) => {
