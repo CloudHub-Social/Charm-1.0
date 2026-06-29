@@ -1,8 +1,10 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useMatch } from 'react-router-dom';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { isPhoneLayoutDevice } from '$utils/user-agent';
 import { DIRECT_PATH, EXPLORE_PATH, HOME_PATH, INBOX_PATH, SPACE_PATH } from './paths';
+
+const HIDDEN_STYLE: CSSProperties = { display: 'none' };
 
 type MobileFriendlyClientNavProps = {
   children: ReactNode;
@@ -15,14 +17,14 @@ export function MobileFriendlyClientNav({ children }: MobileFriendlyClientNavPro
   const exploreMatch = useMatch({ path: EXPLORE_PATH, caseSensitive: true, end: true });
   const inboxMatch = useMatch({ path: INBOX_PATH, caseSensitive: true, end: true });
 
-  if (
-    (screenSize === ScreenSize.Mobile || isPhoneLayoutDevice()) &&
-    !(homeMatch || directMatch || spaceMatch || exploreMatch || inboxMatch)
-  ) {
-    return null;
-  }
+  const isMobile = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
+  const atSectionRoot = !!(homeMatch || directMatch || spaceMatch || exploreMatch || inboxMatch);
 
-  return children;
+  // Keep the nav mounted so it doesn't need to remount when returning from a room.
+  // CSS-hide rather than unmount to avoid a blank-flash during navigation on mobile.
+  return (
+    <div style={isMobile && !atSectionRoot ? HIDDEN_STYLE : undefined}>{children}</div>
+  );
 }
 
 type MobileFriendlyPageNavProps = {
@@ -37,9 +39,11 @@ export function MobileFriendlyPageNav({ path, children }: MobileFriendlyPageNavP
     end: true,
   });
 
-  if ((screenSize === ScreenSize.Mobile || isPhoneLayoutDevice()) && !exactPath) {
-    return null;
-  }
+  const isMobile = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
 
-  return children;
+  // Keep the room-list nav mounted while in a room so it's ready instantly when
+  // the user swipes back. CSS-hide rather than returning null avoids a blank-flash.
+  return (
+    <div style={isMobile && !exactPath ? HIDDEN_STYLE : undefined}>{children}</div>
+  );
 }
