@@ -1792,12 +1792,14 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 sentSilentReplySnapshot
               );
             }
-            debugLog.error('message', 'Failed to send message', {
+            const sendErrMsg = error instanceof Error ? error.message : String(error);
+            const isSendNetworkError = /load failed|failed to fetch|network/i.test(sendErrMsg);
+            debugLog[isSendNetworkError ? 'warn' : 'error']('message', 'Failed to send message', {
               roomId,
-              error: error instanceof Error ? error.message : String(error),
+              error: sendErrMsg,
             });
             Sentry.metrics.count('sable.message.send_error', 1, {
-              attributes: { encrypted: String(isEncrypted) },
+              attributes: { encrypted: String(isEncrypted), network_error: String(isSendNetworkError) },
             });
             log.error('failed to send message', { roomId }, error);
           }

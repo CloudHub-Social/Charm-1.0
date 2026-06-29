@@ -630,16 +630,22 @@ const buildClient = async (
   // Register a listener so we can see this in Sentry and understand how often
   // transient IDB aborts are triggering permanent MemoryStore degradation.
   indexedDBStore.on('degraded', (err: Error) => {
-    debugLog.error('sync', 'IndexedDBStore degraded to MemoryStore — sync IDB deleted', {
+    // Use warn (not error) to avoid double-capturing: the explicit captureMessage
+    // below is the authoritative Sentry event with full context.
+    debugLog.warn('sync', 'IndexedDBStore degraded to MemoryStore — sync IDB deleted', {
       error: err.message,
     });
+    const isTransientAbort =
+      err.message.includes('Transaction aborted') ||
+      err.message.includes('database connection is closing') ||
+      err.message.includes('database connection is closed');
     Sentry.captureMessage('IndexedDBStore degraded to MemoryStore', {
-      level: 'error',
+      level: isTransientAbort ? 'warning' : 'error',
       tags: { component: 'idb-sync-store' },
       extra: {
         errorMessage: err.message,
         errorName: err.name,
-        isTransientAbort: err.message.includes('Transaction aborted'),
+        isTransientAbort,
         userId: session.userId,
       },
     });
