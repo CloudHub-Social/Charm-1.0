@@ -529,6 +529,11 @@ export function RoomNavItem({
                               ) : null
                             }
                             ref={triggerRef}
+                            aria-label={
+                              groupRingColor && groupPresence
+                                ? groupPresenceLabel[groupPresence]
+                                : undefined
+                            }
                             style={hideTextStyling(hideText)}
                           >
                             <div
