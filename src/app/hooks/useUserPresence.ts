@@ -177,11 +177,14 @@ export const useGroupPresence = (userIds: string[]): Presence | undefined => {
     // Merge into previous state so REST-fetched presence (stored only in React
     // state, not the SDK store) survives a userIdsKey change. SDK data takes
     // priority; users absent from both maps are simply omitted.
-    setPresenceMap((prev) =>
-      new Map(ids.flatMap((id) => {
-        const p = initialMap.get(id) ?? prev.get(id);
-        return p !== undefined ? [[id, p] as [string, Presence]] : [];
-      }))
+    setPresenceMap(
+      (prev) =>
+        new Map(
+          ids.flatMap((id) => {
+            const p = initialMap.get(id) ?? prev.get(id);
+            return p !== undefined ? [[id, p] as [string, Presence]] : [];
+          })
+        )
     );
 
     const handlePresenceUpdate: UserEventHandlerMap[UserEvent.Presence] = (_e, u) => {
