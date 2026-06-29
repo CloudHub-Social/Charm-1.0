@@ -517,6 +517,7 @@ export const UrlPreviewCard = as<
               info={ogImageInfo}
               matrixThumbnailMaxEdge={previewThumbMaxEdge}
               cacheThumbnailMetadataAsMedia
+              allowDirectAnimatedImage={autoplayGifs}
               onError={() => setImageError(true)}
               suppressErrorUI
               renderViewer={(p) => <ImageViewer {...p} />}

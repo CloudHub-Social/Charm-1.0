@@ -58,25 +58,23 @@ import { gifSearchConfigured, useClientConfig } from '$hooks/useClientConfig';
 import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
 import { hasControllingServiceWorker } from '$utils/platform';
 
-const ANIMATED_IMAGE_MIME_TYPES = new Set(['image/gif', 'image/apng', 'image/webp']);
+const ANIMATED_IMAGE_MIME_TYPES = new Set(['image/gif', 'image/apng']);
 
 const isAnimatedImageContent = (
   mimeType: string | undefined,
-  body: string,
+  body: string | undefined,
   url: string
 ): boolean => {
   const normalizedMime = mimeType?.toLowerCase();
   if (normalizedMime && ANIMATED_IMAGE_MIME_TYPES.has(normalizedMime)) return true;
 
-  const lowerBody = body.toLowerCase();
+  const lowerBody = body?.toLowerCase() ?? '';
   const lowerUrl = url.toLowerCase();
   return (
     lowerBody.endsWith('.gif') ||
     lowerBody.endsWith('.apng') ||
-    lowerBody.endsWith('.webp') ||
     lowerUrl.endsWith('.gif') ||
-    lowerUrl.endsWith('.apng') ||
-    lowerUrl.endsWith('.webp')
+    lowerUrl.endsWith('.apng')
   );
 };
 
@@ -122,7 +120,7 @@ type RenderImageProps = {
   tabIndex: number;
 };
 export type ImageContentProps = {
-  body: string;
+  body?: string;
   mimeType?: string;
   url: string;
   info?: IImageInfo;
@@ -137,6 +135,7 @@ export type ImageContentProps = {
   mediaLayout?: 'default' | 'contained';
   containedStripMinPx?: number;
   fillsPreviewSlot?: boolean;
+  allowDirectAnimatedImage?: boolean;
   onError?: () => void;
   suppressErrorUI?: boolean;
 };
@@ -249,6 +248,7 @@ export const ImageContent = as<'div', ImageContentProps>(
       mediaLayout = 'default',
       containedStripMinPx,
       fillsPreviewSlot,
+      allowDirectAnimatedImage = true,
       onError,
       suppressErrorUI,
       ...props
@@ -270,6 +270,7 @@ export const ImageContent = as<'div', ImageContentProps>(
       if (url.startsWith('http')) return url;
       return mediaUrlCache.get(mx, url, useAuthentication) ?? undefined;
     }, [mediaUrlCache, mx, url, useAuthentication]);
+    const safeBody = body ?? 'Image';
     const mediaMetadataKey = useMemo(() => {
       if (encInfo) return getScopedMediaCacheKey(url);
       return getScopedMediaCacheKey(rawMediaUrl ?? url);
@@ -292,6 +293,7 @@ export const ImageContent = as<'div', ImageContentProps>(
         : mediaMetadata?.byteSize;
     const shouldStreamDirectAnimatedImage =
       !encInfo &&
+      allowDirectAnimatedImage &&
       isAnimatedImageContent(mimeType, body, url) &&
       (!useAuthentication || hasControllingServiceWorker());
     const [srcState, loadSrc, setSrcState] = useAsyncCallback(
@@ -513,7 +515,7 @@ export const ImageContent = as<'div', ImageContentProps>(
                 >
                   {renderViewer({
                     src: viewerFullSrc ?? srcState.data,
-                    alt: body,
+                    alt: safeBody,
                     requestClose: () => setViewer(false),
                     info: info,
                   })}
@@ -559,8 +561,8 @@ export const ImageContent = as<'div', ImageContentProps>(
             style={{ width: '100%' }}
           >
             {renderImage({
-              alt: body,
-              title: body,
+              alt: safeBody,
+              title: safeBody,
               src: srcState.data,
               ...(typeof imageW === 'number' && Number.isFinite(imageW) ? { width: imageW } : {}),
               ...(typeof imageH === 'number' && Number.isFinite(imageH) ? { height: imageH } : {}),
@@ -669,7 +671,7 @@ export const ImageContent = as<'div', ImageContentProps>(
                 </MenuItem>
                 {info?.mimetype === 'image/gif' && !encInfo && (
                   <GifFavoriteAction
-                    body={body}
+                    body={safeBody}
                     url={url}
                     imageW={imageW}
                     imageH={imageH}

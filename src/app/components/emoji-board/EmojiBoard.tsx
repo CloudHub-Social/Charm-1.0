@@ -806,9 +806,12 @@ export function EmojiBoard({
     ? (gifResult?.items.slice(0, 100) ?? favoriteGifs)
     : (gifResult?.items.slice(0, 100) ?? []);
   const gifQuery = gifResult?.query?.trim() ?? '';
+  const visibleGifCount = showFavoritesOnly
+    ? favoriteGifs.length
+    : searchedGifItems.length + gifs.gifs.length;
   const gifSummaryLabel = showFavoritesOnly
     ? `${favoriteGifs.length} favorite${favoriteGifs.length === 1 ? '' : 's'}`
-    : `${gifs.gifs.length} result${gifs.gifs.length === 1 ? '' : 's'}`;
+    : `${visibleGifCount} result${visibleGifCount === 1 ? '' : 's'}`;
 
   useEffect(() => {
     if (active && activeTab === EmojiBoardTab.Gif) return;
