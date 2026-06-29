@@ -76,9 +76,9 @@ describe('mobile PWA dogfood contract', () => {
     const roomInput = readWorkspaceFile('src/app/features/room/RoomInput.tsx');
 
     expect(roomInput).toContain('...(isPhoneLayoutDevice()');
-    expect(roomInput).toContain(
-      'left: (window.innerWidth - getEmojiBoardWidth(window.innerWidth)) / 2'
-    );
+    // Phone: robust centering via transform (avoids JS/CSS width rounding drift)
+    expect(roomInput).toContain("left: '50%'");
+    expect(roomInput).toContain("transform: 'translateX(-50%)'");
     expect(roomInput).toContain('width: getEmojiBoardWidth(window.innerWidth)');
     expect(roomInput).toContain('right: getEmojiBoardRightOffset(');
   });

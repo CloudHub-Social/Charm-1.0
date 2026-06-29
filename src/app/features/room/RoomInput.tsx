@@ -2426,11 +2426,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   (() => {
                     const isWideGifBoard = emojiBoardTab === EmojiBoardTab.Gif;
                     const mobileBoardWidth = getEmojiBoardWidth(window.innerWidth, isWideGifBoard);
-                    // Dogfood contract: left: (window.innerWidth - getEmojiBoardWidth(window.innerWidth)) / 2
-                    // Dogfood contract: width: getEmojiBoardWidth(window.innerWidth)
-                    const phoneBoardPosition = isWideGifBoard
-                      ? { left: (window.innerWidth - mobileBoardWidth) / 2 }
-                      : { left: (window.innerWidth - getEmojiBoardWidth(window.innerWidth)) / 2 };
+                    // Phone: center via transform so JS/CSS width rounding never causes drift.
+                    const phoneBoardPosition = {
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                    };
                     const tabletBoardPosition = {
                       right: getEmojiBoardRightOffset(
                         emojiBoardAnchorRect.right,
