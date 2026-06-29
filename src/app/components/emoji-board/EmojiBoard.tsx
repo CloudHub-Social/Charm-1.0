@@ -2,6 +2,7 @@ import type {
   ChangeEventHandler,
   FocusEventHandler,
   MouseEventHandler,
+  PointerEventHandler,
   ReactNode,
   RefObject,
 } from 'react';
@@ -753,9 +754,28 @@ type EmojiBoardProps = {
   allowTextCustomEmoji?: boolean;
   addToRecentEmoji?: boolean;
   isFullWidth?: boolean;
+  isMobileSheet?: boolean;
 };
 
 const getGifName = (v: GifData) => v.title;
+
+const getMobileSheetHeights = (viewportHeight: number, tab: EmojiBoardTab) => {
+  const maxHeight = Math.max(360, Math.min(viewportHeight - 72, viewportHeight * 0.9));
+
+  if (tab === EmojiBoardTab.Gif) {
+    return {
+      min: Math.max(340, Math.min(maxHeight - 80, viewportHeight * 0.58)),
+      max: maxHeight,
+      initial: Math.max(380, Math.min(maxHeight, viewportHeight * 0.78)),
+    };
+  }
+
+  return {
+    min: Math.max(300, Math.min(maxHeight - 60, viewportHeight * 0.46)),
+    max: Math.max(340, Math.min(maxHeight, viewportHeight * 0.7)),
+    initial: Math.max(320, Math.min(maxHeight, viewportHeight * 0.56)),
+  };
+};
 
 export function EmojiBoard({
   tab = EmojiBoardTab.Emoji,
@@ -771,6 +791,7 @@ export function EmojiBoard({
   allowTextCustomEmoji,
   addToRecentEmoji = true,
   isFullWidth,
+  isMobileSheet = false,
 }: Readonly<EmojiBoardProps>) {
   const mx = useMatrixClient();
   const [saveStickerEmojiBandwidth] = useSetting(settingsAtom, 'saveStickerEmojiBandwidth');
@@ -782,6 +803,12 @@ export function EmojiBoard({
   const emojiTab = activeTab === EmojiBoardTab.Emoji;
   const gifTab = activeTab === EmojiBoardTab.Gif;
   const usage = emojiTab ? ImageUsage.Emoticon : ImageUsage.Sticker;
+  const [mobileSheetHeight, setMobileSheetHeight] = useState<number>();
+  const mobileSheetDragRef = useRef<{
+    currentHeight: number;
+    startY: number;
+    startHeight: number;
+  } | null>(null);
 
   const previewAtom = useMemo(
     () =>
@@ -895,6 +922,21 @@ export function EmojiBoard({
   useEffect(() => {
     setRecentGifSearches(getRecentGifSearches(userId));
   }, [userId]);
+
+  useEffect(() => {
+    if (!isMobileSheet) return undefined;
+
+    const applyHeight = () => {
+      const heights = getMobileSheetHeights(window.innerHeight, activeTab);
+      setMobileSheetHeight(heights.initial);
+    };
+
+    applyHeight();
+    window.addEventListener('resize', applyHeight);
+    return () => {
+      window.removeEventListener('resize', applyHeight);
+    };
+  }, [activeTab, isMobileSheet]);
 
   const rememberGifSearch = useCallback(
     (term: string) => {
@@ -1039,6 +1081,49 @@ export function EmojiBoard({
     virtualizer.scrollToIndex(groupIndex, { align: 'start' });
   };
 
+  const handleMobileSheetPointerDown: PointerEventHandler<HTMLButtonElement> = useCallback(
+    (evt) => {
+      if (!isMobileSheet) return;
+
+      evt.preventDefault();
+      const currentHeight =
+        mobileSheetHeight ?? getMobileSheetHeights(window.innerHeight, activeTab).initial;
+      mobileSheetDragRef.current = {
+        currentHeight,
+        startY: evt.clientY,
+        startHeight: currentHeight,
+      };
+
+      const handlePointerMove = (moveEvt: PointerEvent) => {
+        const dragState = mobileSheetDragRef.current;
+        if (!dragState) return;
+
+        const heights = getMobileSheetHeights(window.innerHeight, activeTab);
+        const nextHeight = dragState.startHeight - (moveEvt.clientY - dragState.startY);
+        dragState.currentHeight = Math.max(heights.min, Math.min(heights.max, nextHeight));
+        setMobileSheetHeight(dragState.currentHeight);
+      };
+
+      const handlePointerUp = () => {
+        const dragState = mobileSheetDragRef.current;
+        mobileSheetDragRef.current = null;
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerUp);
+
+        if (!dragState) return;
+
+        const heights = getMobileSheetHeights(window.innerHeight, activeTab);
+        const current = dragState.currentHeight;
+        const midpoint = (heights.min + heights.max) / 2;
+        setMobileSheetHeight(current >= midpoint ? heights.max : heights.min);
+      };
+
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp, { once: true });
+    },
+    [activeTab, isMobileSheet, mobileSheetHeight]
+  );
+
   // sync active sidebar tab with scroll
   useEffect(() => {
     const scrollElement = contentScrollRef.current;
@@ -1096,7 +1181,6 @@ export function EmojiBoard({
             )}
             {gifTab ? (
               <Box className={componentCss.GifHeader} direction="Column" gap="200">
-                <div className={componentCss.GifHandle} />
                 <SearchInput
                   key={activeTab}
                   tab={activeTab}
@@ -1137,6 +1221,18 @@ export function EmojiBoard({
             )}
           </Box>
         }
+        mobileSheetHandle={
+          isMobileSheet ? (
+            <Box className={componentCss.MobileSheetHandleShell}>
+              <button
+                type="button"
+                className={componentCss.MobileSheetHandle}
+                aria-label="Resize picker"
+                onPointerDown={handleMobileSheetPointerDown}
+              />
+            </Box>
+          ) : undefined
+        }
         sidebar={
           emojiTab ? (
             <EmojiSidebar
@@ -1158,6 +1254,7 @@ export function EmojiBoard({
         }
         isFullWidth={isFullWidth}
         isGifLayout={gifTab}
+        style={isMobileSheet && mobileSheetHeight ? { height: mobileSheetHeight } : undefined}
       >
         <Box grow="Yes">
           <EmojiGroupHolder

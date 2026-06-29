@@ -1,8 +1,14 @@
 const EMOJI_BOARD_MAX_WIDTH = 432;
+const GIF_BOARD_MAX_WIDTH = 480;
 const EMOJI_BOARD_VIEWPORT_GUTTER = 32;
+const GIF_BOARD_VIEWPORT_GUTTER = 16;
 
-export const getEmojiBoardWidth = (viewportWidth: number): number =>
-  Math.min(EMOJI_BOARD_MAX_WIDTH, Math.max(0, viewportWidth - EMOJI_BOARD_VIEWPORT_GUTTER));
+export const getEmojiBoardWidth = (viewportWidth: number, preferWide = false): number => {
+  const maxWidth = preferWide ? GIF_BOARD_MAX_WIDTH : EMOJI_BOARD_MAX_WIDTH;
+  const gutter = preferWide ? GIF_BOARD_VIEWPORT_GUTTER : EMOJI_BOARD_VIEWPORT_GUTTER;
+
+  return Math.min(maxWidth, Math.max(0, viewportWidth - gutter));
+};
 
 export const getEmojiBoardRightOffset = (anchorRight: number, viewportWidth: number): number => {
   const boardWidth = getEmojiBoardWidth(viewportWidth);

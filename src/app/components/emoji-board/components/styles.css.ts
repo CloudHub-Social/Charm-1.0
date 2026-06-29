@@ -29,16 +29,10 @@ export const Base = recipe({
     },
     isGifLayout: {
       true: {
+        maxWidth: toRem(480),
         height: toRem(520),
         borderRadius: config.radii.R500,
         boxShadow: config.shadow.E300,
-
-        '@media': {
-          'screen and (max-width: 480px)': {
-            height: 'min(calc(100dvh - 7.5rem), 78dvh)',
-            borderRadius: config.radii.R500,
-          },
-        },
       },
     },
   },
@@ -50,8 +44,27 @@ export const Header = style({
 });
 
 export const GifHeaderShell = style({
-  paddingTop: config.space.S200,
+  paddingTop: config.space.S100,
 });
+
+export const MobileSheetHandleShell = style({
+  paddingBottom: config.space.S100,
+});
+
+export const MobileSheetHandle = style([
+  DefaultReset,
+  FocusOutline,
+  {
+    display: 'block',
+    width: toRem(44),
+    height: toRem(5),
+    borderRadius: config.radii.Pill,
+    backgroundColor: color.SurfaceVariant.ContainerLine,
+    margin: '0 auto',
+    cursor: 'ns-resize',
+    border: 'none',
+  },
+]);
 
 export const GifHandle = style({
   width: toRem(44),

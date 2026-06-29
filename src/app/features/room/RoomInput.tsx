@@ -102,7 +102,7 @@ import {
   getEditedEvent,
 } from '$utils/room';
 import { Command, SHRUG, TABLEFLIP, UNFLIP, useCommands } from '$hooks/useCommands';
-import { isPhoneLayoutDevice, mobileOrTablet } from '$utils/user-agent';
+import { mobileOrTablet } from '$utils/user-agent';
 import { useElementSizeObserver } from '$hooks/useElementSizeObserver';
 import { Reply, ThreadIndicator } from '$components/message';
 import { roomToParentsAtom } from '$state/room/roomToParents';
@@ -2423,30 +2423,38 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               {isMobileLayout &&
                 emojiBoardAnchorRect &&
                 createPortal(
-                  <div
-                    style={{
-                      position: 'fixed',
-                      zIndex: 999,
-                      // Position above the emoji button (mirrors PopOut position="Top" offset=16).
-                      bottom: window.innerHeight - emojiBoardAnchorRect.top + 16,
-                      left: (window.innerWidth - getEmojiBoardWidth(window.innerWidth)) / 2,
-                      width: getEmojiBoardWidth(window.innerWidth),
-                      display: emojiBoardTab !== undefined ? undefined : 'none',
-                    }}
-                  >
-                    <EmojiBoard
-                      active={emojiBoardTab !== undefined}
-                      tab={emojiBoardTab ?? EmojiBoardTab.Emoji}
-                      onTabChange={setEmojiBoardTab}
-                      imagePackRooms={imagePackRooms}
-                      returnFocusOnDeactivate={false}
-                      onEmojiSelect={handleEmoticonSelect}
-                      onCustomEmojiSelect={handleEmoticonSelect}
-                      onStickerSelect={handleStickerSelect}
-                      onGifSelect={handleGifSelect}
-                      requestClose={closeEmojiBoard}
-                    />
-                  </div>,
+                  (() => {
+                    const isWideGifBoard = emojiBoardTab === EmojiBoardTab.Gif;
+                    const mobileBoardWidth = getEmojiBoardWidth(window.innerWidth, isWideGifBoard);
+
+                    return (
+                      <div
+                        style={{
+                          position: 'fixed',
+                          zIndex: 999,
+                          // Position above the emoji button (mirrors PopOut position="Top" offset=16).
+                          bottom: window.innerHeight - emojiBoardAnchorRect.top + 16,
+                          left: (window.innerWidth - mobileBoardWidth) / 2,
+                          width: mobileBoardWidth,
+                          display: emojiBoardTab !== undefined ? undefined : 'none',
+                        }}
+                      >
+                        <EmojiBoard
+                          active={emojiBoardTab !== undefined}
+                          tab={emojiBoardTab ?? EmojiBoardTab.Emoji}
+                          onTabChange={setEmojiBoardTab}
+                          imagePackRooms={imagePackRooms}
+                          returnFocusOnDeactivate={false}
+                          onEmojiSelect={handleEmoticonSelect}
+                          onCustomEmojiSelect={handleEmoticonSelect}
+                          onStickerSelect={handleStickerSelect}
+                          onGifSelect={handleGifSelect}
+                          isMobileSheet
+                          requestClose={closeEmojiBoard}
+                        />
+                      </div>
+                    );
+                  })(),
                   document.body
                 )}
               <PopOut
