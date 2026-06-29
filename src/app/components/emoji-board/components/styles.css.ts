@@ -32,6 +32,13 @@ export const Base = recipe({
         height: toRem(520),
         borderRadius: config.radii.R500,
         boxShadow: config.shadow.E300,
+
+        '@media': {
+          'screen and (max-width: 480px)': {
+            height: 'min(calc(100dvh - 7.5rem), 78dvh)',
+            borderRadius: config.radii.R500,
+          },
+        },
       },
     },
   },
