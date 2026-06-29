@@ -632,6 +632,8 @@ const buildClient = async (
   indexedDBStore.on('degraded', (err: Error) => {
     const isTransientAbort =
       err.name === 'AbortError' ||
+      err.name === 'DatabaseClosedError' ||
+      err.message.includes('DatabaseClosedError') ||
       err.message.includes('Transaction aborted') ||
       err.message.includes('The transaction was aborted') ||
       err.message.includes('database connection is closing') ||
