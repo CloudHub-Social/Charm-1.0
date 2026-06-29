@@ -57,7 +57,7 @@ import {
 import { createLogger } from '$utils/debug';
 import { useSyncNicknames } from '$hooks/useNickname';
 import { useAppVisibility } from '$hooks/useAppVisibility';
-import { getHomePath, getLandingPath, rememberLastVisitedPath } from '$pages/pathUtils';
+import { getHomePath, rememberLastVisitedPath } from '$pages/pathUtils';
 import { composerIcon, DotsThreeOutlineVerticalIcon } from '$components/icons/phosphor';
 import { useClientConfig } from '$hooks/useClientConfig';
 import { getSettings } from '$state/settings';

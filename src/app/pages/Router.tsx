@@ -163,9 +163,15 @@ export const createRouter = (clientConfig: ClientConfig, screenSize: ScreenSize)
           loader={({ request }) => {
             const url = new URL(request.url);
             if (url.searchParams.get('addAccount') === '1') return null;
-            // Let SSO/token callbacks through so Login can process the token
-            // even when the user already has an active session.
-            if (url.searchParams.has('loginToken')) return null;
+            // Let SSO token callbacks through so Login can process the token
+            // even when the user already has an active session. In hash-router
+            // mode Matrix appends loginToken to the outer query string, which
+            // React Router ignores, so check window.location.search as well.
+            if (
+              url.searchParams.has('loginToken') ||
+              new URLSearchParams(window.location.search).has('loginToken')
+            )
+              return null;
             if (hasStoredSession()) return redirect(getHomePath());
             return null;
           }}
