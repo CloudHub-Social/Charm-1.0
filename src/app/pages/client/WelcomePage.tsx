@@ -44,6 +44,18 @@ export function WelcomePage() {
                 </Button>
                 <Button
                   as="a"
+                  href="https://github.com/SableClient/Sable/blob/dev/CHANGELOG.md"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  fill="Soft"
+                  before={menuIcon(Code)}
+                >
+                  <Text as="span" size="B400" truncate>
+                    Features
+                  </Text>
+                </Button>
+                <Button
+                  as="a"
                   href="https://opencollective.com/sable"
                   target="_blank"
                   rel="noreferrer noopener"
@@ -55,19 +67,6 @@ export function WelcomePage() {
                   </Text>
                 </Button>
               </Box>
-            </Box>
-            <Box direction="Column" gap="200" alignItems="Center">
-              <Button
-                as="a"
-                href="https://github.com/SableClient/Sable/blob/dev/CHANGELOG.md"
-                target="_blank"
-                rel="noreferrer noopener"
-                before={menuIcon(Code)}
-              >
-                <Text as="span" size="B400" truncate>
-                  Features
-                </Text>
-              </Button>
             </Box>
           </PageHero>
         </PageHeroSection>
