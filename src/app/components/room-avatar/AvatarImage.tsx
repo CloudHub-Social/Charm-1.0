@@ -41,25 +41,31 @@ export function clearProcessedAvatarCache(): void {
  * SVG avatars are additionally processed to ensure animations loop
  * indefinitely before being stored.
  */
+// Track the src the resolved URL belongs to. This lets us derive the correct
+// value during render when src changes before the effect has run, avoiding a
+// one-frame flash where the *old* room's blob URL is shown for the new room.
+type AvatarUrlState = { src: string | undefined; url: string | undefined };
+
 export function useProcessedAvatarSrc(src?: string): string | undefined {
-  const [processedSrc, setProcessedSrc] = useState<string | undefined>(() =>
-    src ? avatarBlobCache.get(src) : undefined
-  );
+  const [state, setState] = useState<AvatarUrlState>(() => ({
+    src,
+    url: src ? avatarBlobCache.get(src) : undefined,
+  }));
 
   useEffect(() => {
     if (!src) {
-      setProcessedSrc(undefined);
+      setState({ src: undefined, url: undefined });
       return () => {};
     }
 
     let isMounted = true;
-    setProcessedSrc(avatarBlobCache.get(src));
+    setState({ src, url: avatarBlobCache.get(src) });
 
     const processImage = async () => {
       // Layer 1: in-memory hit — return immediately without any async work.
       const memCached = avatarBlobCache.get(src);
       if (memCached) {
-        setProcessedSrc(memCached);
+        if (isMounted) setState({ src, url: memCached });
         return;
       }
 
@@ -67,7 +73,7 @@ export function useProcessedAvatarSrc(src?: string): string | undefined {
         const inflight = avatarInflightCache.get(src);
         if (inflight) {
           const inflightBlobUrl = await inflight;
-          if (isMounted) setProcessedSrc(inflightBlobUrl);
+          if (isMounted) setState({ src, url: inflightBlobUrl });
           return;
         }
 
@@ -110,11 +116,11 @@ export function useProcessedAvatarSrc(src?: string): string | undefined {
             attributes: { result: 'success' },
           }
         );
-        if (isMounted) setProcessedSrc(blobUrl);
+        if (isMounted) setState({ src, url: blobUrl });
       } catch {
         // Network or processing failure — fall back to the original URL so the
         // browser can attempt a direct load (e.g. unauthenticated media).
-        if (isMounted) setProcessedSrc(src);
+        if (isMounted) setState({ src, url: src });
       } finally {
         avatarInflightCache.delete(src);
       }
@@ -129,7 +135,10 @@ export function useProcessedAvatarSrc(src?: string): string | undefined {
     };
   }, [src]);
 
-  return processedSrc;
+  // Derive the processed URL during render. If the state lags behind the current
+  // src (e.g. src just changed and the effect hasn't run yet), read the cache
+  // directly so we never return a stale blob URL for a different room/space.
+  return state.src === src ? state.url : (src ? avatarBlobCache.get(src) : undefined);
 }
 
 type AvatarImageProps = {

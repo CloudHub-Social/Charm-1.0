@@ -1,5 +1,5 @@
 import type { KeyboardEventHandler, MouseEvent, RefObject } from 'react';
-import { forwardRef, useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 
@@ -432,6 +432,27 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       });
     }, [editor]);
     const micBtnRef = useRef<HTMLButtonElement>(null);
+    const emojiPickerRef = useRef<HTMLDivElement>(null);
+
+    // Slide-in animation for the mobile emoji/GIF/sticker picker — same motion
+    // as the long-press context menu (250ms, cubic-bezier(0.32, 0.72, 0, 1)).
+    useLayoutEffect(() => {
+      const el = emojiPickerRef.current;
+      if (!el || emojiBoardTab === undefined) return;
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      // On phone layouts the element is centered with translateX(-50%); include
+      // it in both keyframes so the horizontal centering is preserved throughout.
+      const xCenter = isPhoneLayoutDevice() ? ' translateX(-50%)' : '';
+      const anim = el.animate(
+        [
+          { opacity: '0', transform: `translateY(16px)${xCenter}` },
+          { opacity: '1', transform: `translateY(0)${xCenter}` },
+        ],
+        { duration: 220, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'forwards' }
+      );
+      return () => anim.cancel();
+    }, [emojiBoardTab]);
+
     // Preserve stable list keys across metadata/description replacements without
     // storing UI-only IDs in the upload draft state.
     const uploadItemKeysRef = useRef(new WeakMap<TUploadContent, string>());
@@ -2608,6 +2629,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
                     return (
                       <div
+                        ref={emojiPickerRef}
                         style={{
                           position: 'fixed',
                           zIndex: 999,
