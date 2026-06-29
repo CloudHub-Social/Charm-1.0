@@ -299,17 +299,23 @@ export function RoomTimeline({
 
   const scrollToBottom = useCallback(
     (behavior?: 'instant' | 'smooth') => {
-      if (!vListRef.current) return;
-      const lastIndex = processedEventsRef.current.length - 1;
-      if (lastIndex < 0) return;
-      // scrollToIndex defers until the item is measured, so the scroll lands
-      // correctly even when the new message's height hasn't been computed yet.
-      vListRef.current.scrollToIndex(lastIndex, {
-        align: 'end',
-        smooth: behavior === 'smooth',
-      });
+      // Start the settle window immediately so the tick loop anchors at the
+      // bottom while we wait for the new event to be added.
       refreshBottomAnchorSettleWindow();
       restartBottomAnchorTick();
+      // Defer the index read until after React re-renders with the new event.
+      // Without this, scrollToBottom is called by useLiveEventArrive before
+      // processedEventsRef is updated, so lastIndex points at the previous last
+      // message rather than the newly arrived one.
+      requestAnimationFrame(() => {
+        if (!vListRef.current) return;
+        const lastIndex = processedEventsRef.current.length - 1;
+        if (lastIndex < 0) return;
+        vListRef.current.scrollToIndex(lastIndex, {
+          align: 'end',
+          smooth: behavior === 'smooth',
+        });
+      });
     },
     [refreshBottomAnchorSettleWindow]
   );

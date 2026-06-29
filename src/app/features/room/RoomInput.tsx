@@ -78,7 +78,7 @@ import { plainToEditorInput } from '$components/editor/input';
 import { htmlToMarkdown } from '$plugins/markdown';
 import type { GifData } from '$components/emoji-board';
 import { EmojiBoard, EmojiBoardTab } from '$components/emoji-board';
-import { getKlipyRemoteId, normalizeGifProxyHost } from '$utils/gifs';
+import { getKlipyRemoteId, isKlipyProxyMxc, normalizeGifProxyHost } from '$utils/gifs';
 import type { TUploadContent } from '$utils/matrix';
 import { encryptFile, getImageInfo, mxcUrlToHttp, toggleReaction } from '$utils/matrix';
 import { useTypingStatusUpdater } from '$hooks/useTypingStatusUpdater';
@@ -2117,8 +2117,16 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       const gifUrl = gif.url.trim();
       const gifProxyHost = normalizeGifProxyHost(clientConfig.gifs?.proxyUrl);
       let url = gifUrl;
-      const isKlipyProxy = !gifUrl.startsWith('mxc://');
-      if (isKlipyProxy) {
+      // Fresh Klipy CDN pick: convert CDN URL → mxc://. getKlipyRemoteId only
+      // works on CDN HTTP URLs, so the conversion block must NOT run for
+      // favorited Klipy GIFs whose gif.url is already an mxc:// URL.
+      const isKlipyFreshCdn = !gifUrl.startsWith('mxc://');
+      // Favorited Klipy GIFs arrive as mxc://<proxyHost>/klipy_* — detect them
+      // so we can apply the same body/MIME treatment as fresh picks.
+      const isKlipyProxyFavorite =
+        !isKlipyFreshCdn && isKlipyProxyMxc(gifUrl, clientConfig.gifs?.proxyUrl);
+      const isKlipyProxy = isKlipyFreshCdn || isKlipyProxyFavorite;
+      if (isKlipyFreshCdn) {
         const remoteId = getKlipyRemoteId(gifUrl);
 
         if (!gifProxyHost || !remoteId) {
@@ -2129,14 +2137,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         url = `mxc://${gifProxyHost}/${toMatrixMediaId(remoteId, 'klipy_')}`;
       }
 
-      // For Klipy proxy GIFs, append .webp to the body for Discord bridge compat.
-      // Strip any existing image extension first so a title like "name.gif" or a
-      // re-favorited "name.webp" never produces a double-suffix. For mxc:// favorites
-      // (isKlipyProxy = false) the body is kept verbatim — it already carries the
-      // correct extension from when the GIF was originally sent.
+      // For Klipy proxy GIFs (both fresh CDN picks and mxc:// favorites), append
+      // .webp to the body for Discord bridge compat and advertise the correct
+      // image/webp MIME. Strip any existing image extension first so a title like
+      // "name.gif" or a re-favorited "name.webp" never produces a double-suffix.
       const baseTitle = gif.title.replace(/\.(gif|webp)$/i, '');
       const body = isKlipyProxy ? `${baseTitle}.webp` : gif.title;
-      const mimetype = 'image/gif';
+      const mimetype = isKlipyProxy ? 'image/webp' : 'image/gif';
 
       const content: RoomMessageEventContent & IContent = {
         body,

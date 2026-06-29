@@ -48,7 +48,7 @@ import { getScopedMediaCacheKey } from '$utils/mediaTransport';
 import { storeMediaMetadataForBlob } from '$utils/mediaMetadata';
 import { ModalWide } from '$styles/Modal.css';
 import { validBlurHash } from '$utils/blurHash';
-import { isSupportedGifFavoriteUrl } from '$utils/gifs';
+import { isSupportedGifFavoriteUrl, isKlipyProxyMxc } from '$utils/gifs';
 import * as css from './style.css';
 import {
   MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS,
@@ -63,10 +63,15 @@ const ANIMATED_IMAGE_MIME_TYPES = new Set(['image/gif', 'image/apng']);
 const isAnimatedImageContent = (
   mimeType: string | undefined,
   body: string | undefined,
-  url: string
+  url: string,
+  klipyProxyUrl?: string
 ): boolean => {
   const normalizedMime = mimeType?.toLowerCase();
   if (normalizedMime && ANIMATED_IMAGE_MIME_TYPES.has(normalizedMime)) return true;
+  // image/webp is only animated for Klipy proxy GIFs; guard with isKlipyProxyMxc
+  // so static WebP images don't get the direct-stream treatment.
+  if (normalizedMime === 'image/webp' && klipyProxyUrl && isKlipyProxyMxc(url, klipyProxyUrl))
+    return true;
 
   const lowerBody = body?.toLowerCase() ?? '';
   const lowerUrl = url.toLowerCase();
@@ -143,6 +148,7 @@ export type ImageContentProps = {
 type GifFavoriteActionProps = {
   body: string;
   url: string;
+  mimeType?: string;
   imageW?: number;
   imageH?: number;
   srcState: { status: AsyncStatus };
@@ -151,6 +157,7 @@ type GifFavoriteActionProps = {
 function GifFavoriteAction({
   body,
   url,
+  mimeType,
   imageW,
   imageH,
   srcState,
@@ -168,6 +175,9 @@ function GifFavoriteAction({
   }, [favoritedContent, url]);
 
   if (!gifsEnabled || !isSupportedGifFavoriteUrl(url)) return null;
+  // isSupportedGifFavoriteUrl accepts any mxc:// URL; for WebP specifically
+  // restrict to Klipy proxy sources so static WebP images don't get the button.
+  if (mimeType === 'image/webp' && !isKlipyProxyMxc(url, clientConfig.gifs?.proxyUrl)) return null;
 
   return (
     <MenuItem
@@ -256,6 +266,7 @@ export const ImageContent = as<'div', ImageContentProps>(
     ref
   ) => {
     const mx = useMatrixClient();
+    const clientConfig = useClientConfig();
     const useAuthentication = useMediaAuthentication();
     const mediaUrlCache = useMediaUrlCacheContext();
     const blurHash = validBlurHash(info?.[MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME]);
@@ -298,7 +309,7 @@ export const ImageContent = as<'div', ImageContentProps>(
     const shouldStreamDirectAnimatedImage =
       !encInfo &&
       allowDirectAnimatedImage &&
-      isAnimatedImageContent(mimeType, body, url) &&
+      isAnimatedImageContent(mimeType, body, url, clientConfig.gifs?.proxyUrl) &&
       (!mediaUseAuthentication || hasServiceWorkerControl);
     const [srcState, loadSrc, setSrcState] = useAsyncCallback(
       useCallback(async () => {
@@ -708,6 +719,7 @@ export const ImageContent = as<'div', ImageContentProps>(
                     <GifFavoriteAction
                       body={body || 'GIF'}
                       url={url}
+                      mimeType={info?.mimetype}
                       imageW={imageW}
                       imageH={imageH}
                       srcState={srcState}
