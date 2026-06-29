@@ -1,35 +1,31 @@
-import { useMemo, useRef, useEffect } from "react";
-import * as Sentry from "@sentry/react";
-import { useNavigate } from "react-router-dom";
-import { Avatar, Text, Box } from "folds";
-import { useAtomValue } from "jotai";
-import type { Room } from "$types/matrix-sdk";
-import { useMatrixClient } from "$hooks/useMatrixClient";
-import { roomToUnreadAtom } from "$state/room/roomToUnread";
-import { getDirectRoomPath } from "$pages/pathUtils";
+import { useMemo, useRef, useEffect } from 'react';
+import * as Sentry from '@sentry/react';
+import { useNavigate } from 'react-router-dom';
+import { Avatar, Text, Box } from 'folds';
+import { useAtomValue } from 'jotai';
+import type { Room } from '$types/matrix-sdk';
+import { useMatrixClient } from '$hooks/useMatrixClient';
+import { roomToUnreadAtom } from '$state/room/roomToUnread';
+import { getDirectRoomPath } from '$pages/pathUtils';
 import {
   SidebarAvatar,
   SidebarItemLeft,
   SidebarUnreadBadge,
   SidebarItemTooltip,
-} from "$components/sidebar";
-import { RoomAvatar } from "$components/room-avatar";
-import { UserAvatar } from "$components/user-avatar";
-import { getDirectRoomAvatarUrl, getRoomAvatarUrl } from "$utils/room";
-import { useMediaAuthentication } from "$hooks/useMediaAuthentication";
-import { useCachedMxcConverter } from "$hooks/useCachedMxcConverter";
-import { nameInitials } from "$utils/common";
-import { getCanonicalAliasOrRoomId } from "$utils/matrix";
-import { useSelectedRoom } from "$hooks/router/useSelectedRoom";
-import { useGroupDMMembers } from "$hooks/useGroupDMMembers";
-import { useSidebarDirectRoomIds } from "./useSidebarDirectRoomIds";
-import {
-  Presence,
-  useGroupPresence,
-  useUserPresence,
-} from "$hooks/useUserPresence";
-import { AvatarPresence, PresenceBadge } from "$components/presence";
-import * as css from "./DirectDMsList.css";
+} from '$components/sidebar';
+import { RoomAvatar } from '$components/room-avatar';
+import { UserAvatar } from '$components/user-avatar';
+import { getDirectRoomAvatarUrl, getRoomAvatarUrl } from '$utils/room';
+import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { useCachedMxcConverter } from '$hooks/useCachedMxcConverter';
+import { nameInitials } from '$utils/common';
+import { getCanonicalAliasOrRoomId } from '$utils/matrix';
+import { useSelectedRoom } from '$hooks/router/useSelectedRoom';
+import { useGroupDMMembers } from '$hooks/useGroupDMMembers';
+import { useSidebarDirectRoomIds } from './useSidebarDirectRoomIds';
+import { Presence, useGroupPresence, useUserPresence } from '$hooks/useUserPresence';
+import { AvatarPresence, PresenceBadge } from '$components/presence';
+import * as css from './DirectDMsList.css';
 
 const MAX_GROUP_MEMBERS = 3;
 
@@ -59,29 +55,21 @@ function DMItem({ room, selected }: DMItemProps) {
   // useUserPresence clears the presence dot.  Once we discover the userId we
   // hold it for the lifetime of this DMItem instance (keyed by room.roomId, so
   // the ref is stable per room).
-  const rawDmUserId = !isGroupDM
-    ? room.getAvatarFallbackMember()?.userId
-    : undefined;
+  const rawDmUserId = !isGroupDM ? room.getAvatarFallbackMember()?.userId : undefined;
   const stableDmUserIdRef = useRef(rawDmUserId);
   if (rawDmUserId !== undefined) stableDmUserIdRef.current = rawDmUserId;
   const dmUserId = stableDmUserIdRef.current;
-  const dmPresence = useUserPresence(dmUserId ?? "");
+  const dmPresence = useUserPresence(dmUserId ?? '');
 
   // Get member info for group DMs using m.direct and profile API (doesn't require full room state)
   // Members are sorted by who last sent messages (most recent first).
   // Only pass the room for actual group DMs — for 1:1 DMs the hook would fire a
   // profile-API round-trip, trigger a re-render, and transiently make dmUserId undefined,
   // clearing the presence dot. RoomNavItem uses the same guard.
-  const groupMembers = useGroupDMMembers(
-    mx,
-    isGroupDM ? room : undefined,
-    MAX_GROUP_MEMBERS,
-  );
+  const groupMembers = useGroupDMMembers(mx, isGroupDM ? room : undefined, MAX_GROUP_MEMBERS);
   // Only subscribe to group presence for actual group DMs; for 1:1 DMs groupMembers
   // is [] anyway, but being explicit avoids redundant hook work.
-  const groupPresence = useGroupPresence(
-    isGroupDM ? groupMembers.map((m) => m.userId) : [],
-  );
+  const groupPresence = useGroupPresence(isGroupDM ? groupMembers.map((m) => m.userId) : []);
 
   // Get unread info for badge
   const unread = roomToUnread.get(room.roomId);
@@ -92,10 +80,7 @@ function DMItem({ room, selected }: DMItemProps) {
     if (groupMembers.length !== 1 || !member?.avatarUrl) {
       return undefined;
     }
-    return (
-      convertMxc(mx, member.avatarUrl, useAuthentication, 96, 96, "crop") ??
-      undefined
-    );
+    return convertMxc(mx, member.avatarUrl, useAuthentication, 96, 96, 'crop') ?? undefined;
   };
 
   // Render appropriate avatar based on DM type
@@ -108,13 +93,7 @@ function DMItem({ room, selected }: DMItemProps) {
             roomId={room.roomId}
             src={
               getRoomAvatarUrl(mx, room, 96, useAuthentication, convertMxc) ||
-              getDirectRoomAvatarUrl(
-                mx,
-                room,
-                96,
-                useAuthentication,
-                convertMxc,
-              )
+              getDirectRoomAvatarUrl(mx, room, 96, useAuthentication, convertMxc)
             }
             alt={room.name}
             renderFallback={() => (
@@ -152,23 +131,11 @@ function DMItem({ room, selected }: DMItemProps) {
         <Box className={css.GroupAvatarRow}>
           {groupMembers.map((member) => {
             const avatarUrl = member.avatarUrl
-              ? (convertMxc(
-                  mx,
-                  member.avatarUrl,
-                  useAuthentication,
-                  48,
-                  48,
-                  "crop",
-                ) ?? undefined)
+              ? (convertMxc(mx, member.avatarUrl, useAuthentication, 48, 48, 'crop') ?? undefined)
               : undefined;
 
             return (
-              <Avatar
-                key={member.userId}
-                size="200"
-                radii="300"
-                className={css.GroupAvatar}
-              >
+              <Avatar key={member.userId} size="200" radii="300" className={css.GroupAvatar}>
                 <UserAvatar
                   userId={member.userId}
                   src={avatarUrl}
@@ -204,13 +171,7 @@ function DMItem({ room, selected }: DMItemProps) {
                   )
             }
           >
-            <SidebarAvatar
-              as="button"
-              ref={triggerRef}
-              outlined
-              onClick={handleClick}
-              size="400"
-            >
+            <SidebarAvatar as="button" ref={triggerRef} outlined onClick={handleClick} size="400">
               {renderAvatar()}
             </SidebarAvatar>
           </AvatarPresence>
@@ -247,39 +208,26 @@ export function DirectDMsList() {
       sidebarRoomIds
         .map((roomId) => mx.getRoom(roomId))
         .filter((room): room is Room => room !== null),
-    [sidebarRoomIds, mx],
+    [sidebarRoomIds, mx]
   );
 
   // Track initial sync phase: when room IDs first appear
   useEffect(() => {
-    if (
-      sidebarRoomIds.length > 0 &&
-      phaseTimesRef.current.initialSync === undefined
-    ) {
+    if (sidebarRoomIds.length > 0 && phaseTimesRef.current.initialSync === undefined) {
       const elapsed = performance.now() - mountTimeRef.current;
       phaseTimesRef.current.initialSync = elapsed;
-      Sentry.metrics.distribution(
-        "sable.roomlist.phase.initial_sync_ms",
-        elapsed,
-      );
+      Sentry.metrics.distribution('sable.roomlist.phase.initial_sync_ms', elapsed);
     }
   }, [sidebarRoomIds]);
 
   // Track member lists phase: when Room objects are fetched and member counts available
   useEffect(() => {
-    if (
-      recentDMs.length > 0 &&
-      phaseTimesRef.current.memberLists === undefined
-    ) {
+    if (recentDMs.length > 0 && phaseTimesRef.current.memberLists === undefined) {
       const elapsed = performance.now() - mountTimeRef.current;
       phaseTimesRef.current.memberLists = elapsed;
-      Sentry.metrics.distribution(
-        "sable.roomlist.phase.member_lists_ms",
-        elapsed,
-        {
-          attributes: { room_count: String(recentDMs.length) },
-        },
-      );
+      Sentry.metrics.distribution('sable.roomlist.phase.member_lists_ms', elapsed, {
+        attributes: { room_count: String(recentDMs.length) },
+      });
     }
   }, [recentDMs]);
 
@@ -292,10 +240,7 @@ export function DirectDMsList() {
     ) {
       const elapsed = performance.now() - mountTimeRef.current;
       phaseTimesRef.current.notifications = elapsed;
-      Sentry.metrics.distribution(
-        "sable.roomlist.phase.notifications_ms",
-        elapsed,
-      );
+      Sentry.metrics.distribution('sable.roomlist.phase.notifications_ms', elapsed);
     }
   }, [recentDMs, roomToUnread]);
 
@@ -304,8 +249,8 @@ export function DirectDMsList() {
     if (recentDMs.length > 0 && !firstReadyRef.current) {
       firstReadyRef.current = true;
       Sentry.metrics.distribution(
-        "sable.roomlist.time_to_ready_ms",
-        performance.now() - mountTimeRef.current,
+        'sable.roomlist.time_to_ready_ms',
+        performance.now() - mountTimeRef.current
       );
     }
   }, [recentDMs]);
@@ -317,11 +262,7 @@ export function DirectDMsList() {
   return (
     <>
       {recentDMs.map((room) => (
-        <DMItem
-          key={room.roomId}
-          room={room}
-          selected={selectedRoomId === room.roomId}
-        />
+        <DMItem key={room.roomId} room={room} selected={selectedRoomId === room.roomId} />
       ))}
     </>
   );
