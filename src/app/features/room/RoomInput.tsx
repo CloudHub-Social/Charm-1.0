@@ -2130,10 +2130,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       }
 
       // For Klipy proxy GIFs, always use .webp body and image/webp MIME.
-      // For favorited GIFs (already mxc://), preserve the stored title and
-      // infer the MIME from the extension so resending doesn't corrupt metadata.
+      // For favorited GIFs (already mxc://), preserve the stored title as-is
+      // and use image/gif — Matrix image bodies are not guaranteed to have a
+      // file extension, so title.endsWith('.webp') is an unreliable heuristic.
       const body = isKlipyProxy ? `${gif.title}.webp` : gif.title;
-      const mimetype = isKlipyProxy || gif.title.endsWith('.webp') ? 'image/webp' : 'image/gif';
+      const mimetype = isKlipyProxy ? 'image/webp' : 'image/gif';
 
       const content: RoomMessageEventContent & IContent = {
         body,

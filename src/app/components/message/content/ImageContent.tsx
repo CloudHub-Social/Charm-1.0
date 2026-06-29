@@ -48,7 +48,7 @@ import { getScopedMediaCacheKey } from '$utils/mediaTransport';
 import { storeMediaMetadataForBlob } from '$utils/mediaMetadata';
 import { ModalWide } from '$styles/Modal.css';
 import { validBlurHash } from '$utils/blurHash';
-import { isSupportedGifFavoriteUrl } from '$utils/gifs';
+import { isSupportedGifFavoriteUrl, isKlipyProxyMxc } from '$utils/gifs';
 import * as css from './style.css';
 import {
   MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS,
@@ -143,6 +143,7 @@ export type ImageContentProps = {
 type GifFavoriteActionProps = {
   body: string;
   url: string;
+  mimeType?: string;
   imageW?: number;
   imageH?: number;
   srcState: { status: AsyncStatus };
@@ -151,6 +152,7 @@ type GifFavoriteActionProps = {
 function GifFavoriteAction({
   body,
   url,
+  mimeType,
   imageW,
   imageH,
   srcState,
@@ -168,6 +170,9 @@ function GifFavoriteAction({
   }, [favoritedContent, url]);
 
   if (!gifsEnabled || !isSupportedGifFavoriteUrl(url)) return null;
+  // isSupportedGifFavoriteUrl accepts any mxc:// URL; for WebP specifically
+  // restrict to Klipy proxy sources so static WebP images don't get the button.
+  if (mimeType === 'image/webp' && !isKlipyProxyMxc(url, clientConfig.gifs?.proxyUrl)) return null;
 
   return (
     <MenuItem
@@ -708,6 +713,7 @@ export const ImageContent = as<'div', ImageContentProps>(
                     <GifFavoriteAction
                       body={body || 'GIF'}
                       url={url}
+                      mimeType={info?.mimetype}
                       imageW={imageW}
                       imageH={imageH}
                       srcState={srcState}
