@@ -1,29 +1,23 @@
 import type { ChangeEventHandler } from 'react';
 import { useRef } from 'react';
-import { Input, Chip, Text, Box } from 'folds';
+import { Input, Chip, Text } from 'folds';
 import { mobileOrTablet } from '$utils/user-agent';
-import { ArrowRight, sizedIcon, MagnifyingGlass, X } from '$components/icons/phosphor';
-import { EmojiBoardTab } from '$components/emoji-board/types';
+import { ArrowRight, sizedIcon, MagnifyingGlass } from '$components/icons/phosphor';
+import { EmojiBoardTab } from '../types';
 
 type SearchInputProps = {
-  tab: EmojiBoardTab;
   query?: string;
-  value?: string;
   onChange: ChangeEventHandler<HTMLInputElement>;
-  onClear?: () => void;
   allowTextCustomEmoji?: boolean;
   onTextCustomEmojiSelect?: (text: string) => void;
-  placeholder?: string;
+  tab?: EmojiBoardTab;
 };
 export function SearchInput({
-  tab,
   query,
-  value,
   onChange,
-  onClear,
   allowTextCustomEmoji,
   onTextCustomEmojiSelect,
-  placeholder,
+  tab,
 }: SearchInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -39,12 +33,13 @@ export function SearchInput({
       variant="SurfaceVariant"
       size="400"
       placeholder={
-        placeholder ??
-        (allowTextCustomEmoji && tab !== EmojiBoardTab.Gif ? 'Search or Text Reaction' : 'Search')
+        tab === EmojiBoardTab.Gif
+          ? 'Search KLIPY'
+          : allowTextCustomEmoji
+            ? 'Search or Text Reaction '
+            : 'Search'
       }
-      value={value}
       maxLength={50}
-      before={sizedIcon(MagnifyingGlass, '50')}
       after={
         allowTextCustomEmoji && query && tab !== EmojiBoardTab.Gif ? (
           <Chip
@@ -56,19 +51,9 @@ export function SearchInput({
           >
             <Text size="L400">React</Text>
           </Chip>
-        ) : onClear && value ? (
-          <Box
-            as="button"
-            type="button"
-            alignItems="Center"
-            justifyContent="Center"
-            style={{ cursor: 'pointer' }}
-            aria-label="Clear search"
-            onClick={onClear}
-          >
-            {sizedIcon(X, '50')}
-          </Box>
-        ) : undefined
+        ) : (
+          sizedIcon(MagnifyingGlass, '50')
+        )
       }
       onChange={onChange}
       autoFocus={!mobileOrTablet()}

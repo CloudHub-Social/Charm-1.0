@@ -60,6 +60,7 @@ import { modalAtom, ModalType } from '$state/modal';
 import { OptionQuickMenu } from '$components/message/modals/Options';
 
 export type ReactionHandler = (keyOrMxc: string, shortcode: string) => void;
+
 export const MemoizedBody = memo(({ children }: { children: ReactNode }) => children);
 
 export type ForwardedMessageProps = {
@@ -129,21 +130,14 @@ function useMobileLongPress(callback: () => void, delay = 500) {
     }
   }, []);
 
-  const onTouchStart = useCallback(
-    (evt: React.TouchEvent) => {
-      if (!mobileOrTablet()) return;
-      evt.stopPropagation();
-      if (timerRef.current !== null) {
-        clearTimeout(timerRef.current);
-      }
-      firedRef.current = false;
-      timerRef.current = setTimeout(() => {
-        firedRef.current = true;
-        callback();
-      }, delay);
-    },
-    [callback, delay]
-  );
+  const onTouchStart = useCallback(() => {
+    if (!mobileOrTablet()) return;
+    firedRef.current = false;
+    timerRef.current = setTimeout(() => {
+      firedRef.current = true;
+      callback();
+    }, delay);
+  }, [callback, delay]);
 
   const onTouchEnd = useCallback(() => {
     clear();
@@ -153,7 +147,7 @@ function useMobileLongPress(callback: () => void, delay = 500) {
     clear();
   }, [clear]);
 
-  return { onTouchStart, onTouchEnd, onTouchMove, onTouchCancel: clear, firedRef };
+  return { onTouchStart, onTouchEnd, onTouchMove, firedRef };
 }
 
 const clamp = (str: string, len: number) => (str.length > len ? `${str.slice(0, len)}...` : str);
@@ -467,10 +461,9 @@ function MessageInternal(
   // avatar so per-room avatar overrides are respected in the timeline.
   const memberAvatarMxc = getMemberAvatarMxc(room, senderId);
   const avatarUrl = useMemo(() => {
-    if (collapse) return undefined;
     const mxc = pmp?.avatar_url || memberAvatarMxc || profile.avatarUrl;
     return mxc ? mxcUrlToHttp(mx, mxc, useAuthentication, 48, 48, 'crop') : undefined;
-  }, [collapse, pmp, memberAvatarMxc, profile.avatarUrl, mx, useAuthentication]);
+  }, [pmp, memberAvatarMxc, profile.avatarUrl, mx, useAuthentication]);
 
   const cachedAvatar = useBlobCache(avatarUrl ?? undefined);
 
@@ -748,10 +741,7 @@ function MessageInternal(
               compact={messageLayout === MessageLayout.Compact}
               hour24Clock={hour24Clock}
               dateFormatString={dateFormatString}
-              style={{
-                marginLeft: config.space.S100,
-                justifyContent: 'flex-end',
-              }}
+              style={{ marginLeft: config.space.S100, justifyContent: 'flex-end' }}
             />
           </Text>
         </Chip>
@@ -859,16 +849,16 @@ function MessageInternal(
           </div>
         ),
         canSendReaction: canSendReaction,
-        imagePackRooms,
       },
     });
   };
 
-  // Mobile PWA contract kept visible for the dogfood guard:
-  // const longPress = useMobileLongPress(() => {
-  //   setMobileOptionsOpen(true);
-  // });
-  const { firedRef: longPressFiredRef, ...longPress } = useMobileLongPress(() => {
+  const {
+    onTouchStart,
+    onTouchEnd,
+    onTouchMove,
+    firedRef: longPressFiredRef,
+  } = useMobileLongPress(() => {
     if (!edit) openMobileOptions();
   });
 
@@ -880,12 +870,10 @@ function MessageInternal(
       // If our long-press handler already fired (iOS), suppress the native contextmenu
       if (longPressFiredRef.current) {
         evt.preventDefault();
-        evt.stopPropagation();
         longPressFiredRef.current = false;
         return;
       }
       evt.preventDefault();
-      evt.stopPropagation();
       openMobileOptions();
       return;
     }
@@ -920,8 +908,6 @@ function MessageInternal(
     onReplyClick(mockEvent);
   };
 
-  const msgContentWithLongPressJSX = <div {...longPress}>{msgContentJSX}</div>;
-
   return (
     <MessageBase
       className={classNames(css.MessageBase, className, {
@@ -935,7 +921,6 @@ function MessageInternal(
       selected={!!menuAnchor || isEmoji}
       isMarked={isMarked}
       mobile={mobileOrTablet()}
-      contentSpacing={messageSpacing}
       {...props}
       {...hoverProps}
       {...focusWithinProps}
@@ -965,18 +950,22 @@ function MessageInternal(
         </div>
       )}
 
-      <div style={{ width: '100%' }}>
-        <div onContextMenu={handleContextMenu} {...longPress}>
-          <WrappedMessage
-            headerJSX={headerJSX(collapse)}
-            avatarJSX={avatarJSX(collapse)}
-            msgContentJSX={msgContentWithLongPressJSX}
-            messageLayout={messageLayout}
-            handleSwipeReply={handleSwipeReply}
-            handleContextMenu={handleContextMenu}
-            align={useRightBubbles && senderId === mx.getUserId() ? 'right' : 'left'}
-          />
-        </div>
+      <div
+        style={{ width: '100%' }}
+        onContextMenu={handleContextMenu}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onTouchMove={onTouchMove}
+      >
+        <WrappedMessage
+          headerJSX={headerJSX(collapse)}
+          avatarJSX={avatarJSX(collapse)}
+          msgContentJSX={msgContentJSX}
+          messageLayout={messageLayout}
+          handleSwipeReply={handleSwipeReply}
+          handleContextMenu={handleContextMenu}
+          align={useRightBubbles && senderId === mx.getUserId() ? 'right' : 'left'}
+        />
       </div>
     </MessageBase>
   );

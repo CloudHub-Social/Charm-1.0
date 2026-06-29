@@ -1,6 +1,8 @@
 import type { CSSProperties } from 'react';
-import { Badge, Box, Text, color, config } from 'folds';
+import { Badge, Box, Text } from 'folds';
 import { EmojiBoardTab } from '$components/emoji-board/types';
+import { useSetting } from '$state/hooks/settings';
+import { settingsAtom } from '$state/settings';
 
 const styles: CSSProperties = {
   cursor: 'pointer',
@@ -9,56 +11,51 @@ const styles: CSSProperties = {
 export function EmojiBoardTabs({
   tab,
   onTabChange,
-  showGifTab = true,
 }: {
   tab: EmojiBoardTab;
   onTabChange: (tab: EmojiBoardTab) => void;
-  showGifTab?: boolean;
 }) {
-  const tabs = [
-    {
-      id: EmojiBoardTab.Emoji,
-      label: 'Emoji',
-    },
-    {
-      id: EmojiBoardTab.Sticker,
-      label: 'Stickers',
-    },
-    ...(showGifTab
-      ? [
-          {
-            id: EmojiBoardTab.Gif,
-            label: 'GIFs',
-          },
-        ]
-      : []),
-  ] as const;
-
+  const [showGifPicker] = useSetting(settingsAtom, 'enableGifPicker');
   return (
-    <Box
-      gap="100"
-      style={{
-        padding: config.space.S100,
-        borderRadius: config.radii.R400,
-        backgroundColor: color.SurfaceVariant.Container,
-        width: '100%',
-      }}
-    >
-      {tabs.map((item) => (
+    <Box gap="100">
+      {showGifPicker && (
         <Badge
-          key={item.id}
-          style={{ ...styles, flex: 1, justifyContent: 'center' }}
+          style={styles}
           as="button"
-          variant={tab === item.id ? 'Primary' : 'Secondary'}
-          fill={tab === item.id ? 'Solid' : 'None'}
+          variant="Secondary"
+          fill={tab === EmojiBoardTab.Gif ? 'Solid' : 'None'}
           size="500"
-          onClick={() => onTabChange(item.id)}
+          onClick={() => onTabChange(EmojiBoardTab.Gif)}
         >
           <Text as="span" size="L400">
-            {item.label}
+            GIF
           </Text>
         </Badge>
-      ))}
+      )}
+      <Badge
+        style={styles}
+        as="button"
+        variant="Secondary"
+        fill={tab === EmojiBoardTab.Sticker ? 'Solid' : 'None'}
+        size="500"
+        onClick={() => onTabChange(EmojiBoardTab.Sticker)}
+      >
+        <Text as="span" size="L400">
+          Sticker
+        </Text>
+      </Badge>
+      <Badge
+        style={styles}
+        as="button"
+        variant="Secondary"
+        fill={tab === EmojiBoardTab.Emoji ? 'Solid' : 'None'}
+        size="500"
+        onClick={() => onTabChange(EmojiBoardTab.Emoji)}
+      >
+        <Text as="span" size="L400">
+          Emoji
+        </Text>
+      </Badge>
     </Box>
   );
 }

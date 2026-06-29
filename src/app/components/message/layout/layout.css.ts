@@ -9,9 +9,6 @@ export const StickySection = style({
 });
 
 const SpacingVar = createVar();
-const ContentSpacingVar = createVar();
-const withVarFallback = (cssVar: string, fallback: string): string =>
-  `var(${cssVar.slice(4, -1)}, ${fallback})`;
 const SpacingVariant = styleVariants({
   '0': {
     vars: {
@@ -41,39 +38,6 @@ const SpacingVariant = styleVariants({
   '500': {
     vars: {
       [SpacingVar]: config.space.S500,
-    },
-  },
-});
-
-const ContentSpacingVariant = styleVariants({
-  '0': {
-    vars: {
-      [ContentSpacingVar]: config.space.S0,
-    },
-  },
-  '100': {
-    vars: {
-      [ContentSpacingVar]: config.space.S100,
-    },
-  },
-  '200': {
-    vars: {
-      [ContentSpacingVar]: config.space.S200,
-    },
-  },
-  '300': {
-    vars: {
-      [ContentSpacingVar]: config.space.S300,
-    },
-  },
-  '400': {
-    vars: {
-      [ContentSpacingVar]: config.space.S400,
-    },
-  },
-  '500': {
-    vars: {
-      [ContentSpacingVar]: config.space.S500,
     },
   },
 });
@@ -145,21 +109,20 @@ const AutoCollapse = style({
 });
 
 export const MessageBase = recipe({
-  base: {
-    marginTop: SpacingVar,
-    paddingTop: withVarFallback(ContentSpacingVar, config.space.S100),
-    paddingRight: config.space.S200,
-    paddingBottom: withVarFallback(ContentSpacingVar, config.space.S100),
-    paddingLeft: config.space.S400,
-    borderRadius: `0 ${config.radii.R400} ${config.radii.R400} 0`,
-    minHeight: toRem(16),
-    contain: 'layout',
-    alignSelf: 'stretch',
-    width: '100%',
-  },
+  base: [
+    DefaultReset,
+    {
+      marginTop: SpacingVar,
+      padding: `${config.space.S100} ${config.space.S200} ${config.space.S100} ${config.space.S400}`,
+      borderRadius: `0 ${config.radii.R400} ${config.radii.R400} 0`,
+      minHeight: toRem(16),
+      contain: 'layout',
+      flexGrow: '1',
+      width: '100',
+    },
+  ],
   variants: {
     space: SpacingVariant,
-    contentSpacing: ContentSpacingVariant,
     collapse: {
       true: {
         marginTop: 0,
@@ -204,15 +167,11 @@ export const AvatarBase = style({
 });
 
 export const ModernBefore = style({
-  width: toRem(36),
   minWidth: toRem(36),
-  flexBasis: toRem(36),
 });
 
 export const BubbleBefore = style({
-  width: toRem(36),
   minWidth: toRem(36),
-  flexBasis: toRem(36),
 });
 
 export const BubbleWrapper = style({

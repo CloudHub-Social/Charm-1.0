@@ -1,28 +1,9 @@
 import { atom, type WritableAtom } from 'jotai';
 import type { Store } from 'jotai/vanilla/store';
-import type { IImageInfo } from '$types/matrix/common';
 import { mobileOrTablet } from '$utils/user-agent';
-import type {
-  NotificationTransportMode,
-  NotificationTransportProvider,
-  PushTransportOverrides,
-} from '$features/settings/notifications/NotificationTransport';
+import type { IImageInfo } from '$types/matrix/common';
 
 const STORAGE_KEY = 'settings';
-export const EXPLICITLY_CLEARABLE_SETTINGS_KEYS = [
-  'themeId',
-  'lightThemeId',
-  'darkThemeId',
-  'themeRemoteManualFullUrl',
-  'themeRemoteLightFullUrl',
-  'themeRemoteDarkFullUrl',
-  'themeRemoteManualKind',
-  'themeRemoteLightKind',
-  'themeRemoteDarkKind',
-  'arboriumLightTheme',
-  'arboriumDarkTheme',
-] as const satisfies readonly (keyof Settings)[];
-type ExplicitlyClearableSettingsKey = (typeof EXPLICITLY_CLEARABLE_SETTINGS_KEYS)[number];
 export type DateFormat = 'D MMM YYYY' | 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY/MM/DD' | '';
 export type MessageSpacing = '0' | '100' | '200' | '300' | '400' | '500';
 export enum MessageLayout {
@@ -54,12 +35,6 @@ export type PerRoomShowRoomIcon = {
   display: ShowRoomIcon;
 };
 
-export enum DefaultLandingScreen {
-  Home = 'home',
-  Direct = 'direct',
-  LastVisited = 'last-visited',
-}
-
 export type JumboEmojiSize = 'none' | 'extraSmall' | 'small' | 'normal' | 'large' | 'extraLarge';
 
 export type ThemeRemoteFavorite = {
@@ -84,7 +59,6 @@ export type RenderUserCardsMode = 'both' | 'light' | 'dark' | 'none';
 
 /** Where to use crisp nearest-neighbor (pixelated) image scaling. */
 export type PixelatedImageRenderingMode = 'always' | 'smart' | 'never';
-export type NotificationDeviceScope = 'all_clients' | 'active_client_only';
 
 export function isPixelatedRendering(
   mode: PixelatedImageRenderingMode,
@@ -96,11 +70,12 @@ export function isPixelatedRendering(
 
 export function shouldApplyUserHeroCards(
   mode: RenderUserCardsMode,
-  brightness: string | undefined
+  brightness?: string,
+  color?: string
 ): boolean {
+  if (!color || (brightness !== 'light' && brightness !== 'dark')) return false;
   if (mode === 'none') return false;
   if (mode === 'both') return true;
-  if (brightness !== 'light' && brightness !== 'dark') return false;
   return brightness === mode;
 }
 
@@ -118,7 +93,6 @@ export interface Settings {
   twitterEmoji: boolean;
   pageZoom: number;
   hideActivity: boolean;
-  defaultLandingScreen: DefaultLandingScreen;
 
   isPeopleDrawer: boolean;
   isWidgetDrawer: boolean;
@@ -149,11 +123,11 @@ export interface Settings {
   clientUrlPreview: boolean;
   encClientUrlPreview: boolean;
   clientPreviewYoutube: boolean;
+  enableGifPicker: boolean;
   showInteractiveMap: boolean;
   showEncInteractiveMap: boolean;
 
   usePushNotifications: boolean;
-  useUnifiedPush: boolean;
   useInAppNotifications: boolean;
   useSystemNotifications: boolean;
   isNotificationSounds: boolean;
@@ -161,11 +135,6 @@ export interface Settings {
   showMessageContentInNotifications: boolean;
   showMessageContentInEncryptedNotifications: boolean;
   clearNotificationsOnRead: boolean;
-  backgroundPushEnabled: boolean;
-  backgroundPushProvider: NotificationTransportProvider | null;
-  pushTransportMode: NotificationTransportMode;
-  pushTransportOverride: PushTransportOverrides;
-  notificationDeviceScope: NotificationDeviceScope;
 
   hour24Clock: boolean;
   dateFormatString: string;
@@ -173,9 +142,6 @@ export interface Settings {
   developerTools: boolean;
   enableMSC4268CMD: boolean;
   settingsSyncEnabled: boolean;
-  encryptedSearch: boolean;
-  idbSearchIndex: boolean;
-  searchIndexMessageLimit: number;
 
   // Cosmetics!
   iconCompactSizePx: number;
@@ -201,25 +167,16 @@ export interface Settings {
 
   // Sable features!
   sendPresence: boolean;
-  presenceMode: 'online' | 'unavailable' | 'dnd' | 'offline';
-  autoIdlePresence: boolean;
-  presenceIdleTimeoutMins: number;
-  /** User-set status message, cached locally so it survives mode changes and sliding-sync restarts. */
-  presenceStatusMsg: string;
-  focusMode: 'off' | 'focus' | 'dnd';
   mobileGestures: boolean;
   rightSwipeAction: RightSwipeAction;
   hideMembershipInReadOnly: boolean;
   useRightBubbles: boolean;
   showUnreadCounts: boolean;
   badgeCountDMsOnly: boolean;
-  showLoudRoomCounts: boolean;
   showPingCounts: boolean;
   showEasterEggs: boolean;
   hideReads: boolean;
   emojiSuggestThreshold: number;
-  emojiAutoExpand: boolean;
-  structuredMarkdownAssist: boolean;
   underlineLinks: boolean;
   reducedMotion: boolean;
   autoplayGifs: boolean;
@@ -252,15 +209,7 @@ export interface Settings {
   threadRootHeight: number;
   vcmsgSidebarWidth: number;
   widgetSidebarWidth: number;
-  roomTopicPreview: boolean;
-  roomMessagePreview: boolean;
-  dmMessagePreview: boolean;
-
-  // experimental
-  enableMessageBookmarks: boolean;
-  enableBookmarkReminders: boolean;
-  editInInput: boolean;
-  messageGroupingThreshold: number;
+  isShowingAllRoomsInHome: boolean;
 
   // furry stuff
   renderAnimals: boolean;
@@ -297,7 +246,6 @@ export const defaultSettings: Settings = {
   twitterEmoji: true,
   pageZoom: 100,
   hideActivity: false,
-  defaultLandingScreen: DefaultLandingScreen.Home,
 
   isPeopleDrawer: true,
   isWidgetDrawer: false,
@@ -318,7 +266,8 @@ export const defaultSettings: Settings = {
   clientUrlPreview: false,
   encClientUrlPreview: false,
   clientPreviewYoutube: false,
-  showInteractiveMap: false,
+  enableGifPicker: true,
+  showInteractiveMap: true,
   showEncInteractiveMap: false,
   showHiddenEvents: false,
   showTombstoneEvents: true,
@@ -336,7 +285,6 @@ export const defaultSettings: Settings = {
   // In-app pill banner: default on for mobile (primary foreground alert), opt-in on desktop.
   // System (OS) notifications: desktop-only; hidden and disabled on mobile.
   usePushNotifications: mobileOrTablet(),
-  useUnifiedPush: false,
   useInAppNotifications: mobileOrTablet(),
   useSystemNotifications: !mobileOrTablet(),
   isNotificationSounds: true,
@@ -344,20 +292,12 @@ export const defaultSettings: Settings = {
   showMessageContentInNotifications: false,
   showMessageContentInEncryptedNotifications: false,
   clearNotificationsOnRead: false,
-  backgroundPushEnabled: mobileOrTablet(),
-  backgroundPushProvider: null,
-  pushTransportMode: 'auto',
-  pushTransportOverride: {},
-  notificationDeviceScope: 'all_clients',
 
   hour24Clock: false,
   dateFormatString: 'D MMM YYYY',
 
   developerTools: false,
   settingsSyncEnabled: false,
-  encryptedSearch: false,
-  idbSearchIndex: false,
-  searchIndexMessageLimit: 2000,
 
   // Cosmetics!
   iconCompactSizePx: 16,
@@ -381,24 +321,16 @@ export const defaultSettings: Settings = {
 
   // Sable features!
   sendPresence: true,
-  presenceMode: 'online',
-  autoIdlePresence: true,
-  presenceIdleTimeoutMins: 5,
-  presenceStatusMsg: '',
-  focusMode: 'off',
   mobileGestures: true,
   rightSwipeAction: RightSwipeAction.Reply,
   hideMembershipInReadOnly: true,
   useRightBubbles: false,
   showUnreadCounts: false,
   badgeCountDMsOnly: true,
-  showLoudRoomCounts: false,
   showPingCounts: true,
   showEasterEggs: true,
   hideReads: false,
   emojiSuggestThreshold: 2,
-  emojiAutoExpand: false,
-  structuredMarkdownAssist: false,
   underlineLinks: false,
   reducedMotion: false,
   autoplayGifs: true,
@@ -431,9 +363,7 @@ export const defaultSettings: Settings = {
   threadRootHeight: 220,
   vcmsgSidebarWidth: 399,
   widgetSidebarWidth: 420,
-  roomTopicPreview: false,
-  roomMessagePreview: false,
-  dmMessagePreview: true,
+  isShowingAllRoomsInHome: false,
   // furry stuff
   renderAnimals: true,
 
@@ -453,12 +383,6 @@ export const defaultSettings: Settings = {
   themeMigrationDismissed: false,
   themeRemoteTweakFavorites: [],
   themeRemoteEnabledTweakFullUrls: [],
-
-  // experimental
-  enableMessageBookmarks: false,
-  enableBookmarkReminders: false,
-  editInInput: false,
-  messageGroupingThreshold: 180000,
 };
 
 function cloneDefaultSettings(): Settings {
@@ -470,65 +394,6 @@ function cloneDefaultSettings(): Settings {
     themeRemoteTweakFavorites: defaultSettings.themeRemoteTweakFavorites.map((x) => ({ ...x })),
     themeRemoteEnabledTweakFullUrls: [...defaultSettings.themeRemoteEnabledTweakFullUrls],
   };
-}
-
-function getStorageDefaults(): Settings {
-  return {
-    ...cloneDefaultSettings(),
-    ...runtimeSettingsDefaults,
-  };
-}
-
-function readStoredSettingsRecord(): Record<string, unknown> | null {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw === null) return null;
-
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    return parsed as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-export function getExplicitlyClearedSettingsKeys(): Set<ExplicitlyClearableSettingsKey> {
-  const stored = readStoredSettingsRecord();
-  const cleared = new Set<ExplicitlyClearableSettingsKey>();
-  if (!stored) return cleared;
-
-  EXPLICITLY_CLEARABLE_SETTINGS_KEYS.forEach((key) => {
-    if (stored[key] === null) {
-      cleared.add(key);
-    }
-  });
-
-  return cleared;
-}
-
-export function persistExplicitlyClearedSettingsKeys(
-  keys: Iterable<ExplicitlyClearableSettingsKey>
-): void {
-  const keySet = new Set(keys);
-  if (keySet.size === 0) return;
-
-  const stored = readStoredSettingsRecord() ?? {};
-  let changed = false;
-
-  keySet.forEach((key) => {
-    if (stored[key] !== null) {
-      stored[key] = null;
-      changed = true;
-    }
-  });
-
-  if (!changed) return;
-
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-  } catch {
-    // QuotaExceededError: write best-effort; ignore if storage is full
-  }
 }
 
 function migrateParsedLocalStorage(parsed: Record<string, unknown>): void {
@@ -550,6 +415,16 @@ function migrateParsedLocalStorage(parsed: Record<string, unknown>): void {
     parsed.renderUserCards = 'both';
   }
 
+  if (typeof parsed.pixelatedImageRendering === 'boolean') {
+    parsed.pixelatedImageRendering = parsed.pixelatedImageRendering ? 'both' : 'none';
+  } else if (
+    parsed.pixelatedImageRendering !== 'always' &&
+    parsed.pixelatedImageRendering !== 'smart' &&
+    parsed.pixelatedImageRendering !== 'never'
+  ) {
+    delete parsed.pixelatedImageRendering;
+  }
+
   if (
     typeof parsed.themeChatAutoPreviewAnyUrl !== 'boolean' &&
     typeof parsed.themeChatPreviewAnyUrl === 'boolean'
@@ -558,19 +433,13 @@ function migrateParsedLocalStorage(parsed: Record<string, unknown>): void {
   }
   delete parsed.themeChatPreviewAnyUrl;
   delete parsed.themeChatPreviewApprovedCatalogOnly;
-
-  EXPLICITLY_CLEARABLE_SETTINGS_KEYS.forEach((key) => {
-    if (parsed[key] === null) {
-      parsed[key] = undefined;
-    }
-  });
 }
 
 export function mergePersistedSettings(
   rawLocalStorage: string | null,
   fileDefaults: Partial<Settings>
 ): Settings {
-  const base = { ...cloneDefaultSettings(), ...fileDefaults };
+  const base = { ...defaultSettings, ...fileDefaults };
   if (rawLocalStorage === null) return base;
 
   const parsed = JSON.parse(rawLocalStorage) as Record<string, unknown>;
@@ -679,8 +548,6 @@ function sanitizeSettingsKey(key: keyof Settings, val: unknown): unknown {
         : undefined;
     case 'rightSwipeAction':
       return val === RightSwipeAction.Members || val === RightSwipeAction.Reply ? val : undefined;
-    case 'notificationDeviceScope':
-      return val === 'all_clients' || val === 'active_client_only' ? val : undefined;
     case 'renderUserCards':
       return val === 'both' || val === 'light' || val === 'dark' || val === 'none'
         ? val
@@ -770,13 +637,12 @@ export function resetRuntimeSettingsDefaults(): void {
   runtimeSettingsDefaults = {};
 }
 
-export function primeRuntimeSettingsDefaults(rawSettingsDefaults: unknown): void {
-  runtimeSettingsDefaults = sanitizeSettingsDefaults(rawSettingsDefaults);
-}
+export const baseSettings = atom<Settings>(cloneDefaultSettings());
 
 export function bootstrapSettingsStore(store: Store, rawSettingsDefaults: unknown): void {
-  primeRuntimeSettingsDefaults(rawSettingsDefaults);
-  const merged = mergePersistedSettings(localStorage.getItem(STORAGE_KEY), runtimeSettingsDefaults);
+  const sanitized = sanitizeSettingsDefaults(rawSettingsDefaults);
+  runtimeSettingsDefaults = sanitized;
+  const merged = mergePersistedSettings(localStorage.getItem(STORAGE_KEY), sanitized);
   store.set(baseSettings, merged);
 }
 
@@ -784,43 +650,8 @@ export const getSettings = (): Settings =>
   mergePersistedSettings(localStorage.getItem(STORAGE_KEY), runtimeSettingsDefaults);
 
 export const setSettings = (settings: Settings) => {
-  try {
-    const storageDefaults = getStorageDefaults();
-    const previouslyStored = readStoredSettingsRecord();
-    const serialized = { ...settings } as Record<string, unknown>;
-    EXPLICITLY_CLEARABLE_SETTINGS_KEYS.forEach((key) => {
-      const previousValue = previouslyStored?.[key];
-      const shouldPersistClear =
-        serialized[key] === undefined &&
-        (storageDefaults[key] !== undefined ||
-          previousValue === null ||
-          previousValue !== undefined);
-
-      if (shouldPersistClear) {
-        serialized[key] = null;
-      }
-    });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(serialized));
-  } catch {
-    // QuotaExceededError: write best-effort; ignore if storage is full
-  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 };
-
-export const baseSettings = atom<Settings>(getSettings());
-
-/**
- * Ephemeral atom — true when the auto-idle hook has transitioned the user to idle.
- * Not persisted to localStorage; resets to false on every page load.
- */
-export const presenceAutoIdledAtom = atom(false);
-
-/**
- * Ephemeral atom — true when settings have been fully initialized.
- * Prevents theme flashing by delaying theme application until both localStorage
- * AND account data have been checked (or timeout expires).
- * Resets to false on every page load.
- */
-export const settingsInitializedAtom = atom(false);
 
 export const settingsAtom = atom<Settings, [Settings], undefined>(
   (get) => get(baseSettings),

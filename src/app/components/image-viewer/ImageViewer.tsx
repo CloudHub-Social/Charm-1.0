@@ -121,6 +121,22 @@ export const ImageViewer = as<'div', ImageViewerProps>(
       });
     };
 
+    const [menuAnchor, setMenuAnchor] = useState<RectCords>();
+
+    const handleContextMenu: MouseEventHandler<HTMLDivElement> = (evt) => {
+      if (evt.altKey || !window.getSelection()?.isCollapsed) return;
+      const tag = (evt.target as HTMLElement).tagName;
+      if (typeof tag === 'string' && tag.toLowerCase() === 'a') return;
+
+      evt.preventDefault();
+      setMenuAnchor({
+        x: evt.clientX,
+        y: evt.clientY,
+        width: 0,
+        height: 0,
+      });
+    };
+
     return (
       <>
         <PopOut

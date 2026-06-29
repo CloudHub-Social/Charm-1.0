@@ -12,10 +12,10 @@ export const MessageBaseBubbleCollapsed = style({
 export const MessageOptionsBase = style([
   DefaultReset,
   {
-    position: 'absolute',
+    position: 'fixed',
     top: toRem(-30),
     right: 0,
-    zIndex: 1,
+    zIndex: 1000,
   },
 ]);
 export const MessageOptionsBar = style([
@@ -41,6 +41,12 @@ export const MessageOptionsMenu = style({
   flexDirection: 'column',
 });
 
+export const PreventSelect = style({
+  WebkitUserSelect: 'none',
+  msUserSelect: 'none',
+  userSelect: 'none',
+  MozUserSelect: 'none',
+});
 //I have zero clue where these numbers and vars are from but they should be changed
 //I just copied the hardcoded value in a more correct place
 

@@ -1,18 +1,19 @@
-import { Box, color, Text } from 'folds';
+import { Box, color, config, Menu, MenuItem } from 'folds';
 import type { MatrixClient } from '$types/matrix-sdk';
 import type { PackImageReader } from '$plugins/custom-emoji';
 import type { IEmoji } from '$plugins/emoji';
 import { mxcUrlToHttp } from '$utils/matrix';
-import type { CSSProperties, ReactNode } from 'react';
-import { useEffect, useRef, useState } from 'react';
 import type { EmojiItemInfo, GifData } from '$components/emoji-board/types';
 import { EmojiType } from '$components/emoji-board/types';
-import { AuthenticatedImg } from '$components/AuthenticatedImg';
+import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import * as css from './styles.css';
 import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
-import { Star, menuIcon } from '$components/icons/phosphor';
+import { Star, Eye, EyeSlash, menuIcon } from '$components/icons/phosphor';
 import { MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS } from '$unstable/prefixes';
 import { useMatrixClient } from '$hooks/useMatrixClient';
+import { useClientConfig } from '$hooks/useClientConfig';
+import { getKlipyMxcUrl } from '$utils/klipy';
 
 const ANIMATED_MIME_TYPES = new Set(['image/gif', 'image/apng']);
 
@@ -24,19 +25,19 @@ const isAnimatedPackImage = (image: PackImageReader): boolean => {
   return !!body && (body.endsWith('.gif') || body.endsWith('.webp') || body.endsWith('.apng'));
 };
 
-export const getPackImageSrc = (
+const getPackImageSrc = (
   mx: MatrixClient,
   image: PackImageReader,
   useAuthentication: boolean | undefined,
   saveStickerEmojiBandwidth: boolean,
   width: number,
   height: number
-): string | undefined => {
+): string => {
   const preserveAnimation = isAnimatedPackImage(image);
 
   return preserveAnimation || !saveStickerEmojiBandwidth
-    ? (mxcUrlToHttp(mx, image.url, useAuthentication) ?? undefined)
-    : (mxcUrlToHttp(mx, image.url, useAuthentication, width, height) ?? undefined);
+    ? (mxcUrlToHttp(mx, image.url, useAuthentication) ?? '')
+    : (mxcUrlToHttp(mx, image.url, useAuthentication, width, height) ?? '');
 };
 
 export const getEmojiItemInfo = (element: Element): EmojiItemInfo | undefined => {
@@ -72,7 +73,7 @@ export function EmojiItem({ emoji }: EmojiItemProps) {
       data-emoji-data={emoji.unicode}
       data-emoji-shortcode={emoji.shortcode}
     >
-      <span className={css.EmojiGlyph}>{emoji.unicode}</span>
+      {emoji.unicode}
     </Box>
   );
 }
@@ -102,7 +103,7 @@ export function CustomEmojiItem({
       data-emoji-data={image.url}
       data-emoji-shortcode={image.shortcode}
     >
-      <AuthenticatedImg
+      <img
         loading="lazy"
         className={css.CustomEmojiImg}
         alt={image.body || image.shortcode}
@@ -138,7 +139,7 @@ export function StickerItem({
       data-emoji-data={image.url}
       data-emoji-shortcode={image.shortcode}
     >
-      <AuthenticatedImg
+      <img
         loading="lazy"
         className={css.StickerImg}
         alt={image.body || image.shortcode}
@@ -167,47 +168,27 @@ export function GifItem({
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const favoritedContent = useFavoriteGifs();
-  const favoriteGifsRef = useRef(favoritedContent.gifs);
+  const clientConfig = useClientConfig();
+
+  const mxcUrl = gif?.url ? getKlipyMxcUrl(gif.url, clientConfig.gifs?.proxyUrl) : '';
+
   const [favorited, setFavorited] = useState(
-    favoritedContent.gifs.find((v) => v.url == gif?.url) != undefined
+    favoritedContent.gifs.some((v) => {
+      const vMxc = getKlipyMxcUrl(v.url, clientConfig.gifs?.proxyUrl);
+      return vMxc === mxcUrl && mxcUrl !== '';
+    })
   );
+  const [isSpoiler, setIsSpoiler] = useState(false);
   const mx = useMatrixClient();
 
   useEffect(() => {
-    favoriteGifsRef.current = favoritedContent.gifs;
-    setFavorited(favoritedContent.gifs.some((v) => v.url === gif?.url));
-  }, [favoritedContent, gif?.url]);
-
-  const toggleFavorite = async () => {
-    if (!favorited) {
-      setFavorited(true);
-      const nextFavorites = favoriteGifsRef.current.some((v) => v.url === gif.url)
-        ? favoriteGifsRef.current
-        : [...favoriteGifsRef.current, gif];
-      favoriteGifsRef.current = nextFavorites;
-      await mx
-        .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
-          gifs: nextFavorites,
-        })
-        .catch(() => {
-          favoriteGifsRef.current = favoritedContent.gifs;
-          setFavorited(false);
-        });
-      return;
-    }
-
-    setFavorited(false);
-    const nextFavorites = favoriteGifsRef.current.filter((v) => v.url != gif.url);
-    favoriteGifsRef.current = nextFavorites;
-    await mx
-      .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
-        gifs: nextFavorites,
+    setFavorited(
+      favoritedContent.gifs.some((v) => {
+        const vMxc = getKlipyMxcUrl(v.url, clientConfig.gifs?.proxyUrl);
+        return vMxc === mxcUrl && mxcUrl !== '';
       })
-      .catch(() => {
-        favoriteGifsRef.current = favoritedContent.gifs;
-        setFavorited(true);
-      });
-  };
+    );
+  }, [favoritedContent, mxcUrl, clientConfig.gifs?.proxyUrl]);
 
   return (
     <Box
@@ -223,85 +204,78 @@ export function GifItem({
       data-emoji-data={data}
       data-emoji-shortcode={shortcode}
       data-gif-data={gif ? JSON.stringify(gif) : undefined}
+      data-gif-spoiler={isSpoiler ? 'true' : 'false'}
       onPointerEnter={() => setIsHovered(true)}
       onPointerLeave={() => setIsHovered(false)}
     >
       {children}
-      <div className={css.GifScrim} />
-      <Box className={css.GifMeta} direction="Column" gap="100">
-        <Text className={css.GifMetaBadge} size="T200">
-          GIF
-        </Text>
-        <Text className={css.GifMetaTitle} size="L400">
-          {label}
-        </Text>
-      </Box>
-      {(isHovered || favorited) && (
-        <span
-          className={css.GifFavoriteBtn}
-          role="button"
-          tabIndex={0}
-          title={favorited ? 'Unfavorite gif' : 'Favorite gif'}
-          onClick={async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            await toggleFavorite();
-          }}
-          onKeyDown={async (e) => {
-            if (e.key !== 'Enter' && e.key !== ' ') return;
-            e.preventDefault();
-            e.stopPropagation();
-            await toggleFavorite();
-          }}
-        >
-          {menuIcon(Star, {
-            weight: favorited ? 'fill' : 'regular',
-            color: favorited ? color.Warning.MainHover : '#fff',
-          })}
-        </span>
+      {isHovered && (
+        <Box style={{ padding: config.space.S200, right: 0, top: 0, position: 'absolute' }}>
+          <Menu style={{ padding: config.space.S0 }}>
+            <Box>
+              <MenuItem
+                size="300"
+                radii="0"
+                fill="Soft"
+                variant="Secondary"
+                title={favorited ? 'Unfavorite gif' : 'Favorite gif'}
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!favorited) {
+                    setFavorited(true);
+                    await mx
+                      .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
+                        gifs: [
+                          ...favoritedContent.gifs,
+                          {
+                            title: gif.title,
+                            url: mxcUrl,
+                            width: gif.width,
+                            height: gif.height,
+                            size: gif.size,
+                          },
+                        ],
+                      })
+                      .catch(() => setFavorited(false));
+                  } else {
+                    setFavorited(false);
+                    await mx
+                      .setAccountData(MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS, {
+                        gifs: favoritedContent.gifs.filter(
+                          (v) => getKlipyMxcUrl(v.url, clientConfig.gifs?.proxyUrl) !== mxcUrl
+                        ),
+                      })
+                      .catch(() => setFavorited(true));
+                  }
+                }}
+              >
+                {menuIcon(Star, {
+                  weight: favorited ? 'fill' : 'regular',
+                  color: favorited ? color.Warning.MainHover : color.Surface.OnContainer,
+                })}
+              </MenuItem>
+              <MenuItem
+                size="300"
+                radii="0"
+                fill="Soft"
+                variant="Secondary"
+                title={isSpoiler ? 'Remove spoiler' : 'Mark as spoiler'}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsSpoiler(!isSpoiler);
+                }}
+              >
+                {menuIcon(isSpoiler ? EyeSlash : Eye, {
+                  weight: isSpoiler ? 'fill' : 'regular',
+                  color: color.Surface.OnContainer,
+                })}
+              </MenuItem>
+            </Box>
+          </Menu>
+        </Box>
       )}
-    </Box>
-  );
-}
-
-export function GifSearchItem({
-  label,
-  previewUrl,
-  style,
-  onClick,
-}: {
-  label: string;
-  previewUrl?: string;
-  style?: CSSProperties;
-  onClick: () => void;
-}) {
-  return (
-    <Box
-      as="button"
-      className={css.GifSearchItem}
-      type="button"
-      style={style}
-      alignItems="Center"
-      justifyContent="Center"
-      title={`Search GIFs for ${label}`}
-      aria-label={`Search GIFs for ${label}`}
-      onClick={onClick}
-    >
-      {previewUrl && (
-        <AuthenticatedImg
-          loading="lazy"
-          alt=""
-          aria-hidden
-          src={previewUrl}
-          style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-      )}
-      <div className={css.GifScrim} />
-      <Box className={css.GifSearchMetaOverlay}>
-        <Text className={css.GifMetaTitle} size="B500">
-          {label}
-        </Text>
-      </Box>
     </Box>
   );
 }

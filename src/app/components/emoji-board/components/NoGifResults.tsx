@@ -10,7 +10,7 @@ export function GifSearching() {
       direction="Column"
       gap="300"
     >
-      <Text>Loading GIFs from Klipy...</Text>
+      <Text>Loading GIFs...</Text>
     </Box>
   );
 }
@@ -25,9 +25,6 @@ export function GifSearchError({ error }: { error: string }) {
       gap="300"
     >
       <Text>Error: {error}</Text>
-      <Text priority="300" align="Center" size="T200">
-        Klipy search is temporarily unavailable.
-      </Text>
     </Box>
   );
 }
@@ -45,7 +42,7 @@ export function NoGifResults() {
       <Box direction="Inherit">
         <Text align="Center">No GIFs found!</Text>
         <Text priority="300" align="Center" size="T200">
-          Try another search or keep a few favorites close for quick replies.
+          Try searching for something else or favoriting some gifs.
         </Text>
       </Box>
     </Box>
@@ -56,12 +53,11 @@ type GifStatusProps = {
   loading: boolean;
   error: string | null;
   isEmpty: boolean;
-  showEmptyState: boolean;
 };
 
-export function GifStatus({ loading, error, isEmpty, showEmptyState }: Readonly<GifStatusProps>) {
+export function GifStatus({ loading, error, isEmpty }: Readonly<GifStatusProps>) {
   if (loading) return <GifSearching />;
   if (error) return <GifSearchError error={error} />;
-  if (isEmpty && showEmptyState) return <NoGifResults />;
+  if (isEmpty) return <NoGifResults />;
   return null;
 }

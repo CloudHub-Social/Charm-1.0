@@ -1311,6 +1311,12 @@ export function RoomTimeline({
               userSelect: 'none',
               MozUserSelect: 'none',
             }}
+            style={{
+              WebkitUserSelect: 'none',
+              msUserSelect: 'none',
+              userSelect: 'none',
+              MozUserSelect: 'none',
+            }}
           >
             <Text size="L400">Jump to Latest</Text>
           </Chip>

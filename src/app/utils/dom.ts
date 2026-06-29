@@ -1,5 +1,3 @@
-import { fetchMediaBlob, type MediaTransportOptions } from './mediaTransport';
-
 export const targetFromEvent = (evt: Event, selector: string): Element | undefined => {
   const targets = evt.composedPath() as Element[];
   return targets.find((target) => target.matches?.(selector));
@@ -66,45 +64,18 @@ export const selectFile = <M extends boolean | undefined = undefined>(
     if (accept) input.accept = accept;
     if (multiple) input.multiple = true;
 
-    // iOS Safari requires the input to be in the DOM to reliably trigger the
-    // file picker dialog; remove it immediately after selection.
-    input.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
-    document.body.appendChild(input);
-
-    let settled = false;
-
-    const cleanup = () => {
-      input.removeEventListener('change', changeHandler);
-      input.removeEventListener('cancel', cancelHandler);
-      if (input.parentNode) input.parentNode.removeChild(input);
-    };
-
-    const settle = (value: FilesOrFile<M> | undefined) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(value);
-    };
-
     const changeHandler = () => {
       const fileList = input.files;
-      // On iOS Safari, `change` can fire with an empty FileList (e.g. the
-      // picker was dismissed, or the file isn't available yet). Treat this
-      // the same as a cancellation so callers receive `undefined` rather than
-      // an empty array that silently produces no upload items.
-      if (!fileList || fileList.length === 0) {
-        settle(undefined);
-        return;
+      if (!fileList) {
+        resolve(undefined);
+      } else {
+        const files: File[] = getFilesFromFileList(fileList);
+        resolve((multiple ? files : files[0]) as FilesOrFile<M>);
       }
-      const files: File[] = getFilesFromFileList(fileList);
-      settle(files.length === 0 ? undefined : ((multiple ? files : files[0]) as FilesOrFile<M>));
+      input.removeEventListener('change', changeHandler);
     };
 
-    // iOS 15+: fires when the picker is dismissed without a file selection.
-    const cancelHandler = () => settle(undefined);
-
     input.addEventListener('change', changeHandler);
-    input.addEventListener('cancel', cancelHandler);
     input.click();
   });
 
@@ -118,35 +89,24 @@ export const getDataTransferFiles = (dataTransfer: DataTransfer): File[] | undef
 export const renameFile = (file: File, name: string): File =>
   new File([file], name, { type: file.type });
 
+export const getImageUrlBlob = async (url: string) => {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return blob;
+};
+
 export const getImageFileUrl = (fileOrBlob: File | Blob) => URL.createObjectURL(fileOrBlob);
 
 export const getVideoFileUrl = (fileOrBlob: File | Blob) => URL.createObjectURL(fileOrBlob);
 
-export const loadImageElement = (url: string): Promise<HTMLImageElement> =>
+export const loadImageElement = (url: string, crossOrigin?: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
     const img = document.createElement('img');
+    if (crossOrigin) img.crossOrigin = crossOrigin;
     img.addEventListener('load', () => resolve(img));
     img.addEventListener('error', (err) => reject(err));
     img.src = url;
   });
-
-export const loadImageElementFromMediaUrl = async (
-  url: string,
-  options?: MediaTransportOptions
-): Promise<{
-  blob: Blob;
-  image: HTMLImageElement;
-}> => {
-  const blob = await fetchMediaBlob(url, options);
-  const objectUrl = URL.createObjectURL(blob);
-
-  try {
-    const image = await loadImageElement(objectUrl);
-    return { blob, image };
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-};
 
 export const loadVideoElement = (url: string): Promise<HTMLVideoElement> =>
   new Promise((resolve, reject) => {
@@ -246,7 +206,7 @@ async function getBitmap(blob: Blob): Promise<ImageBitmap> {
   }
 }
 
-const getClipboardImageBlob = async (blob: Blob): Promise<Blob> => {
+export const copyImageToClipboard = async (blob: Blob): Promise<boolean> => {
   const bitmap = await getBitmap(blob);
 
   const canvas = document.createElement('canvas');
@@ -254,30 +214,18 @@ const getClipboardImageBlob = async (blob: Blob): Promise<Blob> => {
   canvas.height = bitmap.height;
 
   const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('Failed to acquire a 2D canvas context for clipboard copy.');
-  }
-  ctx.drawImage(bitmap, 0, 0);
+  ctx?.drawImage(bitmap, 0, 0);
 
-  const finalBlob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => {
-      if (result) {
-        resolve(result);
-        return;
-      }
-
-      reject(new Error('Failed to encode image for clipboard.'));
-    }, 'image/png');
-  });
-
-  return finalBlob;
-};
-
-export const copyImageToClipboard = async (blobSource: Blob | Promise<Blob>): Promise<boolean> => {
   try {
+    const finalBlob = await new Promise<Blob>((resolve) => {
+      canvas.toBlob((result) => {
+        if (result) resolve(result);
+      }, 'image/png');
+    });
+
     await navigator.clipboard.write([
       new ClipboardItem({
-        'image/png': Promise.resolve(blobSource).then(getClipboardImageBlob),
+        'image/png': finalBlob,
       }),
     ]);
 
