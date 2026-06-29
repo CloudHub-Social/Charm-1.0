@@ -2,14 +2,6 @@ import { Box, Button, Text, config, toRem } from 'folds';
 import { Code, Heart, menuIcon } from '$components/icons/phosphor';
 import { Page, PageHero, PageHeroSection } from '$components/page';
 import LogoSVG from '$public/res/svg/logo.svg';
-import {
-  APP_ATTRIBUTION,
-  APP_DESCRIPTION,
-  APP_FEATURES_URL,
-  APP_NAME,
-  APP_SOURCE_URL,
-  APP_SUPPORT_URL,
-} from '$app/config/brand';
 
 export function WelcomePage() {
   return (
@@ -22,12 +14,16 @@ export function WelcomePage() {
       >
         <PageHeroSection>
           <PageHero
-            icon={<img width="70" height="70" src={LogoSVG} alt={`${APP_NAME} logo`} />}
-            title={`Welcome to ${APP_NAME}`}
+            icon={<img width="70" height="70" src={LogoSVG} alt="Sable Logo" />}
+            title="Welcome to Sable"
             subTitle={
               <span>
-                {APP_DESCRIPTION} {APP_ATTRIBUTION}{' '}
-                <a href={APP_SOURCE_URL} target="_blank" rel="noreferrer noopener">
+                An almost stable Matrix client.{' '}
+                <a
+                  href="https://github.com/SableClient/Sable"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
                   {`v${APP_VERSION}${IS_RELEASE_TAG ? '' : `-dev${BUILD_HASH ? ` (${BUILD_HASH})` : ''}`}`}
                 </a>
               </span>
@@ -37,7 +33,7 @@ export function WelcomePage() {
               <Box grow="Yes" style={{ maxWidth: toRem(300) }} direction="Column" gap="300">
                 <Button
                   as="a"
-                  href={APP_SOURCE_URL}
+                  href="https://github.com/SableClient/Sable"
                   target="_blank"
                   rel="noreferrer noopener"
                   before={menuIcon(Code)}
@@ -48,7 +44,19 @@ export function WelcomePage() {
                 </Button>
                 <Button
                   as="a"
-                  href={APP_SUPPORT_URL}
+                  href="https://github.com/SableClient/Sable/blob/dev/CHANGELOG.md"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  fill="Soft"
+                  before={menuIcon(Code)}
+                >
+                  <Text as="span" size="B400" truncate>
+                    Features
+                  </Text>
+                </Button>
+                <Button
+                  as="a"
+                  href="https://opencollective.com/sable"
                   target="_blank"
                   rel="noreferrer noopener"
                   fill="Soft"
@@ -59,19 +67,6 @@ export function WelcomePage() {
                   </Text>
                 </Button>
               </Box>
-            </Box>
-            <Box direction="Column" gap="200" alignItems="Center">
-              <Button
-                as="a"
-                href={APP_FEATURES_URL}
-                target="_blank"
-                rel="noreferrer noopener"
-                before={menuIcon(Code)}
-              >
-                <Text as="span" size="B400" truncate>
-                  Features
-                </Text>
-              </Button>
             </Box>
           </PageHero>
         </PageHeroSection>
