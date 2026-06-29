@@ -441,8 +441,7 @@ function RenderMessageContentInternal({
       (content.body as string)?.toLowerCase().endsWith('.gif') ||
       (content.body as string)?.toLowerCase().endsWith('.apng') ||
       (typeof imageUrl === 'string' &&
-        (imageUrl.toLowerCase().endsWith('.gif') ||
-          imageUrl.toLowerCase().endsWith('.apng')));
+        (imageUrl.toLowerCase().endsWith('.gif') || imageUrl.toLowerCase().endsWith('.apng')));
 
     return renderCaptionedAttachment(
       <MImage
