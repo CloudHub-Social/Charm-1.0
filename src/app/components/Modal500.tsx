@@ -1,21 +1,28 @@
 import type { ReactNode } from 'react';
 import { useRef } from 'react';
 import FocusTrap from 'focus-trap-react';
-import { Modal, Overlay, OverlayBackdrop, OverlayCenter, color } from 'folds';
+import { Modal, Overlay, OverlayBackdrop, OverlayCenter, color, config } from 'folds';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { isPhoneLayoutDevice } from '$utils/user-agent';
 import { stopPropagation } from '$utils/keyboard';
 
 type Modal500Props = {
   fullScreenOnMobile?: boolean;
+  sheetOnMobile?: boolean;
   requestClose: () => void;
   children: ReactNode;
 };
-export function Modal500({ requestClose, children, fullScreenOnMobile = false }: Modal500Props) {
+export function Modal500({
+  requestClose,
+  children,
+  fullScreenOnMobile = false,
+  sheetOnMobile = false,
+}: Modal500Props) {
   const modalRef = useRef<HTMLDivElement | null>(null);
   const screenSize = useScreenSizeContext();
   const isMobile = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
   const useFullScreen = fullScreenOnMobile && isMobile;
+  const useSheet = sheetOnMobile && isMobile && !useFullScreen;
   const modal = (
     <FocusTrap
       focusTrapOptions={{
@@ -37,15 +44,28 @@ export function Modal500({ requestClose, children, fullScreenOnMobile = false }:
                 position: 'fixed',
                 inset: 0,
                 width: '100vw',
-                height: '100vh',
+                height: '100dvh',
                 maxWidth: '100vw',
-                maxHeight: '100vh',
+                maxHeight: '100dvh',
                 borderRadius: 0,
                 paddingTop: 'var(--sable-safe-area-top, 0px)',
                 overflow: 'hidden',
                 backgroundColor: color.Background.Container,
               }
-            : undefined
+            : useSheet
+              ? {
+                  position: 'fixed',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: '85dvh',
+                  maxWidth: '100vw',
+                  borderTopLeftRadius: config.radii.R400,
+                  borderTopRightRadius: config.radii.R400,
+                  overflow: 'hidden',
+                  backgroundColor: color.Background.Container,
+                }
+              : undefined
         }
       >
         {children}
@@ -55,7 +75,7 @@ export function Modal500({ requestClose, children, fullScreenOnMobile = false }:
 
   return (
     <Overlay open backdrop={<OverlayBackdrop />}>
-      {useFullScreen ? modal : <OverlayCenter>{modal}</OverlayCenter>}
+      {useFullScreen || useSheet ? modal : <OverlayCenter>{modal}</OverlayCenter>}
     </Overlay>
   );
 }

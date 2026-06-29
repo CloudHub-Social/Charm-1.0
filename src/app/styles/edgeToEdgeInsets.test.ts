@@ -169,7 +169,7 @@ describe('android edge-to-edge inset contract', () => {
       'paddingBottom: `calc(${config.space.S100} + ${safeAreaBottomInset})`'
     );
     expect(accountSwitcher).toContain(
-      '<Modal500 requestClose={() => setMenuAnchor(undefined)} fullScreenOnMobile>'
+      '<Modal500 requestClose={() => setMenuAnchor(undefined)} sheetOnMobile>'
     );
     expect(accountSwitcher).toContain('{settingsFooter}');
   });

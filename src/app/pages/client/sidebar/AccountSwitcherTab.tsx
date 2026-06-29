@@ -578,7 +578,7 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
 
       {useModalAccountSwitcher ? (
         menuAnchor && (
-          <Modal500 requestClose={() => setMenuAnchor(undefined)} fullScreenOnMobile>
+          <Modal500 requestClose={() => setMenuAnchor(undefined)} sheetOnMobile>
             <Box
               direction="Column"
               style={{ height: '100%', maxHeight: '100%', overflow: 'hidden' }}

@@ -201,7 +201,7 @@ describe('mobile PWA dogfood contract', () => {
     );
     expect(accountSwitcher).toContain('const useModalAccountSwitcher = isPhoneLayout;');
     expect(accountSwitcher).toContain(
-      '<Modal500 requestClose={() => setMenuAnchor(undefined)} fullScreenOnMobile>'
+      '<Modal500 requestClose={() => setMenuAnchor(undefined)} sheetOnMobile>'
     );
     expect(accountSwitcher).toContain(
       "const safeAreaInlineStart = 'var(--sable-safe-area-left, env(safe-area-inset-left, 0px))';"
