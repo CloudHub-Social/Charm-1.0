@@ -440,11 +440,9 @@ function RenderMessageContentInternal({
       (info?.mimetype === 'image/webp' && isKlipyProxyMxc(imageUrl, clientConfig.gifs?.proxyUrl)) ||
       (content.body as string)?.toLowerCase().endsWith('.gif') ||
       (content.body as string)?.toLowerCase().endsWith('.apng') ||
-      (content.body as string)?.toLowerCase().endsWith('.webp') ||
       (typeof imageUrl === 'string' &&
         (imageUrl.toLowerCase().endsWith('.gif') ||
-          imageUrl.toLowerCase().endsWith('.apng') ||
-          imageUrl.toLowerCase().endsWith('.webp')));
+          imageUrl.toLowerCase().endsWith('.apng')));
 
     return renderCaptionedAttachment(
       <MImage
