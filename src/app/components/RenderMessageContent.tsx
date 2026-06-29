@@ -50,6 +50,8 @@ import { CuteEventType, MCuteEvent } from './message/MCuteEvent';
 import { M_TEXT } from 'matrix-js-sdk';
 import type { IImageInfo } from '$types/matrix/common';
 import { PollEvent } from '$features/room/poll/PollEvent';
+import { useClientConfig } from '$hooks/useClientConfig';
+import { isKlipyProxyMxc } from '$utils/gifs';
 
 type RenderMessageContentProps = {
   displayName: string;
@@ -115,6 +117,7 @@ function RenderMessageContentInternal({
   const content = useMemo(() => getContent() as Record<string, unknown>, [getContent]);
 
   const [autoplayGifs] = useSetting(settingsAtom, 'autoplayGifs');
+  const clientConfig = useClientConfig();
   const [captionPosition] = useSetting(settingsAtom, 'captionPosition');
   const [themeChatSableWidgets] = useSetting(settingsAtom, 'themeChatSableWidgetsEnabled');
   const [multiplePreviews] = useSetting(settingsAtom, 'multiplePreviews');
@@ -428,17 +431,20 @@ function RenderMessageContentInternal({
 
   if (msgType === (MsgType.Image as string)) {
     const { info } = content as { info?: IImageInfo };
+    const imageUrl = (content as { url?: string }).url ?? '';
     const isGif =
       info?.mimetype === 'image/gif' ||
       info?.mimetype === 'image/apng' ||
-      info?.mimetype === 'image/webp' ||
+      // image/webp is used by Klipy proxy GIFs; guard with isKlipyProxyMxc so
+      // static WebP images don't get the ClientSideHoverFreeze treatment.
+      (info?.mimetype === 'image/webp' && isKlipyProxyMxc(imageUrl, clientConfig.gifs?.proxyUrl)) ||
       (content.body as string)?.toLowerCase().endsWith('.gif') ||
       (content.body as string)?.toLowerCase().endsWith('.apng') ||
       (content.body as string)?.toLowerCase().endsWith('.webp') ||
-      (typeof (content as { url?: string }).url === 'string' &&
-        ((content as { url?: string }).url?.toLowerCase().endsWith('.gif') ||
-          (content as { url?: string }).url?.toLowerCase().endsWith('.apng') ||
-          (content as { url?: string }).url?.toLowerCase().endsWith('.webp')));
+      (typeof imageUrl === 'string' &&
+        (imageUrl.toLowerCase().endsWith('.gif') ||
+          imageUrl.toLowerCase().endsWith('.apng') ||
+          imageUrl.toLowerCase().endsWith('.webp')));
 
     return renderCaptionedAttachment(
       <MImage
