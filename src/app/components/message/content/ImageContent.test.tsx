@@ -157,24 +157,23 @@ describe('ImageContent', () => {
     );
   });
 
-  it('does not direct-stream proxy-backed klipy gifs even when a service worker controls the page', async () => {
+  it('direct-streams proxy-backed klipy gifs when a service worker controls the page', async () => {
     hasControllingServiceWorker.mockReturnValue(true);
     getMediaUrl.mockImplementation((_mx, _mxc, useAuthentication) =>
       useAuthentication
         ? 'https://matrix.example.org/_matrix/client/v1/media/download/gifs.example.org/klipy_auth'
         : 'https://matrix.example.org/_matrix/media/v3/download/gifs.example.org/klipy_public'
     );
-    downloadMedia.mockResolvedValue(new Blob(['gif'], { type: 'image/gif' }));
 
     renderWithProviders('mxc://gifs.example.org/klipy_Zm9vL2Jhci5naWY');
 
     await waitFor(() => {
-      expect(screen.getByTestId('rendered-image')).toHaveAttribute('src', 'blob:gif-proxy');
+      expect(screen.getByTestId('rendered-image')).toHaveAttribute(
+        'src',
+        'https://matrix.example.org/_matrix/client/v1/media/download/gifs.example.org/klipy_auth'
+      );
     });
 
-    expect(downloadMedia).toHaveBeenCalledWith(
-      'https://matrix.example.org/_matrix/client/v1/media/download/gifs.example.org/klipy_auth',
-      null
-    );
+    expect(downloadMedia).not.toHaveBeenCalled();
   });
 });
