@@ -142,7 +142,7 @@ import { usePowerLevelsContext } from '$hooks/usePowerLevels';
 import { useRoomCreators } from '$hooks/useRoomCreators';
 import { useRoomPermissions } from '$hooks/useRoomPermissions';
 import { AutocompleteNotice } from '$components/editor/autocomplete/AutocompleteNotice';
-import { getEmojiBoardRightOffset, getEmojiBoardWidth } from './emojiBoardPosition';
+import { getEmojiBoardWidth } from './emojiBoardPosition';
 import {
   convertPerMessageProfileToBeeperFormat,
   getCurrentlyUsedPerMessageProfileForRoom,
@@ -2429,17 +2429,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       zIndex: 999,
                       // Position above the emoji button (mirrors PopOut position="Top" offset=16).
                       bottom: window.innerHeight - emojiBoardAnchorRect.top + 16,
-                      ...(isPhoneLayoutDevice()
-                        ? {
-                            left: (window.innerWidth - getEmojiBoardWidth(window.innerWidth)) / 2,
-                            width: getEmojiBoardWidth(window.innerWidth),
-                          }
-                        : {
-                            right: getEmojiBoardRightOffset(
-                              emojiBoardAnchorRect.right,
-                              window.innerWidth
-                            ),
-                          }),
+                      left: (window.innerWidth - getEmojiBoardWidth(window.innerWidth)) / 2,
+                      width: getEmojiBoardWidth(window.innerWidth),
                       display: emojiBoardTab !== undefined ? undefined : 'none',
                     }}
                   >
