@@ -817,6 +817,8 @@ export function EmojiBoard({
   const gifTab = activeTab === EmojiBoardTab.Gif;
   const usage = emojiTab ? ImageUsage.Emoticon : ImageUsage.Sticker;
   const [mobileSheetHeight, setMobileSheetHeight] = useState<number>();
+  const mobileSheetHeightRef = useRef(mobileSheetHeight);
+  mobileSheetHeightRef.current = mobileSheetHeight;
   const mobileSheetDragRef = useRef<{
     currentHeight: number;
     startY: number;
@@ -1149,7 +1151,7 @@ export function EmojiBoard({
 
       evt.preventDefault();
       const currentHeight =
-        mobileSheetHeight ??
+        mobileSheetHeightRef.current ??
         getMobileSheetHeights(window.innerHeight, activeTabRef.current).initial;
       mobileSheetDragRef.current = {
         currentHeight,
@@ -1188,7 +1190,7 @@ export function EmojiBoard({
       window.addEventListener('pointermove', handlePointerMove);
       window.addEventListener('pointerup', handlePointerUp, { once: true });
     },
-    [isMobileSheet, mobileSheetHeight]
+    [isMobileSheet]
   );
 
   useEffect(

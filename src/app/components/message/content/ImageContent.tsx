@@ -401,6 +401,12 @@ export const ImageContent = as<'div', ImageContentProps>(
     );
 
     useEffect(() => {
+      if (!shouldStreamDirectAnimatedImage) return;
+      const blobUrl = mediaUrlCache.getBlob(url, false, mimeType);
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    }, [shouldStreamDirectAnimatedImage, mediaUrlCache, url, mimeType]);
+
+    useEffect(() => {
       if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return undefined;
 
       const updateControllerState = () => {
