@@ -2117,11 +2117,16 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       const gifUrl = gif.url.trim();
       const gifProxyHost = normalizeGifProxyHost(clientConfig.gifs?.proxyUrl);
       let url = gifUrl;
-      // Also treat favorited Klipy mxc:// URLs as Klipy proxy — they still
-      // point to WebP media on the proxy host and need the same metadata.
-      const isKlipyProxy =
-        !gifUrl.startsWith('mxc://') || isKlipyProxyMxc(gifUrl, clientConfig.gifs?.proxyUrl);
-      if (isKlipyProxy) {
+      // Fresh Klipy CDN pick: convert CDN URL → mxc://. getKlipyRemoteId only
+      // works on CDN HTTP URLs, so the conversion block must NOT run for
+      // favorited Klipy GIFs whose gif.url is already an mxc:// URL.
+      const isKlipyFreshCdn = !gifUrl.startsWith('mxc://');
+      // Favorited Klipy GIFs arrive as mxc://<proxyHost>/klipy_* — detect them
+      // so we can apply the same body/MIME treatment as fresh picks.
+      const isKlipyProxyFavorite =
+        !isKlipyFreshCdn && isKlipyProxyMxc(gifUrl, clientConfig.gifs?.proxyUrl);
+      const isKlipyProxy = isKlipyFreshCdn || isKlipyProxyFavorite;
+      if (isKlipyFreshCdn) {
         const remoteId = getKlipyRemoteId(gifUrl);
 
         if (!gifProxyHost || !remoteId) {
