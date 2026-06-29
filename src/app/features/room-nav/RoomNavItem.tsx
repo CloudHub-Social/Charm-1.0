@@ -518,7 +518,16 @@ export function RoomNavItem({
                       >
                         {(triggerRef) => (
                           <AvatarPresence
-                            badge={null}
+                            badge={
+                              !groupRingColor &&
+                              groupPresence &&
+                              groupPresence !== Presence.Offline ? (
+                                <PresenceBadge
+                                  presence={groupPresence}
+                                  size={hideText ? '300' : '200'}
+                                />
+                              ) : null
+                            }
                             ref={triggerRef}
                             style={hideTextStyling(hideText)}
                           >
