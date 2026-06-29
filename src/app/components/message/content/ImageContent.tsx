@@ -699,7 +699,7 @@ export const ImageContent = as<'div', ImageContentProps>(
                 </MenuItem>
                 {info?.mimetype === 'image/gif' && !encInfo && (
                   <GifFavoriteAction
-                    body={safeBody}
+                    body={body || 'GIF'}
                     url={url}
                     imageW={imageW}
                     imageH={imageH}
