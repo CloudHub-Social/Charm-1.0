@@ -23,7 +23,7 @@ import { getCanonicalAliasOrRoomId } from '$utils/matrix';
 import { useSelectedRoom } from '$hooks/router/useSelectedRoom';
 import { useGroupDMMembers } from '$hooks/useGroupDMMembers';
 import { useSidebarDirectRoomIds } from './useSidebarDirectRoomIds';
-import { Presence, useUserPresence } from '$hooks/useUserPresence';
+import { Presence, useGroupPresence, useUserPresence } from '$hooks/useUserPresence';
 import { AvatarPresence, PresenceBadge } from '$components/presence';
 import * as css from './DirectDMsList.css';
 
@@ -48,12 +48,28 @@ function DMItem({ room, selected }: DMItemProps) {
   // Check if this is a group DM (more than 2 members)
   const isGroupDM = room.getJoinedMemberCount() > 2;
 
-  const dmUserId = !isGroupDM ? room.getAvatarFallbackMember()?.userId : undefined;
+  // Stabilise the 1:1 DM partner's userId across re-renders.
+  // getAvatarFallbackMember() can transiently return undefined while lazy-loaded
+  // member state is being populated (e.g. after useGroupDMMembers triggers a
+  // profile-API re-render or when roomToUnreadAtom updates).  Passing '' to
+  // useUserPresence clears the presence dot.  Once we discover the userId we
+  // hold it for the lifetime of this DMItem instance (keyed by room.roomId, so
+  // the ref is stable per room).
+  const rawDmUserId = !isGroupDM ? room.getAvatarFallbackMember()?.userId : undefined;
+  const stableDmUserIdRef = useRef(rawDmUserId);
+  if (rawDmUserId !== undefined) stableDmUserIdRef.current = rawDmUserId;
+  const dmUserId = stableDmUserIdRef.current;
   const dmPresence = useUserPresence(dmUserId ?? '');
 
   // Get member info for group DMs using m.direct and profile API (doesn't require full room state)
-  // Members are sorted by who last sent messages (most recent first)
-  const groupMembers = useGroupDMMembers(mx, room, MAX_GROUP_MEMBERS);
+  // Members are sorted by who last sent messages (most recent first).
+  // Only pass the room for actual group DMs — for 1:1 DMs the hook would fire a
+  // profile-API round-trip, trigger a re-render, and transiently make dmUserId undefined,
+  // clearing the presence dot. RoomNavItem uses the same guard.
+  const groupMembers = useGroupDMMembers(mx, isGroupDM ? room : undefined, MAX_GROUP_MEMBERS);
+  // Only subscribe to group presence for actual group DMs; for 1:1 DMs groupMembers
+  // is [] anyway, but being explicit avoids redundant hook work.
+  const groupPresence = useGroupPresence(isGroupDM ? groupMembers.map((m) => m.userId) : []);
 
   // Get unread info for badge
   const unread = roomToUnread.get(room.roomId);
@@ -144,11 +160,15 @@ function DMItem({ room, selected }: DMItemProps) {
         {(triggerRef) => (
           <AvatarPresence
             badge={
-              !isGroupDM &&
-              dmPresence &&
-              dmPresence.presence !== Presence.Offline && (
-                <PresenceBadge presence={dmPresence.presence} size="200" />
-              )
+              isGroupDM
+                ? groupPresence &&
+                  groupPresence !== Presence.Offline && (
+                    <PresenceBadge presence={groupPresence} size="200" />
+                  )
+                : dmPresence &&
+                  dmPresence.presence !== Presence.Offline && (
+                    <PresenceBadge presence={dmPresence.presence} size="200" />
+                  )
             }
           >
             <SidebarAvatar as="button" ref={triggerRef} outlined onClick={handleClick} size="400">
