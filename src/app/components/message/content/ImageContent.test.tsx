@@ -22,6 +22,10 @@ const { hasControllingServiceWorker } = vi.hoisted(() => ({
   hasControllingServiceWorker: vi.fn<() => boolean>(() => false),
 }));
 
+type ServiceWorkerControllerChangeHandler = EventListenerOrEventListenerObject;
+
+let serviceWorkerListeners: Map<string, ServiceWorkerControllerChangeHandler>;
+
 vi.mock('$hooks/useMediaAuthentication', () => ({
   useMediaAuthentication: () => true,
 }));
@@ -120,6 +124,20 @@ describe('ImageContent', () => {
     getMediaUrl.mockReset();
     downloadMedia.mockReset();
     hasControllingServiceWorker.mockReturnValue(false);
+    serviceWorkerListeners = new Map();
+    Object.defineProperty(window.navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        controller: null,
+        ready: Promise.resolve({}),
+        addEventListener: vi.fn((event: string, listener: ServiceWorkerControllerChangeHandler) => {
+          serviceWorkerListeners.set(event, listener);
+        }),
+        removeEventListener: vi.fn((event: string) => {
+          serviceWorkerListeners.delete(event);
+        }),
+      },
+    });
     vi.stubGlobal(
       'URL',
       Object.assign(URL, {
@@ -175,5 +193,35 @@ describe('ImageContent', () => {
     });
 
     expect(downloadMedia).not.toHaveBeenCalled();
+  });
+
+  it('switches proxy-backed klipy gifs to direct streaming after controllerchange', async () => {
+    getMediaUrl.mockImplementation((_mx, _mxc, useAuthentication) =>
+      useAuthentication
+        ? 'https://matrix.example.org/_matrix/client/v1/media/download/gifs.example.org/klipy_auth'
+        : 'https://matrix.example.org/_matrix/media/v3/download/gifs.example.org/klipy_public'
+    );
+    downloadMedia.mockResolvedValue(new Blob(['gif'], { type: 'image/gif' }));
+
+    renderWithProviders('mxc://gifs.example.org/klipy_Zm9vL2Jhci5naWY');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-image')).toHaveAttribute('src', 'blob:gif-proxy');
+    });
+
+    hasControllingServiceWorker.mockReturnValue(true);
+    const controllerChangeListener = serviceWorkerListeners.get('controllerchange');
+    if (typeof controllerChangeListener === 'function') {
+      controllerChangeListener(new Event('controllerchange'));
+    } else {
+      controllerChangeListener?.handleEvent(new Event('controllerchange'));
+    }
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rendered-image')).toHaveAttribute(
+        'src',
+        'https://matrix.example.org/_matrix/client/v1/media/download/gifs.example.org/klipy_auth'
+      );
+    });
   });
 });

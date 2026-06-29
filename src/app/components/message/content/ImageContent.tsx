@@ -267,6 +267,9 @@ export const ImageContent = as<'div', ImageContentProps>(
     const [viewerFullSrc, setViewerFullSrc] = useState<string | null>(null);
     const [blurred, setBlurred] = useState(markedAsSpoiler ?? false);
     const [isHovered, setIsHovered] = useState(false);
+    const [hasServiceWorkerControl, setHasServiceWorkerControl] = useState(() =>
+      hasControllingServiceWorker()
+    );
     const rawMediaUrl = useMemo(() => {
       if (url.startsWith('http')) return url;
       return mediaUrlCache.get(mx, url, mediaUseAuthentication) ?? undefined;
@@ -292,7 +295,6 @@ export const ImageContent = as<'div', ImageContentProps>(
       typeof info?.size === 'number' && Number.isFinite(info.size) && info.size > 0
         ? info.size
         : mediaMetadata?.byteSize;
-    const hasServiceWorkerControl = hasControllingServiceWorker();
     const shouldStreamDirectAnimatedImage =
       !encInfo &&
       allowDirectAnimatedImage &&
@@ -397,6 +399,22 @@ export const ImageContent = as<'div', ImageContentProps>(
         mediaUseAuthentication,
       ])
     );
+
+    useEffect(() => {
+      if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return undefined;
+
+      const updateControllerState = () => {
+        setHasServiceWorkerControl(hasControllingServiceWorker());
+      };
+
+      updateControllerState();
+      navigator.serviceWorker.ready.then(updateControllerState).catch(() => undefined);
+      navigator.serviceWorker.addEventListener('controllerchange', updateControllerState);
+
+      return () => {
+        navigator.serviceWorker.removeEventListener('controllerchange', updateControllerState);
+      };
+    }, []);
 
     useEffect(() => {
       if (!viewer) {
