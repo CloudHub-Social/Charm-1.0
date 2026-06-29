@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { MatrixEvent, User, UserEventHandlerMap } from '$types/matrix-sdk';
-import { ClientEvent, UserEvent } from '$types/matrix-sdk';
-import { useMatrixClient } from './useMatrixClient';
+import { useEffect, useMemo, useState } from "react";
+import type { MatrixEvent, User, UserEventHandlerMap } from "$types/matrix-sdk";
+import { ClientEvent, UserEvent } from "$types/matrix-sdk";
+import { useMatrixClient } from "./useMatrixClient";
 
 export enum Presence {
-  Online = 'online',
-  Unavailable = 'unavailable',
-  Offline = 'offline',
+  Online = "online",
+  Unavailable = "unavailable",
+  Offline = "offline",
   // DND is not a native Matrix state; Sable encodes it as online + status_msg='dnd'.
-  Dnd = 'dnd',
+  Dnd = "dnd",
 }
 
 export type UserPresence = {
@@ -20,10 +20,11 @@ export type UserPresence = {
 
 const getUserPresence = (user: User): UserPresence => {
   const rawPresence = user.presence as Presence;
-  const statusMsg = user.presenceStatusMsg ?? '';
+  const statusMsg = user.presenceStatusMsg ?? "";
   // DND is encoded as online + status_msg starting with '[dnd]'. Decode it back
   // so the badge renders red for any Sable client, not just the sender's own account switcher.
-  const isDnd = rawPresence === Presence.Online && statusMsg.startsWith('[dnd]');
+  const isDnd =
+    rawPresence === Presence.Online && statusMsg.startsWith("[dnd]");
   const presence = isDnd ? Presence.Dnd : rawPresence;
 
   // Strip the [dnd] prefix when displaying status in Sable
@@ -47,27 +48,24 @@ const getUserPresence = (user: User): UserPresence => {
 export const useUserPresence = (userId: string): UserPresence | undefined => {
   const mx = useMatrixClient();
   const user = mx.getUser(userId);
-  const [presence, setPresence] = useState(() => (user ? getUserPresence(user) : undefined));
+  const [presence, setPresence] = useState(() =>
+    user ? getUserPresence(user) : undefined,
+  );
 
   useEffect(() => {
     if (!user) {
-      if (!userId) {
-        // Empty userId is a sentinel meaning "no user selected" — don't clear
-        // whatever presence state was already in the hook.  This prevents a
-        // transient undefined dmUserId (e.g. getAvatarFallbackMember() returning
-        // null during a re-render) from wiping the presence dot.
-        return undefined;
-      }
       setPresence(undefined);
 
       // When the user isn't in the SDK store yet (e.g., presence arrived before
       // any membership event), listen on the client for incoming events so we
       // can re-evaluate once a presence event for this user is stored.
       const handleEvent = (event: MatrixEvent) => {
-        if (event.getType() !== 'm.presence') return;
+        if (event.getType() !== "m.presence") return;
         // MSC4186 sliding sync presence events may carry the user ID in
         // content.user_id rather than the sender field.
-        const sender = event.getSender() ?? (event.getContent().user_id as string | undefined);
+        const sender =
+          event.getSender() ??
+          (event.getContent().user_id as string | undefined);
         if (sender !== userId) return;
         const latestUser = mx.getUser(userId);
         if (latestUser) setPresence(getUserPresence(latestUser));
@@ -119,12 +117,12 @@ export const useUserPresence = (userId: string): UserPresence | undefined => {
 export const usePresenceLabel = (): Record<Presence, string> =>
   useMemo(
     () => ({
-      [Presence.Online]: 'Active',
-      [Presence.Unavailable]: 'Busy',
-      [Presence.Offline]: 'Away',
-      [Presence.Dnd]: 'Do Not Disturb',
+      [Presence.Online]: "Active",
+      [Presence.Unavailable]: "Busy",
+      [Presence.Offline]: "Away",
+      [Presence.Dnd]: "Do Not Disturb",
     }),
-    []
+    [],
   );
 
 // Priority for group dominant presence: lower rank wins (most visible state).
@@ -146,7 +144,7 @@ const PRESENCE_RANK: Record<Presence, number> = {
 export const useGroupPresence = (userIds: string[]): Presence | undefined => {
   const mx = useMatrixClient();
   // Join to a stable string so the effect only re-runs when the set of users changes.
-  const userIdsKey = userIds.join('\n');
+  const userIdsKey = userIds.join("\n");
 
   const [presenceMap, setPresenceMap] = useState<Map<string, Presence>>(() => {
     const map = new Map<string, Presence>();
@@ -159,7 +157,7 @@ export const useGroupPresence = (userIds: string[]): Presence | undefined => {
   });
 
   useEffect(() => {
-    const ids = userIdsKey ? userIdsKey.split('\n').filter(Boolean) : [];
+    const ids = userIdsKey ? userIdsKey.split("\n").filter(Boolean) : [];
 
     if (ids.length === 0) {
       setPresenceMap((prev) => (prev.size > 0 ? new Map() : prev));
@@ -181,7 +179,10 @@ export const useGroupPresence = (userIds: string[]): Presence | undefined => {
     }
     setPresenceMap(initialMap);
 
-    const handlePresenceUpdate: UserEventHandlerMap[UserEvent.Presence] = (_e, u) => {
+    const handlePresenceUpdate: UserEventHandlerMap[UserEvent.Presence] = (
+      _e,
+      u,
+    ) => {
       setPresenceMap((prev) => {
         const next = new Map(prev);
         next.set(u.userId, getUserPresence(u).presence);
@@ -215,8 +216,10 @@ export const useGroupPresence = (userIds: string[]): Presence | undefined => {
     let handleClientEvent: ((event: MatrixEvent) => void) | undefined;
     if (unknownIds.length > 0) {
       handleClientEvent = (event: MatrixEvent) => {
-        if (event.getType() !== 'm.presence') return;
-        const sender = event.getSender() ?? (event.getContent().user_id as string | undefined);
+        if (event.getType() !== "m.presence") return;
+        const sender =
+          event.getSender() ??
+          (event.getContent().user_id as string | undefined);
         if (!sender || !unknownIds.includes(sender)) return;
         const latestUser = mx.getUser(sender);
         if (latestUser) {
