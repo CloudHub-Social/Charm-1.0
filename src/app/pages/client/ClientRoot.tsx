@@ -57,7 +57,7 @@ import {
 import { createLogger } from '$utils/debug';
 import { useSyncNicknames } from '$hooks/useNickname';
 import { useAppVisibility } from '$hooks/useAppVisibility';
-import { getLandingPath, rememberLastVisitedPath } from '$pages/pathUtils';
+import { getHomePath, getLandingPath, rememberLastVisitedPath } from '$pages/pathUtils';
 import { composerIcon, DotsThreeOutlineVerticalIcon } from '$components/icons/phosphor';
 import { useClientConfig } from '$hooks/useClientConfig';
 import { getSettings } from '$state/settings';
@@ -307,7 +307,9 @@ export function ClientRoot({ children }: ClientRootProps) {
         loadedUserIdRef.current = undefined;
         setLoading(true);
         setLoadState({ status: AsyncStatus.Idle });
-        navigate(getLandingPath(defaultLandingScreen), { replace: true });
+        // Always land on home when switching accounts — the last-visited path
+        // was written by the previous account and would navigate into its room.
+        navigate(getHomePath(), { replace: true });
       })();
     }
     return () => {
