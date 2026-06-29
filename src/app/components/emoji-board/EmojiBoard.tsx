@@ -26,7 +26,6 @@ import { isUserId, mxcUrlToHttp } from '$utils/matrix';
 import { editableActiveElement, targetFromEvent } from '$utils/dom';
 import type { UseAsyncSearchOptions } from '$hooks/useAsyncSearch';
 import { useAsyncSearch } from '$hooks/useAsyncSearch';
-import { useDebounce } from '$hooks/useDebounce';
 import { useThrottle } from '$hooks/useThrottle';
 import { addRecentEmoji } from '$plugins/recent-emoji';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
@@ -882,6 +881,9 @@ export function EmojiBoard({
     getGifName,
     SEARCH_OPTIONS
   );
+  const gifSearchDebounceRef = useRef<number>();
+  const mobileSheetPointerMoveRef = useRef<((evt: PointerEvent) => void) | null>(null);
+  const mobileSheetPointerUpRef = useRef<(() => void) | null>(null);
 
   const searchedItems = emojiResult?.items.slice(0, 100);
   const klipyApiKey = clientConfig.gifs?.klipyApiKey ?? '';
@@ -950,6 +952,10 @@ export function EmojiBoard({
   const applyGifSearch = useCallback(
     (term: string) => {
       const normalized = term.trim();
+      if (gifSearchDebounceRef.current !== undefined) {
+        clearTimeout(gifSearchDebounceRef.current);
+        gifSearchDebounceRef.current = undefined;
+      }
       setGifInputValue(normalized);
       if (!normalized) {
         resetGifSearch();
@@ -960,6 +966,15 @@ export function EmojiBoard({
       searchGifs(normalized);
     },
     [rememberGifSearch, resetGifSearch, resetSearchGifs, searchGifs]
+  );
+
+  useEffect(
+    () => () => {
+      if (gifSearchDebounceRef.current !== undefined) {
+        clearTimeout(gifSearchDebounceRef.current);
+      }
+    },
+    []
   );
 
   const groupsByTab = {
@@ -989,27 +1004,43 @@ export function EmojiBoard({
   const groups = groupsByTab[activeTab];
   const renderItem = useItemRenderer(activeTab, saveStickerEmojiBandwidth);
 
-  const handleOnChange: ChangeEventHandler<HTMLInputElement> = useDebounce(
-    useCallback(
-      (evt) => {
-        const term = evt.target.value;
-        if (activeTab === EmojiBoardTab.Gif) {
-          setGifInputValue(term);
-          if (term.trim()) {
-            searchGifs(term);
+  const handleOnChange: ChangeEventHandler<HTMLInputElement> = useCallback(
+    (evt) => {
+      const term = evt.target.value;
+      if (activeTab === EmojiBoardTab.Gif) {
+        setGifInputValue(term);
+        if (gifSearchDebounceRef.current !== undefined) {
+          clearTimeout(gifSearchDebounceRef.current);
+        }
+        gifSearchDebounceRef.current = window.setTimeout(() => {
+          const normalized = term.trim();
+          if (normalized) {
+            rememberGifSearch(normalized);
+            searchGifs(normalized);
           } else {
             resetGifSearch();
             resetSearchGifs();
           }
-        } else if (term) {
-          emojiSearch(term);
-        } else {
-          resetEmojiSearch();
-        }
-      },
-      [activeTab, emojiSearch, resetEmojiSearch, searchGifs, resetGifSearch, resetSearchGifs]
-    ),
-    { wait: 200 }
+          gifSearchDebounceRef.current = undefined;
+        }, 200);
+        return;
+      }
+
+      if (term) {
+        emojiSearch(term);
+      } else {
+        resetEmojiSearch();
+      }
+    },
+    [
+      activeTab,
+      emojiSearch,
+      rememberGifSearch,
+      resetEmojiSearch,
+      resetGifSearch,
+      resetSearchGifs,
+      searchGifs,
+    ]
   );
 
   const contentScrollRef = useRef<HTMLDivElement>(null);
@@ -1109,6 +1140,8 @@ export function EmojiBoard({
         mobileSheetDragRef.current = null;
         window.removeEventListener('pointermove', handlePointerMove);
         window.removeEventListener('pointerup', handlePointerUp);
+        mobileSheetPointerMoveRef.current = null;
+        mobileSheetPointerUpRef.current = null;
 
         if (!dragState) return;
 
@@ -1118,10 +1151,27 @@ export function EmojiBoard({
         setMobileSheetHeight(current >= midpoint ? heights.max : heights.min);
       };
 
+      mobileSheetPointerMoveRef.current = handlePointerMove;
+      mobileSheetPointerUpRef.current = handlePointerUp;
       window.addEventListener('pointermove', handlePointerMove);
       window.addEventListener('pointerup', handlePointerUp, { once: true });
     },
     [activeTab, isMobileSheet, mobileSheetHeight]
+  );
+
+  useEffect(
+    () => () => {
+      if (mobileSheetPointerMoveRef.current) {
+        window.removeEventListener('pointermove', mobileSheetPointerMoveRef.current);
+        mobileSheetPointerMoveRef.current = null;
+      }
+      if (mobileSheetPointerUpRef.current) {
+        window.removeEventListener('pointerup', mobileSheetPointerUpRef.current);
+        mobileSheetPointerUpRef.current = null;
+      }
+      mobileSheetDragRef.current = null;
+    },
+    []
   );
 
   // sync active sidebar tab with scroll

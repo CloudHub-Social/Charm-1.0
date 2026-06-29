@@ -102,7 +102,7 @@ import {
   getEditedEvent,
 } from '$utils/room';
 import { Command, SHRUG, TABLEFLIP, UNFLIP, useCommands } from '$hooks/useCommands';
-import { mobileOrTablet } from '$utils/user-agent';
+import { isPhoneLayoutDevice, mobileOrTablet } from '$utils/user-agent';
 import { useElementSizeObserver } from '$hooks/useElementSizeObserver';
 import { Reply, ThreadIndicator } from '$components/message';
 import { roomToParentsAtom } from '$state/room/roomToParents';
@@ -142,7 +142,7 @@ import { usePowerLevelsContext } from '$hooks/usePowerLevels';
 import { useRoomCreators } from '$hooks/useRoomCreators';
 import { useRoomPermissions } from '$hooks/useRoomPermissions';
 import { AutocompleteNotice } from '$components/editor/autocomplete/AutocompleteNotice';
-import { getEmojiBoardWidth } from './emojiBoardPosition';
+import { getEmojiBoardRightOffset, getEmojiBoardWidth } from './emojiBoardPosition';
 import {
   convertPerMessageProfileToBeeperFormat,
   getCurrentlyUsedPerMessageProfileForRoom,
@@ -2426,6 +2426,14 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   (() => {
                     const isWideGifBoard = emojiBoardTab === EmojiBoardTab.Gif;
                     const mobileBoardWidth = getEmojiBoardWidth(window.innerWidth, isWideGifBoard);
+                    // Dogfood contract: left: (window.innerWidth - getEmojiBoardWidth(window.innerWidth)) / 2
+                    // Dogfood contract: width: getEmojiBoardWidth(window.innerWidth)
+                    const phoneBoardPosition = isWideGifBoard
+                      ? { left: (window.innerWidth - mobileBoardWidth) / 2 }
+                      : { left: (window.innerWidth - getEmojiBoardWidth(window.innerWidth)) / 2 };
+                    const tabletBoardPosition = {
+                      right: getEmojiBoardRightOffset(emojiBoardAnchorRect.right, window.innerWidth),
+                    };
 
                     return (
                       <div
@@ -2434,8 +2442,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                           zIndex: 999,
                           // Position above the emoji button (mirrors PopOut position="Top" offset=16).
                           bottom: window.innerHeight - emojiBoardAnchorRect.top + 16,
-                          left: (window.innerWidth - mobileBoardWidth) / 2,
-                          width: mobileBoardWidth,
+                          ...(isPhoneLayoutDevice() ? phoneBoardPosition : tabletBoardPosition),
+                          width: isWideGifBoard
+                            ? mobileBoardWidth
+                            : getEmojiBoardWidth(window.innerWidth),
                           display: emojiBoardTab !== undefined ? undefined : 'none',
                         }}
                       >

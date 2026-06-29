@@ -514,6 +514,7 @@ export const UrlPreviewCard = as<
               onAuxClick={handleAuxClick}
               body={prev['og:title']}
               url={prev['og:image']}
+              mimeType={((prev['og:image:type'] as string) ?? ogImageInfo?.mimetype ?? '').trim()}
               info={ogImageInfo}
               matrixThumbnailMaxEdge={previewThumbMaxEdge}
               cacheThumbnailMetadataAsMedia
