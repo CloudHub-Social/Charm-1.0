@@ -130,7 +130,9 @@ describe('ImageContent', () => {
       value: {
         controller: null,
         ready: Promise.resolve({}),
-        addEventListener: vi.fn<(event: string, listener: ServiceWorkerControllerChangeHandler) => void>((event, listener) => {
+        addEventListener: vi.fn<
+          (event: string, listener: ServiceWorkerControllerChangeHandler) => void
+        >((event, listener) => {
           serviceWorkerListeners.set(event, listener);
         }),
         removeEventListener: vi.fn<(event: string) => void>((event) => {
