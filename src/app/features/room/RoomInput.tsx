@@ -1793,11 +1793,24 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               );
             }
             const sendErrMsg = error instanceof Error ? error.message : String(error);
-            const isSendNetworkError = /load failed|failed to fetch|network/i.test(sendErrMsg);
-            debugLog[isSendNetworkError ? 'warn' : 'error']('message', 'Failed to send message', {
-              roomId,
-              error: sendErrMsg,
-            });
+            const isSendNetworkError = /load failed|failed to fetch|fetch failed|network/i.test(
+              sendErrMsg
+            );
+            if (isSendNetworkError) {
+              // debugLog.warn is a no-op in production; add breadcrumb directly and skip
+              // creating a Sentry issue for expected connectivity failures.
+              Sentry.addBreadcrumb({
+                category: 'message.send',
+                message: 'Failed to send message',
+                level: 'warning',
+                data: { roomId, error: sendErrMsg },
+              });
+            } else {
+              debugLog.error('message', 'Failed to send message', {
+                roomId,
+                error: sendErrMsg,
+              });
+            }
             Sentry.metrics.count('sable.message.send_error', 1, {
               attributes: {
                 encrypted: String(isEncrypted),
