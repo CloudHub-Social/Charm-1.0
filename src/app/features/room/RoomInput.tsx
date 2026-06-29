@@ -2432,7 +2432,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       ? { left: (window.innerWidth - mobileBoardWidth) / 2 }
                       : { left: (window.innerWidth - getEmojiBoardWidth(window.innerWidth)) / 2 };
                     const tabletBoardPosition = {
-                      right: getEmojiBoardRightOffset(emojiBoardAnchorRect.right, window.innerWidth),
+                      right: getEmojiBoardRightOffset(
+                        emojiBoardAnchorRect.right,
+                        window.innerWidth
+                      ),
                     };
 
                     return (
