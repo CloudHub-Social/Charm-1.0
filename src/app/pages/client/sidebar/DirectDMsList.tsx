@@ -23,7 +23,7 @@ import { getCanonicalAliasOrRoomId } from '$utils/matrix';
 import { useSelectedRoom } from '$hooks/router/useSelectedRoom';
 import { useGroupDMMembers } from '$hooks/useGroupDMMembers';
 import { useSidebarDirectRoomIds } from './useSidebarDirectRoomIds';
-import { Presence, useUserPresence } from '$hooks/useUserPresence';
+import { Presence, useGroupPresence, useUserPresence } from '$hooks/useUserPresence';
 import { AvatarPresence, PresenceBadge } from '$components/presence';
 import * as css from './DirectDMsList.css';
 
@@ -54,6 +54,7 @@ function DMItem({ room, selected }: DMItemProps) {
   // Get member info for group DMs using m.direct and profile API (doesn't require full room state)
   // Members are sorted by who last sent messages (most recent first)
   const groupMembers = useGroupDMMembers(mx, room, MAX_GROUP_MEMBERS);
+  const groupPresence = useGroupPresence(groupMembers.map((m) => m.userId));
 
   // Get unread info for badge
   const unread = roomToUnread.get(room.roomId);
@@ -144,11 +145,15 @@ function DMItem({ room, selected }: DMItemProps) {
         {(triggerRef) => (
           <AvatarPresence
             badge={
-              !isGroupDM &&
-              dmPresence &&
-              dmPresence.presence !== Presence.Offline && (
-                <PresenceBadge presence={dmPresence.presence} size="200" />
-              )
+              isGroupDM
+                ? groupPresence &&
+                  groupPresence !== Presence.Offline && (
+                    <PresenceBadge presence={groupPresence} size="200" />
+                  )
+                : dmPresence &&
+                  dmPresence.presence !== Presence.Offline && (
+                    <PresenceBadge presence={dmPresence.presence} size="200" />
+                  )
             }
           >
             <SidebarAvatar as="button" ref={triggerRef} outlined onClick={handleClick} size="400">

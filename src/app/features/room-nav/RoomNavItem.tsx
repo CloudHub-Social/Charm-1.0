@@ -81,7 +81,7 @@ import { useCallPreferencesAtom } from '$state/hooks/callPreferences';
 import { CallControlState } from '$plugins/call/CallControlState';
 import { useAutoDiscoveryInfo } from '$hooks/useAutoDiscoveryInfo';
 import { livekitSupport } from '$hooks/useLivekitSupport';
-import { Presence, useUserPresence } from '$hooks/useUserPresence';
+import { Presence, useGroupPresence, useUserPresence } from '$hooks/useUserPresence';
 import { AvatarPresence, PresenceBadge } from '$components/presence';
 import { useGroupDMMembers } from '$hooks/useGroupDMMembers';
 import { UserAvatar } from '$components/user-avatar';
@@ -320,6 +320,7 @@ export function RoomNavItem({
   );
   const hasCompleteGroupAvatar =
     groupMembers.length > 1 && groupMemberAvatarSrcs.every((src) => !!src);
+  const groupPresence = useGroupPresence(groupMembers.map((m) => m.userId));
 
   const [roomIconOverlay] = useSetting(settingsAtom, 'roomIconOverlay');
   const nicknames = useAtomValue(nicknamesAtom);
@@ -485,30 +486,45 @@ export function RoomNavItem({
                       // Group DM: triangle layout of mini avatars.
                       // In hideText (icon-only) mode the Avatar slot is 32px (size="300");
                       // use the larger container+mini variant so the composite scales properly.
-                      <div className={hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow}>
-                        {groupMembers.map((member, index) => {
-                          const memberAvatarSrc = groupMemberAvatarSrcs[index];
-                          return (
-                            <Avatar
-                              key={member.userId}
-                              className={
-                                hideText ? css.GroupAvatarMiniHideText : css.GroupAvatarMini
-                              }
-                            >
-                              <UserAvatar
-                                userId={member.userId}
-                                src={memberAvatarSrc}
-                                alt={member.displayName ?? member.userId}
-                                renderFallback={() => (
-                                  <Text as="span" size="T200">
-                                    {nameInitials(member.displayName ?? member.userId)}
-                                  </Text>
-                                )}
-                              />
-                            </Avatar>
-                          );
-                        })}
-                      </div>
+                      <AvatarPresence
+                        badge={
+                          groupPresence &&
+                          groupPresence !== Presence.Offline && (
+                            <PresenceBadge
+                              presence={groupPresence}
+                              size={hideText ? '300' : '200'}
+                            />
+                          )
+                        }
+                        style={hideTextStyling(hideText)}
+                      >
+                        <div
+                          className={hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow}
+                        >
+                          {groupMembers.map((member, index) => {
+                            const memberAvatarSrc = groupMemberAvatarSrcs[index];
+                            return (
+                              <Avatar
+                                key={member.userId}
+                                className={
+                                  hideText ? css.GroupAvatarMiniHideText : css.GroupAvatarMini
+                                }
+                              >
+                                <UserAvatar
+                                  userId={member.userId}
+                                  src={memberAvatarSrc}
+                                  alt={member.displayName ?? member.userId}
+                                  renderFallback={() => (
+                                    <Text as="span" size="T200">
+                                      {nameInitials(member.displayName ?? member.userId)}
+                                    </Text>
+                                  )}
+                                />
+                              </Avatar>
+                            );
+                          })}
+                        </div>
+                      </AvatarPresence>
                     ) : (
                       <AvatarPresence
                         badge={
