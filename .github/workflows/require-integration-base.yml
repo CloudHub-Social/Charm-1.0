@@ -1,0 +1,27 @@
+name: Require integration base branch
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions: {}
+
+jobs:
+  check-base-branch:
+    name: Check base branch
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Verify base branch is integration or a release branch
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [[ "$BASE_REF" == "integration" || "$BASE_REF" == release* ]]; then
+            echo "Base branch '$BASE_REF' is allowed."
+            exit 0
+          fi
+          echo "::error::This PR targets '$BASE_REF', but all PRs must target 'integration' (or a release/* branch). Please update the base branch."
+          exit 1

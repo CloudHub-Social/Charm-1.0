@@ -1,4 +1,5 @@
 <!-- Please read CONTRIBUTING.md before submitting fork-local pull requests. Use upstream/dev only for deliberate upstream contributions. -->
+<!-- ⚠️ IMPORTANT: All PRs must target the `integration` branch, NOT `dev` or `main`. Change the base branch if needed before opening. -->
 
 ### Description
 
