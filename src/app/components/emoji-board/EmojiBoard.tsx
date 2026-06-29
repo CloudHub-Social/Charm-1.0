@@ -63,6 +63,15 @@ import {
 } from './components';
 import type { GifData } from './types';
 import { EmojiBoardTab, EmojiType } from './types';
+import { getMobileSheetHeights } from './mobileSheetHeights';
+import {
+  addGifSentBreadcrumb,
+  addGifTabOpenedBreadcrumb,
+  captureGifDiscoveryError,
+  captureGifSearchError,
+  recordGifDiscoveryMs,
+  recordGifSearchMs,
+} from '$utils/gifTelemetry';
 import { useClientConfig } from '$hooks/useClientConfig';
 import { gifSearchConfigured } from '$hooks/useClientConfig';
 import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
@@ -222,6 +231,7 @@ function useGifSearch(
 
       gifSearch(trimmedQuery);
 
+      const searchStartedAt = performance.now();
       try {
         const url = new URL('https://api.klipy.com');
         url.pathname = `/api/v1/${klipyApiKey}/gifs/search`;
@@ -233,8 +243,12 @@ function useGifSearch(
         if (response.status === 200) {
           const data = await response.json();
           const results = data.data.data as KlipyGifResult[] | undefined;
-          if (requestIdRef.current !== requestId) return;
+          if (requestIdRef.current !== requestId) {
+            recordGifSearchMs(performance.now() - searchStartedAt, { result: 'cancelled' });
+            return;
+          }
 
+          recordGifSearchMs(performance.now() - searchStartedAt, { result: 'ok' });
           setGifs((old) => ({
             ...old,
             gifs: results ? results.map(parseKlipyResult).filter(hasUsableGifUrl) : [],
@@ -242,8 +256,10 @@ function useGifSearch(
         } else {
           throw new Error(`HTTP ${response.status}`);
         }
-      } catch {
+      } catch (err) {
         if (requestIdRef.current !== requestId) return;
+        recordGifSearchMs(performance.now() - searchStartedAt, { result: 'error' });
+        captureGifSearchError(err, trimmedQuery);
         setError('Failed to search GIFs');
         setGifs((old) => ({
           ...old,
@@ -278,6 +294,7 @@ function useGifDiscovery(klipyApiKey: string, gifsEnabled: boolean, active: bool
 
     const cached = gifDiscoveryCache.get(klipyApiKey);
     if (cached) {
+      recordGifDiscoveryMs(0, { cached: true });
       setItems(cached);
       return undefined;
     }
@@ -285,6 +302,7 @@ function useGifDiscovery(klipyApiKey: string, gifsEnabled: boolean, active: bool
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     let cancelled = false;
+    const discoveryStartedAt = performance.now();
 
     Promise.all(
       POPULAR_GIF_SEARCH_TERMS.map(async (term) => {
@@ -301,12 +319,14 @@ function useGifDiscovery(klipyApiKey: string, gifsEnabled: boolean, active: bool
           const result = (data.data.data as KlipyGifResult[] | undefined)?.[0];
           const gif = result ? parseKlipyResult(result) : undefined;
           return gif && hasUsableGifUrl(gif) ? { term, gif } : { term };
-        } catch {
+        } catch (err) {
+          captureGifDiscoveryError(err, term);
           return { term };
         }
       })
     ).then((results) => {
       if (cancelled || requestIdRef.current !== requestId) return;
+      recordGifDiscoveryMs(performance.now() - discoveryStartedAt, { cached: false });
       gifDiscoveryCache.set(klipyApiKey, results);
       setItems(results);
     });
@@ -768,28 +788,7 @@ type EmojiBoardProps = {
 
 const getGifName = (v: GifData) => v.title;
 
-const getMobileSheetHeights = (viewportHeight: number, tab: EmojiBoardTab) => {
-  const maxHeight = Math.max(360, Math.min(viewportHeight - 72, viewportHeight * 0.9));
-
-  if (tab === EmojiBoardTab.Gif) {
-    const max = maxHeight;
-    const min = Math.max(340, Math.min(max - 80, viewportHeight * 0.58));
-    return {
-      min,
-      max,
-      // Clamp initial to [min, max] — on short viewports max can be < 380.
-      initial: Math.max(min, Math.min(max, Math.max(380, viewportHeight * 0.78))),
-    };
-  }
-
-  const max = Math.max(340, Math.min(maxHeight, viewportHeight * 0.7));
-  const min = Math.max(300, Math.min(max - 60, viewportHeight * 0.46));
-  return {
-    min,
-    max,
-    initial: Math.max(min, Math.min(max, Math.max(320, viewportHeight * 0.56))),
-  };
-};
+// getMobileSheetHeights is defined in ./mobileSheetHeights and imported above.
 
 export function EmojiBoard({
   tab = EmojiBoardTab.Emoji,
@@ -933,7 +932,10 @@ export function EmojiBoard({
     : searchedGifItems.length + gifs.gifs.length;
 
   useEffect(() => {
-    if (active && activeTab === EmojiBoardTab.Gif) return;
+    if (active && activeTab === EmojiBoardTab.Gif) {
+      addGifTabOpenedBreadcrumb();
+      return;
+    }
 
     setGifInputValue('');
     resetGifSearch();
@@ -1115,6 +1117,7 @@ export function EmojiBoard({
       const gifData = gifDataStr ? JSON.parse(gifDataStr) : null;
       if (gifData) {
         rememberGifSearch(gifQuery);
+        addGifSentBreadcrumb(gifQuery ? 'search' : isGifDiscovery ? 'discovery' : 'favorites');
         onGifSelect?.(gifData);
       }
     }
