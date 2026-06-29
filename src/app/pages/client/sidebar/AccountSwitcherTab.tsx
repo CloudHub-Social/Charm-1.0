@@ -94,7 +94,10 @@ const sectionListStyle = {
 const mobileMenuViewportPadding = 12;
 const safeAreaInlineStart = 'var(--sable-safe-area-left, env(safe-area-inset-left, 0px))';
 const safeAreaInlineEnd = 'var(--sable-safe-area-right, env(safe-area-inset-right, 0px))';
-const safeAreaBottomInset = 'var(--sable-safe-area-bottom, env(safe-area-inset-bottom, 0px))';
+// --sable-safe-area-bottom is intentionally 0px in SystemBarShell (room views own
+// their own spacing). Use env() directly so fixed overlays like the sheet get the
+// real home-indicator / browser-bottom inset.
+const safeAreaBottomInset = 'env(safe-area-inset-bottom, 0px)';
 
 const getAccountSwitcherMenuMaxHeight = (menuAnchor?: RectCords, isBottom?: boolean): string => {
   const viewportCap =

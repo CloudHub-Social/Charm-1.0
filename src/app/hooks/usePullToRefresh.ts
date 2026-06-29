@@ -102,8 +102,11 @@ export function usePullToRefresh(
     // Measure safe-area-inset-top so the indicator sits just below it when visible,
     // and starts fully above the viewport edge when hidden.
     const safeAreaTopPx = getSafeAreaTopPx();
-    // With top = INDICATOR_GAP px, this translateY places the top edge at -44px (always off-screen).
-    const HIDDEN_Y = -(INDICATOR_SIZE + INDICATOR_GAP + 4);
+    // With top = INDICATOR_GAP (10px) and height = INDICATOR_SIZE (40px), the shadow
+    // (0 2px 10px) paints up to 12px below the element's bottom edge. HIDDEN_Y must
+    // satisfy: top + height + HIDDEN_Y + shadowSpread < 0 → HIDDEN_Y < -(10+40+12) = -62.
+    // Use -70 for a comfortable margin.
+    const HIDDEN_Y = -(INDICATOR_SIZE + INDICATOR_GAP + 20);
     // translateY that positions the indicator just below the safe area.
     const VISIBLE_Y = safeAreaTopPx;
 

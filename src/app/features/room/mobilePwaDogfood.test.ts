@@ -210,7 +210,7 @@ describe('mobile PWA dogfood contract', () => {
       "const safeAreaInlineEnd = 'var(--sable-safe-area-right, env(safe-area-inset-right, 0px))';"
     );
     expect(accountSwitcher).toContain(
-      "const safeAreaBottomInset = 'var(--sable-safe-area-bottom, env(safe-area-inset-bottom, 0px))';"
+      "const safeAreaBottomInset = 'env(safe-area-inset-bottom, 0px)';"
     );
   });
 
