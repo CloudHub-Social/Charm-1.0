@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { Badge, Box, Text } from 'folds';
+import { Badge, Box, Text, color, config } from 'folds';
 import { EmojiBoardTab } from '$components/emoji-board/types';
 
 const styles: CSSProperties = {
@@ -15,46 +15,50 @@ export function EmojiBoardTabs({
   onTabChange: (tab: EmojiBoardTab) => void;
   showGifTab?: boolean;
 }) {
+  const tabs = [
+    {
+      id: EmojiBoardTab.Emoji,
+      label: 'Emoji',
+    },
+    {
+      id: EmojiBoardTab.Sticker,
+      label: 'Stickers',
+    },
+    ...(showGifTab
+      ? [
+          {
+            id: EmojiBoardTab.Gif,
+            label: 'GIFs',
+          },
+        ]
+      : []),
+  ] as const;
+
   return (
-    <Box gap="100">
-      {showGifTab && (
+    <Box
+      gap="100"
+      style={{
+        padding: config.space.S100,
+        borderRadius: config.radii.R400,
+        backgroundColor: color.SurfaceVariant.Container,
+        width: '100%',
+      }}
+    >
+      {tabs.map((item) => (
         <Badge
-          style={styles}
+          key={item.id}
+          style={{ ...styles, flex: 1, justifyContent: 'center' }}
           as="button"
-          variant="Secondary"
-          fill={tab === EmojiBoardTab.Gif ? 'Solid' : 'None'}
+          variant={tab === item.id ? 'Primary' : 'Secondary'}
+          fill={tab === item.id ? 'Solid' : 'None'}
           size="500"
-          onClick={() => onTabChange(EmojiBoardTab.Gif)}
+          onClick={() => onTabChange(item.id)}
         >
           <Text as="span" size="L400">
-            GIF
+            {item.label}
           </Text>
         </Badge>
-      )}
-      <Badge
-        style={styles}
-        as="button"
-        variant="Secondary"
-        fill={tab === EmojiBoardTab.Sticker ? 'Solid' : 'None'}
-        size="500"
-        onClick={() => onTabChange(EmojiBoardTab.Sticker)}
-      >
-        <Text as="span" size="L400">
-          Sticker
-        </Text>
-      </Badge>
-      <Badge
-        style={styles}
-        as="button"
-        variant="Secondary"
-        fill={tab === EmojiBoardTab.Emoji ? 'Solid' : 'None'}
-        size="500"
-        onClick={() => onTabChange(EmojiBoardTab.Emoji)}
-      >
-        <Text as="span" size="L400">
-          Emoji
-        </Text>
-      </Badge>
+      ))}
     </Box>
   );
 }

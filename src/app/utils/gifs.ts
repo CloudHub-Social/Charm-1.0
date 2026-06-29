@@ -1,5 +1,7 @@
 const KLIPY_STATIC_HOSTS = new Set(['static.klipy.com']);
 
+const MXC_URL_RE = /^mxc:\/\/([^/]+)\/(.+)$/i;
+
 export const normalizeGifProxyHost = (proxyUrl: string | undefined): string =>
   (proxyUrl ?? '')
     .trim()
@@ -24,3 +26,14 @@ export const getKlipyRemoteId = (gifUrl: string): string | undefined => {
 
 export const isSupportedGifFavoriteUrl = (gifUrl: string): boolean =>
   gifUrl.startsWith('mxc://') || getKlipyRemoteId(gifUrl) !== undefined;
+
+export const isKlipyProxyMxc = (mxcUrl: string, proxyUrl: string | undefined): boolean => {
+  const normalizedProxyHost = normalizeGifProxyHost(proxyUrl);
+  if (!normalizedProxyHost) return false;
+
+  const match = MXC_URL_RE.exec(mxcUrl.trim());
+  if (!match) return false;
+
+  const [, serverName, mediaId = ''] = match;
+  return serverName === normalizedProxyHost && mediaId.startsWith('klipy_');
+};

@@ -10,7 +10,7 @@ export function GifSearching() {
       direction="Column"
       gap="300"
     >
-      <Text>Loading GIFs...</Text>
+      <Text>Loading GIFs from Klipy...</Text>
     </Box>
   );
 }
@@ -25,6 +25,9 @@ export function GifSearchError({ error }: { error: string }) {
       gap="300"
     >
       <Text>Error: {error}</Text>
+      <Text priority="300" align="Center" size="T200">
+        Klipy search is temporarily unavailable.
+      </Text>
     </Box>
   );
 }
@@ -42,7 +45,7 @@ export function NoGifResults() {
       <Box direction="Inherit">
         <Text align="Center">No GIFs found!</Text>
         <Text priority="300" align="Center" size="T200">
-          Try searching for something else or favoriting some gifs.
+          Try another search or keep a few favorites close for quick replies.
         </Text>
       </Box>
     </Box>

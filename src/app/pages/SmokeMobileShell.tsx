@@ -32,6 +32,7 @@ import {
   SidebarStack,
 } from '$components/emoji-board/components';
 import * as emojiBoardCss from '$components/emoji-board/components/styles.css';
+import { getEmojiBoardWidth } from '$features/room/emojiBoardPosition';
 import * as roomNavCss from '$features/room-nav/styles.css';
 import { APP_FEATURES_URL, APP_SOURCE_URL, APP_SUPPORT_URL } from '$app/config/brand';
 import { getMessageSearchShortcutPath } from '$features/search/searchShortcut';
@@ -1039,6 +1040,55 @@ function SmokeSearchShortcuts() {
   );
 }
 
+function SmokeGifPicker() {
+  // Mirrors RoomInput.tsx phone picker positioning: left 50% + translateX(-50%)
+  // Width follows GIF_BOARD_VIEWPORT_GUTTER=16px, capped at 480px.
+  const boardWidth = getEmojiBoardWidth(
+    typeof window !== 'undefined' ? window.innerWidth : 390,
+    true
+  );
+
+  return (
+    <Page>
+      <Box
+        grow="Yes"
+        direction="Column"
+        style={{ minHeight: 0, backgroundColor: 'var(--sable-surface)', position: 'relative' }}
+      >
+        <div
+          data-testid="smoke-gif-picker-trigger"
+          style={{
+            position: 'absolute',
+            bottom: 80,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: boardWidth,
+            zIndex: 10,
+          }}
+        >
+          <div
+            data-testid="smoke-gif-picker"
+            className={emojiBoardCss.Base({ isGifLayout: true })}
+            style={{ width: '100%' }}
+          >
+            <Box
+              grow="Yes"
+              direction="Column"
+              alignItems="Center"
+              justifyContent="Center"
+              gap="200"
+              style={{ padding: config.space.S400 }}
+            >
+              <Text size="H4">GIF Picker</Text>
+              <Text size="T300">smoke fixture — layout geometry only</Text>
+            </Box>
+          </div>
+        </div>
+      </Box>
+    </Page>
+  );
+}
+
 export function SmokeMobileShell() {
   const { mode = 'home' } = useParams();
 
@@ -1050,6 +1100,7 @@ export function SmokeMobileShell() {
   if (mode === 'profile') return <SmokeProfileModal />;
   if (mode === 'room') return <SmokeRoomFooter />;
   if (mode === 'room-spacing') return <SmokeRoomSpacing />;
+  if (mode === 'gif-picker') return <SmokeGifPicker />;
 
   return (
     <PageRoot nav={<SmokeHomeNav />}>
