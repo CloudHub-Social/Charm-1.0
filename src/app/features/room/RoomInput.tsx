@@ -1799,7 +1799,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               error: sendErrMsg,
             });
             Sentry.metrics.count('sable.message.send_error', 1, {
-              attributes: { encrypted: String(isEncrypted), network_error: String(isSendNetworkError) },
+              attributes: {
+                encrypted: String(isEncrypted),
+                network_error: String(isSendNetworkError),
+              },
             });
             log.error('failed to send message', { roomId }, error);
           }
