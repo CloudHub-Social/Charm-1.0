@@ -2483,22 +2483,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   ) : undefined
                 }
               >
-                {gifsEnabled && (
-                  <IconButton
-                    aria-pressed={emojiBoardTab === EmojiBoardTab.Gif}
-                    onPointerDownCapture={prepareComposerOverlayTrigger}
-                    onClick={() => void openEmojiBoard(EmojiBoardTab.Gif)}
-                    variant="SurfaceVariant"
-                    size="300"
-                    radii="300"
-                    title="open GIF picker"
-                    aria-label="Open GIF picker"
-                  >
-                    {composerIcon(GifIcon, {
-                      weight: emojiBoardTab === EmojiBoardTab.Gif ? 'fill' : 'regular',
-                    })}
-                  </IconButton>
-                )}
                 {!hideStickerBtn && (
                   <IconButton
                     aria-pressed={emojiBoardTab === EmojiBoardTab.Sticker}
@@ -2512,6 +2496,22 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   >
                     {composerIcon(Sticker, {
                       weight: emojiBoardTab === EmojiBoardTab.Sticker ? 'fill' : 'regular',
+                    })}
+                  </IconButton>
+                )}
+                {gifsEnabled && (
+                  <IconButton
+                    aria-pressed={emojiBoardTab === EmojiBoardTab.Gif}
+                    onPointerDownCapture={prepareComposerOverlayTrigger}
+                    onClick={() => void openEmojiBoard(EmojiBoardTab.Gif)}
+                    variant="SurfaceVariant"
+                    size="300"
+                    radii="300"
+                    title="open GIF picker"
+                    aria-label="Open GIF picker"
+                  >
+                    {composerIcon(GifIcon, {
+                      weight: emojiBoardTab === EmojiBoardTab.Gif ? 'fill' : 'regular',
                     })}
                   </IconButton>
                 )}

@@ -116,33 +116,40 @@ describe('ImageContent', () => {
   beforeEach(() => {
     getMediaUrl.mockReset();
     downloadMedia.mockReset();
+    vi.stubGlobal(
+      'URL',
+      Object.assign(URL, {
+        createObjectURL: vi.fn(() => 'blob:gif-proxy'),
+      })
+    );
   });
 
-  it('streams proxy-backed klipy gifs through unauthenticated media urls', async () => {
+  it('loads proxy-backed klipy gifs through authenticated blob fetches', async () => {
     getMediaUrl.mockImplementation((_mx, _mxc, useAuthentication) =>
       useAuthentication
-        ? 'https://gifs.example.org/_matrix/client/v1/media/download/gifs.example.org/klipy_auth'
-        : 'https://gifs.example.org/_matrix/media/v3/download/gifs.example.org/klipy_public'
+        ? 'https://matrix.example.org/_matrix/client/v1/media/download/gifs.example.org/klipy_auth'
+        : 'https://matrix.example.org/_matrix/media/v3/download/gifs.example.org/klipy_public'
     );
+    downloadMedia.mockResolvedValue(new Blob(['gif'], { type: 'image/gif' }));
 
     renderWithProviders('mxc://gifs.example.org/klipy_Zm9vL2Jhci5naWY');
 
     await waitFor(() => {
-      expect(screen.getByTestId('rendered-image')).toHaveAttribute(
-        'src',
-        'https://gifs.example.org/_matrix/media/v3/download/gifs.example.org/klipy_public'
-      );
+      expect(screen.getByTestId('rendered-image')).toHaveAttribute('src', 'blob:gif-proxy');
     });
 
     expect(getMediaUrl).toHaveBeenCalledWith(
       expect.objectContaining({ getAccessToken: expect.any(Function) }),
       'mxc://gifs.example.org/klipy_Zm9vL2Jhci5naWY',
-      false,
+      true,
       undefined,
       undefined,
       undefined,
       undefined
     );
-    expect(downloadMedia).not.toHaveBeenCalled();
+    expect(downloadMedia).toHaveBeenCalledWith(
+      'https://matrix.example.org/_matrix/client/v1/media/download/gifs.example.org/klipy_auth',
+      null
+    );
   });
 });

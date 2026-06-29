@@ -20,6 +20,10 @@ export function EmojiBoardTabs({
       id: EmojiBoardTab.Emoji,
       label: 'Emoji',
     },
+    {
+      id: EmojiBoardTab.Sticker,
+      label: 'Stickers',
+    },
     ...(showGifTab
       ? [
           {
@@ -28,10 +32,6 @@ export function EmojiBoardTabs({
           },
         ]
       : []),
-    {
-      id: EmojiBoardTab.Sticker,
-      label: 'Stickers',
-    },
   ] as const;
 
   return (

@@ -48,7 +48,7 @@ import { getScopedMediaCacheKey } from '$utils/mediaTransport';
 import { storeMediaMetadataForBlob } from '$utils/mediaMetadata';
 import { ModalWide } from '$styles/Modal.css';
 import { validBlurHash } from '$utils/blurHash';
-import { isKlipyProxyMxc, isSupportedGifFavoriteUrl } from '$utils/gifs';
+import { isSupportedGifFavoriteUrl } from '$utils/gifs';
 import * as css from './style.css';
 import {
   MATRIX_SABLE_UNSTABLE_FAVORITE_GIFS,
@@ -257,12 +257,10 @@ export const ImageContent = as<'div', ImageContentProps>(
   ) => {
     const mx = useMatrixClient();
     const useAuthentication = useMediaAuthentication();
-    const clientConfig = useClientConfig();
     const mediaUrlCache = useMediaUrlCacheContext();
     const blurHash = validBlurHash(info?.[MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME]);
 
-    const preferUnauthenticatedProxyMedia = isKlipyProxyMxc(url, clientConfig.gifs?.proxyUrl);
-    const mediaUseAuthentication = preferUnauthenticatedProxyMedia ? false : useAuthentication;
+    const mediaUseAuthentication = useAuthentication;
     const [load, setLoad] = useState(false);
     const [error, setError] = useState(false);
     const [viewer, setViewer] = useState(false);
