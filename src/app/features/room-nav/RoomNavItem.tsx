@@ -498,9 +498,7 @@ export function RoomNavItem({
                         }
                         style={hideTextStyling(hideText)}
                       >
-                        <div
-                          className={hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow}
-                        >
+                        <div className={hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow}>
                           {groupMembers.map((member, index) => {
                             const memberAvatarSrc = groupMemberAvatarSrcs[index];
                             return (
