@@ -23,6 +23,11 @@ export const LinePlaceholder = recipe({
       height: toRem(16),
       borderRadius: config.radii.R300,
       animation: `${shimmer} 1.6s ease-in-out infinite`,
+      '@media': {
+        '(prefers-reduced-motion: reduce)': {
+          animation: 'none',
+        },
+      },
     },
   ],
   variants: {

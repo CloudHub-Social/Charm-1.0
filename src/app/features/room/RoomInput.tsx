@@ -441,12 +441,17 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     }, [editor]);
     const micBtnRef = useRef<HTMLButtonElement>(null);
     const emojiPickerRef = useRef<HTMLDivElement>(null);
+    const prevEmojiBoardTabRef = useRef<EmojiBoardTab | undefined>(emojiBoardTab);
 
     // Slide-in animation for the mobile emoji/GIF/sticker picker — same motion
-    // as the long-press context menu (250ms, cubic-bezier(0.32, 0.72, 0, 1)).
+    // as the long-press context menu (220ms, cubic-bezier(0.32, 0.72, 0, 1)).
+    // Only plays when the picker opens (undefined → tab), not on tab switches.
     useLayoutEffect(() => {
+      const wasOpen = prevEmojiBoardTabRef.current !== undefined;
+      prevEmojiBoardTabRef.current = emojiBoardTab;
+
       const el = emojiPickerRef.current;
-      if (!el || emojiBoardTab === undefined) return;
+      if (!el || emojiBoardTab === undefined || wasOpen) return;
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       // On phone layouts the element is centered with translateX(-50%); include
       // it in both keyframes so the horizontal centering is preserved throughout.
@@ -2112,7 +2117,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       const gifUrl = gif.url.trim();
       const gifProxyHost = normalizeGifProxyHost(clientConfig.gifs?.proxyUrl);
       let url = gifUrl;
-      if (!gifUrl.startsWith('mxc://')) {
+      const isKlipyProxy = !gifUrl.startsWith('mxc://');
+      if (isKlipyProxy) {
         const remoteId = getKlipyRemoteId(gifUrl);
 
         if (!gifProxyHost || !remoteId) {
@@ -2123,14 +2129,20 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         url = `mxc://${gifProxyHost}/${toMatrixMediaId(remoteId, 'klipy_')}`;
       }
 
+      // For Klipy proxy GIFs, always use .webp body and image/webp MIME.
+      // For favorited GIFs (already mxc://), preserve the stored title and
+      // infer the MIME from the extension so resending doesn't corrupt metadata.
+      const body = isKlipyProxy ? `${gif.title}.webp` : gif.title;
+      const mimetype = isKlipyProxy || gif.title.endsWith('.webp') ? 'image/webp' : 'image/gif';
+
       const content: RoomMessageEventContent & IContent = {
-        body: `${gif.title}.webp`,
+        body,
         url: url,
         msgtype: MsgType.Image,
         info: {
           w: gif.width,
           h: gif.height,
-          mimetype: 'image/webp',
+          mimetype,
         },
       };
 
