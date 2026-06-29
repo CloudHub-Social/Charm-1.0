@@ -14,6 +14,23 @@ const INDICATOR_GAP = 10;
 const ARROW_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;transition:transform 0.15s ease"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>`;
 const SPINNER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="display:block;animation:sable-ptr-spin 0.7s linear infinite"><path d="M12 2a10 10 0 1 0 10 10"/></svg>`;
 
+/** Probe the DOM to read env(safe-area-inset-top) as a resolved px value. */
+function getSafeAreaTopPx(): number {
+  const probe = document.createElement('div');
+  Object.assign(probe.style, {
+    position: 'fixed',
+    top: '0',
+    height: 'env(safe-area-inset-top, 0px)',
+    width: '1px',
+    visibility: 'hidden',
+    pointerEvents: 'none',
+  });
+  document.body.appendChild(probe);
+  const h = probe.getBoundingClientRect().height;
+  document.body.removeChild(probe);
+  return h;
+}
+
 /** Inject the spin keyframe once into the document. */
 function ensurePTRStyles(): void {
   if (document.getElementById('sable-ptr-styles')) return;
@@ -24,17 +41,17 @@ function ensurePTRStyles(): void {
 }
 
 /** Create the fixed-position circular indicator element. */
-function createIndicator(): HTMLDivElement {
+function createIndicator(hiddenY: number): HTMLDivElement {
   const el = document.createElement('div');
   el.setAttribute('aria-hidden', 'true');
   el.setAttribute('role', 'status');
   Object.assign(el.style, {
     position: 'fixed',
-    // Sit just below the device safe-area (notch / dynamic island).
-    top: `calc(env(safe-area-inset-top, 0px) + ${INDICATOR_GAP}px)`,
+    // Anchor at the gap below the viewport top edge; translateY controls actual position.
+    top: `${INDICATOR_GAP}px`,
     left: '50%',
     // Start off-screen above; brought into view during pull.
-    transform: `translate(-50%, -${INDICATOR_SIZE + INDICATOR_GAP + 4}px)`,
+    transform: `translate(-50%, ${hiddenY}px)`,
     zIndex: '9998',
     width: `${INDICATOR_SIZE}px`,
     height: `${INDICATOR_SIZE}px`,
@@ -81,14 +98,22 @@ export function usePullToRefresh(
     if (!el) return () => {};
 
     ensurePTRStyles();
-    const indicator = createIndicator();
+
+    // Measure safe-area-inset-top so the indicator sits just below it when visible,
+    // and starts fully above the viewport edge when hidden.
+    const safeAreaTopPx = getSafeAreaTopPx();
+    // With top = INDICATOR_GAP px, this translateY places the top edge at -44px (always off-screen).
+    const HIDDEN_Y = -(INDICATOR_SIZE + INDICATOR_GAP + 4);
+    // translateY that positions the indicator just below the safe area.
+    const VISIBLE_Y = safeAreaTopPx;
+
+    const indicator = createIndicator(HIDDEN_Y);
     document.body.appendChild(indicator);
 
     /** Move the indicator to match the current pull ratio (0–1). */
     const updateIndicator = (ratio: number) => {
-      // Translate from fully hidden (-size px) to fully visible (0px).
-      const hidden = -(INDICATOR_SIZE + INDICATOR_GAP + 4);
-      const translateY = hidden + ratio * (INDICATOR_SIZE + INDICATOR_GAP + 4);
+      // Interpolate from fully hidden to fully visible.
+      const translateY = HIDDEN_Y + ratio * (VISIBLE_Y - HIDDEN_Y);
       indicator.style.transform = `translate(-50%, ${translateY}px)`;
 
       // Rotate arrow: 0° at start → 180° at threshold (points up = "release").
@@ -100,12 +125,12 @@ export function usePullToRefresh(
 
     const showRefreshing = () => {
       indicator.innerHTML = SPINNER_SVG;
-      indicator.style.transform = 'translate(-50%, 0px)';
+      indicator.style.transform = `translate(-50%, ${VISIBLE_Y}px)`;
     };
 
     const hideIndicator = () => {
       indicator.style.transition = 'transform 0.25s ease';
-      indicator.style.transform = `translate(-50%, -${INDICATOR_SIZE + INDICATOR_GAP + 4}px)`;
+      indicator.style.transform = `translate(-50%, ${HIDDEN_Y}px)`;
       // Restore arrow after it has slid out of view.
       setTimeout(() => {
         indicator.innerHTML = ARROW_SVG;
