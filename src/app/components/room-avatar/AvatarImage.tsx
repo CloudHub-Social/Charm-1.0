@@ -138,7 +138,7 @@ export function useProcessedAvatarSrc(src?: string): string | undefined {
   // Derive the processed URL during render. If the state lags behind the current
   // src (e.g. src just changed and the effect hasn't run yet), read the cache
   // directly so we never return a stale blob URL for a different room/space.
-  return state.src === src ? state.url : (src ? avatarBlobCache.get(src) : undefined);
+  return state.src === src ? state.url : src ? avatarBlobCache.get(src) : undefined;
 }
 
 type AvatarImageProps = {

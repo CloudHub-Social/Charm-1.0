@@ -297,19 +297,22 @@ export function RoomTimeline({
     bottomAnchorSettleUntilRef.current = Date.now() + BOTTOM_ANCHOR_SETTLE_MS;
   }, []);
 
-  const scrollToBottom = useCallback((behavior?: 'instant' | 'smooth') => {
-    if (!vListRef.current) return;
-    const lastIndex = processedEventsRef.current.length - 1;
-    if (lastIndex < 0) return;
-    // scrollToIndex defers until the item is measured, so the scroll lands
-    // correctly even when the new message's height hasn't been computed yet.
-    vListRef.current.scrollToIndex(lastIndex, {
-      align: 'end',
-      smooth: behavior === 'smooth',
-    });
-    refreshBottomAnchorSettleWindow();
-    restartBottomAnchorTick();
-  }, [refreshBottomAnchorSettleWindow]);
+  const scrollToBottom = useCallback(
+    (behavior?: 'instant' | 'smooth') => {
+      if (!vListRef.current) return;
+      const lastIndex = processedEventsRef.current.length - 1;
+      if (lastIndex < 0) return;
+      // scrollToIndex defers until the item is measured, so the scroll lands
+      // correctly even when the new message's height hasn't been computed yet.
+      vListRef.current.scrollToIndex(lastIndex, {
+        align: 'end',
+        smooth: behavior === 'smooth',
+      });
+      refreshBottomAnchorSettleWindow();
+      restartBottomAnchorTick();
+    },
+    [refreshBottomAnchorSettleWindow]
+  );
 
   const timelineSync = useTimelineSync({
     room,
