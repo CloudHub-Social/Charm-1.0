@@ -20,8 +20,7 @@ const SettingsRoute = lazy(() =>
 import { Room } from '$features/room';
 import { Lobby } from '$features/lobby';
 import { PageRoot } from '$components/page';
-import { ScreenSize } from '$hooks/useScreenSize';
-import { isPhoneLayoutDevice } from '$utils/user-agent';
+
 import { ReceiveSelfDeviceVerification } from '$components/DeviceVerification';
 import { AutoRestoreBackupOnVerification } from '$components/BackupRestore';
 import { RoomSettingsRenderer } from '$features/room-settings';
@@ -123,9 +122,8 @@ const getFirstSession = () => {
   return getFallbackSession();
 };
 
-export const createRouter = (clientConfig: ClientConfig, screenSize: ScreenSize) => {
+export const createRouter = (clientConfig: ClientConfig, mobile: boolean) => {
   const { hashRouter } = clientConfig;
-  const mobile = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
 
   const routes = createRoutesFromElements(
     <Route>

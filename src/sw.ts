@@ -2372,37 +2372,29 @@ precacheAndRoute(self.__WB_MANIFEST);
 
 cleanupOutdatedCaches();
 
-// SABLE-5G: Catch-all fetch handler for navigation requests
-// Handles FetchEvent.respondWith errors when precached assets fail to load
-// (e.g., right after SW update when old cached URLs are being cleaned up).
-// Falls back to serving cached index.html for navigation requests.
+// SABLE-5G: Catch-all fetch handler for navigation requests.
+// Cache-first: serve the precached index.html immediately so the SPA loads
+// instantly while offline and never shows a blank page waiting on the network.
+// Falls back to a live network fetch only before the precache is populated
+// (e.g., the very first SW install before `activate` has run).
 self.addEventListener('fetch', (event: FetchEvent) => {
   const { request } = event;
-  // Only handle navigation requests (document loads)
-  if (request.mode !== 'navigate') {
-    return;
-  }
+  if (request.mode !== 'navigate') return;
+  // Skip non-SPA document paths (e.g. the Element Call iframe at /public/element-call/).
+  // request.mode === 'navigate' fires for same-origin iframe navigations too, so we must
+  // not intercept widget URLs or they would receive index.html instead of their own page.
+  const url = new URL(request.url);
+  if (url.pathname.startsWith('/public/')) return;
 
   event.respondWith(
     (async () => {
       try {
-        // Try network first
-        return await fetch(request);
-      } catch (fetchError) {
-        console.debug('[SW fetch fallback] Network fetch failed, trying cache:', fetchError);
-        // Network failed, try to serve cached index.html
-        try {
-          const cachedResponse = await matchPrecache('/index.html');
-          if (cachedResponse) {
-            console.debug('[SW fetch fallback] Serving cached index.html');
-            return cachedResponse;
-          }
-        } catch (cacheError) {
-          console.error('[SW fetch fallback] Failed to serve cached index.html:', cacheError);
-        }
-        // Both network and cache failed, rethrow original error
-        throw fetchError;
+        const cachedResponse = await matchPrecache('/index.html');
+        if (cachedResponse) return cachedResponse;
+      } catch (cacheError) {
+        console.debug('[SW fetch] Cache lookup failed, falling back to network:', cacheError);
       }
+      return fetch(request);
     })()
   );
 });
