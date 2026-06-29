@@ -83,17 +83,19 @@ export const SidebarItem = recipe({
         },
         '&::before': {
           content: '',
-          display: 'none',
+          display: 'block',
           position: 'absolute',
           left: toRem(-11.5 - PUSH_X),
           width: toRem(3 + PUSH_X),
           height: toRem(16),
           borderRadius: `0 ${toRem(4)} ${toRem(4)} 0`,
           background: 'CurrentColor',
-          transition: 'height 200ms linear',
+          opacity: 0,
+          pointerEvents: 'none',
+          transition: 'height 200ms linear, opacity 150ms ease',
         },
         '&:hover::before': {
-          display: 'block',
+          opacity: 1,
           width: toRem(3),
         },
       },
@@ -106,7 +108,7 @@ export const SidebarItem = recipe({
       true: {
         selectors: {
           '&::before': {
-            display: 'block',
+            opacity: 1,
             height: toRem(24),
           },
           '&:hover::before': {
@@ -130,23 +132,31 @@ export const SidebarItemBottom = recipe({
       position: 'relative',
       transition: 'transform 200ms cubic-bezier(0, 0.8, 0.67, 0.97)',
 
+      '@media': {
+        '(pointer: coarse)': {
+          minHeight: toRem(44),
+        },
+      },
+
       selectors: {
         '&:hover': {
           transform: `translateY(${toRem(PUSH_Y)})`,
         },
         '&::before': {
           content: '',
-          display: 'none',
+          display: 'block',
           position: 'absolute',
           bottom: toRem(-11.5 - PUSH_Y),
           height: toRem(3 + PUSH_Y),
           width: toRem(16),
           borderRadius: `${toRem(4)} ${toRem(4)} 0 0`,
           background: 'CurrentColor',
-          transition: 'height 200ms linear',
+          opacity: 0,
+          pointerEvents: 'none',
+          transition: 'width 200ms linear, opacity 150ms ease',
         },
         '&:hover::before': {
-          display: 'block',
+          opacity: 1,
           height: toRem(3),
         },
       },
@@ -159,7 +169,7 @@ export const SidebarItemBottom = recipe({
       true: {
         selectors: {
           '&::before': {
-            display: 'block',
+            opacity: 1,
             width: toRem(24),
           },
           '&:hover::before': {

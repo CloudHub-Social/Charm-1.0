@@ -190,8 +190,8 @@ export const StickerImg = style([
 
 export const GifContainer = style({
   columnCount: 3,
-  columnGap: toRem(8),
-  padding: toRem(16),
+  columnGap: config.space.S200,
+  padding: config.space.S400,
 
   '@media': {
     '(max-width: 768px)': {
