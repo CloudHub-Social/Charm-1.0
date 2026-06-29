@@ -27,6 +27,13 @@ export const Base = recipe({
         width: `calc(100vw - ${config.borderWidth.B300})`,
       },
     },
+    isGifLayout: {
+      true: {
+        height: toRem(520),
+        borderRadius: config.radii.R500,
+        boxShadow: config.shadow.E300,
+      },
+    },
   },
 });
 
@@ -35,18 +42,32 @@ export const Header = style({
   paddingBottom: 0,
 });
 
+export const GifHeaderShell = style({
+  paddingTop: config.space.S200,
+});
+
+export const GifHandle = style({
+  width: toRem(44),
+  height: toRem(5),
+  borderRadius: config.radii.Pill,
+  backgroundColor: color.SurfaceVariant.ContainerLine,
+  margin: `0 auto ${config.space.S200}`,
+});
+
 export const GifHeader = style({
-  padding: config.space.S200,
-  borderRadius: config.radii.R400,
-  background: color.SurfaceVariant.Container,
+  padding: `${config.space.S200} ${config.space.S200} ${config.space.S100}`,
+  borderRadius: config.radii.R500,
+  background: `linear-gradient(180deg, ${color.SurfaceVariant.Container} 0%, ${color.Surface.Container} 100%)`,
+  border: `${config.borderWidth.B300} solid ${color.Surface.ContainerLine}`,
 });
 
 export const GifSearchMeta = style({
-  padding: `0 ${config.space.S100}`,
+  padding: `${config.space.S100} ${config.space.S100} 0`,
+  rowGap: config.space.S100,
 });
 
 export const GifDiscovery = style({
-  padding: `${config.space.S100} ${config.space.S200} ${config.space.S300}`,
+  padding: `${config.space.S200} ${config.space.S200} ${config.space.S300}`,
 });
 
 export const GifDiscoverySection = style({
@@ -62,12 +83,15 @@ export const GifChipRow = style({
 export const GifPromptGrid = style({
   display: 'grid',
   gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-  gap: config.space.S100,
+  gap: config.space.S200,
 });
 
 export const GifAttribution = style({
   letterSpacing: '0.04em',
   textTransform: 'uppercase',
+  textAlign: 'right',
+  lineHeight: toRem(14),
+  whiteSpace: 'normal',
 });
 
 /**
@@ -166,8 +190,8 @@ export const GifGroupContent = style([
   {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-    gap: config.space.S100,
-    padding: `0 ${config.space.S200}`,
+    gap: config.space.S200,
+    padding: `0 ${config.space.S200} ${config.space.S200}`,
   },
 ]);
 
@@ -251,7 +275,7 @@ export const GifItem = style([
   FocusOutline,
   {
     width: '100%',
-    borderRadius: config.radii.R400,
+    borderRadius: config.radii.R500,
     cursor: 'pointer',
     overflow: 'hidden',
     display: 'block',
@@ -272,7 +296,7 @@ export const GifItem = style([
 export const GifSearchItem = style([
   GifItem,
   {
-    minHeight: toRem(104),
+    minHeight: toRem(112),
   },
 ]);
 

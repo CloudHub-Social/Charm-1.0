@@ -940,7 +940,9 @@ export function EmojiBoard({
                 items: searchedGifItems,
               },
             ].concat(gifGroupItems)
-          : gifGroupItems,
+          : isGifDiscovery
+            ? []
+            : gifGroupItems,
   };
   const groups = groupsByTab[activeTab];
   const renderItem = useItemRenderer(activeTab, saveStickerEmojiBandwidth);
@@ -1094,6 +1096,7 @@ export function EmojiBoard({
             )}
             {gifTab ? (
               <Box className={componentCss.GifHeader} direction="Column" gap="200">
+                <div className={componentCss.GifHandle} />
                 <SearchInput
                   key={activeTab}
                   tab={activeTab}
@@ -1154,6 +1157,7 @@ export function EmojiBoard({
           )
         }
         isFullWidth={isFullWidth}
+        isGifLayout={gifTab}
       >
         <Box grow="Yes">
           <EmojiGroupHolder
