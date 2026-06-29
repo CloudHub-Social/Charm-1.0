@@ -6,6 +6,7 @@ import { SequenceCardStyle } from '$features/settings/styles.css';
 import { toSettingsFocusIdPart } from '$features/settings/settingsLink';
 import type { LogCategory } from '$utils/debugLogger';
 import { getDebugLogger } from '$utils/debugLogger';
+import { isSentryToolbarEnabledForBuild } from '$utils/sentryToolbar';
 
 const ALL_CATEGORIES: LogCategory[] = [
   'sync',
@@ -55,8 +56,9 @@ export function SentrySettings() {
   const sentryEnabled = localStorage.getItem('sable_sentry_enabled') === 'true';
   const environment = import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE;
   const isProd = environment === 'production';
-  const traceSampleRate = isProd ? '10%' : '100%';
-  const replaySampleRate = isProd ? '10%' : '100%';
+  const traceSampleRate = isProd ? '50%' : '100%';
+  const replaySampleRate = isProd ? '50%' : '100%';
+  const toolbarEnabled = isSentryToolbarEnabledForBuild();
 
   return (
     <Box direction="Column" gap="100">
@@ -101,6 +103,15 @@ export function SentrySettings() {
               title="Session Error Budget"
               focusId="session-error-budget"
               description="At most 50 error events are forwarded to Sentry per page load to prevent quota exhaustion."
+            />
+            <SettingTile
+              title="Preview Toolbar"
+              focusId="toolbar-preview"
+              description={
+                toolbarEnabled
+                  ? 'The preview-only Sentry Toolbar is enabled for this build.'
+                  : 'The Sentry Toolbar is disabled for this build.'
+              }
             />
           </SequenceCard>
 

@@ -28,6 +28,8 @@ import { EmailStageDialog } from '$components/uia-stages';
 import { getLoginPath, withSearchParam } from '$pages/pathUtils';
 import { getUIAError, getUIAErrorCode } from '$utils/matrix-uia';
 import { FieldError } from '$pages/auth/FiledError';
+import { fetch } from '$utils/fetch';
+import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 import type { ResetPasswordResult } from './resetPasswordUtil';
 import { resetPassword } from './resetPasswordUtil';
 
@@ -78,14 +80,14 @@ type PasswordResetFormProps = {
 };
 
 const handleCancel = () => {
-  window.location.reload();
+  reloadWithTelemetry('password_reset_cancelled');
 };
 export function PasswordResetForm({ defaultEmail }: PasswordResetFormProps) {
   const server = useAuthServer();
 
   const serverDiscovery = useAutoDiscoveryInfo();
   const baseUrl = serverDiscovery['m.homeserver'].base_url;
-  const mx = useMemo(() => createClient({ baseUrl }), [baseUrl]);
+  const mx = useMemo(() => createClient({ baseUrl, fetchFn: fetch }), [baseUrl]);
 
   const [formData, setFormData] = useState<FormData>();
 

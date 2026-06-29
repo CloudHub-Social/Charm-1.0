@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { motion, useMotionValue, useSpring } from 'framer-motion';
+import { motion, useMotionValue, useSpring } from 'motion/react';
 import { useDrag } from '@use-gesture/react';
 import { useAtomValue } from 'jotai';
 import { settingsAtom } from '$state/settings';
@@ -9,12 +9,14 @@ interface SwipeableOverlayWrapperProps {
   children: ReactNode;
   onClose: () => void;
   direction: 'left' | 'right';
+  showDragPreview?: boolean;
 }
 
 export function SwipeableOverlayWrapper({
   children,
   onClose,
   direction,
+  showDragPreview = true,
 }: SwipeableOverlayWrapperProps) {
   const settings = useAtomValue(settingsAtom);
   const x = useMotionValue(0);
@@ -38,10 +40,11 @@ export function SwipeableOverlayWrapper({
       if (direction === 'right' && val < 0) val = 0;
 
       if (active) {
+        if (!showDragPreview) return;
         x.set(val);
       } else {
-        const swipeThreshold = 100;
-        const velocityThreshold = 0.5;
+        const swipeThreshold = 150;
+        const velocityThreshold = 1.2;
 
         const swipedLeft =
           direction === 'left' && (val < -swipeThreshold || (vx > velocityThreshold && dx < 0));

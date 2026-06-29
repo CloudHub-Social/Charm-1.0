@@ -1,11 +1,16 @@
 import type { MatrixClient, MatrixEvent, RoomMember } from '$types/matrix-sdk';
 import { EventType, RoomMemberEvent, RoomStateEvent } from '$types/matrix-sdk';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { isRoomMembersLoaded, loadRoomMembersOnce } from '$utils/loadRoomMembers';
 
 export const useRoomMembers = (mx: MatrixClient, roomId: string): RoomMember[] => {
   const [members, setMembers] = useState<RoomMember[]>([]);
+  const loadInitiatedRef = useRef(false);
 
   useEffect(() => {
+    // Reset on every room change so navigating to a new room always triggers a load.
+    loadInitiatedRef.current = false;
+
     const room = mx.getRoom(roomId);
     let loadingMembers = true;
     let disposed = false;
@@ -18,11 +23,27 @@ export const useRoomMembers = (mx: MatrixClient, roomId: string): RoomMember[] =
 
     if (room) {
       setMembers(room.getMembers());
-      room.loadMembersIfNeeded().then(() => {
+
+      // Foreground load bypasses the background concurrency queue so sidebar
+      // preloads cannot delay the active room's member list or autocomplete.
+      const alreadyLoaded = isRoomMembersLoaded(roomId);
+      if (!alreadyLoaded && !loadInitiatedRef.current) {
+        loadInitiatedRef.current = true;
+        loadRoomMembersOnce(room, { foreground: true })
+          .then(() => {
+            loadingMembers = false;
+            if (disposed) return;
+            updateMemberList();
+          })
+          .catch(() => {
+            // If loading fails, allow retry on next mount
+            loadInitiatedRef.current = false;
+            loadingMembers = false;
+          });
+      } else {
         loadingMembers = false;
-        if (disposed) return;
         updateMemberList();
-      });
+      }
     }
 
     const handleStateEvent = (event: MatrixEvent) => {

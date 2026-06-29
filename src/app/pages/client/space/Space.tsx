@@ -49,8 +49,9 @@ import { useSpaceJoinedHierarchy } from '$hooks/useSpaceHierarchy';
 import { allRoomsAtom } from '$state/room-list/roomList';
 import { PageNav, PageNavContent, PageNavHeader } from '$components/page';
 import { usePowerLevels } from '$hooks/usePowerLevels';
-import { useRecursiveChildScopeFactory, useSpaceChildren } from '$state/hooks/roomList';
+import { useRecursiveChildRoomScopeFactory, useSpaceChildren } from '$state/hooks/roomList';
 import {
+  ArrowsClockwise,
   Checks,
   chipIcon,
   composerIcon,
@@ -92,7 +93,8 @@ import { ContainerColor } from '$styles/ContainerColor.css';
 import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { BreakWord } from '$styles/Text.css';
 import { InviteUserPrompt } from '$components/invite-user-prompt';
-import { mobileOrTablet } from '$utils/user-agent';
+import { isPhoneLayoutDevice, mobileOrTablet } from '$utils/user-agent';
+import { usePullToRefresh } from '$hooks/usePullToRefresh';
 import { lastVisitedRoomIdAtom } from '$state/room/lastRoom';
 import { SwipeableOverlayWrapper } from '$components/SwipeableOverlayWrapper';
 import { useCallEmbed } from '$hooks/useCallEmbed';
@@ -107,157 +109,202 @@ import { CustomStateEvent } from '$types/matrix/room';
 import type { RoomBannerContent } from '$types/matrix-sdk-events';
 import { ModalWide } from '$styles/Modal.css';
 import { ImageViewer } from '$components/image-viewer';
+import { getSlidingSyncManager } from '$client/initMatrix';
+import { LIST_SPACE } from '$client/slidingSync';
+import { getNextSlidingSyncListWindowEnd } from '$client/slidingSyncListPaging';
+import { completeSpaceNavigation, markStartupRoomListReady } from '$utils/perfTelemetry';
+import {
+  ensureManualRefreshSpinStyle,
+  getManualRefreshSpinStyle,
+  triggerManualRefresh,
+} from '$utils/manualRefresh';
 import * as css from './styles.css';
 import { isResizingSidebarAtom } from '$state/isResizingSidebar';
 
 const debugLog = createDebugLogger('Space');
+const SPACE_LIST_PAGING_CHECK_MS = 300;
 
 type SpaceMenuProps = {
+  isRefreshing: boolean;
+  onRefresh: () => void | Promise<void>;
   room: Room;
   requestClose: () => void;
 };
 
-const SpaceMenu = forwardRef<HTMLDivElement, SpaceMenuProps>(({ room, requestClose }, ref) => {
-  const mx = useMatrixClient();
-  const [hideReads] = useSetting(settingsAtom, 'hideReads');
-  const [developerTools] = useSetting(settingsAtom, 'developerTools');
-  const roomToParents = useAtomValue(roomToParentsAtom);
-  const powerLevels = usePowerLevels(room);
-  const creators = useRoomCreators(room);
+const SpaceMenu = forwardRef<HTMLDivElement, SpaceMenuProps>(
+  ({ isRefreshing, onRefresh, room, requestClose }, ref) => {
+    const mx = useMatrixClient();
+    const mDirects = useAtomValue(mDirectAtom);
+    const [hideReads] = useSetting(settingsAtom, 'hideReads');
+    const [developerTools] = useSetting(settingsAtom, 'developerTools');
+    const roomToParents = useAtomValue(roomToParentsAtom);
+    const powerLevels = usePowerLevels(room);
+    const creators = useRoomCreators(room);
 
-  const permissions = useRoomPermissions(creators, powerLevels);
-  const canInvite = permissions.action('invite', mx.getSafeUserId());
-  const openSpaceSettings = useOpenSpaceSettings();
-  const { navigateRoom } = useRoomNavigate();
+    const permissions = useRoomPermissions(creators, powerLevels);
+    const canInvite = permissions.action('invite', mx.getSafeUserId());
+    const openSpaceSettings = useOpenSpaceSettings();
+    const { navigateRoom } = useRoomNavigate();
 
-  const [invitePrompt, setInvitePrompt] = useState(false);
+    const [invitePrompt, setInvitePrompt] = useState(false);
 
-  const allChild = useSpaceChildren(
-    allRoomsAtom,
-    room.roomId,
-    useRecursiveChildScopeFactory(mx, roomToParents)
-  );
-  const unread = useRoomsUnread(allChild, roomToUnreadAtom);
+    const allChild = useSpaceChildren(
+      allRoomsAtom,
+      room.roomId,
+      useRecursiveChildRoomScopeFactory(mx, mDirects, roomToParents)
+    );
+    const unread = useRoomsUnread(allChild, roomToUnreadAtom);
 
-  const handleMarkAsRead = () => {
-    allChild.forEach((childRoomId) => markAsRead(mx, childRoomId, hideReads));
-    requestClose();
-  };
+    const handleMarkAsRead = () => {
+      allChild.forEach((childRoomId) => markAsRead(mx, childRoomId, hideReads));
+      requestClose();
+    };
 
-  const handleCopyLink = () => {
-    const roomIdOrAlias = getCanonicalAliasOrRoomId(mx, room.roomId);
-    const viaServers = isRoomAlias(roomIdOrAlias) ? undefined : getViaServers(room);
-    copyToClipboard(getMatrixToRoom(roomIdOrAlias, viaServers));
-    requestClose();
-  };
+    const handleCopyLink = () => {
+      const roomIdOrAlias = getCanonicalAliasOrRoomId(mx, room.roomId);
+      const viaServers = isRoomAlias(roomIdOrAlias) ? undefined : getViaServers(room);
+      copyToClipboard(getMatrixToRoom(roomIdOrAlias, viaServers));
+      requestClose();
+    };
 
-  const handleInvite = () => {
-    setInvitePrompt(true);
-  };
+    const handleInvite = () => {
+      setInvitePrompt(true);
+    };
 
-  const handleRoomSettings = () => {
-    openSpaceSettings(room.roomId);
-    requestClose();
-  };
+    const handleRoomSettings = () => {
+      openSpaceSettings(room.roomId);
+      requestClose();
+    };
 
-  const handleOpenTimeline = () => {
-    debugLog.info('ui', 'Space timeline opened', { roomId: room.roomId });
-    navigateRoom(room.roomId);
-    requestClose();
-  };
+    const handleOpenTimeline = () => {
+      debugLog.info('ui', 'Space timeline opened', { roomId: room.roomId });
+      navigateRoom(room.roomId);
+      requestClose();
+    };
 
-  return (
-    <Menu ref={ref} style={{ maxWidth: toRem(160), width: '100vw' }}>
-      <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
-        {invitePrompt && room && (
-          <InviteUserPrompt
-            room={room}
-            requestClose={() => {
-              setInvitePrompt(false);
-              requestClose();
-            }}
-          />
-        )}
-        <MenuItem
-          onClick={handleMarkAsRead}
-          size="300"
-          after={menuIcon(Checks)}
-          radii="300"
-          disabled={!unread}
-        >
-          <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
-            Mark as Read
-          </Text>
-        </MenuItem>
-      </Box>
-      <Line variant="Surface" size="300" />
-      <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
-        <MenuItem
-          onClick={handleInvite}
-          variant="Primary"
-          fill="None"
-          size="300"
-          after={menuIcon(UserPlus)}
-          radii="300"
-          aria-pressed={invitePrompt}
-          disabled={!canInvite}
-        >
-          <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
-            Invite
-          </Text>
-        </MenuItem>
-        <MenuItem onClick={handleCopyLink} size="300" after={menuIcon(Link)} radii="300">
-          <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
-            Copy Link
-          </Text>
-        </MenuItem>
-        <MenuItem onClick={handleRoomSettings} size="300" after={menuIcon(GearSix)} radii="300">
-          <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
-            Space Settings
-          </Text>
-        </MenuItem>
-        {developerTools && (
-          <MenuItem onClick={handleOpenTimeline} size="300" after={menuIcon(Terminal)} radii="300">
+    return (
+      <Menu ref={ref} style={{ maxWidth: toRem(160), width: '100vw' }}>
+        <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
+          {invitePrompt && room && (
+            <InviteUserPrompt
+              room={room}
+              requestClose={() => {
+                setInvitePrompt(false);
+                requestClose();
+              }}
+            />
+          )}
+          <MenuItem
+            onClick={handleMarkAsRead}
+            size="300"
+            after={menuIcon(Checks)}
+            radii="300"
+            disabled={!unread}
+          >
             <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
-              Event Timeline
+              Mark as Read
             </Text>
           </MenuItem>
-        )}
-      </Box>
-      <Line variant="Surface" size="300" />
-      <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
-        <UseStateProvider initial={false}>
-          {(promptLeave, setPromptLeave) => (
-            <>
-              <MenuItem
-                onClick={() => setPromptLeave(true)}
-                variant="Critical"
-                fill="None"
-                size="300"
-                after={menuIcon(SignOut)}
-                radii="300"
-                aria-pressed={promptLeave}
-              >
-                <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
-                  Leave Space
-                </Text>
-              </MenuItem>
-              {promptLeave && (
-                <LeaveSpacePrompt
-                  roomId={room.roomId}
-                  onDone={requestClose}
-                  onCancel={() => setPromptLeave(false)}
-                />
-              )}
-            </>
+          <MenuItem
+            onClick={() => {
+              void onRefresh();
+            }}
+            size="300"
+            after={menuIcon(ArrowsClockwise, {
+              style: getManualRefreshSpinStyle(isRefreshing),
+            })}
+            radii="300"
+            disabled={isRefreshing}
+          >
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              Refresh
+            </Text>
+          </MenuItem>
+        </Box>
+        <Line variant="Surface" size="300" />
+        <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
+          <MenuItem
+            onClick={handleInvite}
+            variant="Primary"
+            fill="None"
+            size="300"
+            after={menuIcon(UserPlus)}
+            radii="300"
+            aria-pressed={invitePrompt}
+            disabled={!canInvite}
+          >
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              Invite
+            </Text>
+          </MenuItem>
+          <MenuItem onClick={handleCopyLink} size="300" after={menuIcon(Link)} radii="300">
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              Copy Link
+            </Text>
+          </MenuItem>
+          <MenuItem onClick={handleRoomSettings} size="300" after={menuIcon(GearSix)} radii="300">
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              Space Settings
+            </Text>
+          </MenuItem>
+          {developerTools && (
+            <MenuItem
+              onClick={handleOpenTimeline}
+              size="300"
+              after={menuIcon(Terminal)}
+              radii="300"
+            >
+              <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+                Event Timeline
+              </Text>
+            </MenuItem>
           )}
-        </UseStateProvider>
-      </Box>
-    </Menu>
-  );
-});
+        </Box>
+        <Line variant="Surface" size="300" />
+        <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
+          <UseStateProvider initial={false}>
+            {(promptLeave, setPromptLeave) => (
+              <>
+                <MenuItem
+                  onClick={() => setPromptLeave(true)}
+                  variant="Critical"
+                  fill="None"
+                  size="300"
+                  after={menuIcon(SignOut)}
+                  radii="300"
+                  aria-pressed={promptLeave}
+                >
+                  <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+                    Leave Space
+                  </Text>
+                </MenuItem>
+                {promptLeave && (
+                  <LeaveSpacePrompt
+                    roomId={room.roomId}
+                    onDone={requestClose}
+                    onCancel={() => setPromptLeave(false)}
+                  />
+                )}
+              </>
+            )}
+          </UseStateProvider>
+        </Box>
+      </Menu>
+    );
+  }
+);
 
-function SpaceHeader({ hideText, mx }: { hideText?: boolean; mx: MatrixClient }) {
+function SpaceHeader({
+  hideText,
+  isRefreshing,
+  mx,
+  onRefresh,
+}: {
+  hideText?: boolean;
+  isRefreshing: boolean;
+  mx: MatrixClient;
+  onRefresh: () => void | Promise<void>;
+}) {
   const space = useSpace();
   const spaceName = useRoomName(space);
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
@@ -363,7 +410,12 @@ function SpaceHeader({ hideText, mx }: { hideText?: boolean; mx: MatrixClient })
                     escapeDeactivates: stopPropagation,
                   }}
                 >
-                  <SpaceMenu room={space} requestClose={() => setMenuAnchor(undefined)} />
+                  <SpaceMenu
+                    isRefreshing={isRefreshing}
+                    onRefresh={onRefresh}
+                    room={space}
+                    requestClose={() => setMenuAnchor(undefined)}
+                  />
                 </FocusTrap>
               }
             />
@@ -523,6 +575,11 @@ export function Space() {
   const allJoinedRooms = useMemo(() => new Set(allRooms), [allRooms]);
   const notificationPreferences = useRoomsNotificationPreferencesContext();
 
+  useEffect(() => {
+    const manager = getSlidingSyncManager(mx);
+    manager?.setSpaceScope(space.roomId);
+    return () => manager?.setSpaceScope(null);
+  }, [mx, space.roomId]);
   const setIsResizingSidebar = useSetAtom(isResizingSidebarAtom);
   const [roomSidebarWidth, setRoomSidebarWidth] = useSetting(settingsAtom, 'roomSidebarWidth');
   const [curWidth, setCurWidth] = useState(roomSidebarWidth);
@@ -537,6 +594,7 @@ export function Space() {
   const showIcons = () => {
     if (showRoomIcon === ShowRoomIcon.Always) return true;
     if (showRoomIcon === ShowRoomIcon.Never) return false;
+    if (showRoomIcon === ShowRoomIcon.Strict) return false;
     return curWidth < 144;
   };
   const [joinCallOnSingleClick] = useSetting(settingsAtom, 'joinCallOnSingleClick');
@@ -680,117 +738,123 @@ export function Space() {
    * Determines the depth limit for the joined space hierarchy and the SpaceNavItems to start appearing
    */
   const [subspaceHierarchyLimit] = useSetting(settingsAtom, 'subspaceHierarchyLimit');
+  const [roomTopicPreview] = useSetting(settingsAtom, 'roomTopicPreview');
+  const [roomMessagePreview] = useSetting(settingsAtom, 'roomMessagePreview');
+  const [dmMessagePreview] = useSetting(settingsAtom, 'dmMessagePreview');
   /**
    * Creates an SVG used for connecting spaces to their subrooms.
    * @param virtualizedItems - The virtualized item list that will be used to render elements in the nav
    * @returns React SVG Element that can be overlayed on top of the nav category for rooms.
    */
-  const getConnectorSVG = (
-    hierarchy: HierarchyItem[],
-    virtualizedItems: VirtualItem[]
-  ): ReactElement => {
-    const DEPTH_START = 2;
-    const PADDING_LEFT_DEPTH_OFFSET = 15.75;
-    const PADDING_LEFT_DEPTH_OFFSET_START = -15.75;
-    const RADIUS = 5;
+  const getConnectorSVG = useCallback(
+    (hierarchy: HierarchyItem[], virtualizedItems: VirtualItem[]): ReactElement => {
+      const DEPTH_START = 2;
+      const PADDING_LEFT_DEPTH_OFFSET = 15.75;
+      const PADDING_LEFT_DEPTH_OFFSET_START = -15.75;
+      const RADIUS = 5;
 
-    let connectorStack: { aX: number; aY: number }[] = [];
-    // Holder for the paths
-    const pathHolder: ReactElement[] = [];
-    virtualizedItems.forEach((vItem) => {
-      const hierarchyItem = hierarchy[vItem.index];
-      if (!hierarchyItem) return;
-      const { roomId, depth: itemDepth } = hierarchyItem;
-      const depth = itemDepth ?? 0;
-      const room = getRoom(roomId);
-      // We will render spaces at a level above their normal depth, since we want their children to be "under" them
-      const renderDepth = room?.isSpaceRoom() ? depth : depth + 1;
-      // for the root items, we are not doing anything with it.
-      if (renderDepth < DEPTH_START) {
-        return;
-      }
-      // for nearly root level text/call rooms, we will not be drawing any arcs.
-      if (renderDepth === DEPTH_START - 1 && !room?.isSpaceRoom() && connectorStack.length === 0) {
-        return;
-      }
+      let connectorStack: { aX: number; aY: number }[] = [];
+      // Holder for the paths
+      const pathHolder: ReactElement[] = [];
+      virtualizedItems.forEach((vItem) => {
+        const hierarchyItem = hierarchy[vItem.index];
+        if (!hierarchyItem) return;
+        const { roomId, depth: itemDepth } = hierarchyItem;
+        const depth = itemDepth ?? 0;
+        const room = getRoom(roomId);
+        // We will render spaces at a level above their normal depth, since we want their children to be "under" them
+        const renderDepth = room?.isSpaceRoom() ? depth : depth + 1;
+        // for the root items, we are not doing anything with it.
+        if (renderDepth < DEPTH_START) {
+          return;
+        }
+        // for nearly root level text/call rooms, we will not be drawing any arcs.
+        if (renderDepth === DEPTH_START && !room?.isSpaceRoom() && connectorStack.length === 0) {
+          return;
+        }
 
-      // for the sub-root items, we will not draw any arcs from root to it.
-      // however, we should capture the aX and aY to draw starter arcs for next depths.
-      if (renderDepth === DEPTH_START) {
-        connectorStack = [
-          {
-            aX: PADDING_LEFT_DEPTH_OFFSET * DEPTH_START + PADDING_LEFT_DEPTH_OFFSET_START,
-            aY: vItem.end,
-          },
-        ];
-        return;
-      }
-      // adjust the stack to be at the correct depth, which is the "parent" of the current item.
-      while (connectorStack.length + DEPTH_START > renderDepth && connectorStack.length !== 0) {
-        connectorStack.pop();
-      }
+        // for the sub-root items, we will not draw any arcs from root to it.
+        // however, we should capture the aX and aY to draw starter arcs for next depths.
+        if (renderDepth === DEPTH_START) {
+          connectorStack = [
+            {
+              aX: PADDING_LEFT_DEPTH_OFFSET * DEPTH_START + PADDING_LEFT_DEPTH_OFFSET_START,
+              aY: vItem.end,
+            },
+          ];
+          return;
+        }
+        // adjust the stack to be at the correct depth, which is the "parent" of the current item.
+        while (connectorStack.length + DEPTH_START > renderDepth && connectorStack.length !== 0) {
+          connectorStack.pop();
+        }
 
-      // Fixes crash in case the top level virtual item is unrendered.
-      if (connectorStack.length === 0) {
-        connectorStack = [{ aX: Math.round(renderDepth * PADDING_LEFT_DEPTH_OFFSET), aY: 0 }];
-      }
+        // Fixes crash in case the top level virtual item is unrendered.
+        if (connectorStack.length === 0) {
+          connectorStack = [{ aX: Math.round(renderDepth * PADDING_LEFT_DEPTH_OFFSET), aY: 0 }];
+        }
 
-      const lastConnector = connectorStack[connectorStack.length - 1];
-      if (!lastConnector) return;
+        const lastConnector = connectorStack[connectorStack.length - 1];
+        if (!lastConnector) return;
 
-      // aX: numeric x where the vertical connector starts
-      // aY: end of parent (already numeric)
-      const { aX, aY } = lastConnector;
+        // aX: numeric x where the vertical connector starts
+        // aY: end of parent (already numeric)
+        const { aX, aY } = lastConnector;
 
-      // bX: point where the vertical connector ends
-      const bX = Math.round(
-        (renderDepth - 0.5) * PADDING_LEFT_DEPTH_OFFSET + PADDING_LEFT_DEPTH_OFFSET_START
-      );
-      // bY: center of current item
-      const bY = vItem.end - vItem.size / 2;
+        // bX: point where the vertical connector ends
+        const bX = Math.round(
+          (renderDepth - 0.5) * PADDING_LEFT_DEPTH_OFFSET + PADDING_LEFT_DEPTH_OFFSET_START
+        );
+        // bY: center of current item
+        const bY = vItem.end - vItem.size / 2;
 
-      const pathString =
-        `M ${aX} ${aY} ` +
-        `L ${aX} ${bY - RADIUS} ` +
-        `A ${RADIUS} ${RADIUS} 0 0 0 ${aX + RADIUS} ${bY} ` +
-        `L ${bX} ${bY}`;
+        const pathString =
+          `M ${aX} ${aY} ` +
+          `L ${aX} ${bY - RADIUS} ` +
+          `A ${RADIUS} ${RADIUS} 0 0 0 ${aX + RADIUS} ${bY} ` +
+          `L ${bX} ${bY}`;
 
-      pathHolder.push(
-        <path
-          d={pathString}
-          fill="none"
-          stroke={color.Surface.ContainerLine}
-          strokeWidth="2"
-          display="block"
-        />
-      );
+        pathHolder.push(
+          <path
+            d={pathString}
+            fill="none"
+            stroke={color.Surface.ContainerLine}
+            strokeWidth="2"
+            display="block"
+          />
+        );
 
-      // add this item to the connector stack, in case the next item's depth is higher.
-      connectorStack.push({
-        aX: Math.round(renderDepth * PADDING_LEFT_DEPTH_OFFSET) + PADDING_LEFT_DEPTH_OFFSET_START,
-        aY: vItem.end,
+        // add this item to the connector stack, in case the next item's depth is higher.
+        connectorStack.push({
+          aX: Math.round(renderDepth * PADDING_LEFT_DEPTH_OFFSET) + PADDING_LEFT_DEPTH_OFFSET_START,
+          aY: vItem.end,
+        });
       });
-    });
-    return (
-      <svg
-        style={{
-          position: 'absolute',
-          inset: 0,
-          width: '100%',
-          height: '100%',
-          pointerEvents: 'none',
-        }}
-      >
-        {pathHolder}
-      </svg>
-    );
-  };
+      return (
+        <svg
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+          }}
+        >
+          {pathHolder}
+        </svg>
+      );
+    },
+    [getRoom]
+  );
 
   const hierarchy = useSpaceJoinedHierarchy(
     space.roomId,
     getRoom,
     useCallback(
       (parentId, roomId, depth) => {
+        if (mDirects.has(roomId)) {
+          return true;
+        }
         if (depth >= subspaceHierarchyLimit) {
           // we will exclude items above this depth
           return true;
@@ -810,10 +874,20 @@ export function Space() {
         getInClosedCategories,
         space.roomId,
         callEmbed,
+        mDirects,
         subspaceHierarchyLimit,
         roomToUnread,
         selectedRoomId,
       ]
+    ),
+    useCallback(
+      (_parentId, roomId, depth) => {
+        if (mDirects.has(roomId)) {
+          return true;
+        }
+        return depth >= subspaceHierarchyLimit;
+      },
+      [mDirects, subspaceHierarchyLimit]
     ),
     useCallback(
       (sId) => getInClosedCategories(space.roomId, sId),
@@ -829,6 +903,59 @@ export function Space() {
   });
 
   const virtualizedItems = virtualizer.getVirtualItems();
+  const lastVirtualIndex = virtualizedItems.at(-1)?.index ?? -1;
+  const [spaceListPagingTick, setSpaceListPagingTick] = useState(0);
+  const requestedEmptySpaceExpansionRef = useRef(false);
+
+  useEffect(() => {
+    requestedEmptySpaceExpansionRef.current = false;
+  }, [space.roomId]);
+
+  useEffect(() => {
+    const manager = getSlidingSyncManager(mx);
+    const diagnostics = manager?.getListDiagnostics(LIST_SPACE);
+    if (!manager || !diagnostics) return;
+    const allowEmptyExpansion = hierarchy.length === 0 && !requestedEmptySpaceExpansionRef.current;
+    const nextEnd = getNextSlidingSyncListWindowEnd({
+      diagnostics,
+      itemCount: hierarchy.length,
+      lastVirtualIndex,
+      allowEmptyExpansion,
+    });
+    if (nextEnd === undefined) return;
+    if (allowEmptyExpansion) requestedEmptySpaceExpansionRef.current = true;
+    manager.requestListWindow(LIST_SPACE, nextEnd);
+  }, [mx, space.roomId, hierarchy.length, allRooms.length, lastVirtualIndex, spaceListPagingTick]);
+
+  useEffect(() => {
+    const manager = getSlidingSyncManager(mx);
+    const diagnostics = manager?.getListDiagnostics(LIST_SPACE);
+    const listReady = manager?.isListReady(LIST_SPACE) ?? false;
+    const knownCount = diagnostics?.knownCount ?? 0;
+    if (listReady && hierarchy.length > 0) {
+      completeSpaceNavigation(space.roomId, 'list_ready', hierarchy.length);
+      markStartupRoomListReady('space', hierarchy.length);
+      return;
+    }
+
+    if (listReady && diagnostics && knownCount === 0) {
+      completeSpaceNavigation(space.roomId, 'empty_space', 0);
+      markStartupRoomListReady('space', 0);
+    }
+  }, [mx, space.roomId, hierarchy.length, spaceListPagingTick]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const manager = getSlidingSyncManager(mx);
+      const diagnostics = manager?.getListDiagnostics(LIST_SPACE);
+      if (!diagnostics || diagnostics.rangeEnd + 1 >= diagnostics.knownCount) return;
+      setSpaceListPagingTick((tick) => tick + 1);
+    }, SPACE_LIST_PAGING_CHECK_MS);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [mx, space.roomId]);
 
   const handleCategoryClick = useCategoryHandler(setClosedCategories, (categoryId) => {
     const collapsed = closedCategories.has(categoryId);
@@ -857,8 +984,28 @@ export function Space() {
   }, [lastRoomId, spaceIdOrAlias, mx, navigate]);
 
   const screenSize = useScreenSizeContext();
-  const isMobile = screenSize === ScreenSize.Mobile;
+  const isMobile = isPhoneLayoutDevice() || screenSize === ScreenSize.Mobile;
   const hideText = curWidth <= 80 && !isMobile;
+  const connectorSvg = useMemo(() => {
+    if (hideText || virtualizedItems.length === 0) return null;
+    return getConnectorSVG(hierarchy, virtualizedItems);
+  }, [getConnectorSVG, hideText, hierarchy, virtualizedItems]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  useEffect(() => {
+    ensureManualRefreshSpinStyle();
+  }, []);
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await triggerManualRefresh(mx);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [mx, isRefreshing]);
+
+  usePullToRefresh(scrollRef, mx);
+
   return (
     <Box
       shrink="No"
@@ -868,8 +1015,17 @@ export function Space() {
       }}
     >
       <PageNav>
-        <SwipeableOverlayWrapper direction="left" onClose={handleSwipeToRoom}>
-          <SpaceHeader hideText={hideText} mx={mx} />
+        <SwipeableOverlayWrapper
+          direction="left"
+          onClose={handleSwipeToRoom}
+          showDragPreview={false}
+        >
+          <SpaceHeader
+            hideText={hideText}
+            isRefreshing={isRefreshing}
+            mx={mx}
+            onRefresh={handleRefresh}
+          />
           <PageNavContent scrollRef={scrollRef}>
             <Box direction="Column" gap="300">
               {tombstoneEvent && (
@@ -1030,7 +1186,11 @@ export function Space() {
                         <RoomNavItem
                           room={room}
                           selected={selectedRoomId === roomId}
-                          showAvatar={mDirects.has(roomId) || showIcons()}
+                          showAvatar={
+                            showRoomIcon === ShowRoomIcon.Strict
+                              ? showIcons()
+                              : mDirects.has(roomId) || showIcons()
+                          }
                           direct={mDirects.has(roomId)}
                           linkPath={getToLink(roomId)}
                           hideText={hideText}
@@ -1039,13 +1199,16 @@ export function Space() {
                             room.roomId
                           )}
                           joinCallOnSingleClick={joinCallOnSingleClick}
+                          roomTopicPreview={roomTopicPreview}
+                          roomMessagePreview={roomMessagePreview}
+                          dmMessagePreview={dmMessagePreview}
                           isStrict={showRoomIcon === ShowRoomIcon.Strict}
                         />
                       </div>
                     </VirtualTile>
                   );
                 })}
-                {getConnectorSVG(hierarchy, virtualizedItems)}
+                {connectorSvg}
               </NavCategory>
               <div style={{ height: toRem(40) }} />
             </Box>

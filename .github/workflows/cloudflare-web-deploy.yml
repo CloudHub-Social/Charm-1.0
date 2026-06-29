@@ -40,6 +40,10 @@ jobs:
   plan:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    environment: preview
+    env:
+      CLIENT_CONFIG_OVERRIDES_JSON: ${{ vars.CLIENT_CONFIG_OVERRIDES_JSON }}
+      CLIENT_CONFIG_OVERRIDES_STRICT: ${{ vars.CLIENT_CONFIG_OVERRIDES_STRICT || 'false' }}
     permissions:
       contents: read
       pull-requests: write
@@ -48,7 +52,7 @@ jobs:
         working-directory: infra/web
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -57,7 +61,9 @@ jobs:
         with:
           is_release_tag: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.git_tag != '') }}
         env:
+          VITE_BUILD_HASH: ${{ github.sha }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_SENTRY_TOOLBAR: 'false'
           VITE_SENTRY_ENVIRONMENT: production
           VITE_APP_VERSION: ${{ github.ref_name }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -73,6 +79,10 @@ jobs:
   apply:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLIENT_CONFIG_OVERRIDES_JSON: ${{ vars.CLIENT_CONFIG_OVERRIDES_JSON }}
+      CLIENT_CONFIG_OVERRIDES_STRICT: ${{ vars.CLIENT_CONFIG_OVERRIDES_STRICT || 'false' }}
     permissions:
       contents: read
     defaults:
@@ -80,7 +90,7 @@ jobs:
         working-directory: infra/web
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.git_tag || '' }}
@@ -90,8 +100,10 @@ jobs:
         with:
           is_release_tag: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.git_tag != '') }}
         env:
+          VITE_BUILD_HASH: ${{ github.sha }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           VITE_SENTRY_ENVIRONMENT: production
+          VITE_SENTRY_TOOLBAR: 'false'
           VITE_APP_VERSION: ${{ github.ref_name }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}

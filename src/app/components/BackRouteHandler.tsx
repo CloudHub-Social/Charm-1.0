@@ -1,7 +1,13 @@
 import type { ReactNode } from 'react';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSetAtom } from 'jotai';
-import { matchPath, useLocation, useNavigate } from 'react-router-dom';
+import {
+  matchPath,
+  NavigationType,
+  useLocation,
+  useNavigate,
+  useNavigationType,
+} from 'react-router-dom';
 import {
   getDirectPath,
   getExplorePath,
@@ -20,6 +26,11 @@ import {
   SPACE_ROOM_PATH,
 } from '$pages/paths';
 import { lastVisitedRoomIdAtom } from '$state/room/lastRoom';
+import {
+  buildEventTargetCleanupTarget,
+  shouldCleanNotificationJumpOnBack,
+} from '$features/room/notificationJumpCleanup';
+import type { TimelineJumpMode } from '$hooks/timeline/useTimelineSync';
 
 type BackRouteHandlerProps = {
   children: (onBack: () => void) => ReactNode;
@@ -27,20 +38,103 @@ type BackRouteHandlerProps = {
 export function BackRouteHandler({ children }: BackRouteHandlerProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationType = useNavigationType();
   const setLastRoomId = useSetAtom(lastVisitedRoomIdAtom);
+  const [pendingCleanupBackTarget, setPendingCleanupBackTarget] = useState<string>();
+  const hasMountedRef = useRef(false);
 
-  const goBack = useCallback(() => {
-    const roomPaths = [HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH];
+  const roomPaths = [HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH];
+  const roomMatch = roomPaths
+    .map((path) => matchPath({ path, end: false }, location.pathname))
+    .find((match) => match !== null);
+  const roomIdOrAliasParam = roomMatch?.params.roomIdOrAlias;
+  const eventIdParam = roomMatch?.params.eventId;
+  const searchJumpMode = new URLSearchParams(location.search).get('jumpMode');
+  const jumpMode: TimelineJumpMode | undefined =
+    searchJumpMode === 'notification_live' || searchJumpMode === 'history_context'
+      ? searchJumpMode
+      : undefined;
 
-    const roomMatch = roomPaths
-      .map((path) => matchPath({ path, end: false }, location.pathname))
-      .find((match) => match !== null);
+  useEffect(() => {
+    if (!pendingCleanupBackTarget) return;
 
-    const currentRoomIdOrAlias = roomMatch?.params.roomIdOrAlias;
-    if (currentRoomIdOrAlias) {
-      setLastRoomId(decodeURIComponent(currentRoomIdOrAlias));
+    const currentTarget = `${location.pathname}${location.search}`;
+    if (currentTarget !== pendingCleanupBackTarget) return;
+
+    setPendingCleanupBackTarget(undefined);
+    navigate(-1);
+  }, [location.pathname, location.search, navigate, pendingCleanupBackTarget]);
+
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+    if (navigationType !== NavigationType.Pop || pendingCleanupBackTarget) return;
+
+    const eventId = eventIdParam ? decodeURIComponent(eventIdParam) : undefined;
+
+    if (
+      !shouldCleanNotificationJumpOnBack({
+        eventId,
+        jumpMode,
+        pathname: location.pathname,
+      })
+    ) {
+      return;
     }
 
+    navigate(buildEventTargetCleanupTarget(location.pathname, location.search, eventId!), {
+      replace: true,
+    });
+  }, [
+    location.pathname,
+    location.search,
+    navigate,
+    navigationType,
+    pendingCleanupBackTarget,
+    eventIdParam,
+    jumpMode,
+  ]);
+
+  const goBack = useCallback(() => {
+    if (roomIdOrAliasParam) {
+      setLastRoomId(decodeURIComponent(roomIdOrAliasParam));
+    }
+
+    // Use a native history pop when there is prior history. This keeps the
+    // in-app back button and the native iOS swipe-back gesture in sync: both
+    // traverse the same stack, so the room entry is never left "behind" the
+    // section and there are no phantom pushes for swipe-back to stumble into.
+    const historyIdx = (window.history.state as { idx?: number } | null)?.idx;
+    if (historyIdx !== undefined && historyIdx > 0) {
+      const eventId = eventIdParam ? decodeURIComponent(eventIdParam) : undefined;
+
+      if (
+        shouldCleanNotificationJumpOnBack({
+          eventId,
+          jumpMode,
+          pathname: location.pathname,
+        })
+      ) {
+        const cleanupTarget = buildEventTargetCleanupTarget(
+          location.pathname,
+          location.search,
+          eventId!
+        );
+        setPendingCleanupBackTarget(cleanupTarget);
+        navigate(cleanupTarget, {
+          replace: true,
+        });
+        return;
+      }
+
+      navigate(-1);
+      return;
+    }
+
+    // No back history — navigate to the section root and replace the current
+    // entry so the room doesn't linger as a forward entry.
     if (
       matchPath(
         {
@@ -51,7 +145,7 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
         location.pathname
       )
     ) {
-      navigate(getHomePath());
+      navigate(getHomePath(), { replace: true });
       return;
     }
     if (
@@ -64,7 +158,7 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
         location.pathname
       )
     ) {
-      navigate(getDirectPath());
+      navigate(getDirectPath(), { replace: true });
       return;
     }
     const spaceMatch = matchPath(
@@ -80,7 +174,7 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
       encodedSpaceIdOrAlias && decodeURIComponent(encodedSpaceIdOrAlias);
 
     if (decodedSpaceIdOrAlias) {
-      navigate(getSpacePath(decodedSpaceIdOrAlias));
+      navigate(getSpacePath(decodedSpaceIdOrAlias), { replace: true });
       return;
     }
     if (
@@ -93,7 +187,7 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
         location.pathname
       )
     ) {
-      navigate(getExplorePath());
+      navigate(getExplorePath(), { replace: true });
       return;
     }
     if (
@@ -106,9 +200,9 @@ export function BackRouteHandler({ children }: BackRouteHandlerProps) {
         location.pathname
       )
     ) {
-      navigate(getInboxPath());
+      navigate(getInboxPath(), { replace: true });
     }
-  }, [navigate, location, setLastRoomId]);
+  }, [eventIdParam, jumpMode, location, navigate, roomIdOrAliasParam, setLastRoomId]);
 
   return children(goBack);
 }

@@ -24,6 +24,7 @@ import {
   KnownMembership,
   RoomType,
 } from '$types/matrix-sdk';
+import { CustomAccountDataEvent } from '$types/matrix/accountData';
 
 import type { IRoomCreateContent, RoomToParents, UnreadInfo } from '$types/matrix/room';
 import { NotificationType } from '$types/matrix/room';
@@ -93,25 +94,16 @@ export const isUnsupportedRoom = (room: Room | null): boolean => {
 };
 
 /**
- * Detects if a room is a direct message room using multiple signals for robustness:
- * 1. Primary: checks if room is in mDirects set (from m.direct account data)
- * 2. Fallback: checks if room has exactly 2 joined members (classic DM heuristic)
+ * Check if a room is a Direct Message based on m.direct account data.
  *
- * The fallback handles cases where m.direct account data is incomplete or outdated.
+ * NOTE: We do NOT use a member count heuristic here because it creates false
+ * positives — any regular room with 2 members would be incorrectly treated as a DM,
+ * triggering force-highlight behavior and showing green badges for all unreads.
+ * Only m.direct account data is reliable.
  */
 export const isDMRoom = (room: Room, mDirects?: Set<string>): boolean => {
-  // Primary signal: check m.direct account data
-  if (mDirects?.has(room.roomId)) {
-    return true;
-  }
-
-  // Fallback: use member count heuristic for untagged DMs
-  // Only applies to non-space rooms with exactly 2 members (you + them)
-  if (!room.isSpaceRoom() && room.getJoinedMemberCount() === 2) {
-    return true;
-  }
-
-  return false;
+  // Only trust m.direct account data
+  return mDirects?.has(room.roomId) ?? false;
 };
 
 export function isValidChild(mEvent: MatrixEvent): boolean {
@@ -120,6 +112,11 @@ export function isValidChild(mEvent: MatrixEvent): boolean {
     Array.isArray(mEvent.getContent<{ via: string[] }>().via)
   );
 }
+
+export const getShallowParents = (roomToParents: RoomToParents, roomId: string): string[] => {
+  const parents = roomToParents.get(roomId);
+  return parents ? Array.from(parents) : [];
+};
 
 export const getAllParents = (roomToParents: RoomToParents, roomId: string): Set<string> => {
   const allParents = new Set<string>();
@@ -280,7 +277,8 @@ export const getNotificationType = (mx: MatrixClient, roomId: string): Notificat
     return NotificationType.Default;
   }
 
-  if ((roomPushRule.actions[0] as string) === 'notify') return NotificationType.AllMessages;
+  if ((roomPushRule.actions as string[]).some((a) => a === 'notify'))
+    return NotificationType.AllMessages;
   return NotificationType.MentionsAndKeywords;
 };
 
@@ -331,11 +329,55 @@ export const roomHaveNotification = (room: Room): boolean => {
   return total > 0 || highlight > 0;
 };
 
+const findLiveTimelineEventIndex = (room: Room, eventId: string | undefined): number => {
+  if (!eventId) return -1;
+  return room
+    .getLiveTimeline()
+    .getEvents()
+    .findIndex((event) => event.getId() === eventId);
+};
+
+export const getRoomReadMarkerId = (room: Room, userId: string): string | undefined => {
+  const receiptEventId = room.getEventReadUpTo(userId);
+  const fullyReadEventId = room
+    .getAccountData(EventType.FullyRead)
+    ?.getContent<{ event_id?: string }>()?.event_id;
+
+  if (receiptEventId && fullyReadEventId && receiptEventId !== fullyReadEventId) {
+    const receiptIndex = findLiveTimelineEventIndex(room, receiptEventId);
+    const fullyReadIndex = findLiveTimelineEventIndex(room, fullyReadEventId);
+    if (receiptIndex >= 0 && fullyReadIndex >= 0) {
+      return fullyReadIndex > receiptIndex ? fullyReadEventId : receiptEventId;
+    }
+    if (fullyReadIndex >= 0) return fullyReadEventId;
+    if (receiptIndex >= 0) return receiptEventId;
+  }
+
+  return receiptEventId ?? fullyReadEventId;
+};
+
+const isEventAtOrBeforeReadMarker = (
+  events: MatrixEvent[],
+  eventId: string,
+  readMarkerId: string
+): boolean => {
+  let eventIndex = -1;
+  let readMarkerIndex = -1;
+
+  events.forEach((event, index) => {
+    const id = event.getId();
+    if (id === eventId) eventIndex = index;
+    if (id === readMarkerId) readMarkerIndex = index;
+  });
+
+  return eventIndex >= 0 && readMarkerIndex >= 0 && eventIndex <= readMarkerIndex;
+};
+
 export const roomHaveUnread = (mx: MatrixClient, room: Room) => {
   if (getNotificationType(mx, room.roomId) === NotificationType.Mute) return false;
   const userId = mx.getUserId();
   if (!userId) return false;
-  const readUpToId = room.getEventReadUpTo(userId);
+  const readUpToId = getRoomReadMarkerId(room, userId);
   const liveEvents = room.getLiveTimeline().getEvents();
 
   if (!readUpToId) {
@@ -354,6 +396,18 @@ export const roomHaveUnread = (mx: MatrixClient, room: Room) => {
     if (event.getId() === readUpToId) {
       return false;
     }
+    if (!isNotificationEvent(event, room, userId)) {
+      continue;
+    }
+
+    if (event.getRelation()?.rel_type === RelationType.Annotation) {
+      const pushActions = new PushProcessor(mx).actionsForEvent(event);
+      if (pushActions?.notify) {
+        return true;
+      }
+      continue;
+    }
+
     if (isNotificationEvent(event, room, userId)) {
       return true;
     }
@@ -366,7 +420,38 @@ type UnreadInfoOptions = {
   mDirects?: Set<string>;
 };
 
+type TimelineUnreadCounts = {
+  total: number;
+  highlight: number;
+};
+
 const unreadInfoFixupInProgress = new WeakSet<Room>();
+
+const getTimelineUnreadCounts = (
+  room: Room,
+  userId: string,
+  readUpToId: string
+): TimelineUnreadCounts | undefined => {
+  const liveEvents = room.getLiveTimeline().getEvents();
+  const readMarkerIndex = liveEvents.findIndex((event) => event.getId() === readUpToId);
+  if (readMarkerIndex < 0) return undefined;
+
+  let total = 0;
+  let highlight = 0;
+  const pushProcessor = new PushProcessor(room.client);
+
+  for (let i = readMarkerIndex + 1; i < liveEvents.length; i += 1) {
+    const event = liveEvents[i];
+    if (!event || event.getSender() === userId) continue;
+    if (!isNotificationEvent(event, room, userId)) continue;
+
+    total += 1;
+    const pushActions = pushProcessor.actionsForEvent(event);
+    if (pushActions?.tweaks?.highlight) highlight += 1;
+  }
+
+  return { total, highlight };
+};
 
 export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadInfo => {
   if (getNotificationType(room.client, room.roomId) === NotificationType.Mute) {
@@ -383,8 +468,37 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
     }
   }
 
+  // If the user's own message is the most recent event in the live timeline they
+  // implicitly read everything before it when they composed that reply. Return zero
+  // to suppress phantom unread badges that arise from stale SDK counters in sliding
+  // sync when no explicit read receipt is present.
+  if (userId) {
+    const liveEvents = room.getLiveTimeline().getEvents();
+    const latestEvent = liveEvents[liveEvents.length - 1];
+    if (
+      latestEvent &&
+      !latestEvent.isSending() &&
+      latestEvent.getSender() === userId &&
+      isNotificationEvent(latestEvent) &&
+      !roomHaveUnread(room.client, room)
+    ) {
+      return { roomId: room.roomId, highlight: 0, total: 0 };
+    }
+  }
+
   let total = room.getUnreadNotificationCount(NotificationCountType.Total);
-  const highlight = room.getUnreadNotificationCount(NotificationCountType.Highlight);
+  let highlight = room.getUnreadNotificationCount(NotificationCountType.Highlight);
+
+  if (userId && options?.applyFixup && total > 0) {
+    const readMarkerId = getRoomReadMarkerId(room, userId);
+    const timelineUnread = readMarkerId
+      ? getTimelineUnreadCounts(room, userId, readMarkerId)
+      : undefined;
+    if (timelineUnread && timelineUnread.total < total) {
+      total = timelineUnread.total;
+      highlight = Math.min(highlight, timelineUnread.highlight);
+    }
+  }
 
   // Check if this is a DM and what notification type it has (using multiple signals for robustness)
   const isDM = isDMRoom(room, options?.mDirects);
@@ -413,7 +527,16 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
             isNotificationEvent(event, room, userId)
         );
       const latestNotificationId = latestNotification?.getId();
-      if (latestNotificationId && room.hasUserReadEvent(userId, latestNotificationId)) {
+      // Trust roomHaveUnread: if it confirms nothing is unread and either there are
+      // no notification events from others in the live timeline, or the user has
+      // already read the latest one, the SDK counter is stale — zero it out.
+      const readMarkerId = getRoomReadMarkerId(room, userId);
+      if (
+        !latestNotificationId ||
+        room.hasUserReadEvent(userId, latestNotificationId) ||
+        (readMarkerId &&
+          isEventAtOrBeforeReadMarker(liveEvents, latestNotificationId, readMarkerId))
+      ) {
         // Subtract only the stale main-timeline count; thread totals remain intact.
         total -= roomTotal;
       }
@@ -424,7 +547,7 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
   // messages. Walk the live timeline to compute real counts so the badge number
   // and highlight colour reflect actual state rather than a hard-coded stub.
   if (total === 0 && highlight === 0 && userId && roomHaveUnread(room.client, room)) {
-    const readUpToId = room.getEventReadUpTo(userId);
+    const readUpToId = getRoomReadMarkerId(room, userId);
     const liveEvents = room.getLiveTimeline().getEvents();
     let fallbackTotal = 0;
     let fallbackHighlight = 0;
@@ -434,9 +557,15 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
       if (!event) break;
       if (event.getId() === readUpToId) break;
       if (isNotificationEvent(event, room, userId) && event.getSender() !== userId) {
-        fallbackTotal += 1;
         const pushActions = pushProcessor.actionsForEvent(event);
-        if (pushActions?.tweaks?.highlight) fallbackHighlight += 1;
+        const relationType = event.getRelation()?.rel_type;
+        // Reactions are the main phantom-badge source here, so keep requiring an
+        // explicit notify signal for them. For ordinary visible events, count the
+        // event even when push rule evaluation is unavailable or inconclusive.
+        if (relationType !== RelationType.Annotation || pushActions?.notify) {
+          fallbackTotal += 1;
+          if (pushActions?.tweaks?.highlight) fallbackHighlight += 1;
+        }
       }
     }
     if (fallbackTotal > 0) {
@@ -446,38 +575,17 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
         total: fallbackTotal,
       };
     }
-  }
-
-  // Sliding sync limitation: unvisited rooms don't have read receipt data, but may have
-  // timeline activity. Check for notification events from others in the timeline to show a
-  // badge even when SDK counts are 0 (or unreliable without receipts).
-  if (userId) {
-    const readUpToId = room.getEventReadUpTo(userId);
-
-    // If we have no read receipt, SDK counts may be unreliable. Always check timeline.
-    if (!readUpToId) {
-      const liveEvents = room.getLiveTimeline().getEvents();
-
-      const hasActivity = liveEvents.some(
-        (event) => event.getSender() !== userId && isNotificationEvent(event, room, userId)
-      );
-
-      if (hasActivity) {
-        // If SDK already has counts, use those. Otherwise show dot badge (count=1).
-        if (total === 0 && highlight === 0) {
-          return { roomId: room.roomId, highlight: 0, total: 1 };
-        }
-        // SDK has counts but no receipt - trust the counts and show them
-        return { roomId: room.roomId, highlight, total };
-      }
-    }
+    return { roomId: room.roomId, highlight: 0, total: 0 };
   }
 
   // For DMs with Default or AllMessages notification type: if there are unread messages,
   // ensure we show a notification badge (treat as highlight for badge color purposes).
   // This handles cases where push rules don't properly match (e.g., classic sync with
   // member_count condition failures, or sliding sync with limited required_state).
-  if (shouldForceDMHighlight && total > 0 && highlight === 0) {
+  // Guard on room-level (non-thread) total: thread-only unreads in DMs should not
+  // be force-highlighted — the thread's own push rules handle highlight there.
+  const roomLevelTotal = room.getRoomUnreadNotificationCount(NotificationCountType.Total);
+  if (shouldForceDMHighlight && roomLevelTotal > 0 && highlight === 0) {
     return {
       roomId: room.roomId,
       highlight: total, // Treat all unread messages as highlights for DMs
@@ -493,13 +601,17 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
 };
 
 export const getUnreadInfos = (mx: MatrixClient, options?: UnreadInfoOptions): UnreadInfo[] => {
-  const unreadInfos = mx.getRooms().reduce<UnreadInfo[]>((unread, room) => {
+  const allRooms = mx.getRooms();
+
+  const unreadInfos = allRooms.reduce<UnreadInfo[]>((unread, room) => {
     if (room.isSpaceRoom()) return unread;
     if (room.getMyMembership() !== 'join') return unread;
-    if (getNotificationType(mx, room.roomId) === NotificationType.Mute) return unread;
 
-    // Always call getUnreadInfo - it has fallback logic for sliding sync rooms without receipts
+    const notifType = getNotificationType(mx, room.roomId);
+    if (notifType === NotificationType.Mute) return unread;
+
     const unreadInfo = getUnreadInfo(room, options);
+
     if (unreadInfo.total > 0 || unreadInfo.highlight > 0) {
       unread.push(unreadInfo);
     }
@@ -510,29 +622,49 @@ export const getUnreadInfos = (mx: MatrixClient, options?: UnreadInfoOptions): U
   return unreadInfos;
 };
 
+export type MxcConverter = (
+  mx: MatrixClient,
+  mxcUrl: string,
+  useAuthentication: boolean,
+  width?: number,
+  height?: number,
+  resizeMethod?: string,
+  allowDirectLinks?: boolean
+) => string | null;
 export const getRoomAvatarUrl = (
   mx: MatrixClient,
   room: Room,
   size: 32 | 96 = 32,
-  useAuthentication = false
+  useAuthentication = false,
+  converter?: MxcConverter
 ): string | undefined => {
   const mxcUrl = room.getMxcAvatarUrl();
-  return mxcUrl
-    ? (mx.mxcUrlToHttp(mxcUrl, size, size, 'crop', undefined, false, useAuthentication) ??
-        undefined)
-    : undefined;
+  if (!mxcUrl) return undefined;
+
+  if (converter) {
+    return converter(mx, mxcUrl, useAuthentication, size, size, 'crop') ?? undefined;
+  }
+
+  return (
+    mx.mxcUrlToHttp(mxcUrl, size, size, 'crop', undefined, false, useAuthentication) ?? undefined
+  );
 };
 
 export const getDirectRoomAvatarUrl = (
   mx: MatrixClient,
   room: Room,
   size: 32 | 96 = 32,
-  useAuthentication = false
+  useAuthentication = false,
+  converter?: MxcConverter
 ): string | undefined => {
   const mxcUrl = room.getAvatarFallbackMember()?.getMxcAvatarUrl();
 
   if (!mxcUrl) {
-    return getRoomAvatarUrl(mx, room, size, useAuthentication);
+    return getRoomAvatarUrl(mx, room, size, useAuthentication, converter);
+  }
+
+  if (converter) {
+    return converter(mx, mxcUrl, useAuthentication, size, size, 'crop') ?? undefined;
   }
 
   return (
@@ -820,6 +952,7 @@ export const collectRelationEditEvents = (
 
         const sender = editEvent.getSender();
         if (sender && ignoredUsersSet.has(sender)) continue;
+        if (sender !== parent.getSender()) continue;
 
         extras.push({ mEvent: editEvent, timelineSet, parentId });
       }
@@ -1305,4 +1438,183 @@ export const guessPerfectParent = (
   });
 
   return perfectParent;
+};
+
+export const getPreferredSpaceNavigationRoot = (
+  mx: MatrixClient,
+  roomToParents: RoomToParents,
+  roomId: string
+): string | undefined => {
+  const visited = new Set<string>();
+
+  const walkPreferredParentChain = (childRoomId: string): string | undefined => {
+    if (visited.has(childRoomId)) return undefined;
+    visited.add(childRoomId);
+
+    const parents = getShallowParents(roomToParents, childRoomId);
+    if (parents.length === 0) return undefined;
+
+    const preferredParent = guessPerfectParent(mx, childRoomId, parents) ?? parents[0];
+    if (!preferredParent) return undefined;
+
+    const ancestorRoot = walkPreferredParentChain(preferredParent);
+    return ancestorRoot ?? preferredParent;
+  };
+
+  return walkPreferredParentChain(roomId);
+};
+
+type CinnySidebarItem = string | { id: string; content: string[] };
+
+type CinnySpacesContent = {
+  shortcut?: CinnySidebarItem[];
+  sidebar?: CinnySidebarItem[];
+};
+
+const getSidebarRootSpaces = (mx: MatrixClient): string[] => {
+  if (typeof mx.getAccountData !== 'function') return [];
+
+  const content = getAccountData(
+    mx,
+    CustomAccountDataEvent.CinnySpaces
+  )?.getContent<CinnySpacesContent>();
+  const rawItems = content?.sidebar ?? content?.shortcut ?? [];
+  const roomIds: string[] = [];
+  const seen = new Set<string>();
+
+  rawItems.forEach((item) => {
+    if (typeof item === 'string') {
+      if (!seen.has(item)) {
+        seen.add(item);
+        roomIds.push(item);
+      }
+      return;
+    }
+
+    if (typeof item !== 'object' || !Array.isArray(item.content)) return;
+    item.content.forEach((roomId) => {
+      if (!seen.has(roomId)) {
+        seen.add(roomId);
+        roomIds.push(roomId);
+      }
+    });
+  });
+
+  return roomIds;
+};
+
+const getOrderedParentCandidates = (
+  mx: MatrixClient,
+  roomToParents: RoomToParents,
+  childRoomId: string
+): string[] => {
+  const parents = getShallowParents(roomToParents, childRoomId);
+  const preferredParent = guessPerfectParent(mx, childRoomId, parents);
+  if (!preferredParent) return parents;
+  return [preferredParent, ...parents.filter((parentId) => parentId !== preferredParent)];
+};
+
+export const getSidebarSpaceNavigationRoot = (
+  mx: MatrixClient,
+  roomToParents: RoomToParents,
+  roomId: string
+): string | undefined => {
+  const sidebarRoots = new Set(getSidebarRootSpaces(mx));
+  if (sidebarRoots.size === 0) return undefined;
+
+  const queue = getOrderedParentCandidates(mx, roomToParents, roomId);
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const candidateId = queue.shift();
+    if (!candidateId || visited.has(candidateId)) continue;
+    visited.add(candidateId);
+
+    if (sidebarRoots.has(candidateId) && isJoinedSpaceNavigationCandidate(mx, candidateId)) {
+      return candidateId;
+    }
+
+    getOrderedParentCandidates(mx, roomToParents, candidateId).forEach((parentId) => {
+      if (!visited.has(parentId)) {
+        queue.push(parentId);
+      }
+    });
+  }
+
+  return undefined;
+};
+
+export const isSpaceAncestorOfRoom = (
+  roomToParents: RoomToParents,
+  roomId: string,
+  spaceId: string
+): boolean => roomId === spaceId || getAllParents(roomToParents, roomId).has(spaceId);
+
+export type SpaceNavigationRootResolution = {
+  rootSpaceId?: string;
+  source: 'selected_space' | 'stored_preference' | 'sidebar_shortcut' | 'preferred_chain' | 'none';
+};
+
+const isJoinedSpaceNavigationCandidate = (mx: MatrixClient, roomId: string): boolean => {
+  const room = mx.getRoom(roomId);
+  return (
+    room !== null &&
+    room !== undefined &&
+    room.isSpaceRoom() &&
+    room.getMyMembership() === (KnownMembership.Join as string)
+  );
+};
+
+export const resolveSpaceNavigationRoot = (
+  mx: MatrixClient,
+  roomToParents: RoomToParents,
+  roomId: string,
+  options?: {
+    selectedSpaceId?: string;
+    storedRootSpaceId?: string;
+  }
+): SpaceNavigationRootResolution => {
+  const liveRoomToParents =
+    typeof mx.getRooms === 'function' ? getRoomToParents(mx) : new Map<string, Set<string>>();
+  const effectiveRoomToParents = liveRoomToParents.size > 0 ? liveRoomToParents : roomToParents;
+
+  if (
+    options?.selectedSpaceId &&
+    isJoinedSpaceNavigationCandidate(mx, options.selectedSpaceId) &&
+    isSpaceAncestorOfRoom(effectiveRoomToParents, roomId, options.selectedSpaceId)
+  ) {
+    return {
+      rootSpaceId: options.selectedSpaceId,
+      source: 'selected_space',
+    };
+  }
+
+  if (
+    options?.storedRootSpaceId &&
+    isJoinedSpaceNavigationCandidate(mx, options.storedRootSpaceId) &&
+    isSpaceAncestorOfRoom(effectiveRoomToParents, roomId, options.storedRootSpaceId)
+  ) {
+    return {
+      rootSpaceId: options.storedRootSpaceId,
+      source: 'stored_preference',
+    };
+  }
+
+  const sidebarRoot = getSidebarSpaceNavigationRoot(mx, effectiveRoomToParents, roomId);
+  if (sidebarRoot && isJoinedSpaceNavigationCandidate(mx, sidebarRoot)) {
+    return {
+      rootSpaceId: sidebarRoot,
+      source: 'sidebar_shortcut',
+    };
+  }
+
+  const preferredRoot = getPreferredSpaceNavigationRoot(mx, effectiveRoomToParents, roomId);
+  if (preferredRoot && isJoinedSpaceNavigationCandidate(mx, preferredRoot)) {
+    return {
+      rootSpaceId: preferredRoot,
+      source: 'preferred_chain',
+    };
+  }
+
+  return { source: 'none' };
 };

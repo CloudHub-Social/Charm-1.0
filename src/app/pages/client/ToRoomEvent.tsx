@@ -1,7 +1,16 @@
 import { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useSetAtom } from 'jotai';
-import { activeSessionIdAtom, pendingNotificationAtom } from '$state/sessions';
+import * as Sentry from '@sentry/react';
+import {
+  activeSessionIdAtom,
+  createPendingNotification,
+  pendingNotificationAtom,
+} from '$state/sessions';
+import {
+  buildNotificationBreadcrumb,
+  buildNotificationMetricAttributes,
+} from '$utils/notificationTelemetry';
 
 // ToRoomEvent handles /to/:user_id/:room_id/:event_id? — the canonical deep-link
 // URL used by the service worker's notificationclick handler.
@@ -17,18 +26,51 @@ import { activeSessionIdAtom, pendingNotificationAtom } from '$state/sessions';
 // setActiveSessionId() triggers an account switch.
 export function ToRoomEvent() {
   const { user_id: userId, room_id: roomId, event_id: eventId } = useParams();
+  const [searchParams] = useSearchParams();
   const setActiveSessionId = useSetAtom(activeSessionIdAtom);
   const setPending = useSetAtom(pendingNotificationAtom);
+  const joinCall = searchParams.get('joinCall') === 'true';
+  const swClickId = searchParams.get('swClickId') ?? undefined;
+  const jumpMode =
+    searchParams.get('jumpMode') === 'notification_live' ? 'notification_live' : 'history_context';
 
   useEffect(() => {
     if (!roomId) return;
+    Sentry.addBreadcrumb(
+      buildNotificationBreadcrumb('restore', 'restore_route_entered', {
+        click_id: swClickId,
+        source: 'to_room_event',
+        has_user_id: !!userId,
+        has_room_id: !!roomId,
+        has_event_id: !!eventId,
+        jump_mode: jumpMode,
+      })
+    );
+    Sentry.metrics.count('sable.notification.to_route', 1, {
+      attributes: buildNotificationMetricAttributes({
+        click_id: swClickId,
+        source: 'to_room_event',
+        has_user_id: !!userId,
+        has_room_id: !!roomId,
+        has_event_id: !!eventId,
+        jump_mode: jumpMode,
+      }),
+    });
     // Switch to the target account first so the notification jumper navigates
     // under the correct session.
     if (userId) setActiveSessionId(userId);
-    setPending({ roomId, eventId, targetSessionId: userId });
-    // Replace /to/… in history so the back button doesn't return to this route.
-    window.history.replaceState({}, '', '/');
-  }, [userId, roomId, eventId, setActiveSessionId, setPending]);
+    setPending(
+      createPendingNotification({
+        roomId,
+        eventId,
+        jumpMode,
+        joinCall,
+        targetSessionId: userId,
+        swClickId,
+        source: 'to_room_event',
+      })
+    );
+  }, [userId, roomId, eventId, jumpMode, joinCall, swClickId, setActiveSessionId, setPending]);
 
   return null;
 }

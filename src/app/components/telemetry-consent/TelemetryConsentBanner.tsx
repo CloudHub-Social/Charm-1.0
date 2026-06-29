@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Text } from 'folds';
 import { Shield, sizedIcon } from '$components/icons/phosphor';
+import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 import * as css from './TelemetryConsentBanner.css';
 
 const SENTRY_KEY = 'sable_sentry_enabled';
@@ -24,7 +25,7 @@ export function TelemetryConsentBanner() {
 
   const handleEnable = () => {
     localStorage.setItem(SENTRY_KEY, 'true');
-    window.location.reload();
+    reloadWithTelemetry('telemetry_consent_enabled');
   };
 
   const handleDecline = () => {
@@ -44,12 +45,12 @@ export function TelemetryConsentBanner() {
         <div className={css.Header}>
           {sizedIcon(Shield, '400')}
           <div className={css.HeaderText}>
-            <Text size="H4">Help improve Sable</Text>
+            <Text size="H4">Help improve Charm</Text>
             <Text size="T300" priority="300">
               Optionally send anonymous crash reports to help us fix bugs faster. No messages, room
               names, or personal data are included.{' '}
               <a
-                href="https://github.com/SableClient/Sable/blob/dev/docs/PRIVACY.md"
+                href="https://github.com/CloudHub-Social/Charm/blob/integration/docs/PRIVACY.md"
                 target="_blank"
                 rel="noreferrer noopener"
               >

@@ -31,22 +31,22 @@ import { SettingTile } from '$components/setting-tile';
 import { ThemePreviewCard } from '$components/theme/ThemePreviewCard';
 import { usePatchSettings } from './themeSettingsPatch';
 import { ThemeImportModal } from './ThemeImportModal';
-import { getCachedThemeCss, putCachedThemeCss } from '../../../theme/cache';
+import { getCachedThemeCss, putCachedThemeCss } from '$app/theme/cache';
 import {
   fetchThemeCatalogBundle,
   type ThemePair,
   type TweakCatalogEntry,
-} from '../../../theme/catalog';
-import { isLocalImportBundledUrl, isLocalImportThemeUrl } from '../../../theme/localImportUrls';
-import { isThirdPartyThemeUrl } from '../../../theme/themeApproval';
-import { themeCatalogListingBaseUrl } from '../../../theme/catalogDefaults';
+} from '$app/theme/catalog';
+import { isLocalImportBundledUrl, isLocalImportThemeUrl } from '$app/theme/localImportUrls';
+import { isThirdPartyThemeUrl } from '$app/theme/themeApproval';
+import { themeCatalogListingBaseUrl } from '$app/theme/catalogDefaults';
 import {
   extractFullThemeUrlFromPreview,
   parseSableThemeMetadata,
   parseSableTweakMetadata,
   type SableThemeContrast,
-} from '../../../theme/metadata';
-import { previewUrlFromFullThemeUrl } from '../../../theme/previewUrls';
+} from '$app/theme/metadata';
+import { previewUrlFromFullThemeUrl } from '$app/theme/previewUrls';
 
 export type CatalogPreviewRow = ThemePair & {
   previewText: string;
@@ -1535,7 +1535,7 @@ export function ThemeCatalogSettings({
             <SettingTile
               title="Theme & tweak links in chat"
               focusId="theme-chat-sable-widgets"
-              description="When disabled, messages do not show theme or tweak cards (or placeholders) for Sable CSS links, only a plain link."
+              description="When disabled, messages do not show theme or tweak cards (or placeholders) for Sable-compatible CSS links, only a plain link."
               after={
                 <Switch variant="Primary" value={sableChatWidgets} onChange={setSableChatWidgets} />
               }
@@ -1565,7 +1565,7 @@ export function ThemeCatalogSettings({
             <SettingTile
               title="Theme & tweak previews from any URL"
               focusId="theme-chat-auto-any"
-              description="Strongy discouraged. When enabled, potentially dangerous third-party Sable CSS links also fetch automatically. When disabled, those links never load until you use Load preview on the card."
+              description="Strongy discouraged. When enabled, potentially dangerous third-party Sable-compatible CSS links also fetch automatically. When disabled, those links never load until you use Load preview on the card."
               after={
                 <Switch
                   variant="Primary"

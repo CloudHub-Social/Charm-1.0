@@ -19,14 +19,15 @@ import type { CallMembership } from '$types/matrix-sdk';
 import FocusTrap from 'focus-trap-react';
 import type { Room } from '$types/matrix-sdk';
 import * as css from './styles.css';
-import { stopPropagation } from '../../utils/keyboard';
-import { getMemberAvatarMxc, getMemberDisplayName } from '../../utils/room';
-import { getMxIdLocalPart, mxcUrlToHttp } from '../../utils/matrix';
-import { useMatrixClient } from '../../hooks/useMatrixClient';
-import { useMediaAuthentication } from '../../hooks/useMediaAuthentication';
-import { UserAvatar } from '../../components/user-avatar';
-import { useOpenUserRoomProfile } from '../../state/hooks/userRoomProfile';
-import { getMouseEventCords } from '../../utils/dom';
+import { stopPropagation } from '$utils/keyboard';
+import { getMemberAvatarMxc, getMemberDisplayName } from '$utils/room';
+import { getMxIdLocalPart } from '$utils/matrix';
+import { useMatrixClient } from '$hooks/useMatrixClient';
+import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { useCachedMxcConverter } from '$hooks/useCachedMxcConverter';
+import { UserAvatar } from '$components/user-avatar';
+import { useOpenUserRoomProfile } from '$state/hooks/userRoomProfile';
+import { getMouseEventCords } from '$utils/dom';
 
 type LiveChipProps = {
   room: Room;
@@ -36,6 +37,7 @@ type LiveChipProps = {
 export function LiveChip({ count, room, members }: LiveChipProps) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
+  const convertMxc = useCachedMxcConverter();
   const openUserProfile = useOpenUserRoomProfile();
 
   const [cords, setCords] = useState<RectCords>();
@@ -77,7 +79,7 @@ export function LiveChip({ count, room, members }: LiveChipProps) {
                       getMemberDisplayName(room, userId) ?? getMxIdLocalPart(userId) ?? userId;
                     const avatarMxc = getMemberAvatarMxc(room, userId);
                     const avatarUrl = avatarMxc
-                      ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96) ?? undefined)
+                      ? (convertMxc(mx, avatarMxc, useAuthentication, 96, 96) ?? undefined)
                       : undefined;
 
                     return (

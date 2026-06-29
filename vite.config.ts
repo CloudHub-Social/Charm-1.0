@@ -49,6 +49,20 @@ const resolveBuildHash = (): string | undefined => {
 
 const appVersion = packageJson.version;
 const buildHash = resolveBuildHash();
+const tauriDevHost = process.env.TAURI_DEV_HOST;
+const isTauriBuild = Boolean(process.env.TAURI_ENV_PLATFORM);
+const isTauriDebug = process.env.TAURI_ENV_DEBUG === 'true';
+const tauriBuildTarget = process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13';
+const tauriBuildMinify = !isTauriDebug ? 'esbuild' : false;
+
+const injectedExperimentFlags: Record<string, boolean> = Object.fromEntries(
+  Object.entries(process.env)
+    .filter(([k]) => k.startsWith('VITE_FEATURE_'))
+    .map(([k, v]) => [
+      k.slice('VITE_FEATURE_'.length).toLowerCase().replace(/_/g, '-'),
+      v === 'true' || v === '1',
+    ])
+);
 
 const isReleaseTag = (() => {
   const envVal = process.env.VITE_IS_RELEASE_TAG;
@@ -78,6 +92,10 @@ const copyFiles = {
     },
     {
       src: 'public/manifest.json',
+      dest: '',
+    },
+    {
+      src: 'public/_headers',
       dest: '',
     },
     {
@@ -123,14 +141,40 @@ function serverMatrixSdkCryptoWasm() {
   };
 }
 
+function patchServiceWorkerDocumentShim(): PluginOption {
+  let outDir = '';
+
+  return {
+    name: 'vite-plugin-patch-sw-document-shim',
+    apply: 'build',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    async closeBundle() {
+      const swPath = path.join(outDir, 'sw.js');
+      if (!fs.existsSync(swPath)) return;
+
+      const documentShim =
+        'const document = { currentScript: undefined, baseURI: self.location.href };';
+      const swSource = await fs.promises.readFile(swPath, 'utf8');
+      if (swSource.startsWith(documentShim)) return;
+
+      await fs.promises.writeFile(swPath, `${documentShim}\n${swSource}`, 'utf8');
+    },
+  };
+}
+
 export default defineConfig(({ command }) => ({
+  clearScreen: false,
   appType: 'spa',
   publicDir: false,
   base: buildConfig.base,
+  envPrefix: ['VITE_', 'TAURI_ENV_*'],
   define: {
     APP_VERSION: JSON.stringify(appVersion),
     BUILD_HASH: JSON.stringify(buildHash ?? ''),
     IS_RELEASE_TAG: JSON.stringify(isReleaseTag),
+    INJECTED_EXPERIMENT_FLAGS: JSON.stringify(injectedExperimentFlags),
   },
   resolve: {
     alias: {
@@ -138,10 +182,12 @@ export default defineConfig(({ command }) => ({
       $plugins: path.resolve(__dirname, 'src/app/plugins'),
       $components: path.resolve(__dirname, 'src/app/components'),
       $features: path.resolve(__dirname, 'src/app/features'),
+      $app: path.resolve(__dirname, 'src/app'),
       $state: path.resolve(__dirname, 'src/app/state'),
       $styles: path.resolve(__dirname, 'src/app/styles'),
       $utils: path.resolve(__dirname, 'src/app/utils'),
       $pages: path.resolve(__dirname, 'src/app/pages'),
+      $generated: path.resolve(__dirname, 'src/app/generated'),
       $types: path.resolve(__dirname, 'src/types'),
       $public: path.resolve(__dirname, 'public'),
       $client: path.resolve(__dirname, 'src/client'),
@@ -150,7 +196,18 @@ export default defineConfig(({ command }) => ({
   },
   server: {
     port: 8080,
-    host: true,
+    strictPort: true,
+    host: tauriDevHost || true,
+    hmr: tauriDevHost
+      ? {
+          protocol: 'ws',
+          host: tauriDevHost,
+          port: 1421,
+        }
+      : undefined,
+    watch: {
+      ignored: ['**/src-tauri/**'],
+    },
     allowedHosts: command === 'serve' ? true : undefined,
     fs: {
       // Allow serving files from one level up to the project root
@@ -182,30 +239,73 @@ export default defineConfig(({ command }) => ({
         globIgnores: ['public/element-call/**'],
         // The app's own crypto WASM and main bundle exceed the 2 MiB default.
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MiB
+        // Keep the production worker compatible with browsers that still lack
+        // module service worker support, notably Firefox.
+        rollupFormat: 'iife',
+        buildPlugins: {
+          vite: [patchServiceWorkerDocumentShim()],
+        },
+        // SABLE-5G: Ensure web worker chunks (e.g., search-worker-XXXXX.js) are
+        // included in the precache manifest. Vite's ?worker suffix builds workers
+        // as separate chunks with hashed filenames, and injectManifest should
+        // automatically include them via globPatterns. If worker imports fail at
+        // runtime with 404 errors, verify the worker chunk appears in the manifest.
       },
       devOptions: {
         enabled: true,
         type: 'module',
       },
-    }),
-    cloudflare({
-      config: {
-        compatibility_date: '2026-03-03',
-        assets: {
-          not_found_handling: 'single-page-application',
-        },
+      workbox: {
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB
+        globIgnores: [
+          '**/matrix_sdk_crypto_wasm_bg-*.wasm',
+          '**/vision_wasm_internal-*.wasm',
+          '**/qcms_bg.wasm',
+          '**/openjpeg.wasm',
+          '**/jbig2.wasm',
+        ],
       },
     }),
-    compression({
-      algorithms: [
-        defineAlgorithm('brotliCompress', {
-          params: {
-            [zlibConstants.BROTLI_PARAM_QUALITY]: zlibConstants.BROTLI_MAX_QUALITY,
-          },
-        }),
-      ],
-      include: /\.(html|xml|css|json|js|mjs|svg|yaml|yml|toml|wasm|txt|map)$/,
-    }),
+    ...(!isTauriBuild
+      ? [
+          cloudflare({
+            config: {
+              compatibility_date: '2026-03-03',
+              main: './worker/index.ts',
+              observability: {
+                enabled: true,
+                head_sampling_rate: 1,
+                logs: {
+                  enabled: true,
+                  destinations: ['sentry-logs'],
+                  head_sampling_rate: 1,
+                  persist: true,
+                  invocation_logs: true,
+                },
+                traces: {
+                  enabled: true,
+                  destinations: ['sentry-traces'],
+                  persist: true,
+                  head_sampling_rate: 1,
+                },
+              },
+              assets: {
+                not_found_handling: 'single-page-application',
+                binding: 'ASSETS',
+                run_worker_first: true,
+              },
+            },
+          }),
+          compression({
+            algorithms: [
+              defineAlgorithm('brotliCompress', {
+                params: { [zlibConstants.BROTLI_PARAM_QUALITY]: zlibConstants.BROTLI_MAX_QUALITY },
+              }),
+            ],
+            include: /\.(html|xml|css|json|js|mjs|svg|yaml|yml|toml|wasm|txt|map)$/,
+          }),
+        ]
+      : []),
     // Sentry source map upload — only active when credentials are provided at build time
     ...(process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
       ? [
@@ -228,6 +328,8 @@ export default defineConfig(({ command }) => ({
       : []),
   ],
   optimizeDeps: {
+    // Include service worker entry so worker-only imports are discovered during startup.
+    entries: ['index.html', 'src/sw.ts'],
     // Rebuild dep optimizer cache on each dev start to avoid stale API shapes.
     force: true,
     // Keep matrix-widget-api prebundled so matrix-js-sdk can import its named exports in dev.
@@ -252,14 +354,40 @@ export default defineConfig(({ command }) => ({
     },
   },
   build: {
+    target: isTauriBuild ? tauriBuildTarget : 'es2022',
+    minify: isTauriBuild ? tauriBuildMinify : undefined,
+    sourcemap: isTauriBuild ? isTauriDebug : true,
     outDir: 'dist',
-    sourcemap: true,
     copyPublicDir: false,
-    // es2022+ avoids esbuild 0.27.7 failing to downlevel destructuring when
-    // vite-plugin-top-level-await re-transpiles chunks (see vitejs/vite#22225).
-    target: 'es2022',
     rollupOptions: {
       plugins: [inject({ Buffer: ['buffer', 'Buffer'] }) as PluginOption],
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('pdfjs-dist')) return 'pdf';
+          if (id.includes('@sableclient/sable-call-embedded')) return 'element-call';
+          if (id.includes('@matrix-org') || id.includes('matrix-js-sdk')) return 'matrix';
+          if (id.includes('/slate-react/') || id.includes('/slate-dom/')) {
+            return 'composer';
+          }
+          if (
+            id.includes('/src/app/components/editor/') ||
+            id.includes('/src/app/features/room/RoomInput') ||
+            id.includes('/src/app/hooks/useCommands.ts') ||
+            id.includes('/src/app/plugins/text-area/') ||
+            id.includes('dompurify') ||
+            id.includes('marked') ||
+            id.includes('linkifyjs') ||
+            id.includes('html-react-parser') ||
+            id.includes('html-dom-parser') ||
+            id.includes('/src/app/plugins/markdown/') ||
+            id.includes('/src/app/plugins/react-custom-html-parser.tsx')
+          ) {
+            return 'composer';
+          }
+          if (id.includes('react-prism') || id.includes('prism')) return 'prism';
+          return undefined;
+        },
+      },
     },
   },
 }));

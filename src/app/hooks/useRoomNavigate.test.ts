@@ -1,0 +1,242 @@
+import { renderHook } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { createStore, Provider } from 'jotai';
+import type * as ReactRouterDom from 'react-router-dom';
+import type { Room } from '$types/matrix-sdk';
+import { EventTimeline, EventType, RoomType } from '$types/matrix-sdk';
+import { mDirectAtom } from '$state/mDirectList';
+import { roomToParentsAtom } from '$state/room/roomToParents';
+import { setStoredRoomNavRoot } from '$state/room/roomNavRoots';
+import { useRoomNavigate } from './useRoomNavigate';
+
+const mockNavigate = vi.fn<(path: string) => void>();
+const mockSetSpaceScope = vi.fn<(roomId: string) => void>();
+const mockPrefetchRoom = vi.fn<(roomId: string) => void>();
+const mockGetRoom = vi.fn<(roomId: string) => Room | null>();
+const mockGetRooms = vi.fn<() => Room[]>();
+
+// Preserve the real generatePath (used by $pages/pathUtils) while stubbing useNavigate.
+vi.mock('react-router-dom', async (importOriginal) => {
+  const original = await importOriginal<typeof ReactRouterDom>();
+  return {
+    ...original,
+    useNavigate: () => mockNavigate,
+  };
+});
+
+vi.mock('$hooks/useMatrixClient', () => ({
+  useMatrixClient: () => ({
+    getRoom: mockGetRoom,
+    getRooms: mockGetRooms,
+    getUserId: () => '@alice:example.org',
+  }),
+}));
+
+vi.mock('$client/initMatrix', () => ({
+  getSlidingSyncManager: () => ({
+    setSpaceScope: mockSetSpaceScope,
+    prefetchRoom: mockPrefetchRoom,
+  }),
+}));
+
+// Return the roomId as-is so path assertions are straightforward.
+vi.mock('$utils/matrix', () => ({
+  getCanonicalAliasOrRoomId: (_mx: unknown, roomId: string) => roomId,
+}));
+
+vi.mock('$hooks/router/useSelectedSpace', () => ({
+  useSelectedSpace: () => undefined,
+}));
+
+vi.mock('$state/hooks/settings', () => ({
+  useSetting: () => [false, vi.fn<(value: boolean) => void>()],
+}));
+
+vi.mock('$utils/perfTelemetry', () => ({
+  beginRoomNavigation: vi.fn<(roomId: string, target: string) => void>(),
+  beginSpaceNavigation: vi.fn<(spaceId: string, source: string) => void>(),
+}));
+
+function makeWrapper(store: ReturnType<typeof createStore>) {
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return createElement(Provider, { store }, children);
+  };
+}
+
+function makeJoinedSpace(roomId: string): Room {
+  return {
+    roomId,
+    isSpaceRoom: () => true,
+    getMyMembership: () => 'join',
+    getLiveTimeline: () => ({
+      getState: (direction: unknown) =>
+        direction === EventTimeline.FORWARDS
+          ? {
+              getStateEvents: (eventType: string) =>
+                eventType === EventType.RoomCreate
+                  ? {
+                      getContent: () => ({ type: RoomType.Space }),
+                    }
+                  : [],
+            }
+          : undefined,
+    }),
+  } as unknown as Room;
+}
+
+describe('useRoomNavigate', () => {
+  beforeEach(() => {
+    mockNavigate.mockReset();
+    mockSetSpaceScope.mockReset();
+    mockPrefetchRoom.mockReset();
+    mockGetRoom.mockReset();
+    mockGetRooms.mockReset();
+    mockGetRoom.mockReturnValue(null);
+    mockGetRooms.mockReturnValue([]);
+    localStorage.clear();
+  });
+
+  describe('navigateRoom', () => {
+    it('routes a DM room to /direct even when it has space parents (regression)', () => {
+      // Regression guard: before the fix, a DM room that also appeared in
+      // roomToParents would be routed to the space path instead of /direct.
+      const store = createStore();
+      const dmRoomId = '!dm:example.org';
+      const spaceId = '!space:example.org';
+
+      store.set(mDirectAtom, { type: 'INITIALIZE', rooms: new Set([dmRoomId]) });
+      const roomToParents = new Map<string, Set<string>>();
+      roomToParents.set(dmRoomId, new Set([spaceId]));
+      store.set(roomToParentsAtom, { type: 'INITIALIZE', roomToParents });
+
+      const { result } = renderHook(() => useRoomNavigate(), {
+        wrapper: makeWrapper(store),
+      });
+
+      result.current.navigateRoom(dmRoomId);
+
+      expect(mockNavigate).toHaveBeenCalledOnce();
+      expect(mockNavigate.mock.calls[0]![0]).toMatch(/^\/direct\//);
+      expect(mockPrefetchRoom).toHaveBeenCalledWith(dmRoomId);
+    });
+
+    it('routes a non-DM room with an orphan space parent through the space path', () => {
+      const store = createStore();
+      const roomId = '!room:example.org';
+      const spaceId = '!space:example.org';
+
+      store.set(mDirectAtom, { type: 'INITIALIZE', rooms: new Set<string>() });
+      // spaceId is a parent of roomId and is itself an orphan (top-level space)
+      const roomToParents = new Map<string, Set<string>>();
+      roomToParents.set(roomId, new Set([spaceId]));
+      store.set(roomToParentsAtom, { type: 'INITIALIZE', roomToParents });
+      const joinedSpace = makeJoinedSpace(spaceId);
+      mockGetRoom.mockImplementation((id) => (id === spaceId ? joinedSpace : null));
+      mockGetRooms.mockReturnValue([joinedSpace]);
+
+      const { result } = renderHook(() => useRoomNavigate(), {
+        wrapper: makeWrapper(store),
+      });
+
+      result.current.navigateRoom(roomId);
+
+      expect(mockNavigate).toHaveBeenCalledOnce();
+      const navigatedPath = mockNavigate.mock.calls[0]![0];
+      expect(navigatedPath).not.toMatch(/^\/direct\//);
+      expect(navigatedPath).not.toMatch(/^\/home\//);
+      expect(mockSetSpaceScope).toHaveBeenCalledWith(spaceId);
+      expect(mockPrefetchRoom).toHaveBeenCalledWith(roomId);
+    });
+
+    it('routes a non-DM room through the top-level preferred space chain root', () => {
+      const store = createStore();
+      const roomId = '!room:example.org';
+      const subspaceId = '!subspace:example.org';
+      const rootSpaceId = '!root:example.org';
+
+      store.set(mDirectAtom, { type: 'INITIALIZE', rooms: new Set<string>() });
+      const roomToParents = new Map<string, Set<string>>();
+      roomToParents.set(roomId, new Set([subspaceId]));
+      roomToParents.set(subspaceId, new Set([rootSpaceId]));
+      store.set(roomToParentsAtom, { type: 'INITIALIZE', roomToParents });
+      const joinedSubspace = makeJoinedSpace(subspaceId);
+      const joinedRoot = makeJoinedSpace(rootSpaceId);
+      mockGetRoom.mockImplementation((id) =>
+        id === subspaceId ? joinedSubspace : id === rootSpaceId ? joinedRoot : null
+      );
+      mockGetRooms.mockReturnValue([joinedSubspace, joinedRoot]);
+
+      const { result } = renderHook(() => useRoomNavigate(), {
+        wrapper: makeWrapper(store),
+      });
+
+      result.current.navigateRoom(roomId);
+
+      expect(mockNavigate).toHaveBeenCalledOnce();
+      const navigatedPath = mockNavigate.mock.calls[0]![0];
+      expect(navigatedPath).toContain(`/${encodeURIComponent(rootSpaceId)}/`);
+      expect(navigatedPath).toContain(`/${encodeURIComponent(roomId)}`);
+      expect(mockSetSpaceScope).toHaveBeenCalledWith(rootSpaceId);
+      expect(mockPrefetchRoom).toHaveBeenCalledWith(roomId);
+    });
+
+    it('prefers the stored room navigation root over the fallback preferred chain', () => {
+      const store = createStore();
+      const roomId = '!room:example.org';
+      const fallbackRootSpaceId = '!fallback:example.org';
+      const chosenRootSpaceId = '!chosen:example.org';
+      const subspaceId = '!subspace:example.org';
+
+      store.set(mDirectAtom, { type: 'INITIALIZE', rooms: new Set<string>() });
+      const roomToParents = new Map<string, Set<string>>();
+      roomToParents.set(roomId, new Set([subspaceId]));
+      roomToParents.set(subspaceId, new Set([fallbackRootSpaceId, chosenRootSpaceId]));
+      store.set(roomToParentsAtom, { type: 'INITIALIZE', roomToParents });
+      setStoredRoomNavRoot('@alice:example.org', roomId, chosenRootSpaceId);
+      const joinedSubspace = makeJoinedSpace(subspaceId);
+      const fallbackRoot = makeJoinedSpace(fallbackRootSpaceId);
+      const chosenRoot = makeJoinedSpace(chosenRootSpaceId);
+      mockGetRoom.mockImplementation((id) =>
+        id === subspaceId
+          ? joinedSubspace
+          : id === fallbackRootSpaceId
+            ? fallbackRoot
+            : id === chosenRootSpaceId
+              ? chosenRoot
+              : null
+      );
+      mockGetRooms.mockReturnValue([joinedSubspace, fallbackRoot, chosenRoot]);
+
+      const { result } = renderHook(() => useRoomNavigate(), {
+        wrapper: makeWrapper(store),
+      });
+
+      result.current.navigateRoom(roomId);
+
+      expect(mockNavigate).toHaveBeenCalledOnce();
+      const navigatedPath = mockNavigate.mock.calls[0]![0];
+      expect(navigatedPath).toContain(`/${encodeURIComponent(chosenRootSpaceId)}/`);
+      expect(mockSetSpaceScope).toHaveBeenCalledWith(chosenRootSpaceId);
+      expect(mockPrefetchRoom).toHaveBeenCalledWith(roomId);
+    });
+
+    it('routes an orphan room with no parents to /home', () => {
+      const store = createStore();
+      const roomId = '!room:example.org';
+
+      store.set(mDirectAtom, { type: 'INITIALIZE', rooms: new Set<string>() });
+      store.set(roomToParentsAtom, { type: 'INITIALIZE', roomToParents: new Map() });
+
+      const { result } = renderHook(() => useRoomNavigate(), {
+        wrapper: makeWrapper(store),
+      });
+
+      result.current.navigateRoom(roomId);
+
+      expect(mockNavigate).toHaveBeenCalledOnce();
+      expect(mockNavigate.mock.calls[0]![0]).toMatch(/^\/home\//);
+      expect(mockPrefetchRoom).toHaveBeenCalledWith(roomId);
+    });
+  });
+});

@@ -3,8 +3,8 @@ import { Direction } from '$types/matrix-sdk';
 import {
   isThreadRelationEvent,
   reactionOrEditEvent,
-  roomHaveNotification,
-  roomHaveUnread,
+  getRoomReadMarkerId,
+  getUnreadInfo,
 } from '$utils/room';
 
 export const PAGINATION_LIMIT = 60;
@@ -94,6 +94,16 @@ export const getTimelineEvent = (
   return events ? events[index] : undefined;
 };
 
+export const getTimelineEventAtIndex = (
+  timelines: EventTimeline[],
+  index: number
+): MatrixEvent | undefined => {
+  const [timeline, baseIndex] = getTimelineAndBaseIndex(timelines, index);
+  return timeline
+    ? getTimelineEvent(timeline, getTimelineRelativeIndex(index, baseIndex))
+    : undefined;
+};
+
 export const getEventIdAbsoluteIndex = (
   timelines: EventTimeline[],
   eventTimeline: EventTimeline,
@@ -134,9 +144,10 @@ export const getEmptyTimeline = () => ({
 });
 
 export const getRoomUnreadInfo = (room: Room, scrollTo = false) => {
-  if (!roomHaveNotification(room) && !roomHaveUnread(room.client, room)) return undefined;
+  const unreadInfo = getUnreadInfo(room);
+  if (unreadInfo.total <= 0 && unreadInfo.highlight <= 0) return undefined;
 
-  const readUptoEventId = room.getEventReadUpTo(room.client.getUserId() ?? '');
+  const readUptoEventId = getRoomReadMarkerId(room, room.client.getUserId() ?? '');
   if (!readUptoEventId) return undefined;
 
   const evtTimeline = getEventTimeline(room, readUptoEventId);
@@ -156,6 +167,18 @@ export const getRoomUnreadInfo = (room: Room, scrollTo = false) => {
     scrollTo,
   };
 };
+
+export const getUnreadInfoAfterJumpToLatest = (
+  unreadInfo: ReturnType<typeof getRoomUnreadInfo>
+): ReturnType<typeof getRoomUnreadInfo> =>
+  unreadInfo
+    ? {
+        ...unreadInfo,
+        // Preserve the historical unread jump until the user explicitly marks the room read.
+        inLiveTimeline: unreadInfo.inLiveTimeline,
+        scrollTo: false,
+      }
+    : unreadInfo;
 
 export const getThreadReplyCount = (room: Room, mEventId: string): number => {
   const thread = room.getThread(mEventId);

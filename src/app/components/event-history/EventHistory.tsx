@@ -26,7 +26,7 @@ import { UserAvatar } from '$components/user-avatar';
 import {
   userFallbackIcon,
   ArrowBendUpLeftIcon,
-  ChatTeardropDots,
+  ChatsCircle,
   composerIcon,
   menuIcon,
   Trash,
@@ -153,7 +153,7 @@ export const EventHistory = as<'div', EventHistoryProps>(
           />
           <MenuItem
             size="300"
-            after={menuIcon(ChatTeardropDots)}
+            after={menuIcon(ChatsCircle)}
             radii="300"
             fill="None"
             variant="Secondary"

@@ -49,10 +49,11 @@ import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import FocusTrap from 'focus-trap-react';
 import {
   useOrphanSpaces,
-  useRecursiveChildScopeFactory,
+  useRecursiveChildRoomScopeFactory,
   useSpaceChildren,
 } from '$state/hooks/roomList';
 import { useMatrixClient } from '$hooks/useMatrixClient';
+import { mDirectAtom } from '$state/mDirectList';
 import { roomToParentsAtom } from '$state/room/roomToParents';
 import { allRoomsAtom } from '$state/room-list/roomList';
 import { getSpaceLobbyPath, getSpacePath, joinPathComponent } from '$pages/pathUtils';
@@ -66,7 +67,7 @@ import {
   SidebarFolder,
   SidebarFolderDropTarget,
 } from '$components/sidebar';
-import { RoomUnreadProvider, RoomsUnreadProvider } from '$components/RoomUnreadProvider';
+import { RoomsUnreadProvider } from '$components/RoomUnreadProvider';
 import { useSelectedSpace } from '$hooks/router/useSelectedSpace';
 import { getCanonicalAliasOrRoomId, isRoomAlias } from '$utils/matrix';
 import { RoomAvatar } from '$components/room-avatar';
@@ -87,11 +88,16 @@ import { usePowerLevels } from '$hooks/usePowerLevels';
 import { useRoomsUnread } from '$state/hooks/unread';
 import { roomToUnreadAtom } from '$state/room/roomToUnread';
 import { markAsRead } from '$utils/notifications';
+import {
+  getRoomNotificationMode,
+  RoomNotificationMode,
+  useRoomsNotificationPreferencesContext,
+} from '$hooks/useRoomsNotificationPreferences';
 import { copyToClipboard } from '$utils/dom';
 import { stopPropagation } from '$utils/keyboard';
 import { getMatrixToRoom } from '$plugins/matrix-to';
 import { getViaServers } from '$plugins/via-servers';
-import { getRoomAvatarUrl } from '$utils/room';
+import { getAllParents, getRoomAvatarUrl } from '$utils/room';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
@@ -109,6 +115,7 @@ type SpaceMenuProps = {
 const SpaceMenu = forwardRef<HTMLDivElement, SpaceMenuProps>(
   ({ room, requestClose, onUnpin }, ref) => {
     const mx = useMatrixClient();
+    const mDirects = useAtomValue(mDirectAtom);
     const [hideReads] = useSetting(settingsAtom, 'hideReads');
     const roomToParents = useAtomValue(roomToParentsAtom);
     const powerLevels = usePowerLevels(room);
@@ -123,7 +130,7 @@ const SpaceMenu = forwardRef<HTMLDivElement, SpaceMenuProps>(
     const allChild = useSpaceChildren(
       allRoomsAtom,
       room.roomId,
-      useRecursiveChildScopeFactory(mx, roomToParents)
+      useRecursiveChildRoomScopeFactory(mx, mDirects, roomToParents)
     );
     const unread = useRoomsUnread(allChild, roomToUnreadAtom);
 
@@ -529,6 +536,41 @@ function SpaceTab({
 
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
 
+  // Aggregate unread across all recursive child rooms (space rooms themselves
+  // carry no messages, so RoomUnreadProvider would always return nothing).
+  const mDirects = useAtomValue(mDirectAtom);
+  const roomToParents = useAtomValue(roomToParentsAtom);
+  const allChild = useSpaceChildren(
+    allRoomsAtom,
+    space.roomId,
+    useRecursiveChildRoomScopeFactory(mx, mDirects, roomToParents)
+  );
+
+  // Filter to only include "loud" rooms (Default or All Messages notification mode).
+  // "Show Loud Room Counts" should only count rooms with Default or All Messages,
+  // not rooms set to "Mentions and Keywords Only" or "Mute".
+  const notificationPreferences = useRoomsNotificationPreferencesContext();
+  const loudChild = useMemo(
+    () =>
+      allChild.filter((roomId) => {
+        const mode = getRoomNotificationMode(notificationPreferences, roomId);
+        return mode === RoomNotificationMode.Unset || mode === RoomNotificationMode.AllMessages;
+      }),
+    [allChild, notificationPreferences]
+  );
+
+  // Get unreads from ALL child rooms to show badges for all unreads
+  const allUnread = useRoomsUnread(allChild, roomToUnreadAtom);
+
+  // Track loud rooms separately to determine when to show counts vs dots
+  const loudUnread = useRoomsUnread(loudChild, roomToUnreadAtom);
+  const hasLoudUnreads = !!loudUnread && (loudUnread.highlight > 0 || loudUnread.total > 0);
+
+  // Show badges for all unreads, but the displayed count only covers loud rooms when
+  // "Show Loud Room Counts" is enabled. Highlights (mentions) always use the full
+  // highlight count regardless of notification mode.
+  const unread = allUnread;
+
   const handleContextMenu: MouseEventHandler<HTMLButtonElement> = (evt) => {
     evt.preventDefault();
     const cords = evt.currentTarget.getBoundingClientRect();
@@ -539,74 +581,77 @@ function SpaceTab({
   };
 
   return (
-    <RoomUnreadProvider roomId={space.roomId}>
-      {(unread) => (
-        <SidebarItemLeft
-          active={selected}
-          ref={targetRef}
-          aria-disabled={disabled}
-          data-drop-child={dropType === 'make-child'}
-          data-drop-above={dropType === 'reorder-above'}
-          data-drop-below={dropType === 'reorder-below'}
-          data-inside-folder={!!folder}
-        >
-          <SidebarItemTooltip tooltip={disabled ? undefined : space.name}>
-            {(triggerRef) => (
-              <SidebarAvatar
-                as="button"
-                data-id={space.roomId}
-                ref={triggerRef}
-                size={folder ? '300' : '400'}
-                onClick={onClick}
-                onContextMenu={handleContextMenu}
-              >
-                <RoomAvatar
-                  roomId={space.roomId}
-                  uniformIcons
-                  src={getRoomAvatarUrl(mx, space, 96, useAuthentication) ?? undefined}
-                  alt={space.name}
-                  renderFallback={() => (
-                    <Text size={folder ? 'H6' : 'H4'}>{nameInitials(space.name, 2)}</Text>
-                  )}
-                />
-              </SidebarAvatar>
-            )}
-          </SidebarItemTooltip>
-          {unread && (
-            <SidebarUnreadBadge
-              highlight={unread.highlight > 0}
-              count={unread.highlight > 0 ? unread.highlight : unread.total}
+    <SidebarItemLeft
+      active={selected}
+      ref={targetRef}
+      aria-disabled={disabled}
+      data-drop-child={dropType === 'make-child'}
+      data-drop-above={dropType === 'reorder-above'}
+      data-drop-below={dropType === 'reorder-below'}
+      data-inside-folder={!!folder}
+    >
+      <SidebarItemTooltip tooltip={disabled ? undefined : space.name}>
+        {(triggerRef) => (
+          <SidebarAvatar
+            as="button"
+            data-id={space.roomId}
+            ref={triggerRef}
+            size={folder ? '300' : '400'}
+            onClick={onClick}
+            onContextMenu={handleContextMenu}
+          >
+            <RoomAvatar
+              roomId={space.roomId}
+              uniformIcons
+              src={getRoomAvatarUrl(mx, space, 96, useAuthentication) ?? undefined}
+              alt={space.name}
+              renderFallback={() => (
+                <Text size={folder ? 'H6' : 'H4'}>{nameInitials(space.name, 2)}</Text>
+              )}
             />
-          )}
-          {menuAnchor && (
-            <PopOut
-              anchor={menuAnchor}
-              position="Right"
-              align="Start"
-              content={
-                <FocusTrap
-                  focusTrapOptions={{
-                    initialFocus: false,
-                    returnFocusOnDeactivate: false,
-                    onDeactivate: () => setMenuAnchor(undefined),
-                    clickOutsideDeactivates: true,
-                    isKeyForward: (evt: KeyboardEvent) => evt.key === 'ArrowDown',
-                    isKeyBackward: (evt: KeyboardEvent) => evt.key === 'ArrowUp',
-                    escapeDeactivates: stopPropagation,
-                  }}
-                >
-                  <SpaceMenu
-                    room={space}
-                    requestClose={() => setMenuAnchor(undefined)}
-                    onUnpin={onUnpin}
-                  />
-                </FocusTrap>
-              }
-            />
-          )}
-        </SidebarItemLeft>
+          </SidebarAvatar>
+        )}
+      </SidebarItemTooltip>
+      {unread && (
+        <SidebarUnreadBadge
+          highlight={unread.highlight > 0}
+          count={
+            unread.highlight > 0
+              ? unread.highlight
+              : hasLoudUnreads
+                ? (loudUnread?.total ?? unread.total)
+                : unread.total
+          }
+          loud={hasLoudUnreads}
+        />
       )}
-    </RoomUnreadProvider>
+      {menuAnchor && (
+        <PopOut
+          anchor={menuAnchor}
+          position="Right"
+          align="Start"
+          content={
+            <FocusTrap
+              focusTrapOptions={{
+                initialFocus: false,
+                returnFocusOnDeactivate: false,
+                onDeactivate: () => setMenuAnchor(undefined),
+                clickOutsideDeactivates: true,
+                isKeyForward: (evt: KeyboardEvent) => evt.key === 'ArrowDown',
+                isKeyBackward: (evt: KeyboardEvent) => evt.key === 'ArrowUp',
+                escapeDeactivates: stopPropagation,
+              }}
+            >
+              <SpaceMenu
+                room={space}
+                requestClose={() => setMenuAnchor(undefined)}
+                onUnpin={onUnpin}
+              />
+            </FocusTrap>
+          }
+        />
+      )}
+    </SidebarItemLeft>
   );
 }
 
@@ -666,6 +711,9 @@ function ClosedSpaceFolder({
 }: Readonly<ClosedSpaceFolderProps>) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
+  const allRooms = useAtomValue(allRoomsAtom);
+  const mDirects = useAtomValue(mDirectAtom);
+  const roomToParents = useAtomValue(roomToParentsAtom);
   const handlerRef = useRef<HTMLDivElement>(null);
 
   const spaceDraggable: FolderDraggable = useMemo(() => ({ folder }), [folder]);
@@ -675,8 +723,32 @@ function ClosedSpaceFolder({
 
   const tooltipName = folderDefaultDisplayName(mx, folder);
 
+  const notificationPreferences = useRoomsNotificationPreferencesContext();
+
+  const folderChildRooms = useMemo(() => {
+    const folderSpaces = new Set(folder.content);
+    return allRooms.filter((roomId) => {
+      const room = mx.getRoom(roomId);
+      if (!room || room.isSpaceRoom()) return false;
+      if (mDirects.has(roomId)) return false;
+      const parents = getAllParents(roomToParents, roomId);
+      return [...folderSpaces].some((spaceId) => parents.has(spaceId));
+    });
+  }, [allRooms, folder.content, mDirects, mx, roomToParents]);
+
+  const loudChildRooms = useMemo(
+    () =>
+      folderChildRooms.filter((roomId) => {
+        const mode = getRoomNotificationMode(notificationPreferences, roomId);
+        return mode === RoomNotificationMode.Unset || mode === RoomNotificationMode.AllMessages;
+      }),
+    [folderChildRooms, notificationPreferences]
+  );
+  const loudUnread = useRoomsUnread(loudChildRooms, roomToUnreadAtom);
+  const hasLoudChildren = !!loudUnread && (loudUnread.highlight > 0 || loudUnread.total > 0);
+
   return (
-    <RoomsUnreadProvider rooms={folder.content}>
+    <RoomsUnreadProvider rooms={folderChildRooms}>
       {(unread) => (
         <SidebarItemLeft
           active={selected}
@@ -721,7 +793,14 @@ function ClosedSpaceFolder({
           {unread && (
             <SidebarUnreadBadge
               highlight={unread.highlight > 0}
-              count={unread.highlight > 0 ? unread.highlight : unread.total}
+              count={
+                unread.highlight > 0
+                  ? unread.highlight
+                  : hasLoudChildren
+                    ? (loudUnread?.total ?? unread.total)
+                    : unread.total
+              }
+              loud={hasLoudChildren}
             />
           )}
         </SidebarItemLeft>

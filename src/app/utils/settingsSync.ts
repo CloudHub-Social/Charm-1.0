@@ -1,4 +1,8 @@
-import type { Settings } from '$state/settings';
+import {
+  EXPLICITLY_CLEARABLE_SETTINGS_KEYS,
+  getExplicitlyClearedSettingsKeys,
+  type Settings,
+} from '$state/settings';
 
 /**
  * Keys excluded from cross-device sync.
@@ -7,6 +11,8 @@ import type { Settings } from '$state/settings';
 export const NON_SYNCABLE_KEYS = new Set<keyof Settings>([
   // Platform / permission-level — differ per device/browser
   'usePushNotifications',
+  'backgroundPushEnabled',
+  'backgroundPushProvider',
   'useInAppNotifications',
   'useSystemNotifications',
   // Personal device-level preferences
@@ -14,8 +20,15 @@ export const NON_SYNCABLE_KEYS = new Set<keyof Settings>([
   'isPeopleDrawer',
   'isWidgetDrawer',
   'memberSortFilterIndex',
-  // Developer / diagnostic
+  // Device-specific audio preferences
+  'isNotificationSounds',
+  // Developer / diagnostic features
   'developerTools',
+  // Per-device search index cache size limit
+  'searchIndexMessageLimit',
+  // Input behaviour — on mobile the Enter-for-newline toggle is disabled, so syncing a
+  // desktop value would inadvertently re-enable Enter-to-send on the user's phone
+  'enterForNewline',
   // Sync toggle itself must never be uploaded (it's device-local)
   'settingsSyncEnabled',
 ]);
@@ -25,13 +38,57 @@ export const SETTINGS_SYNC_VERSION = 1;
 export type SettingsSyncContent = {
   v: number;
   settings: Partial<Settings>;
+  updatedAt?: number;
+};
+
+export const getSettingsSyncUpdatedAt = (data: unknown): number | null => {
+  if (!data || typeof data !== 'object') return null;
+  const updatedAt = (data as { updatedAt?: unknown }).updatedAt;
+  return typeof updatedAt === 'number' && Number.isFinite(updatedAt) ? updatedAt : null;
+};
+
+export const serializeSettingsWithExplicitClears = (
+  settings: Partial<Settings>
+): Partial<Settings> => {
+  const serialized = { ...settings } as Partial<Settings>;
+  const explicitlyClearedKeys = getExplicitlyClearedSettingsKeys();
+  EXPLICITLY_CLEARABLE_SETTINGS_KEYS.forEach((key) => {
+    if (serialized[key] === undefined && explicitlyClearedKeys.has(key)) {
+      (serialized as Record<string, unknown>)[key] = null;
+    }
+  });
+  return serialized;
+};
+
+export const getExplicitlyClearedSettingsKeysFromSync = (
+  data: unknown
+): Set<(typeof EXPLICITLY_CLEARABLE_SETTINGS_KEYS)[number]> => {
+  const cleared = new Set<(typeof EXPLICITLY_CLEARABLE_SETTINGS_KEYS)[number]>();
+  if (!data || typeof data !== 'object') return cleared;
+
+  const content = data as Record<string, unknown>;
+  if (content.v !== SETTINGS_SYNC_VERSION) return cleared;
+  const remote = content.settings;
+  if (!remote || typeof remote !== 'object' || Array.isArray(remote)) return cleared;
+
+  EXPLICITLY_CLEARABLE_SETTINGS_KEYS.forEach((key) => {
+    if ((remote as Record<string, unknown>)[key] === null) {
+      cleared.add(key);
+    }
+  });
+
+  return cleared;
 };
 
 /** Strip non-syncable keys and wrap in a versioned envelope. */
-export const serializeForSync = (settings: Settings): SettingsSyncContent => {
-  const syncable = { ...settings } as Partial<Settings>;
+export const serializeForSync = (settings: Settings, updatedAt?: number): SettingsSyncContent => {
+  const syncable = serializeSettingsWithExplicitClears(settings);
   NON_SYNCABLE_KEYS.forEach((key) => delete syncable[key]);
-  return { v: SETTINGS_SYNC_VERSION, settings: syncable };
+  return {
+    v: SETTINGS_SYNC_VERSION,
+    settings: syncable,
+    ...(typeof updatedAt === 'number' && Number.isFinite(updatedAt) ? { updatedAt } : {}),
+  };
 };
 
 /**
@@ -46,7 +103,14 @@ export const deserializeFromSync = (data: unknown, currentSettings: Settings): S
   const remote = content.settings;
   if (!remote || typeof remote !== 'object' || Array.isArray(remote)) return null;
 
-  const merged = { ...currentSettings, ...(remote as Partial<Settings>) };
+  const normalizedRemote = { ...(remote as Partial<Settings>) };
+  EXPLICITLY_CLEARABLE_SETTINGS_KEYS.forEach((key) => {
+    if ((normalizedRemote as Record<string, unknown>)[key] === null) {
+      (normalizedRemote as Record<string, unknown>)[key] = undefined;
+    }
+  });
+
+  const merged = { ...currentSettings, ...normalizedRemote };
   // Always restore non-syncable keys from local state.
   NON_SYNCABLE_KEYS.forEach((key) => {
     (merged as unknown as Record<string, unknown>)[key] = (
@@ -59,7 +123,11 @@ export const deserializeFromSync = (data: unknown, currentSettings: Settings): S
 
 /** Trigger a browser download of the current settings as a JSON file. */
 export const exportSettingsAsJson = (settings: Settings): void => {
-  const payload = JSON.stringify({ v: SETTINGS_SYNC_VERSION, settings }, null, 2);
+  const payload = JSON.stringify(
+    { v: SETTINGS_SYNC_VERSION, settings: serializeSettingsWithExplicitClears(settings) },
+    null,
+    2
+  );
   const blob = new Blob([payload], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

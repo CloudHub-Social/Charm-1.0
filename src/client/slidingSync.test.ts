@@ -10,20 +10,54 @@
  *    event indicating the local user left or was banned from a room that is
  *    actively subscribed, unsubscribeFromRoom() should be called automatically.
  *
- *    Note: navigation between rooms does not call unsubscribeFromRoom —
- *    subscriptions accumulate across the session so returning to a room is
- *    instant (matching Element Web's model).
+ *    Note: navigation cleanup calls unsubscribeFromRoom so sliding sync does
+ *    not accumulate background room subscriptions across the session.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { MatrixClient } from '$types/matrix-sdk';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  SlidingSyncEvent,
+  SlidingSyncState,
+  type MatrixEvent,
+  type MatrixClient,
+} from '$types/matrix-sdk';
 
-import { SlidingSyncManager, type SlidingSyncConfig } from './slidingSync';
+import {
+  LIST_DMS,
+  LIST_INVITES,
+  LIST_JOINED,
+  LIST_SPACE,
+  SlidingSyncManager,
+  type SlidingSyncConfig,
+} from './slidingSync';
+
+function installConnectionMock(): { fireConnectionChange: () => void } {
+  let onChange: (() => void) | undefined;
+  Object.defineProperty(window.navigator, 'connection', {
+    configurable: true,
+    value: {
+      effectiveType: '4g',
+      downlink: 10,
+      addEventListener: vi.fn<(event: string, cb: () => void) => void>((event, cb) => {
+        if (event === 'change') onChange = cb;
+      }),
+      removeEventListener: vi.fn<() => void>(),
+      onchange: null,
+    },
+  });
+  return {
+    fireConnectionChange: () => {
+      if (!onChange) throw new Error('connection change listener not registered');
+      onChange();
+    },
+  };
+}
 
 // ── vi.hoisted mocks ─────────────────────────────────────────────────────────
 // Must be defined via vi.hoisted so they're available before vi.mock runs
 // (vi.mock calls are hoisted above all imports by vitest's transformer).
 const mocks = vi.hoisted(() => ({
+  slidingSyncConstructor: vi.fn<(...args: unknown[]) => void>(),
   slidingSyncInstance: {
     on: vi.fn<() => void>(),
     off: vi.fn<() => void>(),
@@ -31,11 +65,12 @@ const mocks = vi.hoisted(() => ({
     stop: vi.fn<() => void>(),
     modifyRoomSubscriptions: vi.fn<() => void>(),
     modifyRoomSubscriptionInfo: vi.fn<() => void>(),
+    resend: vi.fn<() => void>(),
     addCustomSubscription: vi.fn<() => void>(),
     useCustomSubscription: vi.fn<() => void>(),
     registerExtension: vi.fn<() => void>(),
-    getListData: vi.fn<() => null>(),
-    getListParams: vi.fn<() => null>(),
+    getListData: vi.fn<(key?: unknown) => { joinedCount: number } | null>(),
+    getListParams: vi.fn<(key?: unknown) => { ranges?: [number, number][] } | null>(),
     setList: vi.fn<() => void>(),
     setListRanges: vi.fn<() => void>(),
   },
@@ -54,12 +89,17 @@ vi.mock('@sentry/react', () => ({
   startSpan: vi.fn<() => Promise<unknown>>(),
 }));
 
+vi.mock('$utils/perfTelemetry', () => ({
+  completeRoomNavigation: vi.fn<(roomId: string, reason: string, eventCount: number) => void>(),
+}));
+
 // ── SlidingSync SDK mock ─────────────────────────────────────────────────────
 // vi.fn() wrappers are arrow functions internally and cannot be called with `new`.
 // A plain function constructor (returning an object) is the correct pattern.
 vi.mock('$types/matrix-sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  function MockSlidingSync() {
+  function MockSlidingSync(...args: unknown[]) {
+    mocks.slidingSyncConstructor(...args);
     return mocks.slidingSyncInstance;
   }
   return { ...actual, SlidingSync: MockSlidingSync };
@@ -73,6 +113,7 @@ function makeMockMx(overrides: Record<string, unknown> = {}) {
     getSafeUserId: vi.fn<() => string>().mockReturnValue('@user:example.com'),
     isRoomEncrypted: vi.fn<() => boolean>().mockReturnValue(false),
     getRoom: vi.fn<() => null>().mockReturnValue(null),
+    getRooms: vi.fn<() => unknown[]>().mockReturnValue([]),
     on: vi.fn<() => void>(),
     off: vi.fn<() => void>(),
     removeListener: vi.fn<() => void>(),
@@ -80,13 +121,400 @@ function makeMockMx(overrides: Record<string, unknown> = {}) {
   } as unknown as MatrixClient;
 }
 
-function makeManager(mx: ReturnType<typeof makeMockMx>): SlidingSyncManager {
-  const config: SlidingSyncConfig = {};
+function makeManager(
+  mx: ReturnType<typeof makeMockMx>,
+  config: SlidingSyncConfig = {}
+): SlidingSyncManager {
   return new SlidingSyncManager(mx, 'https://sliding.example.com', config);
+}
+
+function makeMockRoom(overrides: Record<string, unknown> = {}) {
+  const room = {
+    addLiveEvents: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    partitionThreadedEvents: vi
+      .fn<(events: MatrixEvent[]) => [MatrixEvent[], MatrixEvent[], MatrixEvent[]]>()
+      .mockImplementation((events) => [
+        events.filter((event) => !event.threadRootId),
+        events.filter((event) => !!event.threadRootId),
+        [],
+      ]),
+    resetLiveTimeline: vi.fn<() => void>(),
+    getUnfilteredTimelineSet: vi
+      .fn<
+        () => {
+          getLiveTimeline: () => { getEvents: () => MatrixEvent[] };
+        }
+      >()
+      .mockReturnValue({
+        getLiveTimeline: () => ({
+          getEvents: () => [],
+        }),
+      }),
+    ...overrides,
+  };
+  return room;
+}
+
+function fireLifecycle(state: SlidingSyncState, resp: unknown = {}, err?: Error) {
+  const lifecycleCall = mocks.slidingSyncInstance.on.mock.calls.find(
+    (args: unknown[]) => args[0] === SlidingSyncEvent.Lifecycle
+  );
+  if (!lifecycleCall) throw new Error('lifecycle listener not registered');
+  const [, handler] = lifecycleCall as unknown as [
+    SlidingSyncEvent,
+    (state: SlidingSyncState, resp: unknown, err?: Error) => void,
+  ];
+  handler(state, resp, err);
+}
+
+function setNavigatorOnline(value: boolean): void {
+  Object.defineProperty(window.navigator, 'onLine', {
+    configurable: true,
+    value,
+  });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.slidingSyncInstance.getListParams.mockImplementation((key: unknown) => {
+    if (key === LIST_JOINED || key === LIST_DMS || key === LIST_INVITES) {
+      return { ranges: [[0, 29]] };
+    }
+    return null;
+  });
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+// ── startup cache detection ─────────────────────────────────────────────────
+
+describe('SlidingSyncManager.hasWarmCache()', () => {
+  it('uses the persisted-cache startup signal when rooms are not in memory yet', () => {
+    const manager = new SlidingSyncManager(
+      makeMockMx({ getRooms: vi.fn<() => unknown[]>().mockReturnValue([]) }),
+      'https://sliding.example.com',
+      {},
+      true
+    );
+
+    expect(manager.hasWarmCache()).toBe(true);
+  });
+
+  it('keeps cold-cache starts cold when no startup warm-cache signal exists', () => {
+    const manager = new SlidingSyncManager(
+      makeMockMx({ getRooms: vi.fn<() => unknown[]>().mockReturnValue([]) }),
+      'https://sliding.example.com',
+      {},
+      false
+    );
+
+    expect(manager.hasWarmCache()).toBe(false);
+  });
+
+  it('falls back to initial in-memory rooms when no startup signal is supplied', () => {
+    const manager = makeManager(
+      makeMockMx({ getRooms: vi.fn<() => unknown[]>().mockReturnValue([{}]) })
+    );
+
+    expect(manager.hasWarmCache()).toBe(true);
+  });
+});
+
+describe('SlidingSyncManager initial list request shape', () => {
+  it('requests only the first visible window with state-only list rooms by default', () => {
+    makeManager(makeMockMx());
+
+    const [, lists] = mocks.slidingSyncConstructor.mock.calls[0] as unknown as [
+      string,
+      Map<
+        string,
+        {
+          ranges: [number, number][];
+          timeline_limit: number;
+          required_state: [string, string][];
+          slow_get_all_rooms?: boolean;
+        }
+      >,
+    ];
+    const joined = lists.get(LIST_JOINED);
+    const dms = lists.get(LIST_DMS);
+    const invites = lists.get(LIST_INVITES);
+
+    expect(joined?.ranges).toEqual([[0, 29]]);
+    expect(dms?.ranges).toEqual([[0, 29]]);
+    expect(invites?.ranges).toEqual([[0, 29]]);
+    expect(joined?.timeline_limit).toBe(0);
+    expect(joined?.slow_get_all_rooms).toBeUndefined();
+    expect(joined?.required_state).toContainEqual(['m.space.child', '*']);
+    expect(joined?.required_state).toContainEqual(['m.room.canonical_alias', '']);
+    expect(joined?.required_state).toContainEqual(['im.ponies.room_emotes', '*']);
+    expect(joined?.required_state).toContainEqual(['moe.sable.room.abbreviations', '']);
+  });
+
+  it('uses a tiny list timeline when previews opt in', () => {
+    const manager = new SlidingSyncManager(
+      makeMockMx(),
+      'https://sliding.example.com',
+      { listTimelineLimit: 1 },
+      false
+    );
+
+    const [, lists] = mocks.slidingSyncConstructor.mock.calls[0] as unknown as [
+      string,
+      Map<string, { timeline_limit: number; required_state: [string, string][] }>,
+    ];
+    const joined = lists.get(LIST_JOINED);
+
+    expect(joined?.timeline_limit).toBe(1);
+    expect(joined?.required_state).toContainEqual(['m.room.member', '$LAZY']);
+    expect(manager.hasWarmCache()).toBe(false);
+  });
+});
+
+describe('SlidingSyncManager.hasSufficientRoomsLoaded()', () => {
+  it('waits for each known list to reach the requested visible window', () => {
+    mocks.slidingSyncInstance.getListData.mockImplementation((key: unknown) => {
+      if (key === LIST_JOINED) return { joinedCount: 600 };
+      if (key === LIST_DMS) return { joinedCount: 10 };
+      if (key === LIST_INVITES) return { joinedCount: 0 };
+      return null;
+    });
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+    fireLifecycle(SlidingSyncState.RequestFinished, {
+      rooms: {},
+      lists: {
+        [LIST_JOINED]: {
+          ops: [{ range: [0, 10], room_ids: Array.from({ length: 11 }, (_, i) => `!j${i}`) }],
+        },
+        [LIST_DMS]: {
+          ops: [{ range: [0, 9], room_ids: Array.from({ length: 10 }, (_, i) => `!d${i}`) }],
+        },
+      },
+    });
+
+    expect(manager.hasSufficientRoomsLoaded()).toBe(false);
+  });
+
+  it('allows startup once every known list has the requested visible window', () => {
+    mocks.slidingSyncInstance.getListData.mockImplementation((key: unknown) => {
+      if (key === LIST_JOINED) return { joinedCount: 600 };
+      if (key === LIST_DMS) return { joinedCount: 10 };
+      if (key === LIST_INVITES) return { joinedCount: 0 };
+      return null;
+    });
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+    fireLifecycle(SlidingSyncState.RequestFinished, {
+      rooms: {},
+      lists: {
+        [LIST_JOINED]: {
+          ops: [{ range: [0, 29], room_ids: Array.from({ length: 30 }, (_, i) => `!j${i}`) }],
+        },
+        [LIST_DMS]: {
+          ops: [{ range: [0, 9], room_ids: Array.from({ length: 10 }, (_, i) => `!d${i}`) }],
+        },
+      },
+    });
+
+    expect(manager.hasSufficientRoomsLoaded()).toBe(true);
+  });
+
+  it('treats empty list responses as sufficient for empty accounts', () => {
+    mocks.slidingSyncInstance.getListData.mockImplementation((key: unknown) => {
+      if (key === LIST_JOINED || key === LIST_DMS || key === LIST_INVITES) {
+        return { joinedCount: 0 };
+      }
+      return null;
+    });
+    const manager = makeManager(makeMockMx());
+
+    expect(manager.hasSufficientRoomsLoaded()).toBe(true);
+  });
+});
+
+describe('SlidingSyncManager.requestListWindow()', () => {
+  it('expands list ranges on demand instead of during sync completion', () => {
+    mocks.slidingSyncInstance.getListData.mockImplementation((key: unknown) => {
+      if (key === LIST_JOINED) return { joinedCount: 120 };
+      return null;
+    });
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+
+    fireLifecycle(SlidingSyncState.Complete, {});
+    expect(mocks.slidingSyncInstance.setListRanges).not.toHaveBeenCalled();
+
+    manager.requestListWindow(LIST_JOINED, 59);
+    expect(mocks.slidingSyncInstance.setListRanges).toHaveBeenCalledWith(LIST_JOINED, [[0, 59]]);
+  });
+
+  it('does not shrink or resend an already covered window', () => {
+    mocks.slidingSyncInstance.getListData.mockImplementation((key: unknown) => {
+      if (key === LIST_JOINED) return { joinedCount: 120 };
+      return null;
+    });
+    const manager = makeManager(makeMockMx());
+
+    manager.requestListWindow(LIST_JOINED, 10);
+
+    expect(mocks.slidingSyncInstance.setListRanges).not.toHaveBeenCalled();
+  });
+
+  it('preserves the configured maxRooms cap when expanding a list', () => {
+    mocks.slidingSyncInstance.getListData.mockImplementation((key: unknown) => {
+      if (key === LIST_JOINED) return { joinedCount: 120 };
+      return null;
+    });
+    const manager = makeManager(makeMockMx(), { maxRooms: 50 });
+
+    manager.requestListWindow(LIST_JOINED, 100);
+
+    expect(mocks.slidingSyncInstance.setListRanges).toHaveBeenCalledWith(LIST_JOINED, [[0, 49]]);
+  });
+
+  it('reports list diagnostics for UI-driven paging decisions', () => {
+    mocks.slidingSyncInstance.getListData.mockImplementation((key: unknown) => {
+      if (key === LIST_JOINED) return { joinedCount: 120 };
+      return null;
+    });
+    const manager = makeManager(makeMockMx());
+
+    expect(manager.getListDiagnostics(LIST_JOINED)).toEqual({
+      key: LIST_JOINED,
+      knownCount: 120,
+      rangeEnd: 29,
+    });
+  });
+});
+
+describe('SlidingSyncManager.setSpaceScope()', () => {
+  it('uses a larger initial range for the active space list', () => {
+    const manager = makeManager(makeMockMx(), { listPageSize: 30 });
+
+    manager.setSpaceScope('!space:example.com');
+
+    expect(mocks.slidingSyncInstance.setList).toHaveBeenCalledWith(
+      LIST_SPACE,
+      expect.objectContaining({
+        ranges: [[0, 59]],
+        filters: { is_invite: false, spaces: ['!space:example.com'] },
+      })
+    );
+  });
+});
+
+describe('SlidingSyncManager.prefetchRoom()', () => {
+  it('temporarily adds a prefetched room subscription and expires it after the ttl', () => {
+    const manager = makeManager(makeMockMx());
+
+    manager.prefetchRoom('!room:example.com', 500);
+    vi.advanceTimersByTime(100);
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenLastCalledWith(
+      new Set(['!room:example.com'])
+    );
+
+    vi.advanceTimersByTime(500);
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenLastCalledWith(new Set());
+  });
+
+  it('keeps the subscription active when the prefetched room becomes the active room', () => {
+    const manager = makeManager(makeMockMx());
+
+    manager.prefetchRoom('!room:example.com', 500);
+    vi.advanceTimersByTime(100);
+    manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(500);
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenLastCalledWith(
+      new Set(['!room:example.com'])
+    );
+  });
+});
+
+describe('SlidingSyncManager space graph warmup', () => {
+  it('lazily expands the joined list after the first successful sync', () => {
+    mocks.slidingSyncInstance.getListData.mockImplementation((key: unknown) => {
+      if (key === LIST_JOINED) return { joinedCount: 120 };
+      return { joinedCount: 0 };
+    });
+    const manager = makeManager(makeMockMx(), { spaceGraphWarmupRooms: 90 });
+    manager.attach();
+
+    fireLifecycle(SlidingSyncState.Complete, {});
+    expect(mocks.slidingSyncInstance.setListRanges).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(2500);
+
+    expect(mocks.slidingSyncInstance.setListRanges).toHaveBeenCalledWith(LIST_JOINED, [[0, 59]]);
+  });
+
+  it('caps lazy space graph warmup below all rooms', () => {
+    mocks.slidingSyncInstance.getListData.mockImplementation((key: unknown) => {
+      if (key === LIST_JOINED) return { joinedCount: 5000 };
+      return { joinedCount: 0 };
+    });
+    const manager = makeManager(makeMockMx(), { spaceGraphWarmupRooms: 60 });
+    manager.attach();
+
+    fireLifecycle(SlidingSyncState.Complete, {});
+    vi.advanceTimersByTime(2500);
+
+    expect(mocks.slidingSyncInstance.setListRanges).toHaveBeenCalledWith(LIST_JOINED, [[0, 59]]);
+
+    mocks.slidingSyncInstance.getListParams.mockImplementation((key: unknown) => {
+      if (key === LIST_JOINED) return { ranges: [[0, 59]] };
+      if (key === LIST_DMS || key === LIST_INVITES) return { ranges: [[0, 29]] };
+      return null;
+    });
+    mocks.slidingSyncInstance.setListRanges.mockClear();
+
+    vi.advanceTimersByTime(1500);
+
+    expect(mocks.slidingSyncInstance.setListRanges).not.toHaveBeenCalled();
+  });
+});
+
+describe('SlidingSyncManager sync health checks', () => {
+  it('does not report healthy before the first successful sliding sync response', () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+
+    expect(manager.getDiagnostics().healthy).toBe(false);
+
+    fireLifecycle(SlidingSyncState.RequestFinished, { rooms: {} });
+
+    expect(manager.getDiagnostics().healthy).toBe(true);
+  });
+
+  it('resends when sliding sync has not completed a successful poll recently', () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+
+    vi.advanceTimersByTime(29_999);
+    expect(mocks.slidingSyncInstance.resend).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(mocks.slidingSyncInstance.resend).toHaveBeenCalledOnce();
+
+    vi.advanceTimersByTime(15_000);
+    expect(mocks.slidingSyncInstance.resend).toHaveBeenCalledOnce();
+  });
+
+  it('does not health-retry while the browser is offline', () => {
+    setNavigatorOnline(false);
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+
+    vi.advanceTimersByTime(30_000);
+
+    expect(mocks.slidingSyncInstance.resend).not.toHaveBeenCalled();
+  });
 });
 
 // ── dispose() ────────────────────────────────────────────────────────────────
@@ -125,8 +553,10 @@ describe('SlidingSyncManager — membership leave auto-unsubscribe', () => {
     const manager = makeManager(mx);
     manager.attach();
     manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
 
     fireMembershipEvent(mx, 'leave');
+    vi.advanceTimersByTime(100);
 
     // subscribeToRoom + unsubscribeFromRoom = 2 calls
     expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenCalledTimes(2);
@@ -137,8 +567,10 @@ describe('SlidingSyncManager — membership leave auto-unsubscribe', () => {
     const manager = makeManager(mx);
     manager.attach();
     manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
 
     fireMembershipEvent(mx, 'ban');
+    vi.advanceTimersByTime(100);
 
     expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenCalledTimes(2);
   });
@@ -148,6 +580,7 @@ describe('SlidingSyncManager — membership leave auto-unsubscribe', () => {
     const manager = makeManager(mx);
     manager.attach();
     manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
 
     fireMembershipEvent(mx, 'leave', '!room:example.com', '@other:example.com');
 
@@ -160,6 +593,7 @@ describe('SlidingSyncManager — membership leave auto-unsubscribe', () => {
     const manager = makeManager(mx);
     manager.attach();
     manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
 
     fireMembershipEvent(mx, 'join');
 
@@ -174,5 +608,243 @@ describe('SlidingSyncManager — membership leave auto-unsubscribe', () => {
     fireMembershipEvent(mx, 'leave');
 
     expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).not.toHaveBeenCalled();
+  });
+
+  it('does not resend a subscription for a room that is already active', () => {
+    const manager = makeManager(makeMockMx());
+    manager.subscribeToRoom('!room:example.com');
+    manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a shared active-room subscription until every caller releases it', () => {
+    const manager = makeManager(makeMockMx());
+    manager.subscribeToRoom('!room:example.com');
+    manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+    mocks.slidingSyncInstance.modifyRoomSubscriptions.mockClear();
+
+    manager.unsubscribeFromRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).not.toHaveBeenCalled();
+
+    manager.unsubscribeFromRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenCalledOnce();
+    const [rooms] = mocks.slidingSyncInstance.modifyRoomSubscriptions.mock.calls[0] as unknown as [
+      Set<string>,
+    ];
+    expect([...rooms]).toEqual([]);
+  });
+
+  it('batches rapid active-room subscriptions into one SDK update', () => {
+    const manager = makeManager(makeMockMx());
+    manager.subscribeToRoom('!a:example.com');
+    manager.subscribeToRoom('!b:example.com');
+    vi.advanceTimersByTime(100);
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenCalledTimes(1);
+    const firstCall = mocks.slidingSyncInstance.modifyRoomSubscriptions.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const [rooms] = firstCall as unknown as [Set<string>];
+    expect([...rooms].toSorted()).toEqual(['!a:example.com', '!b:example.com']);
+  });
+
+  it('removes a room subscription when navigation cleanup unsubscribes it', () => {
+    const manager = makeManager(makeMockMx());
+    manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+    mocks.slidingSyncInstance.modifyRoomSubscriptions.mockClear();
+
+    manager.unsubscribeFromRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenCalledOnce();
+    const [rooms] = mocks.slidingSyncInstance.modifyRoomSubscriptions.mock.calls[0] as unknown as [
+      Set<string>,
+    ];
+    expect([...rooms]).toEqual([]);
+  });
+});
+
+// ── pull-to-refresh force reset ──────────────────────────────────────────────
+
+describe('SlidingSyncManager.scheduleForceReset()', () => {
+  it('restores room subscriptions when the empty cycle finishes', () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+    manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+    mocks.slidingSyncInstance.modifyRoomSubscriptions.mockClear();
+    mocks.slidingSyncInstance.resend.mockClear();
+
+    manager.scheduleForceReset();
+    fireLifecycle(SlidingSyncState.RequestFinished, { rooms: {} });
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenCalledTimes(2);
+    const [emptySet] = mocks.slidingSyncInstance.modifyRoomSubscriptions.mock
+      .calls[0] as unknown as [Set<string>];
+    const [restoredSet] = mocks.slidingSyncInstance.modifyRoomSubscriptions.mock
+      .calls[1] as unknown as [Set<string>];
+    expect([...emptySet]).toEqual([]);
+    expect([...restoredSet]).toEqual(['!room:example.com']);
+    expect(mocks.slidingSyncInstance.resend).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(5000);
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenCalledTimes(2);
+  });
+
+  it('restores room subscriptions if the empty cycle never finishes', () => {
+    const manager = makeManager(makeMockMx());
+    manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+    mocks.slidingSyncInstance.modifyRoomSubscriptions.mockClear();
+    mocks.slidingSyncInstance.resend.mockClear();
+
+    manager.scheduleForceReset();
+    vi.advanceTimersByTime(4999);
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1);
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenCalledTimes(2);
+    const [emptySet] = mocks.slidingSyncInstance.modifyRoomSubscriptions.mock
+      .calls[0] as unknown as [Set<string>];
+    const [restoredSet] = mocks.slidingSyncInstance.modifyRoomSubscriptions.mock
+      .calls[1] as unknown as [Set<string>];
+    expect([...emptySet]).toEqual([]);
+    expect([...restoredSet]).toEqual(['!room:example.com']);
+    expect(mocks.slidingSyncInstance.resend).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolves pending force-reset waiters when the restore times out', async () => {
+    const manager = makeManager(makeMockMx());
+    manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+
+    manager.scheduleForceReset();
+    const waiter = manager.waitForPendingForceReset();
+
+    vi.advanceTimersByTime(5000);
+
+    await expect(waiter).resolves.toBe('timeout');
+  });
+
+  it('resolves pending force-reset waiters on the first empty-cycle completion', async () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+    manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+
+    manager.scheduleForceReset();
+    const waiter = manager.waitForPendingForceReset();
+
+    fireLifecycle(SlidingSyncState.RequestFinished, { rooms: {} });
+
+    await expect(waiter).resolves.toBe('request_finished');
+  });
+
+  it('resets active room timelines before resubscribing', () => {
+    const room = makeMockRoom();
+    const mx = makeMockMx({
+      getRoom: vi.fn<() => unknown>().mockReturnValue(room),
+    });
+    const manager = makeManager(mx);
+    manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+
+    manager.scheduleForceReset();
+
+    expect(room.resetLiveTimeline).toHaveBeenCalledOnce();
+  });
+
+  it('does not restore a room unsubscribed while a reset cycle is pending', () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+    manager.subscribeToRoom('!room:example.com');
+    vi.advanceTimersByTime(100);
+    mocks.slidingSyncInstance.modifyRoomSubscriptions.mockClear();
+
+    manager.scheduleForceReset();
+    manager.unsubscribeFromRoom('!room:example.com');
+    fireLifecycle(SlidingSyncState.RequestFinished, { rooms: {} });
+
+    expect(mocks.slidingSyncInstance.modifyRoomSubscriptions).toHaveBeenCalledTimes(2);
+    const [emptySet] = mocks.slidingSyncInstance.modifyRoomSubscriptions.mock
+      .calls[0] as unknown as [Set<string>];
+    const [restoredSet] = mocks.slidingSyncInstance.modifyRoomSubscriptions.mock
+      .calls[1] as unknown as [Set<string>];
+    expect([...emptySet]).toEqual([]);
+    expect([...restoredSet]).toEqual([]);
+  });
+});
+
+// ── timeline handoff ────────────────────────────────────────────────────────
+
+describe('SlidingSyncManager — timeline handoff', () => {
+  it('leaves timeline events for the SDK sliding-sync handler to process', () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+    const response = {
+      rooms: {
+        '!room:example.com': {
+          timeline: [
+            {
+              event_id: '$event',
+              type: 'm.room.message',
+              sender: '@alice:example.com',
+              origin_server_ts: 1,
+              content: { body: 'hello', msgtype: 'm.text' },
+            },
+          ],
+        },
+      },
+    };
+
+    fireLifecycle(SlidingSyncState.RequestFinished, response);
+
+    expect(response.rooms['!room:example.com'].timeline).toHaveLength(1);
+  });
+});
+
+// ── network changes: avoid foreground resend cascades ───────────────────────
+
+describe('SlidingSyncManager — network change handling', () => {
+  afterEach(() => {
+    setNavigatorOnline(true);
+    Object.defineProperty(window.navigator, 'connection', {
+      configurable: true,
+      value: undefined,
+    });
+  });
+
+  it('ignores online-only network changes', () => {
+    setNavigatorOnline(true);
+    const { fireConnectionChange } = installConnectionMock();
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+
+    fireConnectionChange();
+
+    expect(mocks.slidingSyncInstance.resend).not.toHaveBeenCalled();
+  });
+
+  it('resends when the browser transitions from offline to online', () => {
+    setNavigatorOnline(true);
+    const { fireConnectionChange } = installConnectionMock();
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+
+    setNavigatorOnline(false);
+    fireConnectionChange();
+    setNavigatorOnline(true);
+    fireConnectionChange();
+
+    expect(mocks.slidingSyncInstance.resend).toHaveBeenCalledOnce();
   });
 });

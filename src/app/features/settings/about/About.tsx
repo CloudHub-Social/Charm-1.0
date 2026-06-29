@@ -1,16 +1,26 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, Scroll, Button, config, toRem, Spinner } from 'folds';
-import { Code, Heart, menuIcon } from '$components/icons/phosphor';
+import { ArrowsClockwise, Code, Heart, menuIcon } from '$components/icons/phosphor';
 import { PageContent } from '$components/page';
 import { SequenceCard } from '$components/sequence-card';
 import { SettingTile } from '$components/setting-tile';
 import LogoSVG from '$public/res/svg/logo.svg';
+import {
+  APP_ATTRIBUTION,
+  APP_DESCRIPTION,
+  APP_NAME,
+  APP_SOURCE_URL,
+  APP_SUPPORT_URL,
+  APP_UPSTREAM_URL,
+} from '$app/config/brand';
 import { clearCacheAndReload } from '$client/initMatrix';
+import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { SequenceCardStyle } from '$features/settings/styles.css';
+import { SettingsSectionPage } from '$features/settings/SettingsSectionPage';
 import { Method } from '$types/matrix-sdk';
 import { useOpenBugReportModal } from '$state/hooks/bugReportModal';
-import { SettingsSectionPage } from '../SettingsSectionPage';
+import { applyPendingAppUpdate, checkForAppUpdates } from '$utils/appUpdates';
 
 type VersionResult =
   | { error: { message: string } }
@@ -21,37 +31,49 @@ export function HomeserverInfo() {
   const mx = useMatrixClient();
   const [federationUrl, setFederationUrl] = useState<string>(mx.baseUrl);
   const [version, setVersion] = useState<VersionResult>(undefined);
+  const fetchedRef = useRef(false);
 
-  if (!version)
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+
+    // Step 1: Fetch well-known first to discover federation server
+    const userDomain = mx.getSafeUserId().split(':')[1];
     mx.http
-      .request(Method.Get, '/version', undefined, undefined, {
-        prefix: '/_matrix/federation/v1',
-        baseUrl: federationUrl,
+      .request(Method.Get, '/server', undefined, undefined, {
+        prefix: '/.well-known/matrix',
+        baseUrl: `https://${userDomain}`,
+      })
+      .then((well_known) => {
+        // Step 2: Parse m.server from well-known response
+        const mServer = (well_known as { 'm.server'?: string })['m.server'];
+        // Extract host from m.server (format: "host:port" or "host")
+        const federationBase = mServer
+          ? `https://${mServer.split(':')[0]}${mServer.includes(':') ? `:${mServer.split(':')[1]}` : ''}`
+          : `https://${userDomain}:8448`; // Fallback to port 8448 if well-known not found
+
+        setFederationUrl(federationBase);
+
+        // Step 3: Fetch federation version from discovered endpoint
+        return mx.http.request(Method.Get, '/version', undefined, undefined, {
+          prefix: '/_matrix/federation/v1',
+          baseUrl: federationBase,
+        });
       })
       .then((fetched_version) =>
         setVersion({
-          server: fetched_version as { name?: string; version?: string; compiler?: string },
+          server: fetched_version as {
+            name?: string;
+            version?: string;
+            compiler?: string;
+          },
         })
       )
       .catch((error) => {
-        if (federationUrl === mx.baseUrl) {
-          mx.http
-            .request(Method.Get, '/server', undefined, undefined, {
-              prefix: '/.well-known/matrix',
-              baseUrl: `https://${mx.getSafeUserId().split(':')[1]}`,
-            })
-            .then((well_known) => {
-              const mServer = (well_known as { 'm.server'?: string })['m.server'];
-              const newUrl = mServer ? `https://${mServer.split(':')[0]}` : federationUrl;
-              if (newUrl !== federationUrl) {
-                setFederationUrl(newUrl);
-              }
-            })
-            .catch((error_) => setVersion({ error: { message: String(error_) } }));
-        } else {
-          setVersion({ error: { message: String(error) } });
-        }
+        // Federation may not be exposed to clients — treat as optional
+        setVersion({ error: { message: String(error) } });
       });
+  }, [mx]);
 
   return (
     <Box direction="Column" gap="100" id="homeserver-info">
@@ -180,6 +202,56 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
   const devLabel = IS_RELEASE_TAG ? '' : '-dev';
   const buildLabel = BUILD_HASH ? ` (${BUILD_HASH})` : '';
   const openBugReport = useOpenBugReportModal();
+  const [updateStatusMessage, setUpdateStatusMessage] = useState<string | undefined>();
+  const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
+  const isApplyingUpdateRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const [updateCheckState, runUpdateCheck] = useAsyncCallback<
+    Awaited<ReturnType<typeof checkForAppUpdates>>,
+    Error,
+    []
+  >(checkForAppUpdates);
+
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+    },
+    []
+  );
+
+  const handleCheckForUpdates = useCallback(async () => {
+    try {
+      const result = await runUpdateCheck();
+      if (!result) return;
+      setUpdateStatusMessage(result.message);
+    } catch (error) {
+      setUpdateStatusMessage(
+        error instanceof Error ? error.message : 'Failed to check for updates.'
+      );
+    }
+  }, [runUpdateCheck]);
+
+  const handleApplyUpdate = useCallback(async () => {
+    if (isApplyingUpdateRef.current) return;
+    isApplyingUpdateRef.current = true;
+    setIsApplyingUpdate(true);
+
+    try {
+      const updateApplied = await applyPendingAppUpdate();
+      if (isMountedRef.current && !updateApplied) {
+        isApplyingUpdateRef.current = false;
+        setIsApplyingUpdate(false);
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        setUpdateStatusMessage(
+          error instanceof Error ? error.message : 'Failed to apply the update.'
+        );
+        isApplyingUpdateRef.current = false;
+        setIsApplyingUpdate(false);
+      }
+    }
+  }, []);
 
   return (
     <SettingsSectionPage title="About" requestBack={requestBack} requestClose={requestClose}>
@@ -192,22 +264,23 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                   <img
                     style={{ width: toRem(60), height: toRem(60) }}
                     src={LogoSVG}
-                    alt="Sable logo"
+                    alt={`${APP_NAME} logo`}
                   />
                 </Box>
                 <Box direction="Column" gap="300">
                   <Box direction="Column" gap="100">
                     <Box gap="100" alignItems="End">
-                      <Text size="H3">Sable</Text>
+                      <Text size="H3">{APP_NAME}</Text>
                       <Text size="T200">{`v${APP_VERSION}${devLabel}${buildLabel}`}</Text>
                     </Box>
-                    <Text>An almost stable Matrix client.</Text>
+                    <Text>{APP_DESCRIPTION}</Text>
+                    <Text priority="300">{APP_ATTRIBUTION}</Text>
                   </Box>
 
                   <Box gap="200" wrap="Wrap">
                     <Button
                       as="a"
-                      href="https://github.com/SableClient/Sable"
+                      href={APP_SOURCE_URL}
                       rel="noreferrer noopener"
                       target="_blank"
                       variant="Secondary"
@@ -220,7 +293,20 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
                     </Button>
                     <Button
                       as="a"
-                      href="https://opencollective.com/sable"
+                      href={APP_UPSTREAM_URL}
+                      rel="noreferrer noopener"
+                      target="_blank"
+                      variant="Secondary"
+                      fill="Soft"
+                      size="300"
+                      radii="300"
+                      before={menuIcon(Code, { weight: 'fill' })}
+                    >
+                      <Text size="B300">Upstream</Text>
+                    </Button>
+                    <Button
+                      as="a"
+                      href={APP_SUPPORT_URL}
                       rel="noreferrer noopener"
                       target="_blank"
                       variant="Critical"
@@ -236,6 +322,65 @@ export function About({ requestBack, requestClose }: Readonly<AboutProps>) {
               </Box>
               <Box direction="Column" gap="100">
                 <Text size="L400">Options</Text>
+                <SequenceCard
+                  className={SequenceCardStyle}
+                  variant="SurfaceVariant"
+                  direction="Column"
+                  gap="400"
+                >
+                  <SettingTile
+                    title="Check for Updates"
+                    focusId="check-for-updates"
+                    description={
+                      updateStatusMessage ??
+                      'Check whether a newer web app build is ready to apply in this client.'
+                    }
+                    after={
+                      updateCheckState.status === AsyncStatus.Success &&
+                      updateCheckState.data.canApply ? (
+                        <Button
+                          onClick={handleApplyUpdate}
+                          variant="Primary"
+                          fill="Soft"
+                          size="300"
+                          radii="300"
+                          outlined
+                          disabled={isApplyingUpdate}
+                          before={
+                            isApplyingUpdate ? (
+                              <Spinner variant="Secondary" size="100" />
+                            ) : undefined
+                          }
+                        >
+                          <Text size="B300">{isApplyingUpdate ? 'Applying…' : 'Apply Update'}</Text>
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={handleCheckForUpdates}
+                          variant="Secondary"
+                          fill="Soft"
+                          size="300"
+                          radii="300"
+                          outlined
+                          disabled={updateCheckState.status === AsyncStatus.Loading}
+                          before={
+                            updateCheckState.status === AsyncStatus.Loading ? (
+                              <Spinner variant="Secondary" size="100" />
+                            ) : (
+                              menuIcon(ArrowsClockwise)
+                            )
+                          }
+                        >
+                          <Text size="B300">
+                            {updateCheckState.status === AsyncStatus.Loading
+                              ? 'Checking…'
+                              : 'Check'}
+                          </Text>
+                        </Button>
+                      )
+                    }
+                  />
+                </SequenceCard>
                 <SequenceCard
                   className={SequenceCardStyle}
                   variant="SurfaceVariant"

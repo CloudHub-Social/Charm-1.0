@@ -2,35 +2,38 @@
  * Global keyboard shortcuts for navigation and accessibility.
  *
  * Shortcuts provided:
- *   Alt+N              — jump to the highest-priority unread room
- *   Alt+Shift+Down     — cycle forward through unread rooms
- *   Alt+Shift+Up       — cycle backward through unread rooms
- *   Ctrl+Down / Ctrl+Up: cycle through messages to reply to
+ *   Alt+N                  — jump to the highest-priority unread room
+ *   Alt+Shift+Down/Up      — cycle forward/backward through unread rooms
+ *   Ctrl+Down / Ctrl+Up    — cycle through messages to reply to
+ *   Ctrl+Alt+Down/Up       — cycle through your own messages to edit
  */
 import { useCallback, useRef } from 'react';
 import { useNavigate, useLocation, matchPath } from 'react-router-dom';
-import { useAtomValue, useSetAtom } from 'jotai';
+import { useAtomValue, useSetAtom, atom } from 'jotai';
 import { isKeyHotkey } from 'is-hotkey';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { roomToParentsAtom } from '$state/room/roomToParents';
 import { mDirectAtom } from '$state/mDirectList';
 import { roomToUnreadAtom } from '$state/room/roomToUnread';
 import { useKeyDown } from '$hooks/useKeyDown';
-import {
-  getDirectRoomPath,
-  getHomeRoomPath,
-  getHomeSearchPath,
-  getSpaceRoomPath,
-  getSpaceSearchPath,
-  withSearchParam,
-} from '$pages/pathUtils';
-import type { SearchPathSearchParams } from '$pages/paths';
+import { getDirectRoomPath, getHomeRoomPath, getSpaceRoomPath } from '$pages/pathUtils';
 import { HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH } from '$pages/paths';
-import { getCanonicalAliasOrRoomId } from '$utils/matrix';
+import { getCanonicalAliasOrRoomId, getCanonicalAliasRoomId } from '$utils/matrix';
 import { announce } from '$utils/announce';
-import { roomIdToReplyDraftAtomFamily } from '$state/room/roomInputDrafts';
+import {
+  roomIdToReplyDraftAtomFamily,
+  roomIdToEditNavRequestAtomFamily,
+  type IEditNavRequest,
+} from '$state/room/roomInputDrafts';
 import type { Room } from '$types/matrix-sdk';
-import { useSelectedSpace } from '$hooks/router/useSelectedSpace';
+import {
+  getMessageSearchShortcutPath,
+  getSelectedSpaceIdOrAliasFromPath,
+} from '$features/search/searchShortcut';
+
+// Stable fallback atom used when no room is active — prevents atomFamily from
+// creating a spurious entry under the empty-string key ''.
+const noopEditNavAtom = atom<IEditNavRequest | undefined>(undefined);
 
 export function GlobalKeyboardShortcuts() {
   const navigate = useNavigate();
@@ -42,26 +45,36 @@ export function GlobalKeyboardShortcuts() {
   const unreadIndexRef = useRef(0);
 
   // Derive the current room ID from the URL so we know which room is active.
-  const roomMatch =
-    matchPath(HOME_ROOM_PATH, location.pathname) ??
-    matchPath(DIRECT_ROOM_PATH, location.pathname) ??
-    matchPath(SPACE_ROOM_PATH, location.pathname);
+  const homeRoomMatch = matchPath(HOME_ROOM_PATH, location.pathname);
+  const directRoomMatch = matchPath(DIRECT_ROOM_PATH, location.pathname);
+  const spaceRoomMatch = matchPath(SPACE_ROOM_PATH, location.pathname);
+  const roomMatch = homeRoomMatch ?? directRoomMatch ?? spaceRoomMatch;
   const roomIdOrAlias = roomMatch?.params.roomIdOrAlias
     ? decodeURIComponent(roomMatch.params.roomIdOrAlias)
     : undefined;
-  const currentSpace = useSelectedSpace();
+  const selectedSpaceIdOrAlias = getSelectedSpaceIdOrAliasFromPath(location.pathname);
+  const selectedSpaceId =
+    selectedSpaceIdOrAlias && !selectedSpaceIdOrAlias.startsWith('!')
+      ? mx.getRooms().find((r) => r.getCanonicalAlias() === selectedSpaceIdOrAlias)?.roomId
+      : selectedSpaceIdOrAlias;
   let currentRoom: Room | null = null;
 
   if (roomIdOrAlias) {
     if (roomIdOrAlias.startsWith('!')) {
       currentRoom = mx.getRoom(roomIdOrAlias);
     } else {
-      currentRoom = mx.getRooms().find((r) => r.getCanonicalAlias() === roomIdOrAlias) ?? null;
+      const aliasedRoomId = getCanonicalAliasRoomId(mx, roomIdOrAlias);
+      currentRoom = aliasedRoomId ? mx.getRoom(aliasedRoomId) : null;
     }
   }
   const replyDraftAtomFamily = roomIdToReplyDraftAtomFamily(currentRoom?.roomId ?? '');
   const replyDraft = useAtomValue(replyDraftAtomFamily);
   const setReplyDraft = useSetAtom(replyDraftAtomFamily);
+
+  const setEditNavRequest = useSetAtom(
+    currentRoom?.roomId ? roomIdToEditNavRequestAtomFamily(currentRoom.roomId) : noopEditNavAtom
+  );
+  const editNavNonceRef = useRef(0);
 
   /** Navigate to a room by ID and announce it to screen readers. */
   const navigateToRoom = useCallback(
@@ -162,28 +175,50 @@ export function GlobalKeyboardShortcuts() {
     [currentRoom, replyDraft, setReplyDraft]
   );
 
+  /** Ctrl+Alt+Down / Ctrl+Alt+Up: cycle through the current user's editable messages. */
+  const handleEditKeyDown = useCallback(
+    (evt: KeyboardEvent) => {
+      const isDown = isKeyHotkey('mod+alt+down', evt);
+      const isUp = isKeyHotkey('mod+alt+up', evt);
+      if (!isDown && !isUp) return;
+      if (currentRoom === null) return;
+      evt.preventDefault();
+      editNavNonceRef.current += 1;
+      setEditNavRequest({ dir: isDown ? 'next' : 'prev', nonce: editNavNonceRef.current });
+    },
+    [currentRoom, setEditNavRequest]
+  );
+
   /** Ctrl+F: Search for messages */
   const handleSearchMessageInRoom = useCallback(
     (evt: KeyboardEvent) => {
       if (!isKeyHotkey('mod+f', evt)) return;
-      evt.preventDefault();
 
-      const searchParams: SearchPathSearchParams = {
-        rooms: currentRoom?.roomId,
-      };
-      const path = currentSpace
-        ? getSpaceSearchPath(getCanonicalAliasOrRoomId(mx, currentSpace))
-        : getHomeSearchPath();
+      const path = getMessageSearchShortcutPath({
+        pathname: location.pathname,
+        currentSearch: location.search,
+        selectedSpaceId: selectedSpaceId ?? undefined,
+        currentRoomId: currentRoom?.roomId,
+      });
+      if (!path) return;
+
+      const portalContainer = document.getElementById('portalContainer');
+      if (portalContainer && portalContainer.children.length > 0) {
+        return;
+      }
+
+      evt.preventDefault();
       const roomName = mx.getRoom(currentRoom?.roomId)?.name;
-      navigate(withSearchParam(path, searchParams));
+      navigate(path);
       announce(`Start Searching messages ${roomName ? `in ${roomName}` : ''}`);
     },
-    [mx, currentRoom, currentSpace, navigate]
+    [mx, currentRoom, navigate, location.pathname, location.search, selectedSpaceId]
   );
 
   useKeyDown(window, handleNextUnreadKeyDown);
   useKeyDown(window, handleUnreadNavKeyDown);
   useKeyDown(window, handleReplyKeyDown);
+  useKeyDown(window, handleEditKeyDown);
   useKeyDown(window, handleSearchMessageInRoom);
 
   return null;

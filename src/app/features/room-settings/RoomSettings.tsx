@@ -6,9 +6,10 @@ import { Avatar, Box, config, IconButton, MenuItem, Text } from 'folds';
 import { JoinRule } from '$types/matrix-sdk';
 import { PageNav, PageNavContent, PageNavHeader, PageRoot } from '$components/page';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
+import { isPhoneLayoutDevice } from '$utils/user-agent';
 import { useMatrixClient } from '$hooks/useMatrixClient';
-import { mxcUrlToHttp } from '$utils/matrix';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { useCachedMxcConverter } from '$hooks/useCachedMxcConverter';
 import { useRoomAvatar, useRoomJoinRule, useRoomName } from '$hooks/useRoomMeta';
 import { mDirectAtom } from '$state/mDirectList';
 import { RoomAvatar, RoomIcon } from '$components/room-avatar';
@@ -97,6 +98,7 @@ export function RoomSettings({ initialPage, requestClose }: RoomSettingsProps) {
   const room = useRoom();
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
+  const convertMxc = useCachedMxcConverter();
   const mDirects = useAtomValue(mDirectAtom);
   const [customDMCards] = useSetting(settingsAtom, 'customDMCards');
 
@@ -105,18 +107,22 @@ export function RoomSettings({ initialPage, requestClose }: RoomSettingsProps) {
   const joinRuleContent = useRoomJoinRule(room);
 
   const avatarUrl = roomAvatar
-    ? (mxcUrlToHttp(mx, roomAvatar, useAuthentication, 96, 96, 'crop') ?? undefined)
+    ? (convertMxc(mx, roomAvatar, useAuthentication, 96, 96, 'crop') ?? undefined)
     : undefined;
 
   const screenSize = useScreenSizeContext();
+  // Phone settings always use the full-screen mobile flow. Tablets keep the
+  // desktop settings layout as long as the screen-size heuristic still deems
+  // the viewport non-mobile.
+  const isPhoneLayout = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
   const [activePage, setActivePage] = useState<RoomSettingsPage | undefined>(() => {
     if (initialPage) return initialPage;
-    return screenSize === ScreenSize.Mobile ? undefined : RoomSettingsPage.GeneralPage;
+    return isPhoneLayout ? undefined : RoomSettingsPage.GeneralPage;
   });
   const menuItems = useRoomSettingsMenuItems();
 
   const handlePageRequestClose = () => {
-    if (screenSize === ScreenSize.Mobile) {
+    if (isPhoneLayout) {
       setActivePage(undefined);
       return;
     }
@@ -124,7 +130,7 @@ export function RoomSettings({ initialPage, requestClose }: RoomSettingsProps) {
   };
 
   const handleSwipeBack = () => {
-    if (screenSize === ScreenSize.Mobile) {
+    if (isPhoneLayout) {
       requestClose();
     }
   };
@@ -133,7 +139,7 @@ export function RoomSettings({ initialPage, requestClose }: RoomSettingsProps) {
     <SwipeableOverlayWrapper direction="right" onClose={handleSwipeBack}>
       <PageRoot
         nav={
-          screenSize === ScreenSize.Mobile && activePage !== undefined ? undefined : (
+          isPhoneLayout && activePage !== undefined ? undefined : (
             <PageNav size="300">
               <PageNavHeader outlined={false}>
                 <Box grow="Yes" gap="200">
@@ -157,7 +163,7 @@ export function RoomSettings({ initialPage, requestClose }: RoomSettingsProps) {
                   </Text>
                 </Box>
                 <Box shrink="No">
-                  {screenSize === ScreenSize.Mobile && (
+                  {isPhoneLayout && (
                     <IconButton onClick={requestClose} variant="Background">
                       {composerIcon(X)}
                     </IconButton>

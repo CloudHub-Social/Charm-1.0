@@ -34,7 +34,8 @@ export const AuthLogo = style([
 ]);
 
 export const AuthHeader = style({
-  padding: `0 ${config.space.S400}`,
+  paddingRight: config.space.S400,
+  paddingLeft: config.space.S400,
   borderBottomWidth: config.borderWidth.B300,
 });
 

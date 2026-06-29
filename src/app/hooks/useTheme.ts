@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { settingsAtom } from '$state/settings';
 import { useSetting } from '$state/hooks/settings';
-import { isLocalImportThemeUrl } from '../theme/localImportUrls';
+import { isLocalImportThemeUrl } from '$app/theme/localImportUrls';
 import { onDarkFontWeight, onLightFontWeight } from '../../config.css';
 import { darkTheme, lightTheme } from '../../colors.css';
 
@@ -78,13 +78,24 @@ export const useSystemThemeKind = (): ThemeKind => {
   );
 
   useEffect(() => {
-    const handleMediaQueryChange = () => {
+    const syncThemeKind = () => {
       setThemeKind(darkModeQueryList.matches ? ThemeKind.Dark : ThemeKind.Light);
     };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') syncThemeKind();
+    };
+    const handlePageShow = () => syncThemeKind();
 
-    darkModeQueryList.addEventListener('change', handleMediaQueryChange);
+    syncThemeKind();
+    darkModeQueryList.addEventListener('change', syncThemeKind);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', syncThemeKind);
+    window.addEventListener('pageshow', handlePageShow);
     return () => {
-      darkModeQueryList.removeEventListener('change', handleMediaQueryChange);
+      darkModeQueryList.removeEventListener('change', syncThemeKind);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', syncThemeKind);
+      window.removeEventListener('pageshow', handlePageShow);
     };
   }, [darkModeQueryList, setThemeKind]);
 

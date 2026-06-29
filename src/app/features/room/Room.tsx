@@ -1,9 +1,11 @@
 import { useCallback, useEffect } from 'react';
 import { Box, Line } from 'folds';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { isKeyHotkey } from 'is-hotkey';
 import { useAtom, useAtomValue } from 'jotai';
+import { useSystemBarSafeAreaFill } from '$components/app-shell/useSystemBarStyle';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
+import { isPhoneLayoutDevice } from '$utils/user-agent';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { PowerLevelsContextProvider, usePowerLevels } from '$hooks/usePowerLevels';
@@ -12,6 +14,7 @@ import { useKeyDown } from '$hooks/useKeyDown';
 import { markAsRead } from '$utils/notifications';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useRoomMembers } from '$hooks/useRoomMembers';
+import { useRoomEvent } from '$hooks/useRoomEvent';
 import { CallView } from '$features/call/CallView';
 import { WidgetsDrawer } from '$features/widgets/WidgetsDrawer';
 import { callChatAtom } from '$state/callEmbed';
@@ -30,21 +33,28 @@ const debugLog = createDebugLogger('Room');
 
 export function Room() {
   const { eventId } = useParams();
+  const [searchParams] = useSearchParams();
   const room = useRoom();
   const mx = useMatrixClient();
+  const targetEvent = useRoomEvent(room, eventId ?? '', undefined, Boolean(eventId));
+  const jumpMode =
+    searchParams.get('jumpMode') === 'notification_live' ? 'notification_live' : 'history_context';
+  const screenSize = useScreenSizeContext();
+  const isSinglePaneRoomLayout = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
+
+  useSystemBarSafeAreaFill(isSinglePaneRoomLayout ? 'var(--sable-surface-container)' : undefined);
 
   // Log room mount
   useEffect(() => {
-    debugLog.info('ui', 'Room component mounted', { roomId: room.roomId, eventId });
+    debugLog.info('ui', 'Room component mounted', { roomId: room.roomId, eventId, jumpMode });
     return () => {
       debugLog.info('ui', 'Room component unmounted', { roomId: room.roomId });
     };
-  }, [room.roomId, eventId]);
+  }, [room.roomId, eventId, jumpMode]);
 
   const [isDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
   const [isWidgetDrawerOpen] = useSetting(settingsAtom, 'isWidgetDrawer');
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
-  const screenSize = useScreenSizeContext();
 
   // Log drawer state changes
   useEffect(() => {
@@ -72,7 +82,7 @@ export function Room() {
   useEffect(() => {
     if (!eventId) return;
 
-    const event = room.findEventById(eventId);
+    const event = targetEvent;
     if (!event) return;
 
     const { threadRootId } = event;
@@ -86,7 +96,7 @@ export function Room() {
       }
       setOpenThread(threadRootId);
     }
-  }, [eventId, room, setOpenThread]);
+  }, [eventId, room, setOpenThread, targetEvent]);
 
   useKeyDown(
     window,
@@ -102,6 +112,10 @@ export function Room() {
 
   const callView = room.isCallRoom();
   const abbreviations = useMergedAbbreviations(room);
+  const showMobileWidgetsDrawer = screenSize !== ScreenSize.Desktop && isWidgetDrawerOpen;
+  const hasDesktopRightDrawer =
+    screenSize === ScreenSize.Desktop &&
+    (isDrawer || isWidgetDrawerOpen || Boolean(openThreadId) || threadBrowserOpen);
 
   // Log call view state
   useEffect(() => {
@@ -124,7 +138,11 @@ export function Room() {
             <Box grow="Yes" direction="Column">
               <RoomViewHeader />
               <Box grow="Yes">
-                <RoomView eventId={eventId} />
+                <RoomView
+                  eventId={eventId}
+                  jumpMode={jumpMode}
+                  hasDesktopRightDrawer={hasDesktopRightDrawer}
+                />
               </Box>
             </Box>
           )}
@@ -194,6 +212,18 @@ export function Room() {
               onClose={() => setThreadBrowserOpen(false)}
               overlay
             />
+          )}
+          {showMobileWidgetsDrawer && (
+            <Box
+              style={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 20,
+                backgroundColor: 'var(--sable-surface)',
+              }}
+            >
+              <WidgetsDrawer key={`widgets-mobile-${room.roomId}`} room={room} />
+            </Box>
           )}
         </Box>
       </RoomAbbreviationsContext.Provider>

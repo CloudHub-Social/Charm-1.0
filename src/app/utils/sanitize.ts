@@ -1,6 +1,6 @@
 import DOMPurify from 'dompurify';
 import { isMatrixHexColor } from './matrixHtml';
-import { testMatrixUri } from '../plugins/matrix-uri';
+import { testMatrixUri } from '$plugins/matrix-uri';
 
 const MAX_TAG_NESTING = 100;
 const INTERNAL_IMG_SRC_ATTR = 'data-sable-img-src';
@@ -127,6 +127,30 @@ function isAllowedMxcUri(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function getSafeMediaUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+
+  if (url.startsWith('blob:')) {
+    return url;
+  }
+
+  try {
+    const parsed = new URL(url);
+
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return url;
+    }
+
+    if (isAllowedMxcUri(url)) {
+      return url;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
 }
 
 function normalizeCodeClasses(attrValue: string): string | undefined {

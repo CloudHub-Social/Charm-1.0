@@ -19,6 +19,7 @@ import {
   KnownMembership,
 } from '$types/matrix-sdk';
 import { useMemo } from 'react';
+import * as Sentry from '@sentry/react';
 
 import {
   addRoomIdToMDirect,
@@ -36,11 +37,12 @@ import { splitWithSpace } from '$utils/common';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { useOpenBugReportModal } from '$state/hooks/bugReportModal';
+import { closeKeyboardBeforeOpeningOverlay } from '$utils/keyboard';
 import { createRoomEncryptionState } from '$components/create-room';
 import { parsePronounsInput } from '$utils/pronouns';
 import { sendFeedback } from '$utils/sendFeedbackToUser';
 import { PKitCommandMessageHandler } from '$plugins/pluralkit-handler/PKitCommandMessageHandler';
-import { ErrorCode } from '../cs-errorcode';
+import { ErrorCode } from '$app/cs-errorcode';
 import { useRoomNavigate } from './useRoomNavigate';
 import { enrichWidgetUrl } from './useRoomWidgets';
 import { useUserProfile } from './useUserProfile';
@@ -287,7 +289,8 @@ export enum Command {
   // Spec missing from cinny
   Location = 'location',
   ShareMyLocation = 'sharemylocation',
-  Poll = 'poll',
+  // Polls
+  CreatePoll = 'poll',
 }
 
 export type CommandContent = {
@@ -859,10 +862,16 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
           } catch (e: unknown) {
             if (e instanceof MatrixError && e.errcode === ErrorCode.M_FORBIDDEN) {
               sendFeedback(
-                'Permission Denied. An admin must enable "Room Colors" in Settings > Cosmetics in app.sable.moe or another supported client.',
+                'Permission Denied. An admin must enable "Room Colors" in Settings > Cosmetics in Charm or another supported client.',
                 room,
                 userId
               );
+            } else {
+              Sentry.captureException(e, {
+                tags: { command: 'color', operation: 'set_room_color' },
+                contexts: { command: { roomId: room.roomId, input } },
+              });
+              sendFeedback('Failed to set room color. Please try again.', room, userId);
             }
           }
         },
@@ -909,10 +918,18 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
           } catch (e: unknown) {
             if (e instanceof MatrixError && e.errcode === ErrorCode.M_FORBIDDEN) {
               sendFeedback(
-                'Permission Denied. An admin must enable "Space-Wide Colors" in Settings > Cosmetics in app.sable.moe or another supported client.',
+                'Permission Denied. An admin must enable "Space-Wide Colors" in Settings > Cosmetics in Charm or another supported client.',
                 room,
                 userId
               );
+            } else {
+              Sentry.captureException(e, {
+                tags: { command: 'scolor', operation: 'set_space_color' },
+                contexts: {
+                  command: { spaceId: parents?.[0]?.getStateKey() ?? room.roomId, input },
+                },
+              });
+              sendFeedback('Failed to set space color. Please try again.', room, userId);
             }
           }
         },
@@ -944,7 +961,7 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
           } catch (e: unknown) {
             if (e instanceof MatrixError && e.errcode === ErrorCode.M_FORBIDDEN) {
               sendFeedback(
-                'Permission Denied. An admin must enable "Room Fonts" in Settings > Cosmetics in app.sable.moe or another supported client.',
+                'Permission Denied. An admin must enable "Room Fonts" in Settings > Cosmetics in Charm or another supported client.',
                 room,
                 userId
               );
@@ -992,10 +1009,18 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
           } catch (e: unknown) {
             if (e instanceof MatrixError && e.errcode === ErrorCode.M_FORBIDDEN) {
               sendFeedback(
-                'Permission Denied. An admin must enable "Space-Wide Fonts" in Settings > Cosmetics in app.sable.moe or another supported client.',
+                'Permission Denied. An admin must enable "Space-Wide Fonts" in Settings > Cosmetics in Charm or another supported client.',
                 room,
                 userId
               );
+            } else {
+              Sentry.captureException(e, {
+                tags: { command: 'font', operation: 'set_space_font' },
+                contexts: {
+                  command: { spaceId: parents?.[0]?.getStateKey() ?? room.roomId, input },
+                },
+              });
+              sendFeedback('Failed to set space font. Please try again.', room, userId);
             }
           }
         },
@@ -1046,6 +1071,16 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
                 userId
               );
             } else {
+              Sentry.captureException(e, {
+                tags: { command: 'widget', operation: 'add_widget' },
+                contexts: {
+                  command: {
+                    roomId: room.roomId,
+                    widgetName: name,
+                    widgetUrl: parsedUrl.toString().substring(0, 100),
+                  },
+                },
+              });
               sendFeedback(
                 `Failed to add widget: ${(e as Error).message || 'Unknown error'}`,
                 room,
@@ -1176,6 +1211,10 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
             const content = JSON.parse(payload);
             await mx.sendMessage(room.roomId, content);
           } catch (e: unknown) {
+            Sentry.captureException(e, {
+              tags: { command: 'rawmsg', operation: 'send_raw_message' },
+              contexts: { command: { roomId: room.roomId, payload } },
+            });
             sendFeedback(`Invalid JSON: ${(e as Error).message}`, room, userId);
           }
         },
@@ -1538,6 +1577,7 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
         name: Command.Report,
         description: 'Report a bug or request a feature',
         exe: async () => {
+          await closeKeyboardBeforeOpeningOverlay();
           openBugReport();
         },
       },
@@ -1547,7 +1587,11 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
           'Open location sharing menu or share a location as /location <latitude> <longitude>',
         exe: async (payload) => {
           const coords: LocationPoint = filterLocationString(payload);
-          if (!coords.lat || !coords.lon || coords.status !== LocationErrors.none) {
+          if (
+            coords.lat === undefined ||
+            coords.lon === undefined ||
+            coords.status !== LocationErrors.none
+          ) {
             sendFeedback(
               'You need to specify a latitude, and a longitude parameter, as for example: /location 43.959971 -59.790623 or have nothing after the /location to open the map to click which location to share',
               room,
@@ -1559,12 +1603,11 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
           const mlat = coords.lat;
           const mlon = coords.lon;
 
-          if (mlat && mlon)
-            await mx.sendMessage(room.roomId, {
-              msgtype: 'm.location',
-              geo_uri: `geo:${mlat},${mlon};u=0`,
-              body: `https://www.openstreetmap.org/?mlat=${mlat}&mlon=${mlon}#map=16/${mlat}/${mlon}"`,
-            } as RoomMessageEventContent);
+          await mx.sendMessage(room.roomId, {
+            msgtype: 'm.location',
+            geo_uri: `geo:${mlat},${mlon};u=0`,
+            body: `https://www.openstreetmap.org/?mlat=${mlat}&mlon=${mlon}#map=16/${mlat}/${mlon}"`,
+          } as RoomMessageEventContent);
         },
       },
       [Command.ShareMyLocation]: {
@@ -1587,8 +1630,9 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
 
             const mlat = crd.latitude;
             const mlon = crd.longitude;
-            const malt = crd.altitude;
-            if (!mlat || !mlon) {
+            const malt = Number.isFinite(crd.altitude) ? crd.altitude : undefined;
+            const accuracy = Number.isFinite(crd.accuracy) && crd.accuracy >= 0 ? crd.accuracy : 0;
+            if (!Number.isFinite(mlat) || !Number.isFinite(mlon)) {
               sendFeedback(
                 'Unable to retrieve the location data for an unknown reason',
                 room,
@@ -1598,7 +1642,7 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
             }
             mx.sendMessage(room.roomId, {
               msgtype: 'm.location',
-              geo_uri: `geo:${mlat},${mlon}${malt ? `,${malt}` : ''};u=0`,
+              geo_uri: `geo:${mlat},${mlon}${malt !== undefined ? `,${malt}` : ''};u=${accuracy}`,
               body: `https://www.openstreetmap.org/?mlat=${mlat}&mlon=${mlon}#map=16/${mlat}/${mlon}"`,
             } as unknown as RoomMessageEventContent);
           }
@@ -1613,12 +1657,10 @@ export const useCommands = (mx: MatrixClient, room: Room): CommandRecord => {
           navigator.geolocation.getCurrentPosition(success, error, options);
         },
       },
-      [Command.Poll]: {
-        name: Command.Poll,
+      [Command.CreatePoll]: {
+        name: Command.CreatePoll,
         description: 'Create a poll',
-        exe: async () => {
-          return;
-        },
+        exe: async () => undefined,
       },
     }),
     [

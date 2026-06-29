@@ -15,7 +15,9 @@ import {
   createRoutesFromChildren,
   matchRoutes,
 } from 'react-router-dom';
+import { APP_NAME } from './app/config/brand';
 import { scrubMatrixIds, scrubDataObject, scrubMatrixUrl } from './app/utils/sentryScrubbers';
+import { initSentryToolbar } from './app/utils/sentryToolbar';
 
 const dsn = import.meta.env.VITE_SENTRY_DSN;
 const environment = import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE;
@@ -28,6 +30,7 @@ const SESSION_ERROR_LIMIT = 50;
 // Default off: Sentry only runs when the user has opted in via the banner or Settings.
 const sentryEnabled = localStorage.getItem('sable_sentry_enabled') === 'true';
 const replayEnabled = localStorage.getItem('sable_sentry_replay_enabled') === 'true';
+const canvasReplayEnabled = localStorage.getItem('sable_sentry_canvas_replay_enabled') === 'true';
 
 // Only initialize if DSN is provided and user hasn't opted out
 if (dsn && sentryEnabled) {
@@ -56,6 +59,7 @@ if (dsn && sentryEnabled) {
               blockAllMedia: true, // Block images/video/audio for privacy
               maskAllInputs: true, // Mask form inputs
             }),
+            ...(canvasReplayEnabled ? [Sentry.replayCanvasIntegration()] : []),
           ]
         : []),
       // Capture console.error/warn as structured logs in the Sentry Logs product
@@ -65,12 +69,15 @@ if (dsn && sentryEnabled) {
     ],
 
     // Performance Monitoring - Tracing
-    // 100% in development and preview, lower in production for cost control
-    tracesSampleRate: environment === 'development' || environment === 'preview' ? 1.0 : 0.1,
+    // 100% in development and preview, 50% in production for balanced quota usage
+    tracesSampleRate: environment === 'development' || environment === 'preview' ? 1.0 : 0.5,
 
     // Browser profiling — profiles every sampled session (requires Document-Policy: js-profiling response header)
+    // 'trace' ties the profiling lifecycle to traces automatically; without this it defaults to
+    // 'manual' when profilesSampleRate is absent, and profiling never starts.
+    profileLifecycle: 'trace',
     profileSessionSampleRate:
-      environment === 'development' || environment === 'preview' ? 1.0 : 0.1,
+      environment === 'development' || environment === 'preview' ? 1.0 : 0.5,
 
     // Control which URLs get distributed tracing headers
     tracePropagationTargets: [
@@ -80,10 +87,10 @@ if (dsn && sentryEnabled) {
     ],
 
     // Session Replay sampling
-    // Record 100% in development and preview for testing, 10% in production
+    // Record 100% in development and preview for testing, 50% in production
     // Always record 100% of sessions with errors
     replaysSessionSampleRate:
-      environment === 'development' || environment === 'preview' ? 1.0 : 0.1,
+      environment === 'development' || environment === 'preview' ? 1.0 : 0.5,
     replaysOnErrorSampleRate: 1.0,
 
     // Enable structured logging to Sentry
@@ -108,6 +115,13 @@ if (dsn && sentryEnabled) {
     // Rate limiting: cap error events per page-load session to avoid quota exhaustion.
     // Separate counters for errors and transactions so perf traces do not drain the error budget.
     beforeSendTransaction(event) {
+      // Browser tracing can emit long-lived resource-only transactions such as
+      // media.load. They are noisy, duplicate the app-specific media metrics,
+      // and swamp navigation/startup analysis in Sentry.
+      if (event.transaction === 'media.load') {
+        return null;
+      }
+
       // Scrub Matrix identifiers from the transaction name (the matched route or page URL).
       // React Router normally parameterises routes (e.g. /home/:roomIdOrAlias/) but falls
       // back to the raw URL when matching fails, so we scrub defensively here.
@@ -202,6 +216,19 @@ if (dsn && sentryEnabled) {
         return null; // Drop event — session limit reached
       }
 
+      // Drop MatrixRTCSessionManager "unknown room" console errors captured via the
+      // Sentry console integration. These fire during every cold sliding-sync startup
+      // because RoomStateEvent.Events can arrive before the room is registered in
+      // mx.getRoom() — an SDK-level race we cannot fix from Sable. The underlying
+      // MemoryStore collapse that amplified this 254× has been fixed separately.
+      const msgValue = (event.exception?.values?.[0]?.value ?? event.message) || '';
+      if (
+        typeof msgValue === 'string' &&
+        msgValue.includes('Got room state event for unknown room')
+      ) {
+        return null;
+      }
+
       // Improve grouping for Matrix API errors.
       // MatrixError objects carry an `errcode` (e.g. M_FORBIDDEN, M_NOT_FOUND) — use it to
       // split errors into meaningful issue groups rather than merging them all by stack trace.
@@ -267,7 +294,7 @@ if (dsn && sentryEnabled) {
   // Expose Sentry globally for debugging and console testing
   // Set app-wide attributes on the global scope so they appear on all events and logs
   Sentry.getGlobalScope().setAttributes({
-    'app.name': 'sable',
+    'app.name': APP_NAME,
     'app.version': release ?? 'unknown',
   });
 
@@ -285,10 +312,13 @@ if (dsn && sentryEnabled) {
   );
   console.info(`[Sentry] DSN configured: ${dsn?.substring(0, 30)}...`);
   console.info(`[Sentry] Release: ${release || 'not set'}`);
+  void initSentryToolbar().catch(() => undefined);
 } else if (!sentryEnabled) {
   console.info('[Sentry] Disabled by user preference');
+  void initSentryToolbar().catch(() => undefined);
 } else {
   console.info('[Sentry] Disabled - no DSN provided');
+  void initSentryToolbar().catch(() => undefined);
 }
 
 // Export Sentry for use in other parts of the application

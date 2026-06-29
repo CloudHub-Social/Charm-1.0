@@ -11,7 +11,7 @@ const compareUnreadEqual = (u1?: Unread, u2?: Unread): boolean => {
 };
 
 const getRoomsUnread = (rooms: string[], roomToUnread: RoomToUnread): Unread | undefined => {
-  const unread = rooms.reduce<Unread | undefined>((u, roomId) => {
+  return rooms.reduce<Unread | undefined>((u, roomId) => {
     const roomUnread = roomToUnread.get(roomId);
     if (!roomUnread) return u;
     const newUnread: Unread = u ?? {
@@ -24,16 +24,20 @@ const getRoomsUnread = (rooms: string[], roomToUnread: RoomToUnread): Unread | u
     newUnread.from?.add(roomId);
     return newUnread;
   }, undefined);
-  return unread;
 };
 
 export const useRoomsUnread = (
   rooms: string[],
   roomToUnreadAtm: typeof roomToUnreadAtom
 ): Unread | undefined => {
+  // Create a stable dependency key that changes only when room IDs actually change,
+  // not when the array reference changes. This prevents stale closures and race conditions.
+  const roomsKey = rooms.join('|');
+
   const selector = useCallback(
     (roomToUnread: RoomToUnread) => getRoomsUnread(rooms, roomToUnread),
-    [rooms]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [roomsKey]
   );
   return useAtomValue(selectAtom(roomToUnreadAtm, selector, compareUnreadEqual));
 };

@@ -5,3 +5,4 @@ export * from './SpaceTabs';
 export * from './InboxTab';
 export * from './UnverifiedTab';
 export * from './AccountSwitcherTab';
+export * from './BookmarksTab';

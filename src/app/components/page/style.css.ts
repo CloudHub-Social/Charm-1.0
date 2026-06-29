@@ -25,7 +25,9 @@ export type PageNavVariants = RecipeVariants<typeof PageNav>;
 
 export const PageNavHeader = recipe({
   base: {
-    padding: `0 ${config.space.S200} 0 ${config.space.S300}`,
+    position: 'relative',
+    paddingRight: config.space.S200,
+    paddingLeft: config.space.S200,
     flexShrink: 0,
     selectors: {
       'button&': {
@@ -58,13 +60,14 @@ export type PageNavHeaderVariants = RecipeVariants<typeof PageNavHeader>;
 
 export const PageNavContent = style({
   minHeight: '100%',
-  padding: config.space.S200,
-  paddingRight: 0,
-  paddingBottom: config.space.S700,
+  paddingTop: config.space.S200,
+  paddingLeft: config.space.S100,
+  paddingBottom: `calc(${config.space.S400} + var(--sable-safe-area-bottom, 0px))`,
 });
 
 export const PageHeader = recipe({
   base: {
+    position: 'relative',
     paddingLeft: config.space.S400,
     paddingRight: config.space.S200,
   },
@@ -91,8 +94,7 @@ export const PageContent = style([
   {
     paddingTop: config.space.S400,
     paddingLeft: config.space.S400,
-    paddingRight: 0,
-    paddingBottom: toRem(100),
+    paddingBottom: `calc(${toRem(100)} + var(--sable-safe-area-bottom, 0px))`,
   },
 ]);
 

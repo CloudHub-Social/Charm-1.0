@@ -30,6 +30,7 @@ const settingsLinkFocusIdsBySection: Record<SettingsSectionId, readonly string[]
     'enable-gif-picker',
     'embed-youtube-links',
     'emoji-selector-threshold',
+    'emoji-auto-expand',
     'enable-swiping',
     'encrypted-room-embeds',
     'encrypted-room-url-preview',
@@ -45,6 +46,7 @@ const settingsLinkFocusIdsBySection: Record<SettingsSectionId, readonly string[]
     'markdown-formatting',
     'message-layout',
     'message-spacing',
+    'structured-markdown-assist',
     'presence-status',
     'reply-notifications',
     'right-aligned-bubbles',
@@ -151,6 +153,7 @@ const settingsLinkFocusIdsBySection: Record<SettingsSectionId, readonly string[]
   ],
   notifications: [
     'background-push-notifications',
+    'notification-device-scope',
     'clear-notifications-when-read-elsewhere',
     'contains-display-name',
     'contains-username',
@@ -181,6 +184,7 @@ const settingsLinkFocusIdsBySection: Record<SettingsSectionId, readonly string[]
     'export-messages-data',
     'import-messages-data',
   ],
+  desktop: [],
   emojis: ['default-pack', 'select-pack'],
   'developer-tools': [
     'access-token',
@@ -201,7 +205,13 @@ const settingsLinkFocusIdsBySection: Record<SettingsSectionId, readonly string[]
     'session-replay',
     'traces-profiles',
   ],
-  experimental: ['bandwidth-saving-emojis', 'sharehistory-command', 'show-personas-tab'],
+  experimental: [
+    'bandwidth-saving-emojis',
+    'encrypted-room-search',
+    'encrypted-search-index',
+    'sharehistory-command',
+    'show-personas-tab',
+  ],
   about: [
     'base-url',
     'clear-cache-and-reload',

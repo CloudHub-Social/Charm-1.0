@@ -43,6 +43,7 @@ import { getMatrixToRoom } from '$plugins/matrix-to';
 import { getCanonicalAliasOrRoomId, isRoomAlias } from '$utils/matrix';
 import { getViaServers } from '$plugins/via-servers';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { useCachedMxcConverter } from '$hooks/useCachedMxcConverter';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { useOpenRoomSettings } from '$state/hooks/roomSettings';
@@ -71,7 +72,6 @@ import { InviteUserPrompt } from '$components/invite-user-prompt';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { useRoomName, useRoomTopic } from '$hooks/useRoomMeta';
 import { nicknamesAtom } from '$state/nicknames';
-import { useRoomNavigate } from '$hooks/useRoomNavigate';
 
 // Call Hooks & Plugins
 import { useCallMembers, useCallSession } from '$hooks/useCall';
@@ -83,9 +83,13 @@ import { useAutoDiscoveryInfo } from '$hooks/useAutoDiscoveryInfo';
 import { livekitSupport } from '$hooks/useLivekitSupport';
 import { Presence, useUserPresence } from '$hooks/useUserPresence';
 import { AvatarPresence, PresenceBadge } from '$components/presence';
+import { useGroupDMMembers } from '$hooks/useGroupDMMembers';
+import { UserAvatar } from '$components/user-avatar';
+import * as css from './styles.css';
+import { useRoomLastMessage } from '$hooks/useRoomLastMessage';
 import { RoomNavUser } from './RoomNavUser';
 import { SidebarUnreadBadge } from '$components/sidebar';
-import * as css from './styles.css';
+import { CompactMessagePreview } from '$components/message/CompactMessagePreview';
 
 /**
  * Reactively checks whether a room has unread messages.
@@ -265,10 +269,14 @@ type RoomNavItemProps = {
   notificationMode?: RoomNotificationMode;
   showAvatar?: boolean;
   direct?: boolean;
+  useDirectAvatarFallback?: boolean;
   customDMCards?: boolean;
   hideText?: boolean;
   isStrict?: boolean;
   joinCallOnSingleClick?: boolean;
+  roomTopicPreview?: boolean;
+  roomMessagePreview?: boolean;
+  dmMessagePreview?: boolean;
 };
 
 export function RoomNavItem({
@@ -276,7 +284,11 @@ export function RoomNavItem({
   selected,
   showAvatar,
   direct,
+  useDirectAvatarFallback,
   customDMCards,
+  roomTopicPreview = false,
+  roomMessagePreview = false,
+  dmMessagePreview = true,
   notificationMode,
   linkPath,
   hideText,
@@ -285,6 +297,7 @@ export function RoomNavItem({
 }: RoomNavItemProps) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
+  const convertMxc = useCachedMxcConverter();
   const [hover, setHover] = useState(false);
   const { hoverProps } = useHover({ onHoverChange: setHover });
   const { focusWithinProps } = useFocusWithin({ onFocusWithinChange: setHover });
@@ -296,16 +309,43 @@ export function RoomNavItem({
     (receipt) => receipt.userId !== mx.getUserId()
   );
 
+  const isDirectLikeRoom = direct === true || useDirectAvatarFallback === true;
+  const isGroupDM = isDirectLikeRoom && room.getJoinedMemberCount() > 2;
+  // Keep hook call unconditional; pass undefined when not a group DM so the hook no-ops.
+  const groupMembers = useGroupDMMembers(mx, isGroupDM ? room : undefined, 3);
+  const groupMemberAvatarSrcs = groupMembers.map((member) =>
+    member.avatarUrl
+      ? (convertMxc(mx, member.avatarUrl, useAuthentication, 32, 32, 'crop') ?? undefined)
+      : undefined
+  );
+  const hasCompleteGroupAvatar =
+    groupMembers.length > 1 && groupMemberAvatarSrcs.every((src) => !!src);
+
   const [roomIconOverlay] = useSetting(settingsAtom, 'roomIconOverlay');
   const nicknames = useAtomValue(nicknamesAtom);
   const dmUserId = direct ? room.getAvatarFallbackMember()?.userId : undefined;
   const matrixRoomName = useRoomName(room);
   const roomName = (dmUserId && nicknames[dmUserId]) || matrixRoomName;
   const presence = useUserPresence(dmUserId ?? '');
+  const showPreview = direct ? dmMessagePreview : roomMessagePreview;
+  const lastMessage = useRoomLastMessage(showPreview ? room : undefined, mx);
   const getRoomTopic = useRoomTopic(room);
-  const roomTopic = direct ? ((customDMCards && getRoomTopic) ?? presence?.status) : undefined;
+  const customTopic = customDMCards ? getRoomTopic : undefined;
+  const directPresenceFallback =
+    direct && !customTopic && !lastMessage ? presence?.status : undefined;
+  const roomTopic = direct
+    ? customTopic || directPresenceFallback
+    : roomTopicPreview && getRoomTopic
+      ? getRoomTopic
+      : undefined;
+  const messagePreview = direct
+    ? !customTopic && lastMessage
+      ? lastMessage
+      : undefined
+    : !roomTopic && roomMessagePreview
+      ? lastMessage
+      : undefined;
 
-  const { navigateRoom } = useRoomNavigate();
   const navigate = useNavigate();
   const screenSize = useScreenSizeContext();
   const isMobile = screenSize === ScreenSize.Mobile;
@@ -318,10 +358,13 @@ export function RoomNavItem({
   const [isChatOpen, setChatOpen] = useAtom(callChatAtom);
   const autoDiscoveryInfo = useAutoDiscoveryInfo();
 
-  const avatarSrc =
-    ((!direct || customDMCards) && getRoomAvatarUrl(mx, room, 96, useAuthentication)) ||
-    (direct && getDirectRoomAvatarUrl(mx, room, 96, useAuthentication)) ||
-    undefined;
+  const roomAvatarSrc = getRoomAvatarUrl(mx, room, 96, useAuthentication, convertMxc) || undefined;
+  const directAvatarSrc = isDirectLikeRoom
+    ? (getDirectRoomAvatarUrl(mx, room, 96, useAuthentication, convertMxc) ?? undefined)
+    : undefined;
+  const avatarSrc = direct
+    ? (((customDMCards && roomAvatarSrc) || directAvatarSrc) ?? undefined)
+    : roomAvatarSrc || directAvatarSrc || undefined;
 
   const isActiveCall = callEmbed?.roomId === room.roomId;
 
@@ -351,12 +394,12 @@ export function RoomNavItem({
             new CallControlState(callPref.microphone, callPref.video, callPref.sound)
           );
         } else {
-          navigateRoom(room.roomId);
+          navigate(linkPath);
         }
       } else {
         evt.stopPropagation();
         if (isChatOpen) setChatOpen(false);
-        navigateRoom(room.roomId);
+        navigate(linkPath);
       }
     } else {
       navigate(linkPath);
@@ -433,66 +476,121 @@ export function RoomNavItem({
                     as="span"
                     grow="Yes"
                     alignItems="Center"
-                    justifyContent="Start"
                     gap="200"
                     style={hideTextStyling(hideText)}
                   >
-                    <AvatarPresence
-                      badge={
-                        presence &&
-                        presence.presence !== Presence.Offline && (
-                          <PresenceBadge
-                            presence={presence.presence}
-                            size={hideText ? '300' : '200'}
-                          />
-                        )
-                      }
-                      style={hideTextStyling(hideText)}
-                    >
-                      <Avatar
-                        size={hideText ? undefined : '200'}
-                        radii="400"
+                    {isGroupDM &&
+                    (showAvatar || (isStrict && hasCompleteGroupAvatar)) &&
+                    groupMembers.length > 1 ? (
+                      // Group DM: triangle layout of mini avatars.
+                      // In hideText (icon-only) mode the Avatar slot is 32px (size="300");
+                      // use the larger container+mini variant so the composite scales properly.
+                      <div className={hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow}>
+                        {groupMembers.map((member, index) => {
+                          const memberAvatarSrc = groupMemberAvatarSrcs[index];
+                          return (
+                            <Avatar
+                              key={member.userId}
+                              className={
+                                hideText ? css.GroupAvatarMiniHideText : css.GroupAvatarMini
+                              }
+                            >
+                              <UserAvatar
+                                userId={member.userId}
+                                src={memberAvatarSrc}
+                                alt={member.displayName ?? member.userId}
+                                renderFallback={() => (
+                                  <Text as="span" size="T200">
+                                    {nameInitials(member.displayName ?? member.userId)}
+                                  </Text>
+                                )}
+                              />
+                            </Avatar>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <AvatarPresence
+                        badge={
+                          presence &&
+                          presence.presence !== Presence.Offline && (
+                            <PresenceBadge
+                              presence={presence.presence}
+                              size={hideText ? '300' : '200'}
+                            />
+                          )
+                        }
                         style={hideTextStyling(hideText)}
                       >
-                        {showAvatar || (avatarSrc && isStrict) ? (
-                          <RoomAvatar
-                            roomId={room.roomId}
-                            src={avatarSrc}
-                            uniformIcons
-                            alt={roomName}
-                            renderFallback={() => (
-                              <Text as="span" size="H6">
-                                {nameInitials(roomName)}
-                              </Text>
-                            )}
-                          />
-                        ) : (
-                          <RoomIcon
-                            style={{
-                              opacity:
-                                unread || hasRoomUnread || isActiveCall
-                                  ? config.opacity.P500
-                                  : config.opacity.P300,
-                            }}
-                            filled={selected || isActiveCall}
-                            size={isStrict && hideText ? '300' : '200'}
-                            joinRule={room.getJoinRule()}
-                            roomType={room.getType()}
-                            withOverlay={roomIconOverlay}
-                          />
-                        )}
-                      </Avatar>
-                    </AvatarPresence>
+                        <Avatar
+                          size={hideText ? undefined : '200'}
+                          radii="400"
+                          style={hideTextStyling(hideText)}
+                        >
+                          {showAvatar || (avatarSrc && isStrict) ? (
+                            <RoomAvatar
+                              roomId={room.roomId}
+                              src={avatarSrc}
+                              uniformIcons
+                              alt={roomName}
+                              renderErrorFallback={() => (
+                                <RoomIcon
+                                  style={{
+                                    opacity:
+                                      unread || hasRoomUnread || isActiveCall
+                                        ? config.opacity.P500
+                                        : config.opacity.P300,
+                                  }}
+                                  filled={selected || isActiveCall}
+                                  size={isStrict && hideText ? '300' : hideText ? '200' : '100'}
+                                  joinRule={room.getJoinRule()}
+                                  roomType={room.getType()}
+                                  withOverlay={roomIconOverlay}
+                                />
+                              )}
+                              renderFallback={() => (
+                                <Text as="span" size="H6">
+                                  {nameInitials(roomName)}
+                                </Text>
+                              )}
+                            />
+                          ) : (
+                            <RoomIcon
+                              style={{
+                                opacity:
+                                  unread || hasRoomUnread || isActiveCall
+                                    ? config.opacity.P500
+                                    : config.opacity.P300,
+                              }}
+                              filled={selected || isActiveCall}
+                              size={isStrict && hideText ? '300' : hideText ? '200' : '100'}
+                              joinRule={room.getJoinRule()}
+                              roomType={room.getType()}
+                              withOverlay={roomIconOverlay}
+                            />
+                          )}
+                        </Avatar>
+                      </AvatarPresence>
+                    )}
                     {unread && hideText && (
                       <SidebarUnreadBadge
                         highlight={unread.highlight > 0}
                         count={unread.highlight > 0 ? unread.highlight : unread.total}
+                        loud={
+                          notificationMode === RoomNotificationMode.AllMessages ||
+                          notificationMode === RoomNotificationMode.Unset
+                        }
                       />
                     )}
 
                     {!hideText && (
                       <>
-                        <Box as="span" grow="Yes" direction="Column">
+                        <Box
+                          as="span"
+                          grow="Yes"
+                          direction="Column"
+                          style={{ minWidth: 0, marginLeft: '4px' }}
+                        >
                           <Text
                             priority={unread || hasRoomUnread || isActiveCall ? '500' : '400'}
                             as="span"
@@ -503,6 +601,7 @@ export function RoomNavItem({
                           </Text>
                           {roomTopic && (
                             <Text
+                              className={css.RoomSecondaryLine}
                               truncate
                               size="T200"
                               priority="300"
@@ -513,6 +612,14 @@ export function RoomNavItem({
                             >
                               {roomTopic}
                             </Text>
+                          )}
+                          {!roomTopic && messagePreview && (
+                            <CompactMessagePreview
+                              senderLabel={messagePreview.senderLabel}
+                              preview={messagePreview.preview}
+                              roomId={room.roomId}
+                              className={css.MessagePreview}
+                            />
                           )}
                         </Box>
                         {!optionsVisible && !unread && !selected && typingMember.length > 0 && (
@@ -526,6 +633,10 @@ export function RoomNavItem({
                               highlight={!!unread && unread.highlight > 0}
                               count={unreadCount}
                               dm={direct}
+                              loud={
+                                notificationMode === RoomNotificationMode.AllMessages ||
+                                notificationMode === RoomNotificationMode.Unset
+                              }
                             />
                           </UnreadBadgeCenter>
                         )}

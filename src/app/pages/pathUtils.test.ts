@@ -1,5 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { getSettingsPath } from './pathUtils';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  getLandingPath,
+  getAppPathFromWindowHref,
+  getLastVisitedPath,
+  getSettingsPath,
+  getToRoomEventPath,
+  rememberLastVisitedPath,
+  stripRoomEventSegment,
+  withAdditionalSearchParams,
+} from './pathUtils';
+import { DefaultLandingScreen } from '$state/settings';
 
 describe('getSettingsPath', () => {
   it('returns the settings root path', () => {
@@ -10,6 +20,117 @@ describe('getSettingsPath', () => {
     expect(getSettingsPath('devices')).toBe('/settings/devices');
     expect(getSettingsPath('appearance', 'message-link-preview')).toBe(
       '/settings/appearance?focus=message-link-preview'
+    );
+  });
+});
+
+describe('getToRoomEventPath', () => {
+  it('builds the canonical notification deep-link path', () => {
+    expect(
+      getToRoomEventPath('@alice:example.com', '!room:example.com', '$event123', {
+        jumpMode: 'notification_live',
+      })
+    ).toBe('/to/%40alice%3Aexample.com/!room%3Aexample.com/%24event123?jumpMode=notification_live');
+  });
+
+  it('omits the event segment when no event id is provided', () => {
+    expect(getToRoomEventPath('@alice:example.com', '!room:example.com')).toBe(
+      '/to/%40alice%3Aexample.com/!room%3Aexample.com'
+    );
+  });
+
+  it('preserves join-call intent as a query parameter', () => {
+    expect(
+      getToRoomEventPath('@alice:example.com', '!room:example.com', '$event123', {
+        joinCall: true,
+      })
+    ).toBe('/to/%40alice%3Aexample.com/!room%3Aexample.com/%24event123?joinCall=true');
+  });
+
+  it('preserves both join-call and notification click restore state', () => {
+    expect(
+      getToRoomEventPath('@alice:example.com', '!room:example.com', '$event123', {
+        joinCall: true,
+        swClickId: 'notification-click-123',
+        jumpMode: 'notification_live',
+      })
+    ).toBe(
+      '/to/%40alice%3Aexample.com/!room%3Aexample.com/%24event123?joinCall=true&swClickId=notification-click-123&jumpMode=notification_live'
+    );
+  });
+});
+
+describe('withAdditionalSearchParams', () => {
+  it('adds search params onto a path without clobbering existing ones', () => {
+    expect(withAdditionalSearchParams('/room/abc?foo=bar', { joinCall: 'true' })).toBe(
+      '/room/abc?foo=bar&joinCall=true'
+    );
+  });
+});
+
+describe('last visited path', () => {
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it('remembers a searchable room route including query params', () => {
+    rememberLastVisitedPath('/home/room/%21room%3Aexample?homeView=all');
+
+    expect(getLastVisitedPath()).toBe('/home/room/%21room%3Aexample?homeView=all');
+    expect(getLandingPath(DefaultLandingScreen.LastVisited)).toBe(
+      '/home/room/%21room%3Aexample?homeView=all'
+    );
+  });
+
+  it('drops transient notification params while preserving restorable home state', () => {
+    rememberLastVisitedPath(
+      '/home/room/%21room%3Aexample?homeView=all&jumpMode=notification_live&joinCall=true&swClickId=notification-click-123'
+    );
+
+    expect(getLastVisitedPath()).toBe('/home/room/%21room%3Aexample?homeView=all');
+  });
+
+  it('drops transient notification event segments before saving last visited', () => {
+    rememberLastVisitedPath(
+      '/home/%21room%3Aexample/%24event%3Aexample?jumpMode=notification_live&joinCall=true'
+    );
+
+    expect(getLastVisitedPath()).toBe('/home/%21room%3Aexample');
+  });
+});
+
+describe('stripRoomEventSegment', () => {
+  it('drops a trailing room event path segment', () => {
+    expect(stripRoomEventSegment('/direct/%21room%3Aexample/%24event123', '$event123')).toBe(
+      '/direct/%21room%3Aexample'
+    );
+  });
+
+  it('leaves the path alone when the trailing segment is not the target event', () => {
+    expect(stripRoomEventSegment('/direct/%21room%3Aexample/%24other', '$event123')).toBe(
+      '/direct/%21room%3Aexample/%24other'
+    );
+  });
+});
+
+describe('getAppPathFromWindowHref', () => {
+  const originalLocation = window.location;
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: originalLocation,
+    });
+  });
+
+  it('extracts the current app path for hash-router deployments', () => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: new URL('https://app.example/#/app/to/%40alice%3Aexample/!room%3Aexample'),
+    });
+
+    expect(getAppPathFromWindowHref({ enabled: true, basename: '/app' })).toBe(
+      '/to/%40alice%3Aexample/!room%3Aexample'
     );
   });
 });

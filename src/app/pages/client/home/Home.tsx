@@ -1,6 +1,6 @@
 import type { MouseEventHandler } from 'react';
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { RectCords } from 'folds';
 import {
   Avatar,
@@ -17,7 +17,7 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import FocusTrap from 'focus-trap-react';
-import { factoryRoomIdByActivity, factoryRoomIdByAtoZ } from '$utils/sort';
+import { factoryRoomIdByAtoZ, factoryRoomIdByPriority } from '$utils/sort';
 import {
   NavButton,
   NavCategory,
@@ -36,6 +36,7 @@ import {
   getHomeCreatePath,
   getHomeRoomPath,
   getHomeSearchPath,
+  withAdditionalSearchParams,
   withSearchParam,
 } from '$pages/pathUtils';
 import { getCanonicalAliasOrRoomId } from '$utils/matrix';
@@ -46,6 +47,7 @@ import { VirtualTile } from '$components/virtualizer';
 import { RoomNavCategoryButton, RoomNavItem } from '$features/room-nav';
 import { makeNavCategoryId } from '$state/closedNavCategories';
 import { roomToUnreadAtom } from '$state/room/roomToUnread';
+import { mDirectAtom } from '$state/mDirectList';
 import { useCategoryHandler } from '$hooks/useCategoryHandler';
 import { useNavToActivePathMapper } from '$hooks/useNavToActivePathMapper';
 import { PageNav, PageNavHeader, PageNavContent } from '$components/page';
@@ -60,6 +62,7 @@ import {
   useRoomsNotificationPreferencesContext,
 } from '$hooks/useRoomsNotificationPreferences';
 import {
+  ArrowsClockwise,
   Checks,
   composerIcon,
   DotsThreeOutlineVerticalIcon,
@@ -77,60 +80,106 @@ import { UseStateProvider } from '$components/UseStateProvider';
 import { JoinAddressPrompt } from '$components/join-address-prompt';
 import { useHomeRooms } from './useHomeRooms';
 import { SidebarResizer } from '$pages/client/sidebar/SidebarResizer';
+import { isPhoneLayoutDevice } from '$utils/user-agent';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
+import { usePullToRefresh } from '$hooks/usePullToRefresh';
+import { getSlidingSyncManager } from '$client/initMatrix';
+import { LIST_JOINED } from '$client/slidingSync';
+import { getNextSlidingSyncListWindowEnd } from '$client/slidingSyncListPaging';
+import { allRoomsAtom } from '$state/room-list/roomList';
+import { markStartupRoomListReady } from '$utils/perfTelemetry';
+import {
+  ensureManualRefreshSpinStyle,
+  getManualRefreshSpinStyle,
+  triggerManualRefresh,
+} from '$utils/manualRefresh';
 import { useClientConfig } from '$hooks/useClientConfig';
 import { getMxIdServer } from '$utils/mxIdHelper';
 import { isResizingSidebarAtom } from '$state/isResizingSidebar';
 
 type HomeMenuProps = {
+  isRefreshing: boolean;
+  isShowingAllRoomsInHome: boolean;
+  onRefresh: () => void | Promise<void>;
   requestClose: () => void;
+  setIsShowingAllRoomsInHome: (show: boolean) => void;
 };
-const HomeMenu = forwardRef<HTMLDivElement, HomeMenuProps>(({ requestClose }, ref) => {
-  const orphanRooms = useHomeRooms();
-  const [hideReads] = useSetting(settingsAtom, 'hideReads');
-  const [isShowingAllRoomsInHome, setIsShowingAllRoomsInHome] = useSetting(
-    settingsAtom,
-    'isShowingAllRoomsInHome'
-  );
-  const unread = useRoomsUnread(orphanRooms, roomToUnreadAtom);
-  const mx = useMatrixClient();
+const HomeMenu = forwardRef<HTMLDivElement, HomeMenuProps>(
+  (
+    { isRefreshing, isShowingAllRoomsInHome, onRefresh, requestClose, setIsShowingAllRoomsInHome },
+    ref
+  ) => {
+    const orphanRooms = useHomeRooms(isShowingAllRoomsInHome);
+    const [hideReads] = useSetting(settingsAtom, 'hideReads');
+    const unread = useRoomsUnread(orphanRooms, roomToUnreadAtom);
+    const mx = useMatrixClient();
 
-  const handleMarkAsRead = () => {
-    if (!unread) return;
-    orphanRooms.forEach((rId) => markAsRead(mx, rId, hideReads));
-    requestClose();
-  };
+    const handleMarkAsRead = () => {
+      if (!unread) return;
+      orphanRooms.forEach((rId) => markAsRead(mx, rId, hideReads));
+      requestClose();
+    };
 
-  return (
-    <Menu ref={ref} style={{ maxWidth: toRem(160), width: '100vw' }}>
-      <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
-        <MenuItem
-          onClick={handleMarkAsRead}
-          size="300"
-          after={menuIcon(Checks)}
-          radii="300"
-          aria-disabled={!unread}
-        >
-          <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
-            Mark as Read
-          </Text>
-        </MenuItem>
-        <MenuItem
-          onClick={() => setIsShowingAllRoomsInHome(!isShowingAllRoomsInHome)}
-          size="300"
-          after={menuIcon(isShowingAllRoomsInHome ? House : Globe)}
-          radii="300"
-        >
-          <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
-            {isShowingAllRoomsInHome ? 'Show Home Rooms' : 'Show All Rooms'}
-          </Text>
-        </MenuItem>
-      </Box>
-    </Menu>
-  );
-});
+    return (
+      <Menu ref={ref} style={{ maxWidth: toRem(160), width: '100vw' }}>
+        <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
+          <MenuItem
+            onClick={handleMarkAsRead}
+            size="300"
+            after={menuIcon(Checks)}
+            radii="300"
+            disabled={!unread}
+          >
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              Mark as Read
+            </Text>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              void onRefresh();
+            }}
+            size="300"
+            after={menuIcon(ArrowsClockwise, {
+              style: getManualRefreshSpinStyle(isRefreshing),
+            })}
+            radii="300"
+            disabled={isRefreshing}
+          >
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              Refresh
+            </Text>
+          </MenuItem>
+          <MenuItem
+            onClick={() => setIsShowingAllRoomsInHome(!isShowingAllRoomsInHome)}
+            size="300"
+            after={menuIcon(isShowingAllRoomsInHome ? House : Globe)}
+            radii="300"
+          >
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              {isShowingAllRoomsInHome ? 'Show Home Rooms' : 'Show All Rooms'}
+            </Text>
+          </MenuItem>
+        </Box>
+      </Menu>
+    );
+  }
+);
 
-function HomeHeader({ hideText }: { hideText?: boolean }) {
+type HomeHeaderProps = {
+  hideText?: boolean;
+  isRefreshing: boolean;
+  isShowingAllRoomsInHome: boolean;
+  onRefresh: () => void | Promise<void>;
+  setIsShowingAllRoomsInHome: (show: boolean) => void;
+};
+
+function HomeHeader({
+  hideText,
+  isRefreshing,
+  isShowingAllRoomsInHome,
+  onRefresh,
+  setIsShowingAllRoomsInHome,
+}: HomeHeaderProps) {
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
 
   const handleOpenMenu: MouseEventHandler<HTMLButtonElement> = (evt) => {
@@ -184,7 +233,13 @@ function HomeHeader({ hideText }: { hideText?: boolean }) {
               escapeDeactivates: stopPropagation,
             }}
           >
-            <HomeMenu requestClose={() => setMenuAnchor(undefined)} />
+            <HomeMenu
+              isRefreshing={isRefreshing}
+              isShowingAllRoomsInHome={isShowingAllRoomsInHome}
+              onRefresh={onRefresh}
+              requestClose={() => setMenuAnchor(undefined)}
+              setIsShowingAllRoomsInHome={setIsShowingAllRoomsInHome}
+            />
           </FocusTrap>
         }
       />
@@ -239,15 +294,42 @@ export function Home() {
   useNavToActivePathMapper('home');
   const clientConfig = useClientConfig();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [isShowingAllRoomsInHome] = useSetting(settingsAtom, 'isShowingAllRoomsInHome');
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const showAllRoomsFromRoute = searchParams.get('homeView') === 'all';
+  const [isShowingAllRoomsInHome, setIsShowingAllRoomsInHome] = useState(showAllRoomsFromRoute);
   const rooms = useHomeRooms(isShowingAllRoomsInHome);
   const notificationPreferences = useRoomsNotificationPreferencesContext();
   const roomToUnread = useAtomValue(roomToUnreadAtom);
+  const mDirects = useAtomValue(mDirectAtom);
   const navigate = useNavigate();
+  const updateShowAllRoomsPreference = useCallback(
+    (show: boolean) => {
+      setIsShowingAllRoomsInHome(show);
+
+      const nextSearchParams = new URLSearchParams(searchParams);
+      if (show) nextSearchParams.set('homeView', 'all');
+      else nextSearchParams.delete('homeView');
+
+      const nextSearch = nextSearchParams.toString();
+      navigate(
+        {
+          pathname: location.pathname,
+          search: nextSearch ? `?${nextSearch}` : '',
+        },
+        { replace: true }
+      );
+    },
+    [location.pathname, navigate, searchParams]
+  );
 
   const setIsResizingSidebar = useSetAtom(isResizingSidebarAtom);
   const [roomSidebarWidth, setRoomSidebarWidth] = useSetting(settingsAtom, 'roomSidebarWidth');
   const [curWidth, setCurWidth] = useState(roomSidebarWidth);
+  useEffect(() => {
+    setIsShowingAllRoomsInHome(showAllRoomsFromRoute);
+  }, [showAllRoomsFromRoute]);
+
   useEffect(() => {
     setCurWidth(roomSidebarWidth);
   }, [roomSidebarWidth]);
@@ -259,6 +341,7 @@ export function Home() {
   const showIcons = () => {
     if (showRoomIcon === ShowRoomIcon.Always) return true;
     if (showRoomIcon === ShowRoomIcon.Never) return false;
+    if (showRoomIcon === ShowRoomIcon.Strict) return false;
     return curWidth < 144;
   };
 
@@ -269,11 +352,13 @@ export function Home() {
   const searchSelected = useHomeSearchSelected();
   const noRoomToDisplay = rooms.length === 0;
   const [closedCategories, setClosedCategories] = useAtom(useClosedNavCategoriesAtom());
+  const allRoomCount = useAtomValue(allRoomsAtom).length;
+  const requestedEmptyListExpansionRef = useRef(false);
 
   const sortedRooms = useMemo(() => {
     const items = Array.from(rooms).toSorted(
-      closedCategories.has(DEFAULT_CATEGORY_ID) || isShowingAllRoomsInHome
-        ? factoryRoomIdByActivity(mx)
+      closedCategories.has(DEFAULT_CATEGORY_ID)
+        ? factoryRoomIdByPriority(mx, roomToUnread, mDirects)
         : factoryRoomIdByAtoZ(mx)
     );
     const hasUnread = (roomId: string) => {
@@ -284,7 +369,7 @@ export function Home() {
       return items.filter((rId) => hasUnread(rId) || rId === selectedRoomId);
     }
     return items;
-  }, [mx, rooms, closedCategories, roomToUnread, selectedRoomId, isShowingAllRoomsInHome]);
+  }, [mx, rooms, closedCategories, roomToUnread, mDirects, selectedRoomId]);
 
   const virtualizer = useVirtualizer({
     count: sortedRooms.length,
@@ -292,6 +377,30 @@ export function Home() {
     estimateSize: () => 38,
     overscan: 10,
   });
+  const virtualItems = virtualizer.getVirtualItems();
+  const lastVirtualIndex = virtualItems.at(-1)?.index ?? -1;
+
+  useEffect(() => {
+    const manager = getSlidingSyncManager(mx);
+    const diagnostics = manager?.getListDiagnostics(LIST_JOINED);
+    if (!manager || !diagnostics) return;
+    const allowEmptyExpansion = sortedRooms.length === 0 && !requestedEmptyListExpansionRef.current;
+    const nextEnd = getNextSlidingSyncListWindowEnd({
+      diagnostics,
+      itemCount: sortedRooms.length,
+      lastVirtualIndex,
+      allowEmptyExpansion,
+    });
+    if (nextEnd === undefined) return;
+    if (allowEmptyExpansion) requestedEmptyListExpansionRef.current = true;
+    manager.requestListWindow(LIST_JOINED, nextEnd);
+  }, [mx, sortedRooms.length, allRoomCount, lastVirtualIndex]);
+
+  useEffect(() => {
+    if (sortedRooms.length > 0 || allRoomCount === 0) {
+      markStartupRoomListReady('home', sortedRooms.length);
+    }
+  }, [sortedRooms.length, allRoomCount]);
 
   const handleCategoryClick = useCategoryHandler(setClosedCategories, (categoryId) =>
     closedCategories.has(categoryId)
@@ -317,8 +426,23 @@ export function Home() {
   };
 
   const screenSize = useScreenSizeContext();
-  const isMobile = screenSize === ScreenSize.Mobile;
+  const isMobile = isPhoneLayoutDevice() || screenSize === ScreenSize.Mobile;
   const hideText = curWidth <= 80 && !isMobile;
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  useEffect(() => {
+    ensureManualRefreshSpinStyle();
+  }, []);
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await triggerManualRefresh(mx);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [mx, isRefreshing]);
+
+  usePullToRefresh(scrollRef, mx);
 
   return (
     <Box
@@ -329,7 +453,13 @@ export function Home() {
       }}
     >
       <PageNav>
-        <HomeHeader hideText={hideText} />
+        <HomeHeader
+          hideText={hideText}
+          isRefreshing={isRefreshing}
+          isShowingAllRoomsInHome={isShowingAllRoomsInHome}
+          onRefresh={handleRefresh}
+          setIsShowingAllRoomsInHome={updateShowAllRoomsPreference}
+        />
         {noRoomToDisplay ? (
           <HomeEmpty />
         ) : (
@@ -492,13 +622,12 @@ export function Home() {
                     overflow: 'visible',
                   }}
                 >
-                  {virtualizer.getVirtualItems().map((vItem) => {
+                  {virtualItems.map((vItem) => {
                     const roomId = sortedRooms[vItem.index];
                     if (!roomId) return null;
                     const room = mx.getRoom(roomId);
                     if (!room) return null;
                     const selected = selectedRoomId === roomId;
-                    const canonicalName = getCanonicalAliasOrRoomId(mx, roomId);
 
                     return (
                       <VirtualTile
@@ -523,8 +652,15 @@ export function Home() {
                             room={room}
                             selected={selected}
                             showAvatar={showIcons()}
+                            useDirectAvatarFallback={mDirects.has(roomId)}
+                            isStrict={showRoomIcon === ShowRoomIcon.Strict}
                             hideText={hideText}
-                            linkPath={getHomeRoomPath(canonicalName)}
+                            linkPath={withAdditionalSearchParams(
+                              getHomeRoomPath(getCanonicalAliasOrRoomId(mx, roomId)),
+                              {
+                                homeView: isShowingAllRoomsInHome ? 'all' : undefined,
+                              }
+                            )}
                             notificationMode={getRoomNotificationMode(
                               notificationPreferences,
                               room.roomId
@@ -537,6 +673,7 @@ export function Home() {
                   })}
                 </div>
               </NavCategory>
+              <div style={{ height: toRem(40) }} />
             </Box>
           </PageNavContent>
         )}

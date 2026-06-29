@@ -1,12 +1,12 @@
 /**
  * Keyboard Shortcuts settings page.
  *
- * Lists all keyboard shortcuts available in Sable in a semantic,
+ * Lists all keyboard shortcuts available in Charm in a semantic,
  * screen-reader-friendly dl/dt/dd structure.
  */
 import { Box, Scroll, Text, config } from 'folds';
 import { PageContent } from '$components/page';
-import { SettingsSectionPage } from '../SettingsSectionPage';
+import { SettingsSectionPage } from '$features/settings/SettingsSectionPage';
 
 type ShortcutEntry = {
   keys: string;
@@ -39,6 +39,13 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
       { keys: 'Alt+Shift+Down', description: 'Go to next unread room (cycle)' },
       { keys: 'Alt+Shift+Up', description: 'Go to previous unread room (cycle)' },
       { keys: 'Ctrl+K / ⌘+K', description: 'Search and go to Room' },
+    ],
+  },
+  {
+    name: 'Search',
+    shortcuts: [
+      { keys: 'Ctrl+F / ⌘+F', description: 'Search messages in the current room or space' },
+      { keys: 'Ctrl+K / ⌘+K', description: 'Open the room, DM, and space search menu' },
     ],
   },
   {

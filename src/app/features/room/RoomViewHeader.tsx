@@ -56,13 +56,20 @@ import {
 import { RoomAvatar, RoomIcon } from '$components/room-avatar';
 import { UseStateProvider } from '$components/UseStateProvider';
 import { RoomTopicViewer } from '$components/room-topic-viewer';
+import { UnreadBadge } from '$components/unread-badge';
 
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useIsDirectRoom, useRoom } from '$hooks/useRoom';
-import { useSetting } from '$state/hooks/settings';
+import { useSetSetting, useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
+import { useClientConfig } from '$hooks/useClientConfig';
 import { useSpaceOptionally } from '$hooks/useSpace';
-import { getHomeSearchPath, getSpaceSearchPath, withSearchParam } from '$pages/pathUtils';
+import {
+  getDirectSearchPath,
+  getHomeSearchPath,
+  getSpaceSearchPath,
+  withSearchParam,
+} from '$pages/pathUtils';
 import { createLogger } from '$utils/debug';
 import {
   getCanonicalAliasOrRoomId,
@@ -71,10 +78,11 @@ import {
   removeRoomIdFromMDirect,
 } from '$utils/matrix';
 import { type SearchPathSearchParams } from '$pages/paths';
-import { useRoomUnread } from '$state/hooks/unread';
+import { useRoomUnread, useRoomsUnread } from '$state/hooks/unread';
 import { usePowerLevelsContext } from '$hooks/usePowerLevels';
 import { markAsRead } from '$utils/notifications';
 import { roomToUnreadAtom } from '$state/room/roomToUnread';
+import { allRoomsAtom } from '$state/room-list/roomList';
 import { copyToClipboard } from '$utils/dom';
 import { LeaveRoomPrompt } from '$components/leave-room-prompt';
 import { useRoomAvatar, useRoomName, useRoomTopic } from '$hooks/useRoomMeta';
@@ -98,7 +106,7 @@ import { useRoomPermissions } from '$hooks/useRoomPermissions';
 import { InviteUserPrompt } from '$components/invite-user-prompt';
 import { ContainerColor } from '$styles/ContainerColor.css';
 import { useRoomWidgets } from '$hooks/useRoomWidgets';
-import { hasThreadRootAggregation, isThreadRelationEvent } from '$utils/room';
+import { hasThreadRootAggregation, isRoom, isThreadRelationEvent } from '$utils/room';
 
 import { DirectInvitePrompt } from '$components/direct-invite-prompt';
 import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
@@ -112,6 +120,8 @@ import { RoomPinMenu } from './room-pin-menu';
 import * as css from './RoomViewHeader.css';
 import { RoomCallButton } from './RoomCallButton';
 import { CustomAccountDataEvent } from '$types/matrix/accountData';
+import { useSelectedRooms } from '$state/hooks/roomList';
+import { CustomStateEvent } from '$types/matrix/room';
 
 const log = createLogger('RoomViewHeader');
 
@@ -138,12 +148,16 @@ type RoomMenuProps = {
 const RoomMenu = forwardRef<HTMLDivElement, RoomMenuProps>(({ room, requestClose }, ref) => {
   const mx = useMatrixClient();
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
+  const setWidgetDrawer = useSetSetting(settingsAtom, 'isWidgetDrawer');
   const unread = useRoomUnread(room.roomId, roomToUnreadAtom);
   const powerLevels = usePowerLevelsContext();
   const creators = useRoomCreators(room);
+  const screenSize = useScreenSizeContext();
+  const widgets = useRoomWidgets(room);
 
   const permissions = useRoomPermissions(creators, powerLevels);
   const canInvite = permissions.action('invite', mx.getSafeUserId());
+  const canManageWidgets = permissions.stateEvent(CustomStateEvent.RoomWidget, mx.getSafeUserId());
   const mDirects = useAtomValue(mDirectAtom);
   const isDirectConversation = mDirects.has(room.roomId);
   const notificationPreferences = useRoomsNotificationPreferencesContext();
@@ -202,6 +216,17 @@ const RoomMenu = forwardRef<HTMLDivElement, RoomMenuProps>(({ room, requestClose
     openSettings(room.roomId, parentSpace?.roomId);
     requestClose();
   };
+  const handleOpenMembers = () => {
+    openSettings(room.roomId, parentSpace?.roomId, RoomSettingsPage.MembersPage);
+    requestClose();
+  };
+  const handleOpenWidgets = () => {
+    setWidgetDrawer(true);
+    requestClose();
+  };
+  const showMobileMembersAction = screenSize !== ScreenSize.Desktop;
+  const showMobileWidgetsAction =
+    screenSize !== ScreenSize.Desktop && (widgets.length > 0 || canManageWidgets);
 
   return (
     <Menu ref={ref} style={{ maxWidth: toRem(160), width: '100vw' }}>
@@ -283,6 +308,20 @@ const RoomMenu = forwardRef<HTMLDivElement, RoomMenuProps>(({ room, requestClose
             Copy Link
           </Text>
         </MenuItem>
+        {showMobileMembersAction && (
+          <MenuItem onClick={handleOpenMembers} size="300" after={menuIcon(UserCircle)} radii="300">
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              Members
+            </Text>
+          </MenuItem>
+        )}
+        {showMobileWidgetsAction && (
+          <MenuItem onClick={handleOpenWidgets} size="300" after={menuIcon(GridFour)} radii="300">
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              Widgets
+            </Text>
+          </MenuItem>
+        )}
         <MenuItem onClick={handleOpenSettings} size="300" after={menuIcon(GearSix)} radii="300">
           <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
             Room Settings
@@ -357,6 +396,12 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
   const screenSize = useScreenSizeContext();
   const room = useRoom();
   const space = useSpaceOptionally();
+  const messageRooms = useSelectedRooms(
+    allRoomsAtom,
+    useCallback((roomId) => isRoom(mx.getRoom(roomId)), [mx])
+  );
+  const allUnread = useRoomsUnread(messageRooms, roomToUnreadAtom);
+  const highlightedUnreadCount = allUnread?.highlight ?? 0;
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
   const [pinMenuAnchor, setPinMenuAnchor] = useState<RectCords>();
   const direct = useIsDirectRoom();
@@ -377,6 +422,10 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
 
   const encryptionEvent = useStateEvent(room, EventType.RoomEncryption);
   const encryptedRoom = !!encryptionEvent;
+
+  const { features } = useClientConfig();
+  const settings = useAtomValue(settingsAtom);
+  const encryptedSearchEnabled = features?.encryptedSearch !== false && settings.encryptedSearch;
   const avatarMxc = useRoomAvatar(room, direct && !customDMCards);
   const name = useRoomName(room);
   const topic = useRoomTopic(room);
@@ -562,7 +611,9 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
     };
     const path = space
       ? getSpaceSearchPath(getCanonicalAliasOrRoomId(mx, space.roomId))
-      : getHomeSearchPath();
+      : direct
+        ? getDirectSearchPath()
+        : getHomeSearchPath();
     navigate(withSearchParam(path, searchParams));
   };
 
@@ -609,7 +660,12 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
           <BackRouteHandler>
             {(onBack) => (
               <Box shrink="No" alignItems="Center">
-                <IconButton fill="None" onClick={onBack}>
+                <IconButton fill="None" onClick={onBack} style={{ position: 'relative' }}>
+                  {highlightedUnreadCount > 0 && (
+                    <span className={css.BackButtonBadge}>
+                      <UnreadBadge highlight count={highlightedUnreadCount} />
+                    </span>
+                  )}
                   {composerIcon(ArrowLeft)}
                 </IconButton>
               </Box>
@@ -681,13 +737,13 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
         <Box shrink="No">
           {(!room.isCallRoom() || chat) && (
             <>
-              {!encryptedRoom && (
+              {(!encryptedRoom || encryptedSearchEnabled) && (
                 <TooltipProvider
                   position="Bottom"
                   offset={4}
                   tooltip={
                     <Tooltip>
-                      <Text>Search</Text>
+                      <Text>{encryptedRoom ? 'Search (local cache)' : 'Search'}</Text>
                     </Tooltip>
                   }
                 >

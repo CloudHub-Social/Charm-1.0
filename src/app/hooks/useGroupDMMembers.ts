@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MatrixClient, Room } from '$types/matrix-sdk';
+import { loadRoomMembersOnce } from '$utils/loadRoomMembers';
 
 export type GroupMemberInfo = {
   userId: string;
@@ -20,33 +21,78 @@ const isBridgeBot = (userId: string): boolean => {
 };
 
 /**
+ * Read member info synchronously from already-loaded room state.
+ * Returns partial data (no profile API) so the first render has something to
+ * show rather than being empty while the async fetch is in-flight.
+ */
+function getInitialMembers(
+  mx: MatrixClient,
+  room: Room | undefined,
+  maxMembers: number
+): GroupMemberInfo[] {
+  if (!room) return [];
+  const currentUserId = mx.getUserId();
+  return room
+    .getMembers()
+    .filter((m) => m.membership === 'join' && m.userId !== currentUserId && !isBridgeBot(m.userId))
+    .slice(0, maxMembers)
+    .map((m) => ({
+      userId: m.userId,
+      displayName: m.name || m.userId,
+      avatarUrl: m.getMxcAvatarUrl() ?? undefined,
+    }));
+}
+
+/**
  * Fetches member information for a group DM.
- * Gets all joined members from room state and fetches their profiles.
+ * Starts from already-synced room state, then loads members once per room if
+ * lazy-loaded state is too sparse to render a group-DM avatar.
  * Sorts members by who last sent messages (most recent first), with members who haven't sent messages last.
  */
 export const useGroupDMMembers = (
   mx: MatrixClient,
-  room: Room,
+  room: Room | undefined,
   maxMembers = 3
 ): GroupMemberInfo[] => {
-  const [members, setMembers] = useState<GroupMemberInfo[]>([]);
+  // Seed from local room state so the triple-avatar layout renders on the
+  // first paint instead of flashing in after the async profile fetch.
+  const [members, setMembers] = useState<GroupMemberInfo[]>(() =>
+    getInitialMembers(mx, room, maxMembers)
+  );
 
   useEffect(() => {
+    let cancelled = false;
+    if (!room) {
+      // Use functional update to avoid a re-render when state is already empty
+      // (e.g. every 1:1 DM nav item that never had group members).
+      setMembers((prev) => (prev.length > 0 ? [] : prev));
+      return undefined;
+    }
     const fetchMembers = async () => {
       try {
         const currentUserId = mx.getUserId();
 
-        // Load members from server if needed (handles lazy-loading)
-        await room.loadMembersIfNeeded();
+        let allMembers = room.getMembers();
 
-        // Now get all members
-        const allMembers = room.getMembers();
+        let joinedMembers = allMembers.filter(
+          (m) => m.membership === 'join' && m.userId !== currentUserId && !isBridgeBot(m.userId)
+        );
+        const expectedVisibleMembers = Math.min(
+          maxMembers,
+          Math.max(0, room.getJoinedMemberCount() - 1)
+        );
 
-        const allUserIds = allMembers
-          .filter(
+        if (joinedMembers.length < expectedVisibleMembers) {
+          await loadRoomMembersOnce(room);
+          if (cancelled) return;
+
+          allMembers = room.getMembers();
+          joinedMembers = allMembers.filter(
             (m) => m.membership === 'join' && m.userId !== currentUserId && !isBridgeBot(m.userId)
-          )
-          .map((m) => m.userId);
+          );
+        }
+
+        const allUserIds = joinedMembers.map((m) => m.userId);
 
         // Get last message senders from timeline for sorting
         const timeline = room.getLiveTimeline();
@@ -106,14 +152,20 @@ export const useGroupDMMembers = (
         });
 
         const fetchedMembers = await Promise.all(memberPromises);
+        if (cancelled) return;
         setMembers(fetchedMembers);
       } catch {
+        if (cancelled) return;
         // If fetching fails, set empty array
         setMembers([]);
       }
     };
 
     fetchMembers();
+
+    return () => {
+      cancelled = true;
+    };
   }, [mx, room, maxMembers]);
 
   return members;

@@ -1,11 +1,11 @@
-# Sentry Integration for Sable
+# Sentry Integration for Charm
 
-This document describes the Sentry error tracking and monitoring integration added to Sable.
+This document describes the Sentry error tracking and monitoring integration added to Charm.
 For a detailed breakdown of what data is collected and how it is protected, see [SENTRY_PRIVACY.md](./SENTRY_PRIVACY.md).
 
 ## Overview
 
-Sentry is integrated with Sable to provide:
+Sentry is integrated with Charm to provide:
 
 - **Error tracking**: Automatic capture and reporting of errors and exceptions
 - **Performance monitoring**: Track application performance and identify bottlenecks
@@ -150,13 +150,23 @@ Configure Sentry via environment variables:
 VITE_SENTRY_DSN=https://your-sentry-dsn@sentry.io/project-id
 
 # Required: Environment name - controls sampling rates
-# - "production" = 10% trace/replay sampling (cost-effective for production)
+# - "production" = 50% trace/replay sampling (balanced quota usage for production)
 # - "preview" = 100% trace/replay sampling (full debugging for PR previews)
 # - "development" = 100% trace/replay sampling (full debugging for local dev)
 VITE_SENTRY_ENVIRONMENT=production
 
 # Optional: Release version for tracking (defaults to VITE_APP_VERSION)
 VITE_SENTRY_RELEASE=1.7.0
+
+# Optional: Enable the preview-only Sentry Toolbar loader
+VITE_SENTRY_TOOLBAR=false
+
+# Optional: Required when VITE_SENTRY_TOOLBAR=true
+VITE_SENTRY_ORGANIZATION=your-org-slug
+VITE_SENTRY_PROJECT=your-project-slug
+
+# Optional: Override the Sentry origin used by the Toolbar (defaults to https://sentry.io)
+VITE_SENTRY_TOOLBAR_ORIGIN=https://sentry.io
 
 # Optional: For uploading source maps to Sentry (CI/CD only)
 SENTRY_AUTH_TOKEN=your-sentry-auth-token
@@ -166,7 +176,7 @@ SENTRY_PROJECT=your-project-slug
 
 ### Self-Hosting with Docker
 
-Sable is compiled at build time, so `VITE_*` variables must be passed as Docker
+Charm is compiled at build time, so `VITE_*` variables must be passed as Docker
 **build arguments** — they cannot be injected at container runtime via a plain
 `docker run -e` flag. The easiest way for self-hosters to supply them is with
 a `.env` file and `docker-compose`.
@@ -189,7 +199,7 @@ stage so Vite can embed them in the bundle:
 
 ```yaml
 services:
-  sable:
+  charm:
     build:
       context: .
       args:
@@ -226,7 +236,7 @@ If you use plain `docker build`, pass build args directly:
 docker build \
   --build-arg VITE_SENTRY_DSN="https://your-key@oXXXXX.ingest.sentry.io/XXXXXXX" \
   --build-arg VITE_SENTRY_ENVIRONMENT="production" \
-  -t sable .
+  -t charm .
 ```
 
 > **Security note:** DSN values embedded in the JavaScript bundle are visible
@@ -239,8 +249,8 @@ docker build \
 **Production deployment (from `dev` branch):**
 
 - Set `VITE_SENTRY_ENVIRONMENT=production`
-- Gets 10% sampling for traces and session replay
-- Cost-effective for production usage
+- Gets 50% sampling for traces and session replay
+- Balanced quota usage for production
 - Configured in `.github/workflows/cloudflare-web-deploy.yml`
 
 **Preview deployments (PR previews, Cloudflare Pages):**
@@ -249,6 +259,145 @@ docker build \
 - Gets 100% sampling for traces and session replay
 - Full debugging capabilities for testing
 - Configured in `.github/workflows/cloudflare-web-preview.yml`
+- For GitHub PR previews, the workflow also sets `VITE_SENTRY_PR=<pull request number>`.
+  `src/instrument.ts` reads that value and tags all Sentry events with `pr=<number>`.
+- To enable the preview-only Toolbar, also set:
+  - `VITE_SENTRY_TOOLBAR=true`
+  - `VITE_SENTRY_ORGANIZATION=<org slug>`
+  - `VITE_SENTRY_PROJECT=<project slug>`
+
+### Sentry Toolbar
+
+Charm can inject the Sentry Toolbar in preview builds without adding a runtime package dependency.
+`src/instrument.ts` remains the single Sentry bootstrap point and calls the Toolbar loader after the
+main Sentry SDK initialization path settles.
+
+Behavior:
+
+- The Toolbar only initializes when all of the following are true:
+  - `VITE_SENTRY_ENVIRONMENT=preview`
+  - `VITE_SENTRY_TOOLBAR=true`
+  - `VITE_SENTRY_ORGANIZATION` is set
+  - `VITE_SENTRY_PROJECT` is set
+- Production builds leave the Toolbar disabled by default.
+- The app sets `data-sentry-toolbar-state` on the root HTML element to `enabled`, `disabled`, or
+  `error`, which gives local tests a stable build signal without asserting on Toolbar internals.
+
+### GitHub PR Triage Setup
+
+Charm includes a GitHub Actions workflow, `.github/workflows/sentry-preview-issues.yml`,
+that can turn Sentry preview issues into:
+
+- a sticky PR comment summarizing current preview errors
+- GitHub issues labeled `sentry-preview` and `pr-<number>`
+
+For that flow to work end to end, all of the following must be true:
+
+1. Preview builds must send events to Sentry.
+2. The preview build must tag those events with the PR number.
+3. The triage workflow must be able to query Sentry issues.
+
+The repo-side wiring for this is:
+
+- `.github/workflows/cloudflare-web-preview.yml`
+  - sets `VITE_SENTRY_DSN`
+  - sets `VITE_SENTRY_ENVIRONMENT=preview`
+  - sets `VITE_SENTRY_PR=${{ github.event.pull_request.number }}`
+- `src/instrument.ts`
+  - calls `Sentry.getGlobalScope().setTag('pr', prNumber)` when `VITE_SENTRY_PR` is present
+- `.github/workflows/sentry-preview-issues.yml`
+  - queries Sentry for `is:unresolved pr:<number> environment:preview`
+  - upserts the sticky PR comment
+  - creates or reopens GitHub issues for matching Sentry issues
+- `.github/workflows/sentry-snapshots.yml`
+  - installs Chromium and runs `e2e/smoke/observability.spec.ts`
+  - writes stable screenshots to `.artifacts/sentry-snapshots`
+  - uploads those screenshots with `pnpm dlx @sentry/cli@latest snapshots upload` when the
+    repository variable `SENTRY_SNAPSHOTS_ENABLED=true` is set
+
+Required GitHub repository secrets:
+
+- `VITE_SENTRY_DSN`
+- `SENTRY_ORG`
+- `SENTRY_PROJECT`
+- `SENTRY_AUTH_TOKEN`
+  Used by the preview build for source map upload.
+- `SENTRY_TRIAGE_AUTH_TOKEN`
+  Recommended dedicated token for the triage workflow. It should have at least
+  `event:read` scope in Sentry. Using a separate token avoids broadening the
+  build-time token unnecessarily.
+
+Recommended GitHub repository variable:
+
+- `SENTRY_SNAPSHOTS_ENABLED`
+  Set this to `true` only after the linked Sentry project has snapshot upload support enabled.
+  Until then, the workflow still runs the deterministic Playwright coverage and uploads the PNG
+  artifact to GitHub, but skips the Sentry upload step instead of failing the PR on an unavailable
+  server-side capability.
+
+Reviewer expectations for Snapshots:
+
+- Snapshot diffs are generated from deterministic smoke fixtures, not live Matrix timelines.
+- A failed Snapshot check should be reviewed as a visual change signal, not assumed to be a bug by default.
+- The workflow uploads the same PNG set as a GitHub artifact for debugging when you need to inspect exactly what was rendered.
+- CI fails fast if the preview Sentry env expected by the observability smoke suite is missing.
+
+Operational notes:
+
+- The triage workflow only runs for pull requests from the same repository, not forks.
+- Sentry tagging happens in the built app, so the preview deployment must be rebuilt
+  with the PR-specific environment variables for the `pr` tag to appear.
+- Re-running a workflow uses the workflow file from the commit on GitHub. Local-only
+  edits in your checkout do not affect Actions until they are committed and pushed.
+
+### Current Coverage and Remaining Setup
+
+What is already wired in this repo:
+
+- Preview and production deploy workflows build with Sentry environment metadata and
+  upload source maps.
+- Preview builds tag browser events with `pr=<number>`, which powers the automated
+  preview triage workflow.
+- `.github/workflows/sentry-preview-issues.yml` can create or reopen GitHub issues
+  for preview runtime errors found in Sentry.
+- `src/app/features/bug-report/BugReportModal.tsx` sends bug reports to Sentry both
+  as an issue event and as User Feedback, and can optionally open a pre-filled
+  GitHub issue form.
+
+What still depends on Sentry-side configuration:
+
+- GitHub integration plus code mappings in Sentry.
+  Without this, Sentry will not reliably link issues, releases, and suspect commits
+  back to the Charm repository.
+- A User Feedback alert rule that creates GitHub issues for new feedback items.
+  The app already submits feedback, but automatic GitHub issue creation for feedback
+  is configured in Sentry Alerts, not in this repo.
+- Dashboards and alerts for release health, noisy regressions, and recurring frontend
+  failures. The SDK emits the data, but dashboards and alert routing live in Sentry.
+- Cloudflare Workers log and trace drains. Those are configured in the Cloudflare and
+  Sentry dashboards, then enabled in the Worker observability settings. Charm now
+  deploys a Worker-first asset proxy so Cloudflare observability can see real site
+  traffic; you still need to configure the drain destinations in Cloudflare.
+- Build Distribution and Size Analysis for native artifacts. These remain deliberately deferred
+  until Charm has a stable signed-artifact lane for Tauri or mobile builds.
+
+Recommended manual Sentry follow-up:
+
+1. Install the Sentry GitHub integration for the Charm repository and add a code
+   mapping for `src/`.
+2. Create a User Feedback alert with `The issue's category is equal to "Feedback"`
+   and set the action to create a new GitHub issue in this repository.
+3. Create at least one dashboard for preview and production:
+   - error count by release
+   - top frontend transactions / web vitals
+   - user feedback volume by environment
+4. If you want Cloudflare-side logs and traces in Sentry, add `sentry-logs` and
+   `sentry-traces` destinations in Cloudflare Workers Observability, then wire those
+   destination names into Worker observability config. Without those destinations,
+   the repo changes here only ensure the Worker emits observable traffic; they do
+   not automatically create the drain endpoints in Cloudflare or Sentry.
+5. Use the preview Toolbar and Snapshot checks as complements to the deterministic browser tests,
+   not as a replacement for them.
 
 **Local development:**
 
@@ -261,7 +410,7 @@ docker build \
 ```
 Environment    | Traces | Profiles | Session Replay | Error Replay
 ---------------|--------|----------|----------------|-------------
-production     | 10%    | 10%      | 10%            | 100%
+production     | 50%    | 50%      | 50%            | 100%
 preview        | 100%   | 100%     | 100%           | 100%
 development    | 100%   | 100%     | 100%           | 100%
 ```
@@ -284,9 +433,24 @@ localStorage.setItem('sable_sentry_replay_enabled', 'false');
 
 Or use the UI in Settings → General → Diagnostics & Privacy.
 
+## Native-Prep Scaffolding
+
+Charm now includes `.github/workflows/sentry-native-prep.yml` as a manual placeholder for future
+native artifact uploads.
+
+Current intent:
+
+- Keep Build Distribution and Size Analysis out of the default web build and PR path.
+- Document the future contract where an upstream native build job provides a signed or uploadable
+  artifact.
+- Reuse `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` when that lane becomes real.
+
+Until Charm has a stable native artifact flow, this workflow only documents the expected upload
+shape and does not send any builds to Sentry.
+
 ## Custom Instrumentation
 
-Beyond automatic error capture, Sable has hand-crafted monitoring at key
+Beyond automatic error capture, Charm has hand-crafted monitoring at key
 lifecycle points. See [SENTRY_PRIVACY.md](./SENTRY_PRIVACY.md) for the full
 metrics reference. Key areas:
 
@@ -363,8 +527,8 @@ the Sentry issue timeline and can be filtered in the developer settings panel.
 
 ### Sentry Configuration
 
-- **Tracing sample rate**: 100% in development, 10% in production
-- **Session replay sample rate**: 10% of all sessions, 100% of error sessions
+- **Tracing sample rate**: 100% in development, 50% in production
+- **Session replay sample rate**: 50% of all sessions, 100% of error sessions
 - **Warning capture rate**: 10% to avoid overwhelming Sentry
 - **Breadcrumb retention**: All breadcrumbs retained for context
 - **Log attachment limit**: Last 100 debug log entries

@@ -9,7 +9,7 @@ import {
   EventType,
   KnownMembership,
 } from '$types/matrix-sdk';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useLayoutEffect } from 'react';
 import type { RoomToParents } from '$types/matrix/room';
 
 import {
@@ -20,8 +20,12 @@ import {
   mapParentWithChildren,
 } from '$utils/room';
 import { useSyncState } from '$hooks/useSyncState';
+import { getLocalStorageItem, setLocalStorageItem } from '$state/utils/atomWithLocalStorage';
 
 export type RoomToParentsAction =
+  | {
+      type: 'RESET';
+    }
   | {
       type: 'INITIALIZE';
       roomToParents: RoomToParents;
@@ -41,65 +45,136 @@ export type RoomToParentsAction =
       roomId: string;
     };
 
+// Strategy 2: Cache room hierarchy in localStorage to eliminate startup computation.
+// Scope the cache to the active Matrix user so one account does not hydrate another
+// account's room hierarchy during a switch or multi-account startup.
+const ROOM_TO_PARENTS_CACHE_KEY = 'roomToParents';
+
+export const getRoomToParentsCacheKey = (userId: string): string =>
+  `${ROOM_TO_PARENTS_CACHE_KEY}:${userId}`;
+
+export const hasRoomToParentsCache = (cacheKey: string): boolean =>
+  localStorage.getItem(cacheKey) !== null;
+
+const deserializeRoomToParents = (key: string): RoomToParents => {
+  const cached = getLocalStorageItem<[string, string[]][]>(key, []);
+  return new Map(cached.map(([room, parents]: [string, string[]]) => [room, new Set(parents)]));
+};
+
+const serializeRoomToParents = (value: RoomToParents): [string, string[]][] =>
+  Array.from(value.entries()).map(([room, parents]: [string, Set<string>]) => [
+    room,
+    Array.from(parents),
+  ]);
+
+const readRoomToParentsCache = (cacheKey: string): RoomToParents => {
+  if (hasRoomToParentsCache(cacheKey)) {
+    return deserializeRoomToParents(cacheKey);
+  }
+
+  if (localStorage.getItem(ROOM_TO_PARENTS_CACHE_KEY) !== null) {
+    localStorage.removeItem(ROOM_TO_PARENTS_CACHE_KEY);
+  }
+
+  return new Map();
+};
+
+export const roomToParentsCacheKeyAtom = atom<string | undefined>(undefined);
+
+const persistRoomToParentsCache = (cacheKey: string | undefined, value: RoomToParents) => {
+  if (!cacheKey) return;
+  if (localStorage.getItem(ROOM_TO_PARENTS_CACHE_KEY) !== null) {
+    localStorage.removeItem(ROOM_TO_PARENTS_CACHE_KEY);
+  }
+  setLocalStorageItem(cacheKey, serializeRoomToParents(value));
+};
+
 const baseRoomToParents = atom(new Map());
+const baseRoomToParentsReady = atom(false);
 export const roomToParentsAtom = atom<RoomToParents, [RoomToParentsAction], undefined>(
   (get) => get(baseRoomToParents),
   (get, set, action) => {
+    const cacheKey = get(roomToParentsCacheKeyAtom);
+    if (action.type === 'RESET') {
+      set(baseRoomToParents, new Map());
+      set(baseRoomToParentsReady, false);
+      return;
+    }
     if (action.type === 'INITIALIZE') {
       set(baseRoomToParents, action.roomToParents);
+      set(baseRoomToParentsReady, true);
+      persistRoomToParentsCache(cacheKey, action.roomToParents);
       return;
     }
     if (action.type === 'PUT') {
-      set(
-        baseRoomToParents,
-        produce(get(baseRoomToParents), (draftRoomToParents) => {
-          mapParentWithChildren(draftRoomToParents, action.parent, action.children);
-        })
-      );
+      const newValue = produce(get(baseRoomToParents), (draftRoomToParents) => {
+        mapParentWithChildren(draftRoomToParents, action.parent, action.children);
+      });
+      set(baseRoomToParents, newValue);
+      persistRoomToParentsCache(cacheKey, newValue);
       return;
     }
     if (action.type === 'REMOVE_CHILD') {
-      set(
-        baseRoomToParents,
-        produce(get(baseRoomToParents), (draftRoomToParents) => {
-          const parents = draftRoomToParents.get(action.child);
-          if (!parents) return;
-          parents.delete(action.parent);
-          if (parents.size === 0) {
-            draftRoomToParents.delete(action.child);
-          } else {
-            draftRoomToParents.set(action.child, parents);
-          }
-        })
-      );
+      const newValue = produce(get(baseRoomToParents), (draftRoomToParents) => {
+        const parents = draftRoomToParents.get(action.child);
+        if (!parents) return;
+        parents.delete(action.parent);
+        if (parents.size === 0) {
+          draftRoomToParents.delete(action.child);
+        } else {
+          draftRoomToParents.set(action.child, parents);
+        }
+      });
+      set(baseRoomToParents, newValue);
+      persistRoomToParentsCache(cacheKey, newValue);
       return;
     }
     if (action.type === 'DELETE') {
-      set(
-        baseRoomToParents,
-        produce(get(baseRoomToParents), (draftRoomToParents) => {
-          const noParentRooms: string[] = [];
-          draftRoomToParents.delete(action.roomId);
-          draftRoomToParents.forEach((parents, child) => {
-            parents.delete(action.roomId);
-            if (parents.size === 0) noParentRooms.push(child);
-          });
-          noParentRooms.forEach((room) => draftRoomToParents.delete(room));
-        })
-      );
+      const newValue = produce(get(baseRoomToParents), (draftRoomToParents) => {
+        const noParentRooms: string[] = [];
+        draftRoomToParents.delete(action.roomId);
+        draftRoomToParents.forEach((parents, child) => {
+          parents.delete(action.roomId);
+          if (parents.size === 0) noParentRooms.push(child);
+        });
+        noParentRooms.forEach((room) => draftRoomToParents.delete(room));
+      });
+      set(baseRoomToParents, newValue);
+      persistRoomToParentsCache(cacheKey, newValue);
     }
   }
 );
+
+export const roomToParentsReadyAtom = atom((get) => get(baseRoomToParentsReady));
 
 export const useBindRoomToParentsAtom = (
   mx: MatrixClient,
   roomToParents: typeof roomToParentsAtom
 ) => {
   const setRoomToParents = useSetAtom(roomToParents);
+  const setRoomToParentsCacheKey = useSetAtom(roomToParentsCacheKeyAtom);
   const resetRoomToParents = useCallback(
     () => setRoomToParents({ type: 'INITIALIZE', roomToParents: getRoomToParents(mx) }),
     [mx, setRoomToParents]
   );
+
+  // Strategy 2: Initialize from cache immediately on mount
+  useLayoutEffect(() => {
+    const userId = mx.getUserId();
+    if (!userId) {
+      setRoomToParentsCacheKey(undefined);
+      setRoomToParents({ type: 'RESET' });
+      return;
+    }
+
+    const cacheKey = getRoomToParentsCacheKey(userId);
+    setRoomToParentsCacheKey(cacheKey);
+    setRoomToParents({ type: 'RESET' });
+    const cachedMap = readRoomToParentsCache(cacheKey);
+    if (hasRoomToParentsCache(cacheKey) || cachedMap.size > 0) {
+      setRoomToParents({ type: 'INITIALIZE', roomToParents: cachedMap });
+    }
+  }, [mx, setRoomToParents, setRoomToParentsCacheKey]);
 
   useSyncState(
     mx,

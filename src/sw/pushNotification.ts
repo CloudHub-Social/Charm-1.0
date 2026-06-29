@@ -1,5 +1,4 @@
-/* oxlint-disable no-console */
-// Keep the service worker import graph narrow, the app barrel pulls in runtime Matrix SDK modules that break SW script evaluation
+/* eslint-disable no-console */
 import { EventType } from 'matrix-js-sdk/lib/@types/event';
 import {
   buildRoomMessageNotification,
@@ -15,7 +14,9 @@ type NotificationSettings = {
 
 interface MatrixPushData {
   type?: string;
-  content?: { notification_type?: string; membership?: string };
+  effectiveType?: string;
+  effective_type?: string;
+  content?: Record<string, unknown>;
   sender_display_name?: string;
   room_name?: string;
   room_id?: string;
@@ -23,14 +24,38 @@ interface MatrixPushData {
   event_id?: string;
   user_id?: string;
   timestamp?: number;
+  counts?: {
+    unread?: number;
+    missed_calls?: number;
+  };
+  // Matrix push gateways should include this when the event matched a highlight rule
+  // https://spec.matrix.org/v1.11/push-gateway-api/#post_matrixpushv1notify
+  prio?: 'high' | 'low';
   data?: Record<string, unknown>;
 }
 
 const resolveSilent = (): boolean => false;
+const resolveNotificationEventType = (pushData: MatrixPushData): string | undefined =>
+  pushData?.effectiveType ?? pushData?.effective_type ?? pushData?.type;
+const resolveNotificationDispatchType = (pushData: MatrixPushData): string | undefined => {
+  const effectiveType = pushData?.effectiveType ?? pushData?.effective_type;
+  if (
+    effectiveType === 'org.matrix.msc4075.call.notify' ||
+    effectiveType === 'org.matrix.msc4075.rtc.notification'
+  ) {
+    return effectiveType;
+  }
+  return pushData?.type;
+};
 
 export const createPushNotifications = (
   self: ServiceWorkerGlobalScope,
-  getNotificationSettings: () => NotificationSettings
+  getNotificationSettings: () => NotificationSettings,
+  postSentryMetric: (
+    metricName: string,
+    value: number,
+    attributes?: Record<string, string | number | boolean>
+  ) => Promise<void>
 ) => {
   const showNotificationWithData = async (
     title: string,
@@ -58,7 +83,22 @@ export const createPushNotifications = (
       data,
     };
     console.debug('[SW showNotification] title:', title, '| data:', JSON.stringify(data, null, 2));
-    await self.registration.showNotification(title, notifOptions as NotificationOptions);
+    try {
+      await self.registration.showNotification(title, notifOptions as NotificationOptions);
+      // Track successful notification display
+      postSentryMetric('sable.notification.displayed', 1, {
+        event_type: (data?.type as string) ?? 'unknown',
+        is_call: Boolean(data?.isCall),
+        silent: Boolean(silent),
+      }).catch(() => undefined);
+    } catch (err) {
+      console.error('[SW showNotification] failed:', err);
+      // Track notification display failures
+      postSentryMetric('sable.notification.display_failed', 1, {
+        error_type: err instanceof Error ? err.name : 'unknown',
+      }).catch(() => undefined);
+      throw err;
+    }
   };
 
   const handleCallNotification = async (pushData: MatrixPushData) => {
@@ -73,7 +113,7 @@ export const createPushNotifications = (
       : 'Incoming voice chat';
 
     const data = {
-      type: pushData?.type,
+      type: resolveNotificationEventType(pushData),
       room_id: pushData?.room_id,
       user_id: pushData?.user_id,
       timestamp: Date.now(),
@@ -85,8 +125,9 @@ export const createPushNotifications = (
   };
 
   const handleRoomMessageNotification = async (pushData: MatrixPushData) => {
+    const resolvedType = resolveNotificationEventType(pushData);
     const data: Record<string, unknown> = {
-      type: pushData?.type,
+      type: resolvedType,
       room_id: pushData?.room_id,
       event_id: pushData?.event_id,
       user_id: pushData?.user_id,
@@ -99,7 +140,8 @@ export const createPushNotifications = (
       roomAvatar: pushData?.room_avatar_url,
       previewText: resolveNotificationPreviewText({
         content: pushData?.content,
-        eventType: pushData?.type,
+        eventType: resolvedType,
+        effectiveType: pushData?.effectiveType ?? pushData?.effective_type,
         isEncryptedRoom: false,
         showMessageContent: getNotificationSettings().showMessageContent,
         showEncryptedMessageContent: getNotificationSettings().showEncryptedMessageContent,
@@ -135,6 +177,7 @@ export const createPushNotifications = (
       previewText: resolveNotificationPreviewText({
         content: pushData?.content,
         eventType: pushData?.type,
+        effectiveType: pushData?.effectiveType ?? pushData?.effective_type,
         isEncryptedRoom: true,
         showMessageContent: getNotificationSettings().showMessageContent,
         showEncryptedMessageContent: getNotificationSettings().showEncryptedMessageContent,
@@ -165,7 +208,7 @@ export const createPushNotifications = (
     if (!senderDisplayName && !roomName) body = '';
 
     const data = {
-      type: pushData?.type,
+      type: resolveNotificationEventType(pushData),
       content: pushData?.content,
       user_id: pushData?.user_id,
       timestamp: Date.now(),
@@ -176,14 +219,15 @@ export const createPushNotifications = (
   };
 
   const handlePushNotificationPushData = async (pushData: MatrixPushData) => {
-    const eventType = pushData?.type as EventType | undefined;
+    const eventType = resolveNotificationDispatchType(pushData) as EventType | undefined;
     if (!eventType) {
-      console.warn('no event type');
+      console.warn('[SW pushNotification] no event type');
     }
 
     switch (eventType as string) {
       case EventType.RoomMessage as string:
       case EventType.Sticker as string:
+      case EventType.Reaction as string:
         await handleRoomMessageNotification(pushData);
         break;
       case EventType.RoomMessageEncrypted as string:

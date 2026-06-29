@@ -1,3 +1,4 @@
+import { AuthenticatedImg } from '$components/AuthenticatedImg';
 import { isJumboEmojiText } from '$utils/emojiDetection';
 import * as css from './style.css';
 
@@ -9,6 +10,10 @@ type PowerIconProps = css.PowerIconVariants & {
 const ALLOWED_ICON_PROTOCOLS = new Set(['http:', 'https:']);
 
 function getSafeIconUrl(iconSrc: string): string | undefined {
+  if (iconSrc.startsWith('mxc://')) {
+    return iconSrc;
+  }
+
   try {
     const parsed = new URL(iconSrc);
     return ALLOWED_ICON_PROTOCOLS.has(parsed.protocol) ? parsed.href : undefined;
@@ -25,5 +30,5 @@ export function PowerIcon({ size, iconSrc, name }: PowerIconProps) {
   const safeIconUrl = getSafeIconUrl(iconSrc);
   if (!safeIconUrl) return null;
 
-  return <img className={css.PowerIcon({ size })} src={safeIconUrl} alt={name} />;
+  return <AuthenticatedImg className={css.PowerIcon({ size })} src={safeIconUrl} alt={name} />;
 }

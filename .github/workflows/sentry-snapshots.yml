@@ -1,0 +1,154 @@
+name: Sentry Snapshots
+
+on:
+  push:
+    branches:
+      - integration
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'playwright.config.ts'
+      - 'e2e/**'
+      - '.github/workflows/sentry-snapshots.yml'
+      - '.github/actions/setup/**'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual run (e.g. seed base snapshot)'
+        required: false
+        default: 'manual base snapshot seed'
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'playwright.config.ts'
+      - 'e2e/**'
+      - '.github/workflows/sentry-snapshots.yml'
+      - '.github/actions/setup/**'
+
+concurrency:
+  group: sentry-snapshots-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  snapshots:
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    environment: sentry-preview
+    permissions:
+      contents: read
+    env:
+      PLAYWRIGHT_SNAPSHOT_OUTPUT_DIR: .artifacts/sentry-snapshots
+      SENTRY_SNAPSHOT_DIFF_THRESHOLD: '0.01'
+      SENTRY_SNAPSHOTS_ENABLED: ${{ vars.SENTRY_SNAPSHOTS_ENABLED }}
+      VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+      VITE_SENTRY_ENVIRONMENT: preview
+      VITE_SENTRY_PR: ${{ github.event.pull_request.number }}
+      VITE_SENTRY_TOOLBAR: 'true'
+      VITE_SENTRY_ORGANIZATION: ${{ secrets.SENTRY_ORG }}
+      VITE_SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+      SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+      LIVE_MATRIX_REFERENCE_SNAPSHOTS_ENABLED: ${{ secrets.LIVE_MATRIX_SERVER != '' && secrets.LIVE_MATRIX_USERNAME != '' && secrets.LIVE_MATRIX_PASSWORD != '' && secrets.LIVE_MATRIX_RECOVERY_KEY != '' }}
+      PLAYWRIGHT_TRACE: off
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup app
+        uses: ./.github/actions/setup
+
+      - name: Validate snapshot environment
+        run: |
+          missing=()
+          for name in VITE_SENTRY_DSN VITE_SENTRY_ORGANIZATION VITE_SENTRY_PROJECT; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${SENTRY_SNAPSHOTS_ENABLED:-}" = "true" ] && [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
+            missing+=("SENTRY_AUTH_TOKEN")
+          fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing required snapshot environment: ${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Capture deterministic observability and layout harness snapshots
+        run: pnpm run test:e2e:snapshots
+
+      - name: Capture live Matrix reference snapshots
+        if: >
+          env.LIVE_MATRIX_REFERENCE_SNAPSHOTS_ENABLED == 'true' &&
+          (
+            github.event_name == 'push' ||
+            github.event_name == 'workflow_dispatch' ||
+            (
+              github.event_name == 'pull_request' &&
+              contains(github.event.pull_request.labels.*.name, 'live-smoke')
+            )
+          )
+        env:
+          LIVE_MATRIX_SERVER: ${{ secrets.LIVE_MATRIX_SERVER }}
+          LIVE_MATRIX_USERNAME: ${{ secrets.LIVE_MATRIX_USERNAME }}
+          LIVE_MATRIX_PASSWORD: ${{ secrets.LIVE_MATRIX_PASSWORD }}
+          LIVE_MATRIX_RECOVERY_KEY: ${{ secrets.LIVE_MATRIX_RECOVERY_KEY }}
+          LIVE_MATRIX_ROOM_ID: '!mxyMeeQ8S0qXUqcCkgBei4cnb4grSEwIaK1sQxzAvpM'
+          LIVE_MATRIX_ROOM_NAME: Test
+          LIVE_MATRIX_EMOJI_QA_ROOM_PATH_SEGMENT: '!OUj74q04t8IrfJzG-m5YSEFn9k028-A1EgPQc0ZU3bA'
+          LIVE_MATRIX_EMOJI_QA_ROOM_NAME: Emoji QA
+        run: pnpm exec playwright test e2e/live/liveMatrix.spec.ts --project chromium --workers 1
+
+      - name: Upload snapshot artifact for debugging
+        if: always() && hashFiles('.artifacts/sentry-snapshots/**/*.png') != ''
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: sentry-snapshots-${{ github.event.pull_request.number || github.sha }}
+          path: .artifacts/sentry-snapshots
+
+      - name: Upload snapshots to Sentry
+        id: sentry_upload
+        if: env.SENTRY_SNAPSHOTS_ENABLED == 'true' && hashFiles('.artifacts/sentry-snapshots/**/*.png') != ''
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        run: >
+          pnpm dlx @sentry/cli@3.5.1 snapshots upload
+          "$PLAYWRIGHT_SNAPSHOT_OUTPUT_DIR"
+          --app-id charm-web-preview
+          --diff-threshold "$SENTRY_SNAPSHOT_DIFF_THRESHOLD"
+          --log-level debug
+
+      - name: Note Sentry snapshot upload failure
+        if: always() && steps.sentry_upload.outcome == 'failure'
+        run: |
+          {
+            echo "### Sentry Snapshot Upload"
+            echo
+            echo "- Real-route observability snapshots and layout harness coverage ran successfully for this pull request."
+            echo "- Snapshot upload to Sentry failed, but the workflow is continuing."
+            echo "- Review the \`Upload snapshots to Sentry\` step logs for the CLI/server error details."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Note Sentry snapshot upload status
+        if: env.SENTRY_SNAPSHOTS_ENABLED != 'true'
+        run: |
+          {
+            echo "### Sentry Snapshot Upload"
+            echo
+            echo "- Real-route observability snapshots and layout harness coverage ran successfully for this pull request."
+            echo "- Upload to Sentry is currently disabled for this repository."
+            echo "- Enable the repository variable \`SENTRY_SNAPSHOTS_ENABLED=true\` after the Sentry project has snapshot upload support."
+          } >> "$GITHUB_STEP_SUMMARY"

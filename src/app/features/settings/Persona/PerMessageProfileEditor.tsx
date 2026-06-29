@@ -17,7 +17,7 @@ import {
 } from '$hooks/usePerMessageProfile';
 import type { PronounSet } from '$utils/pronouns';
 import { parsePronounsStringToPronounsSetArray } from '$utils/pronouns';
-import { SequenceCardStyle } from '../styles.css';
+import { SequenceCardStyle } from '$features/settings/styles.css';
 
 /**
  * the props we use for the per-message profile editor, which is used to edit a per-message profile. This is used in the settings page when the user wants to edit a profile.
@@ -45,8 +45,6 @@ export function PerMessageProfileEditor({
   const [currentDisplayName, setCurrentDisplayName] = useState(displayName ?? '');
   const [currentId, setCurrentId] = useState(profileId);
   const [newId, setNewId] = useState(profileId);
-
-  console.warn(pronouns);
 
   // Pronouns
   const [currentPronouns, setCurrentPronouns] = useState(pronouns);
@@ -191,11 +189,7 @@ export function PerMessageProfileEditor({
       grow="Yes"
       style={{
         width: '100%',
-        minWidth: 500,
-        paddingTop: config.space.S400,
-        paddingBottom: config.space.S400,
-        alignItems: 'center',
-        justifyContent: 'center',
+        alignItems: 'stretch',
       }}
       role="form"
       aria-labelledby={`profile-editor-title-${profileId}`}
@@ -207,25 +201,14 @@ export function PerMessageProfileEditor({
         gap="300"
         style={{
           width: '100%',
-          minWidth: 500,
-          minHeight: 100,
-          maxHeight: 240,
           boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'stretch',
-          justifyContent: 'flex-start',
-          position: 'relative',
-          overflow: 'visible',
+          gap: config.space.S300,
         }}
       >
-        {/* Profile ID heading and input */}
-        <Box
-          direction="Row"
-          gap="200"
-          alignItems="Center"
-          style={{ width: '100%', marginBottom: config.space.S200 }}
-        >
+        <Box direction="Row" gap="200" alignItems="Center" wrap="Wrap" style={{ width: '100%' }}>
           <Text size="H6" id={`profile-editor-title-${profileId}`} style={{ minWidth: 90 }}>
             Profile ID:
           </Text>
@@ -239,8 +222,7 @@ export function PerMessageProfileEditor({
             radii="300"
             style={{
               flex: 1,
-              minWidth: 0,
-              maxWidth: 'clamp(200px, 60vw, 480px)',
+              minWidth: 220,
               paddingRight: config.space.S200,
               fontSize: 16,
               height: 50,
@@ -250,19 +232,16 @@ export function PerMessageProfileEditor({
             title="profile id"
           />
         </Box>
-        <Box direction="Row">
+        <Box direction="Row" gap="300" wrap="Wrap" alignItems="Start">
           <Box
             direction="Column"
             alignItems="Center"
-            justifyContent="Center"
+            justifyContent="Start"
             gap="100"
             style={{
-              minWidth: 80,
-              maxWidth: 100,
-              maxHeight: 100,
+              minWidth: 96,
               flexShrink: 0,
-              overflow: 'visible',
-              marginTop: 20,
+              paddingTop: config.space.S100,
             }}
             aria-label="Avatar and upload"
           >
@@ -330,16 +309,16 @@ export function PerMessageProfileEditor({
           </Box>
           <Box
             direction="Column"
-            alignItems="Center"
-            justifyContent="Center"
-            style={{ flex: 1, minWidth: 0, height: '100%' }}
+            alignItems="Stretch"
+            justifyContent="Start"
+            gap="100"
+            style={{ flex: 1, minWidth: 240 }}
             aria-label="Display name input"
           >
             <Text
               size="T300"
               style={{
-                marginBottom: config.space.S200,
-                alignSelf: 'flex-start',
+                marginBottom: config.space.S100,
               }}
             >
               Display Name:
@@ -353,10 +332,8 @@ export function PerMessageProfileEditor({
               variant="Secondary"
               radii="300"
               style={{
-                flex: 1,
                 minWidth: 0,
                 width: '100%',
-                maxWidth: 'clamp(200px, 60vw, 480px)',
                 paddingRight: config.space.S200,
                 fontSize: 16,
                 height: 50,
@@ -386,8 +363,7 @@ export function PerMessageProfileEditor({
               size="T300"
               style={{
                 marginTop: config.space.S100,
-                marginBottom: config.space.S200,
-                alignSelf: 'flex-start',
+                marginBottom: config.space.S100,
               }}
             >
               Pronouns:
@@ -401,10 +377,8 @@ export function PerMessageProfileEditor({
               variant="Secondary"
               radii="300"
               style={{
-                flex: 1,
                 minWidth: 0,
                 width: '100%',
-                maxWidth: 'clamp(200px, 60vw, 480px)',
                 paddingRight: config.space.S200,
                 fontSize: 16,
                 height: 50,
@@ -430,16 +404,14 @@ export function PerMessageProfileEditor({
               }
             />
           </Box>
-          {/* Rechte Spalte: Save Button */}
           <Box
             direction="Column"
-            alignItems="Center"
-            justifyContent="Center"
+            alignItems="Stretch"
+            justifyContent="Start"
+            gap="100"
             style={{
               minWidth: 120,
-              maxWidth: 140,
-              flexShrink: 0,
-              height: '100%',
+              flex: '0 0 140px',
             }}
             aria-label={`Save button area for ${profileId}`}
           >
@@ -470,7 +442,6 @@ export function PerMessageProfileEditor({
               style={{
                 minWidth: 120,
                 height: 'clamp(30px, 6vw, 50px)',
-                marginTop: config.space.S100,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

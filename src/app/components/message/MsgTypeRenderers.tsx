@@ -19,9 +19,15 @@ import type {
 import * as prefix from '$unstable/prefixes';
 import { FALLBACK_MIMETYPE, getBlobSafeMimeType } from '$utils/mimeTypes';
 import { parseGeoUri, scaleYDimension } from '$utils/common';
+import { mxcUrlToHttp } from '$utils/matrix';
+import { getScopedMediaCacheKey } from '$utils/mediaTransport';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import type { PerMessageProfileBeeperFormat } from '$hooks/usePerMessageProfile';
+import { useMatrixClient } from '$hooks/useMatrixClient';
+import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { useMediaMetadata } from '$hooks/useMediaMetadata';
+import type { CachedMediaMetadata } from '$utils/mediaMetadata';
 import { Attachment, AttachmentBox, AttachmentContent, AttachmentHeader } from './attachment';
 import { FileHeader, FileDownloadButton } from './FileHeader';
 import {
@@ -40,6 +46,7 @@ import { copyToClipboard } from '$utils/dom';
 import { MapContainer, Marker, TileLayer } from 'react-leaflet';
 import type { LatLngExpression } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { sanitizeCustomHtml } from '$utils/sanitize';
 
 import * as css from './MsgTypeRenderers.css';
 import { markerIcon } from '$features/room/location-modal/LocationDialog';
@@ -47,6 +54,85 @@ import { markerIcon } from '$features/room/location-modal/LocationDialog';
 export interface BundleContent extends IPreviewUrlResponse {
   matched_url: string;
 }
+
+const HTML_TAG_REGEX = /<[a-z][\w:-]*(?:\s[^<>]*)?>/i;
+const PROFILE_FALLBACK_REGEX = /<strong[^>]*data-mx-profile-fallback[^>]*>(.*?):\s*<\/strong>/i;
+const BLANK_LINE_REGEX = /(?:\r\n|\r|\n){2,}/;
+
+const hasHtmlMarkup = (value: string): boolean => HTML_TAG_REGEX.test(value);
+const shouldPreWrapVisiblePlainText = (value: string | undefined): boolean => {
+  if (typeof value !== 'string') return true;
+
+  const visibleContent = sanitizeCustomHtml(value).replace(PROFILE_FALLBACK_REGEX, '');
+  return !hasHtmlMarkup(visibleContent) && BLANK_LINE_REGEX.test(visibleContent);
+};
+
+const positiveMediaDimension = (value: number | undefined): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+
+const mergeImageInfoWithMetadata = (
+  info: IImageInfo | undefined,
+  metadata: CachedMediaMetadata | undefined
+): IImageInfo | undefined => {
+  if (!metadata) return info;
+
+  const width = positiveMediaDimension(info?.w) ?? metadata.width;
+  const height = positiveMediaDimension(info?.h) ?? metadata.height;
+  const size = positiveMediaDimension(info?.size) ?? metadata.byteSize;
+  const mimetype = info?.mimetype ?? metadata.mimeType;
+
+  if (!width && !height && !size && !mimetype) return info;
+
+  return {
+    ...info,
+    ...(width ? { w: width } : {}),
+    ...(height ? { h: height } : {}),
+    ...(size ? { size } : {}),
+    ...(mimetype ? { mimetype } : {}),
+  };
+};
+
+const mergeVideoInfoWithMetadata = (
+  info: (IVideoInfo & IThumbnailContent) | undefined,
+  metadata: CachedMediaMetadata | undefined
+): (IVideoInfo & IThumbnailContent) | undefined => {
+  if (!metadata) return info;
+
+  const width = positiveMediaDimension(info?.w) ?? metadata.width;
+  const height = positiveMediaDimension(info?.h) ?? metadata.height;
+  const size = positiveMediaDimension(info?.size) ?? metadata.byteSize;
+  const duration = positiveMediaDimension(info?.duration) ?? metadata.duration;
+  const mimetype =
+    info?.mimetype ?? metadata.mimeType ?? (metadata.kind === 'video' ? 'video/mp4' : undefined);
+
+  if (!width && !height && !size && !duration && !mimetype) return info;
+
+  return {
+    ...info,
+    ...(width ? { w: width } : {}),
+    ...(height ? { h: height } : {}),
+    ...(size ? { size } : {}),
+    ...(duration ? { duration } : {}),
+    ...(mimetype ? { mimetype } : {}),
+  };
+};
+
+const useAttachmentMetadataKey = (
+  mxcUrl: string | undefined,
+  encrypted: boolean
+): string | undefined => {
+  const mx = useMatrixClient();
+  const useAuthentication = useMediaAuthentication();
+
+  return useMemo(() => {
+    if (!mxcUrl) return undefined;
+    if (encrypted) return getScopedMediaCacheKey(mxcUrl);
+    if (mxcUrl.startsWith('http')) return getScopedMediaCacheKey(mxcUrl);
+
+    const mediaUrl = mxcUrlToHttp(mx, mxcUrl, useAuthentication);
+    return mediaUrl ? getScopedMediaCacheKey(mediaUrl) : undefined;
+  }, [encrypted, mx, mxcUrl, useAuthentication]);
+};
 
 export function MBadEncrypted() {
   return (
@@ -125,59 +211,129 @@ type MTextProps = {
   renderBody: (props: RenderBodyProps) => ReactNode;
   renderUrlsPreview?: (urls: string[]) => ReactNode;
   renderBundledPreviews?: (bundles: IPreviewUrlResponse[]) => ReactNode;
+  composeBundledPreviewsWithUrls?: boolean;
   style?: CSSProperties;
 };
+
+const isPreviewSuppressedUrl = (
+  body: string,
+  fullMatch: string,
+  url: string,
+  offset: number,
+  allowAngleBracketSuppression: boolean
+): boolean => {
+  const urlIndex = body.indexOf(url, offset);
+  if (urlIndex === -1) return false;
+
+  if (allowAngleBracketSuppression) {
+    const wrappedUrlStart = Math.max(0, urlIndex - 1);
+    if (body.slice(wrappedUrlStart, urlIndex + url.length + 1) === `<${url}>`) return true;
+    const markdownDestinationStart = offset + fullMatch.length;
+    if (
+      body.slice(markdownDestinationStart, markdownDestinationStart + 3) === '](<' &&
+      body.slice(markdownDestinationStart + 3, markdownDestinationStart + 3 + url.length + 1) ===
+        `${url}>`
+    ) {
+      return true;
+    }
+    if (offset >= 3 && body.slice(offset - 3, offset) === '](<') return true;
+    if (body.slice(urlIndex - 2, urlIndex) === '(<') return true;
+  }
+
+  return false;
+};
+
+const normalizeMatchedUrl = (url: string, fullMatch = url): string =>
+  (fullMatch.startsWith('(') &&
+    fullMatch.endsWith(')') &&
+    url.endsWith(')') &&
+    url.substring(0, url.length - 1)) ||
+  (url.startsWith('(') && url.endsWith(')') && url.substring(1, url.length - 1)) ||
+  (url.startsWith('(') && url.substring(1)) ||
+  (url.endsWith('/)') && url.substring(0, url.length - 1)) ||
+  url;
 
 const getUrlsFromContent = (
   content: Record<string, unknown>,
   renderUrlsPreview?: (urls: string[]) => ReactNode
 ): { urls?: string[]; bundleContent?: BundleContent[] } => {
-  const body = typeof content.body === 'string' ? content.body : '';
-  const customBody =
-    typeof content.formatted_body === 'string' ? content.formatted_body : undefined;
-  const trimmedBody = trimReplyFromBody(body);
-
-  const urlsMatch = trimmedBody.match(LINKINPUTREGEX);
-  let urls = urlsMatch ? [...new Set(urlsMatch)] : undefined;
-  urls = urls?.map(
-    (url) =>
-      (url.startsWith('(') && url.endsWith(')') && url.substring(1, url.length - 1)) ||
-      (url.startsWith('(') && url.substring(1)) ||
-      (url.endsWith('/)') && url.substring(0, url.length - 1)) ||
-      url
-  );
-
-  if (urls && customBody) {
-    // Filter out URLs that only appear inside <code> or <pre> tags in the formatted body
-    const safeHtml = customBody
-      .replace(/<pre[^>]*>.*?<\/pre>/gs, '')
-      .replace(/<code[^>]*>.*?<\/code>/gs, '');
-    const safeText = safeHtml.replace(/<[^a][^>]*>/g, '');
-    const safeUrlsMatch = safeText.match(LINKINPUTREGEX);
-    let safeUrls = safeUrlsMatch ? [...new Set(safeUrlsMatch)] : [];
-    safeUrls = safeUrls.map(
-      (url) =>
-        (url.startsWith('(') && url.endsWith(')') && url.substring(1, url.length - 1)) ||
-        (url.startsWith('(') && url.substring(1)) ||
-        (url.endsWith('/)') && url.substring(0, url.length - 1)) ||
-        url
-    );
-    const safeUrlsSet = new Set(safeUrls);
-    urls = urls.filter((url) => safeUrlsSet.has(url) && !url.startsWith(MATRIX_TO_BASE));
-  }
-
-  let bundleContent = content[
-    prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME
-  ] as BundleContent[];
   try {
-    bundleContent = bundleContent?.filter((bundle) => !!urls?.includes(bundle.matched_url));
-    if (renderUrlsPreview && bundleContent)
-      urls = bundleContent.map((bundle) => bundle.matched_url);
-  } catch {
-    urls = [];
-  }
+    const body = typeof content.body === 'string' ? content.body : '';
+    const customBody =
+      typeof content.formatted_body === 'string' ? content.formatted_body : undefined;
+    const trimmedBody = trimReplyFromBody(body);
+    const rawBundleContent = content[prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME] as
+      | BundleContent[]
+      | undefined;
+    const bundledUrls = new Set(
+      rawBundleContent
+        ?.map((bundle) => bundle?.matched_url)
+        .filter((bundleUrl): bundleUrl is string => typeof bundleUrl === 'string') ?? []
+    );
+    const hasBundledPreviewState = Object.prototype.hasOwnProperty.call(
+      content,
+      prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME
+    );
 
-  return { urls, bundleContent };
+    const urlsMatch = [...trimmedBody.matchAll(LINKINPUTREGEX)];
+    let urls: string[] | undefined = urlsMatch
+      .map((match) => {
+        const full = match[0];
+        const url = match[1];
+        const offset = match.index ?? 0;
+        if (typeof url !== 'string') return undefined;
+        const normalizedUrl = normalizeMatchedUrl(url, full);
+        if (
+          isPreviewSuppressedUrl(
+            trimmedBody,
+            full,
+            normalizedUrl,
+            offset,
+            hasBundledPreviewState && !bundledUrls.has(normalizedUrl)
+          )
+        ) {
+          return undefined;
+        }
+        return normalizedUrl;
+      })
+      .filter((url): url is string => Boolean(url));
+    urls = urls.length > 0 ? [...new Set(urls)] : undefined;
+
+    if (urls && customBody) {
+      // Filter out URLs that only appear inside <code> or <pre> tags in the formatted body
+      const safeHtml = customBody
+        .replace(/<pre[^>]*>.*?<\/pre>/gs, '')
+        .replace(/<code[^>]*>.*?<\/code>/gs, '');
+      const safeText = safeHtml.replace(/<[^a][^>]*>/g, '');
+      const safeUrls = [...safeText.matchAll(LINKINPUTREGEX)]
+        .map((match) => {
+          const full = match[0];
+          const url = match[1];
+          return typeof url === 'string' ? normalizeMatchedUrl(url, full) : undefined;
+        })
+        .filter((url): url is string => Boolean(url));
+      const safeUrlsSet = new Set(safeUrls);
+      urls = urls.filter((url) => safeUrlsSet.has(url) && !url.startsWith(MATRIX_TO_BASE));
+    }
+
+    let bundleContent = rawBundleContent;
+    try {
+      bundleContent = bundleContent?.filter((bundle) => !!urls?.includes(bundle.matched_url));
+      if (renderUrlsPreview && bundleContent) {
+        const bundleUrls = bundleContent.map((bundle) => bundle.matched_url);
+        urls = [...new Set([...(urls ?? []), ...bundleUrls])];
+      }
+    } catch (innerError) {
+      console.warn('[getUrlsFromContent] Failed to process bundleContent:', innerError);
+      urls = [];
+    }
+
+    return { urls, bundleContent };
+  } catch (error) {
+    console.warn('[getUrlsFromContent] Failed to extract URLs from message content:', error);
+    // Return empty to allow message to render without link previews
+    return { urls: undefined, bundleContent: undefined };
+  }
 };
 
 export function MText({
@@ -186,6 +342,7 @@ export function MText({
   renderBody,
   renderUrlsPreview,
   renderBundledPreviews,
+  composeBundledPreviewsWithUrls,
   style,
 }: MTextProps) {
   const [jumboEmojiSize] = useSetting(settingsAtom, 'jumboEmojiSize');
@@ -196,6 +353,10 @@ export function MText({
   const cleanedMessage = useMemo(
     () => customBody?.replace(/<li>(<p><\/p>)?<\/li>/gi, '<li><br></li>'),
     [customBody]
+  );
+  const shouldPreWrapCleanedMessage = useMemo(
+    () => shouldPreWrapVisiblePlainText(cleanedMessage),
+    [cleanedMessage]
   );
 
   const trimmedBody = useMemo(() => trimReplyFromBody(body), [body]);
@@ -213,9 +374,12 @@ export function MText({
    * For the unwrapping of per-message profile fallbacks, we look for <strong> tags with the data-mx-profile-fallback attribute
    */
   const unwrappedPerMessageProfileMessage = useMemo(
-    () =>
-      cleanedMessage?.replace(/<strong[^>]*data-mx-profile-fallback[^>]*>(.*?):\s*<\/strong>/i, ''),
+    () => cleanedMessage?.replace(PROFILE_FALLBACK_REGEX, ''),
     [cleanedMessage]
+  );
+  const shouldPreWrapUnwrappedPerMessageProfileMessage = useMemo(
+    () => shouldPreWrapVisiblePlainText(unwrappedPerMessageProfileMessage),
+    [unwrappedPerMessageProfileMessage]
   );
 
   const isJumbo = useMemo(() => {
@@ -237,6 +401,35 @@ export function MText({
   }, [unwrappedPerMessageProfileMessage, cleanedMessage, trimmedBody, customBody]);
 
   const { urls, bundleContent } = getUrlsFromContent(content, renderUrlsPreview);
+  const bundledPreviewUrls = useMemo(
+    () =>
+      new Set(
+        bundleContent
+          ?.map((bundle) => bundle?.matched_url)
+          .filter((bundleUrl): bundleUrl is string => typeof bundleUrl === 'string') ?? []
+      ),
+    [bundleContent]
+  );
+  const composedUrls = useMemo(
+    () =>
+      composeBundledPreviewsWithUrls ? urls?.filter((url) => !bundledPreviewUrls.has(url)) : urls,
+    [composeBundledPreviewsWithUrls, urls, bundledPreviewUrls]
+  );
+  const renderedUrlsPreview =
+    renderUrlsPreview && composedUrls && composedUrls.length > 0 && renderUrlsPreview(composedUrls);
+  const renderedBundledPreviews =
+    renderBundledPreviews &&
+    bundleContent &&
+    bundleContent.length > 0 &&
+    renderBundledPreviews(bundleContent as IPreviewUrlResponse[]);
+  const renderedPreviews = composeBundledPreviewsWithUrls ? (
+    <>
+      {renderedUrlsPreview}
+      {renderedBundledPreviews}
+    </>
+  ) : (
+    renderedUrlsPreview || renderedBundledPreviews
+  );
 
   if (
     (
@@ -249,7 +442,7 @@ export function MText({
     return (
       <>
         <MessageTextBody
-          preWrap={typeof cleanedMessage !== 'string'}
+          preWrap={shouldPreWrapUnwrappedPerMessageProfileMessage}
           style={style}
           jumboEmoji={isJumbo ? jumboEmojiSize : 'none'}
         >
@@ -259,11 +452,7 @@ export function MText({
           })}
           {edited && <MessageEditedContent />}
         </MessageTextBody>
-        {(renderUrlsPreview && urls && urls.length > 0 && renderUrlsPreview(urls)) ||
-          (renderBundledPreviews &&
-            bundleContent &&
-            bundleContent.length > 0 &&
-            renderBundledPreviews(bundleContent as IPreviewUrlResponse[]))}
+        {renderedPreviews}
       </>
     );
   }
@@ -276,11 +465,7 @@ export function MText({
           customBody: unwrappedForwardedContent,
         })}
         {edited && <MessageEditedContent />}
-        {(renderUrlsPreview && urls && urls.length > 0 && renderUrlsPreview(urls)) ||
-          (renderBundledPreviews &&
-            bundleContent &&
-            bundleContent.length > 0 &&
-            renderBundledPreviews(bundleContent as IPreviewUrlResponse[]))}
+        {renderedPreviews}
       </MessageTextBody>
     );
   }
@@ -288,7 +473,7 @@ export function MText({
   return (
     <>
       <MessageTextBody
-        preWrap={typeof cleanedMessage !== 'string'}
+        preWrap={shouldPreWrapCleanedMessage}
         jumboEmoji={isJumbo ? jumboEmojiSize : 'none'}
         style={style}
       >
@@ -298,11 +483,7 @@ export function MText({
         })}
         {edited && <MessageEditedContent />}
       </MessageTextBody>
-      {(renderUrlsPreview && urls && urls.length > 0 && renderUrlsPreview(urls)) ||
-        (renderBundledPreviews &&
-          bundleContent &&
-          bundleContent.length > 0 &&
-          renderBundledPreviews(bundleContent as IPreviewUrlResponse[]))}
+      {renderedPreviews}
     </>
   );
 }
@@ -314,6 +495,7 @@ type MEmoteProps = {
   renderBody: (props: RenderBodyProps) => ReactNode;
   renderUrlsPreview?: (urls: string[]) => ReactNode;
   renderBundledPreviews?: (bundles: IPreviewUrlResponse[]) => ReactNode;
+  composeBundledPreviewsWithUrls?: boolean;
 };
 export function MEmote({
   displayName,
@@ -322,6 +504,7 @@ export function MEmote({
   renderBody,
   renderUrlsPreview,
   renderBundledPreviews,
+  composeBundledPreviewsWithUrls,
 }: MEmoteProps) {
   const { body, formatted_body: customBody } = content;
   const cleanedMessage = useMemo(
@@ -332,14 +515,42 @@ export function MEmote({
     [customBody]
   );
   const [jumboEmojiSize] = useSetting(settingsAtom, 'jumboEmojiSize');
+  const trimmedBody = typeof body === 'string' ? trimReplyFromBody(body) : '';
+  const isJumbo = isJumboEmojiText(trimmedBody);
+  const { urls, bundleContent } = getUrlsFromContent(content, renderUrlsPreview);
+  const bundledPreviewUrls = useMemo(
+    () =>
+      new Set(
+        bundleContent
+          ?.map((bundle) => bundle?.matched_url)
+          .filter((bundleUrl): bundleUrl is string => typeof bundleUrl === 'string') ?? []
+      ),
+    [bundleContent]
+  );
+  const composedUrls = useMemo(
+    () =>
+      composeBundledPreviewsWithUrls ? urls?.filter((url) => !bundledPreviewUrls.has(url)) : urls,
+    [composeBundledPreviewsWithUrls, urls, bundledPreviewUrls]
+  );
 
   if (typeof body !== 'string') {
     return <BrokenContent body={typeof customBody === 'string' ? customBody : undefined} />;
   }
-  const trimmedBody = trimReplyFromBody(body);
-  const isJumbo = isJumboEmojiText(trimmedBody);
-
-  const { urls, bundleContent } = getUrlsFromContent(content, renderUrlsPreview);
+  const renderedUrlsPreview =
+    renderUrlsPreview && composedUrls && composedUrls.length > 0 && renderUrlsPreview(composedUrls);
+  const renderedBundledPreviews =
+    renderBundledPreviews &&
+    bundleContent &&
+    bundleContent.length > 0 &&
+    renderBundledPreviews(bundleContent as IPreviewUrlResponse[]);
+  const renderedPreviews = composeBundledPreviewsWithUrls ? (
+    <>
+      {renderedUrlsPreview}
+      {renderedBundledPreviews}
+    </>
+  ) : (
+    renderedUrlsPreview || renderedBundledPreviews
+  );
 
   return (
     <>
@@ -355,11 +566,7 @@ export function MEmote({
         })}
         {edited && <MessageEditedContent />}
       </MessageTextBody>
-      {(renderUrlsPreview && urls && urls.length > 0 && renderUrlsPreview(urls)) ||
-        (renderBundledPreviews &&
-          bundleContent &&
-          bundleContent.length > 0 &&
-          renderBundledPreviews(bundleContent as IPreviewUrlResponse[]))}
+      {renderedPreviews}
     </>
   );
 }
@@ -370,6 +577,7 @@ type MNoticeProps = {
   renderBody: (props: RenderBodyProps) => ReactNode;
   renderUrlsPreview?: (urls: string[]) => ReactNode;
   renderBundledPreviews?: (bundles: IPreviewUrlResponse[]) => ReactNode;
+  composeBundledPreviewsWithUrls?: boolean;
 };
 export function MNotice({
   edited,
@@ -377,6 +585,7 @@ export function MNotice({
   renderBody,
   renderUrlsPreview,
   renderBundledPreviews,
+  composeBundledPreviewsWithUrls,
 }: MNoticeProps) {
   const { body, formatted_body: customBody } = content;
   const cleanedMessage = useMemo(
@@ -387,14 +596,42 @@ export function MNotice({
     [customBody]
   );
   const [jumboEmojiSize] = useSetting(settingsAtom, 'jumboEmojiSize');
+  const trimmedBody = typeof body === 'string' ? trimReplyFromBody(body) : '';
+  const isJumbo = isJumboEmojiText(trimmedBody);
+  const { urls, bundleContent } = getUrlsFromContent(content, renderUrlsPreview);
+  const bundledPreviewUrls = useMemo(
+    () =>
+      new Set(
+        bundleContent
+          ?.map((bundle) => bundle?.matched_url)
+          .filter((bundleUrl): bundleUrl is string => typeof bundleUrl === 'string') ?? []
+      ),
+    [bundleContent]
+  );
+  const composedUrls = useMemo(
+    () =>
+      composeBundledPreviewsWithUrls ? urls?.filter((url) => !bundledPreviewUrls.has(url)) : urls,
+    [composeBundledPreviewsWithUrls, urls, bundledPreviewUrls]
+  );
 
   if (typeof body !== 'string') {
     return <BrokenContent body={typeof customBody === 'string' ? customBody : undefined} />;
   }
-  const trimmedBody = trimReplyFromBody(body);
-  const isJumbo = isJumboEmojiText(trimmedBody);
-
-  const { urls, bundleContent } = getUrlsFromContent(content, renderUrlsPreview);
+  const renderedUrlsPreview =
+    renderUrlsPreview && composedUrls && composedUrls.length > 0 && renderUrlsPreview(composedUrls);
+  const renderedBundledPreviews =
+    renderBundledPreviews &&
+    bundleContent &&
+    bundleContent.length > 0 &&
+    renderBundledPreviews(bundleContent as IPreviewUrlResponse[]);
+  const renderedPreviews = composeBundledPreviewsWithUrls ? (
+    <>
+      {renderedUrlsPreview}
+      {renderedBundledPreviews}
+    </>
+  ) : (
+    renderedUrlsPreview || renderedBundledPreviews
+  );
 
   return (
     <>
@@ -409,11 +646,7 @@ export function MNotice({
         })}
         {edited && <MessageEditedContent />}
       </MessageTextBody>
-      {(renderUrlsPreview && urls && urls.length > 0 && renderUrlsPreview(urls)) ||
-        (renderBundledPreviews &&
-          bundleContent &&
-          bundleContent.length > 0 &&
-          renderBundledPreviews(bundleContent as IPreviewUrlResponse[]))}
+      {renderedPreviews}
     </>
   );
 }
@@ -434,8 +667,14 @@ type MImageProps = {
   outlined?: boolean;
 };
 export function MImage({ content, renderImageContent, outlined }: MImageProps) {
-  const imgInfo = content?.info;
   const mxcUrl = content.file?.url ?? content.url;
+  const mediaMetadataKey = useAttachmentMetadataKey(
+    typeof mxcUrl === 'string' ? mxcUrl : undefined,
+    Boolean(content.file)
+  );
+  const mediaMetadata = useMediaMetadata(mediaMetadataKey);
+  const imgInfo = mergeImageInfoWithMetadata(content?.info, mediaMetadata);
+
   if (typeof mxcUrl !== 'string') {
     return <BrokenContent body={content.body ?? content.filename} />;
   }
@@ -491,8 +730,13 @@ type MVideoProps = {
   outlined?: boolean;
 };
 export function MVideo({ content, renderAsFile, renderVideoContent, outlined }: MVideoProps) {
-  const videoInfo = content?.info;
   const mxcUrl = content.file?.url ?? content.url;
+  const mediaMetadataKey = useAttachmentMetadataKey(
+    typeof mxcUrl === 'string' ? mxcUrl : undefined,
+    Boolean(content.file)
+  );
+  const mediaMetadata = useMediaMetadata(mediaMetadataKey);
+  const videoInfo = mergeVideoInfoWithMetadata(content?.info, mediaMetadata);
   const safeMimeType = getBlobSafeMimeType(videoInfo?.mimetype ?? '');
 
   if (!videoInfo || !safeMimeType.startsWith('video') || typeof mxcUrl !== 'string') {
@@ -674,6 +918,18 @@ type MLocationProps = {
   content: IContent;
   showMaps?: boolean;
 };
+
+function isValidGeoCoord(latitude: number, longitude: number): boolean {
+  return (
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude >= -180 &&
+    longitude <= 180
+  );
+}
+
 export function MLocation({ content, showMaps }: MLocationProps) {
   const geoUri = content.geo_uri;
   if (typeof geoUri !== 'string') {
@@ -681,8 +937,12 @@ export function MLocation({ content, showMaps }: MLocationProps) {
   }
   const location = parseGeoUri(geoUri);
   if (!location) return <BrokenContent />;
-  const coords: LatLngExpression = [Number(location.latitude), Number(location.longitude)];
-
+  const latitude = Number(location.latitude);
+  const longitude = Number(location.longitude);
+  if (!isValidGeoCoord(latitude, longitude)) {
+    return <BrokenContent body={typeof content.body === 'string' ? content.body : undefined} />;
+  }
+  const coords: LatLngExpression = [latitude, longitude];
   return (
     <Box
       direction="Column"
@@ -699,17 +959,17 @@ export function MLocation({ content, showMaps }: MLocationProps) {
         <Chip
           size="400"
           variant="SurfaceVariant"
-          onClick={() => copyToClipboard(`${location.latitude}, ${location.longitude}`)}
+          onClick={() => copyToClipboard(`${latitude}, ${longitude}`)}
           before={sizedIcon(Link, '50')}
           className={css.LocationCoordsChip}
         >
-          <Text size="T400">{`${location.latitude}, ${location.longitude}`}</Text>
+          <Text size="T400">{`${latitude}, ${longitude}`}</Text>
         </Chip>
 
         <Chip
           as="a"
           size="400"
-          href={`https://www.openstreetmap.org/?mlat=${location.latitude}&mlon=${location.longitude}#map=16/${location.latitude}/${location.longitude}`}
+          href={`https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=16/${latitude}/${longitude}`}
           target="_blank"
           rel="noreferrer noopener"
           variant="Primary"

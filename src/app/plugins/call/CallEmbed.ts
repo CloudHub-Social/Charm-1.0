@@ -9,12 +9,12 @@ import {
   WidgetApiToWidgetAction,
 } from 'matrix-widget-api';
 import { CallWidgetDriver } from './CallWidgetDriver';
-import { trimTrailingSlash } from '../../utils/common';
+import { trimTrailingSlash } from '$utils/common';
 import type { ElementCallThemeKind, ElementMediaStateDetail } from './types';
 import { ElementCallIntent, ElementWidgetActions } from './types';
 import { CallControl } from './CallControl';
 import { CallControlState } from './CallControlState';
-import { createDebugLogger } from '../../utils/debugLogger';
+import { createDebugLogger } from '$utils/debugLogger';
 
 const debugLog = createDebugLogger('CallEmbed');
 
@@ -303,7 +303,7 @@ export class CallEmbed {
     if (this.call === null) return;
     const raw = ev.getEffectiveEvent();
     this.call.feedStateUpdate(raw as IRoomEvent).catch((e) => {
-      console.error('Error sending state update to widget: ', e);
+      console.error('[CallEmbed] Error sending state update to widget:', e);
     });
   }
 
@@ -409,7 +409,7 @@ export class CallEmbed {
       } else {
         const raw = ev.getEffectiveEvent();
         this.call.feedEvent(raw as IRoomEvent).catch((e) => {
-          console.error('Error sending event to widget: ', e);
+          console.error('[CallEmbed] Error sending event to widget:', e);
         });
       }
     }

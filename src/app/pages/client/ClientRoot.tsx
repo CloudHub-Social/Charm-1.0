@@ -5,6 +5,7 @@ import {
   config,
   Dialog,
   IconButton,
+  Line,
   Menu,
   MenuItem,
   PopOut,
@@ -17,12 +18,15 @@ import FocusTrap from 'focus-trap-react';
 import type { MouseEventHandler, ReactNode } from 'react';
 import { useRef, useCallback, useEffect, useState } from 'react';
 import * as Sentry from '@sentry/react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
+import { isTauri } from '@tauri-apps/api/core';
+import { type as osType } from '@tauri-apps/plugin-os';
 import {
   clearCacheAndReload,
   clearLoginData,
   clearMismatchedStores,
+  getSlidingSyncManager,
   initClient,
   logoutClient,
   startClient,
@@ -33,9 +37,16 @@ import { ServerConfigsLoader } from '$components/ServerConfigsLoader';
 import { CapabilitiesProvider } from '$hooks/useCapabilities';
 import { MediaConfigProvider } from '$hooks/useMediaConfig';
 import { MatrixClientProvider } from '$hooks/useMatrixClient';
+import { MediaUrlCacheProvider } from '$hooks/useMediaUrlCacheContext';
 import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { useSyncState } from '$hooks/useSyncState';
+import { useSetting } from '$state/hooks/settings';
+import { settingsAtom } from '$state/settings';
+import { useSwUpdateAvailable } from '$hooks/useSwUpdateAvailable';
+import { applyPendingAppUpdate } from '$utils/appUpdates';
+import { setBlobCacheSession } from '$hooks/useBlobCache';
 import { stopPropagation } from '$utils/keyboard';
+import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 import { AuthMetadataProvider } from '$hooks/useAuthMetadata';
 import {
   sessionsAtom,
@@ -46,15 +57,21 @@ import {
 import { createLogger } from '$utils/debug';
 import { useSyncNicknames } from '$hooks/useNickname';
 import { useAppVisibility } from '$hooks/useAppVisibility';
+import { getLandingPath, rememberLastVisitedPath } from '$pages/pathUtils';
 import { composerIcon, DotsThreeOutlineVerticalIcon } from '$components/icons/phosphor';
-import { getHomePath } from '$pages/pathUtils';
 import { useClientConfig } from '$hooks/useClientConfig';
+import { getSettings } from '$state/settings';
+import { markStartupShellReady } from '$utils/perfTelemetry';
 import { pushSessionToSW } from '../../../sw-session';
+import { createSessionRefreshHandler } from './sessionRefresh';
 import { SyncStatus } from './SyncStatus';
 import { SpecVersions } from './SpecVersions';
 import { AutoDiscovery } from './AutoDiscovery';
+import { ContainerColor } from '$styles/ContainerColor.css';
+import { getClientRootGuardTarget } from './rootHistoryGuard';
 
 const log = createLogger('ClientRoot');
+const MESSAGE_PREVIEW_LIST_TIMELINE_LIMIT = 5;
 
 const isClientReady = (syncState: string | null): boolean =>
   syncState === 'PREPARED' || syncState === 'SYNCING' || syncState === 'CATCHUP';
@@ -76,6 +93,12 @@ type ClientRootOptionsProps = {
 };
 function ClientRootOptions({ mx, onLogout }: ClientRootOptionsProps) {
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
+  const isWindowsTauri = isTauri() && osType() === 'windows';
+  const safeAreaTopInset = 'var(--sable-safe-area-top, env(safe-area-inset-top, 0px))';
+  const safeAreaRightInset = 'var(--sable-safe-area-right, env(safe-area-inset-right, 0px))';
+  const topOffset = isWindowsTauri
+    ? `calc(var(--tauri-titlebar-height) + ${config.space.S100})`
+    : `calc(${safeAreaTopInset} + ${config.space.S100})`;
 
   const handleToggle: MouseEventHandler<HTMLButtonElement> = (evt) => {
     const cords = evt.currentTarget.getBoundingClientRect();
@@ -89,8 +112,8 @@ function ClientRootOptions({ mx, onLogout }: ClientRootOptionsProps) {
     <IconButton
       style={{
         position: 'absolute',
-        top: config.space.S100,
-        right: config.space.S100,
+        top: topOffset,
+        right: `calc(${safeAreaRightInset} + ${config.space.S100})`,
       }}
       variant="Background"
       fill="None"
@@ -160,10 +183,12 @@ const useLogoutListener = (mx?: MatrixClient) => {
         message: 'Session forcibly logged out by server',
         level: 'warning',
       });
-      if (mx) stopClient(mx);
+      if (mx) await stopClient(mx);
       await mx?.clearStores();
       window.localStorage.clear();
-      window.location.reload();
+      reloadWithTelemetry('server_forced_logout', {
+        userId: mx?.getUserId(),
+      });
     };
 
     mx?.on(HttpApiEvent.SessionLoggedOut, handleLogout);
@@ -177,12 +202,19 @@ type ClientRootProps = {
   children: ReactNode;
 };
 export function ClientRoot({ children }: ClientRootProps) {
-  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
   const clientConfig = useClientConfig();
   const sessions = useAtomValue(sessionsAtom);
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
   const [activeSessionId, setActiveSessionId] = useAtom(activeSessionIdAtom);
   const setSessions = useSetAtom(sessionsAtom);
+  const [defaultLandingScreen] = useSetting(settingsAtom, 'defaultLandingScreen');
+  const [swUpdateError, setSwUpdateError] = useState<string | undefined>();
+  const [isApplyingSwUpdate, setIsApplyingSwUpdate] = useState(false);
+  const isApplyingSwUpdateRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   const activeSession: Session | undefined =
     sessions.find((s) => s.userId === activeSessionId) ?? sessions[0];
@@ -192,6 +224,15 @@ export function ClientRoot({ children }: ClientRootProps) {
   const loadedUserIdRef = useRef<string | undefined>(undefined);
   const syncStartTimeRef = useRef(performance.now());
   const firstSyncReadyRef = useRef(false);
+
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+    },
+    []
+  );
+
+  const [loading, setLoading] = useState(true);
 
   const [loadState, loadMatrix, setLoadState] = useAsyncCallback<MatrixClient, Error, []>(
     useCallback(async () => {
@@ -205,47 +246,104 @@ export function ClientRoot({ children }: ClientRootProps) {
       }
       await clearMismatchedStores();
       log.log('initClient for', activeSession.userId);
-      const newMx = await initClient(activeSession);
+      const newMx = await initClient(
+        activeSession,
+        createSessionRefreshHandler(
+          activeSession.userId,
+          () => sessionsRef.current.find((session) => session.userId === activeSession.userId),
+          setSessions,
+          pushSessionToSW
+        )
+      );
       loadedUserIdRef.current = activeSession.userId;
-      pushSessionToSW(activeSession.baseUrl, activeSession.accessToken);
+      pushSessionToSW(activeSession.baseUrl, activeSession.accessToken, activeSession.userId);
       return newMx;
-    }, [activeSession, activeSessionId, setActiveSessionId])
+    }, [activeSession, activeSessionId, setActiveSessionId, setSessions])
   );
 
   const mx = loadState.status === AsyncStatus.Success ? loadState.data : undefined;
 
   const [startState, startMatrix] = useAsyncCallback<void, Error, [MatrixClient]>(
     useCallback(
-      (m) =>
-        startClient(m, {
+      (m) => {
+        const s = getSettings();
+        const needsPreviewTimeline = s.dmMessagePreview || s.roomMessagePreview;
+        return startClient(m, {
           baseUrl: activeSession?.baseUrl,
-          slidingSync: clientConfig.slidingSync,
+          slidingSync: {
+            ...clientConfig.slidingSync,
+            listTimelineLimit: needsPreviewTimeline
+              ? MESSAGE_PREVIEW_LIST_TIMELINE_LIMIT
+              : undefined,
+          },
           sessionSlidingSyncOptIn: activeSession?.slidingSyncOptIn,
-        }),
+        });
+      },
       [activeSession?.baseUrl, activeSession?.slidingSyncOptIn, clientConfig.slidingSync]
     )
   );
+  const insertedRootGuardRef = useRef<string>();
+
+  useEffect(() => {
+    let disposed = false;
+    if (
+      activeSession &&
+      loadedUserIdRef.current &&
+      loadedUserIdRef.current !== activeSession.userId
+    ) {
+      void (async () => {
+        log.log(
+          'session changed from',
+          loadedUserIdRef.current,
+          '→',
+          activeSession.userId,
+          '— reloading client'
+        );
+        pushSessionToSW(activeSession.baseUrl, activeSession.accessToken, activeSession.userId);
+        if (mx) {
+          await stopClient(mx);
+        }
+        if (disposed) return;
+        loadedUserIdRef.current = undefined;
+        setLoading(true);
+        setLoadState({ status: AsyncStatus.Idle });
+        navigate(getLandingPath(defaultLandingScreen), { replace: true });
+      })();
+    }
+    return () => {
+      disposed = true;
+    };
+  }, [activeSession, mx, navigate, setLoadState, defaultLandingScreen]);
+
+  // Remember the last visited path so we can restore it on next app open
+  // if the user has selected "Last Visited" as their landing screen preference
+  useEffect(() => {
+    rememberLastVisitedPath(`${location.pathname}${location.search}`);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     if (!activeSession) return;
-    if (loadedUserIdRef.current && loadedUserIdRef.current !== activeSession.userId) {
-      log.log(
-        'session changed from',
-        loadedUserIdRef.current,
-        '→',
-        activeSession.userId,
-        '— reloading client'
-      );
-      pushSessionToSW(activeSession.baseUrl, activeSession.accessToken);
-      if (mx?.clientRunning) {
-        stopClient(mx);
-      }
-      setLoading(true);
-      loadedUserIdRef.current = undefined;
-      setLoadState({ status: AsyncStatus.Idle });
-      navigate(getHomePath(), { replace: true });
+
+    const currentPath = `${location.pathname}${location.search}`;
+    const rootGuardTarget = getClientRootGuardTarget(location.pathname, location.search);
+    const historyIdx = (window.history.state as { idx?: number } | null)?.idx;
+
+    if (
+      !rootGuardTarget ||
+      rootGuardTarget === currentPath ||
+      (historyIdx !== undefined && historyIdx > 0)
+    ) {
+      insertedRootGuardRef.current = undefined;
+      return;
     }
-  }, [activeSession, mx, navigate, setLoadState]);
+
+    const guardKey = `${rootGuardTarget}=>${currentPath}`;
+    if (insertedRootGuardRef.current === guardKey) return;
+
+    insertedRootGuardRef.current = guardKey;
+    navigate(rootGuardTarget, { replace: true });
+    navigate(currentPath);
+  }, [activeSession, location.pathname, location.search, navigate]);
 
   const handleLogout = useCallback(async () => {
     if (!mx || !activeSession) return;
@@ -254,18 +352,29 @@ export function ClientRoot({ children }: ClientRootProps) {
     setActiveSessionId(
       sessions.find((s) => s.userId !== activeSession.userId)?.userId ?? undefined
     );
-    window.location.reload();
+    reloadWithTelemetry('logout_active_session', {
+      userId: activeSession.userId,
+    });
   }, [mx, activeSession, sessions, setSessions, setActiveSessionId]);
 
   useSyncNicknames(mx);
   useLogoutListener(mx);
-  useAppVisibility(mx);
+  useAppVisibility(mx, activeSession);
+  const swUpdateAvailable = useSwUpdateAvailable();
+
+  const swSessionBaseUrl = activeSession?.baseUrl;
+  const swSessionAccessToken = activeSession?.accessToken;
+  useEffect(() => {
+    if (!swSessionBaseUrl || !swSessionAccessToken) return undefined;
+    setBlobCacheSession(swSessionAccessToken, swSessionBaseUrl);
+    return undefined;
+  }, [swSessionBaseUrl, swSessionAccessToken]);
 
   useEffect(
     () => () => {
       if (mx?.clientRunning) {
         log.log('ClientRoot unmounting — stopping client', mx.getUserId());
-        stopClient(mx);
+        void stopClient(mx);
       }
     },
     [mx]
@@ -278,33 +387,106 @@ export function ClientRoot({ children }: ClientRootProps) {
   }, [loadState, loadMatrix]);
 
   useEffect(() => {
-    if (mx && !mx.clientRunning) {
-      startMatrix(mx);
+    if (mx && !mx.clientRunning && startState.status !== AsyncStatus.Loading) {
+      void startMatrix(mx);
     }
-  }, [mx, startMatrix]);
+  }, [mx, startMatrix, startState.status]);
+
+  // Helper to check if the app is ready: sync must be in a ready state, and
+  // for cold sliding sync the first requested list window must have arrived.
+  const checkReadyAndClearSplash = useCallback(
+    (state: string | null) => {
+      if (!state || !isClientReady(state)) return;
+
+      const slidingSyncManager = mx ? getSlidingSyncManager(mx) : undefined;
+      if (slidingSyncManager) {
+        const hasWarm = slidingSyncManager.hasWarmCache();
+        const isFullyLoaded = slidingSyncManager.isFullyLoaded();
+        const hasSufficient = slidingSyncManager.hasSufficientRoomsLoaded();
+        const roomCount = mx?.getRooms().length ?? 0;
+        const elapsed = performance.now() - syncStartTimeRef.current;
+        const diagnostics = {
+          state,
+          hasWarmCache: hasWarm,
+          isFullyLoaded,
+          hasSufficientRooms: hasSufficient,
+          roomCount,
+          elapsed: `${elapsed.toFixed(0)}ms`,
+        };
+
+        log.log('[startup] checkReady:', diagnostics);
+        Sentry.addBreadcrumb({
+          category: 'startup',
+          message: 'checkReadyAndClearSplash',
+          level: 'info',
+          data: diagnostics,
+        });
+
+        if (hasWarm) {
+          log.log('[startup] showing UI immediately (warm cache)');
+          Sentry.addBreadcrumb({
+            category: 'startup',
+            message: 'Showing UI (warm cache)',
+            level: 'info',
+            data: { roomCount, elapsed: `${elapsed.toFixed(0)}ms` },
+          });
+          markStartupShellReady();
+          setLoading(false);
+          if (!firstSyncReadyRef.current) {
+            firstSyncReadyRef.current = true;
+            Sentry.metrics.distribution(
+              'sable.startup.time_to_ui_ms',
+              performance.now() - syncStartTimeRef.current,
+              { attributes: { cache_type: 'warm' } }
+            );
+          }
+          return;
+        }
+
+        // Cold cache: wait for the first requested window, then let the
+        // virtualized room list request more rows on demand.
+        if (!isFullyLoaded && !hasSufficient) {
+          log.log('[startup] waiting for more rooms (cold cache)');
+          Sentry.addBreadcrumb({
+            category: 'startup',
+            message: 'Waiting for more rooms (cold cache)',
+            level: 'info',
+            data: { roomCount, elapsed: `${elapsed.toFixed(0)}ms` },
+          });
+          return;
+        }
+        log.log('[startup] showing UI (cold cache, sufficient rooms loaded)');
+        Sentry.addBreadcrumb({
+          category: 'startup',
+          message: 'Showing UI (cold cache)',
+          level: 'info',
+          data: { roomCount, elapsed: `${elapsed.toFixed(0)}ms` },
+        });
+      }
+
+      markStartupShellReady();
+      setLoading(false);
+      if (!firstSyncReadyRef.current) {
+        firstSyncReadyRef.current = true;
+        Sentry.metrics.distribution(
+          'sable.startup.time_to_ui_ms',
+          performance.now() - syncStartTimeRef.current,
+          { attributes: { cache_type: 'cold' } }
+        );
+      }
+    },
+    [mx]
+  );
 
   useEffect(() => {
     if (!mx) return;
-    if (isClientReady(mx.getSyncState())) {
-      setLoading(false);
-    }
-  }, [mx]);
+    checkReadyAndClearSplash(mx.getSyncState());
+  }, [mx, checkReadyAndClearSplash]);
 
-  useSyncState(
-    mx,
-    useCallback((state: string) => {
-      if (isClientReady(state)) {
-        if (!firstSyncReadyRef.current) {
-          firstSyncReadyRef.current = true;
-          Sentry.metrics.distribution(
-            'sable.sync.time_to_ready_ms',
-            performance.now() - syncStartTimeRef.current
-          );
-        }
-        setLoading(false);
-      }
-    }, [])
-  );
+  // Wait for the first sync response before hiding the splash. For cold sliding
+  // sync, wait only for the first requested list window so startup remains
+  // viewport-driven.
+  useSyncState(mx, checkReadyAndClearSplash);
 
   // Set matrix client context: homeserver and sync type (not PII)
   useEffect(() => {
@@ -356,12 +538,65 @@ export function ClientRoot({ children }: ClientRootProps) {
     }
   }, [startState]);
 
+  const hasClientRootError =
+    loadState.status === AsyncStatus.Error || startState.status === AsyncStatus.Error;
+
   return (
     <AutoDiscovery userId={userId ?? ''} baseUrl={baseUrl ?? ''}>
       <SpecVersions baseUrl={baseUrl ?? ''}>
+        {swUpdateAvailable && (
+          <Box direction="Column" shrink="No">
+            <Box
+              as="button"
+              type="button"
+              className={ContainerColor({ variant: 'Primary' })}
+              style={{
+                padding: `${config.space.S100} 0`,
+                width: '100%',
+                cursor: isApplyingSwUpdate ? 'progress' : 'pointer',
+                border: 'none',
+                background: 'none',
+              }}
+              disabled={isApplyingSwUpdate}
+              alignItems="Center"
+              justifyContent="Center"
+              onClick={() => {
+                if (isApplyingSwUpdateRef.current) return;
+                isApplyingSwUpdateRef.current = true;
+                setIsApplyingSwUpdate(true);
+
+                void applyPendingAppUpdate()
+                  .then((updateApplied) => {
+                    if (!isMountedRef.current) return;
+                    setSwUpdateError(undefined);
+                    if (!updateApplied) {
+                      isApplyingSwUpdateRef.current = false;
+                      setIsApplyingSwUpdate(false);
+                    }
+                  })
+                  .catch((error) => {
+                    if (!isMountedRef.current) return;
+                    setSwUpdateError(
+                      error instanceof Error ? error.message : 'Failed to apply the update.'
+                    );
+                    isApplyingSwUpdateRef.current = false;
+                    setIsApplyingSwUpdate(false);
+                  });
+              }}
+            >
+              <Box direction="Column" alignItems="Center" gap="100">
+                <Text size="L400">
+                  {isApplyingSwUpdate ? 'Applying update…' : 'Update available — tap to reload'}
+                </Text>
+                {swUpdateError && <Text size="T200">{swUpdateError}</Text>}
+              </Box>
+            </Box>
+            <Line variant="Primary" size="300" />
+          </Box>
+        )}
         {mx && <SyncStatus mx={mx} />}
-        {loading && <ClientRootOptions mx={mx} onLogout={handleLogout} />}
-        {(loadState.status === AsyncStatus.Error || startState.status === AsyncStatus.Error) && (
+        {(loading || !mx) && <ClientRootOptions mx={mx} onLogout={handleLogout} />}
+        {hasClientRootError ? (
           <SplashScreen>
             <Box
               direction="Column"
@@ -387,22 +622,23 @@ export function ClientRoot({ children }: ClientRootProps) {
               </Dialog>
             </Box>
           </SplashScreen>
-        )}
-        {loading || !mx ? (
+        ) : loading || !mx ? (
           <ClientRootLoading />
         ) : (
           <MatrixClientProvider value={mx}>
-            <ServerConfigsLoader>
-              {(serverConfigs) => (
-                <CapabilitiesProvider value={serverConfigs.capabilities ?? {}}>
-                  <MediaConfigProvider value={serverConfigs.mediaConfig ?? {}}>
-                    <AuthMetadataProvider value={serverConfigs.authMetadata}>
-                      {children}
-                    </AuthMetadataProvider>
-                  </MediaConfigProvider>
-                </CapabilitiesProvider>
-              )}
-            </ServerConfigsLoader>
+            <MediaUrlCacheProvider>
+              <ServerConfigsLoader>
+                {(serverConfigs) => (
+                  <CapabilitiesProvider value={serverConfigs.capabilities ?? {}}>
+                    <MediaConfigProvider value={serverConfigs.mediaConfig ?? {}}>
+                      <AuthMetadataProvider value={serverConfigs.authMetadata}>
+                        {children}
+                      </AuthMetadataProvider>
+                    </MediaConfigProvider>
+                  </CapabilitiesProvider>
+                )}
+              </ServerConfigsLoader>
+            </MediaUrlCacheProvider>
           </MatrixClientProvider>
         )}
       </SpecVersions>

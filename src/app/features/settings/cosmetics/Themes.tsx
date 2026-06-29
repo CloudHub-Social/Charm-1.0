@@ -29,8 +29,7 @@ import {
 import { ThemeKind, useActiveTheme } from '$hooks/useTheme';
 import { useSetting } from '$state/hooks/settings';
 import type { PixelatedImageRenderingMode } from '$state/settings';
-import { ShowRoomIcon } from '$state/settings';
-import { settingsAtom } from '$state/settings';
+import { DefaultLandingScreen, settingsAtom, ShowRoomIcon } from '$state/settings';
 import { SequenceCardStyle } from '$features/settings/styles.css';
 import { ThemeAppearanceSection } from './ThemeAppearanceSection';
 import { stopPropagation } from '$utils/keyboard';
@@ -39,6 +38,7 @@ import { useShowRoomIcon } from '$hooks/useShowRoomIcon';
 import type { PanelSizetItem } from '$hooks/usePanelSizes';
 import { usePanelSizeItems } from '$hooks/usePanelSizes';
 import { SelectShowPerRoomRoomIcon } from '$features/common-settings/appearance/Appearance';
+import { Icon, Icons } from '$app/icons';
 
 const clampIncomingInlineImageHeight = (n: number) => Math.max(1, Math.min(4096, n));
 
@@ -238,7 +238,7 @@ function ThemeVisualPreferences() {
   const pixelatedImageRenderingOptions: SettingMenuOption<PixelatedImageRenderingMode>[] = [
     { value: 'always', label: 'Always' },
     { value: 'smart', label: 'Smart' },
-    { value: 'never', label: 'never' },
+    { value: 'never', label: 'Never' },
   ];
   const [incomingInlineImagesDefaultHeight, setIncomingInlineImagesDefaultHeight] = useSetting(
     settingsAtom,
@@ -818,14 +818,44 @@ export function Appearance({
   const [sidebarSelector, setSidebarSelector] = useState('roomSidebarWidth');
   const [twitterEmoji, setTwitterEmoji] = useSetting(settingsAtom, 'twitterEmoji');
   const [customDMCards, setCustomDMCards] = useSetting(settingsAtom, 'customDMCards');
+  const [dmMessagePreview, setDmMessagePreview] = useSetting(settingsAtom, 'dmMessagePreview');
   const [showEasterEggs, setShowEasterEggs] = useSetting(settingsAtom, 'showEasterEggs');
+  const [defaultLandingScreen, setDefaultLandingScreen] = useSetting(
+    settingsAtom,
+    'defaultLandingScreen'
+  );
   const [showRoomIcon] = useSetting(settingsAtom, 'showRoomIcon');
   const [themeBrowserOpen, setThemeBrowserOpen] = useState(false);
   const [closeFoldersByDefault, setCloseFoldersByDefault] = useSetting(
     settingsAtom,
     'closeFoldersByDefault'
   );
+  const [roomTopicPreview, setRoomTopicPreview] = useSetting(settingsAtom, 'roomTopicPreview');
+  const [roomMessagePreview, setRoomMessagePreview] = useSetting(
+    settingsAtom,
+    'roomMessagePreview'
+  );
   const [roomIconOverlay, setRoomIconOverlay] = useSetting(settingsAtom, 'roomIconOverlay');
+
+  const [landingMenuCords, setLandingMenuCords] = useState<RectCords>();
+
+  const landingScreenItems: Array<{ label: string; value: DefaultLandingScreen }> = [
+    { label: 'Home', value: DefaultLandingScreen.Home },
+    { label: 'Direct Messages', value: DefaultLandingScreen.Direct },
+    { label: 'Last Visited', value: DefaultLandingScreen.LastVisited },
+  ];
+
+  const landingCurrentLabel =
+    landingScreenItems.find((item) => item.value === defaultLandingScreen)?.label || 'Home';
+
+  const handleLandingMenu: MouseEventHandler<HTMLButtonElement> = (evt) => {
+    setLandingMenuCords(evt.currentTarget.getBoundingClientRect());
+  };
+
+  const handleLandingSelect = (value: DefaultLandingScreen) => {
+    setDefaultLandingScreen(value);
+    setLandingMenuCords(undefined);
+  };
 
   return (
     <Box direction="Column" gap="700">
@@ -842,6 +872,66 @@ export function Appearance({
 
           <Box direction="Column" gap="100">
             <Text size="L400">Visual Tweaks</Text>
+
+            <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+              <SettingTile
+                title="Default Landing Screen"
+                focusId="default-landing-screen"
+                description="Choose which screen to show when opening the app"
+                after={
+                  <PopOut
+                    anchor={landingMenuCords}
+                    position="Bottom"
+                    align="End"
+                    content={
+                      <FocusTrap
+                        focusTrapOptions={{
+                          initialFocus: false,
+                          onDeactivate: () => setLandingMenuCords(undefined),
+                          clickOutsideDeactivates: true,
+                          escapeDeactivates: stopPropagation,
+                        }}
+                      >
+                        <Menu>
+                          {landingScreenItems.map((item) => (
+                            <MenuItem
+                              key={item.value}
+                              size="300"
+                              onClick={() => handleLandingSelect(item.value)}
+                              radii="300"
+                              before={
+                                defaultLandingScreen === item.value ? (
+                                  <Icon size="100" src={Icons.Check} />
+                                ) : (
+                                  <Box style={{ width: toRem(16) }} />
+                                )
+                              }
+                            >
+                              <Text size="T300">{item.label}</Text>
+                            </MenuItem>
+                          ))}
+                        </Menu>
+                      </FocusTrap>
+                    }
+                  >
+                    <Button
+                      onClick={handleLandingMenu}
+                      variant="Secondary"
+                      outlined
+                      fill="Soft"
+                      size="300"
+                      radii="300"
+                      aria-pressed={!!landingMenuCords}
+                      after={<Icon size="300" src={Icons.ChevronBottom} />}
+                    >
+                      <Text size="T300" truncate>
+                        {landingCurrentLabel}
+                      </Text>
+                    </Button>
+                  </PopOut>
+                }
+              />
+            </SequenceCard>
 
             <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
               <SettingTile
@@ -874,6 +964,51 @@ export function Appearance({
                 description="Show a custom DM card instead of the DM-ed's details"
                 after={
                   <Switch variant="Primary" value={customDMCards} onChange={setCustomDMCards} />
+                }
+              />
+            </SequenceCard>
+
+            <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+              <SettingTile
+                title="DM Message Preview"
+                focusId="dm-message-preview"
+                description="Show a preview of the last message below DM room names."
+                after={
+                  <Switch
+                    variant="Primary"
+                    value={dmMessagePreview}
+                    onChange={setDmMessagePreview}
+                  />
+                }
+              />
+            </SequenceCard>
+
+            <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+              <SettingTile
+                title="Room Topic Preview"
+                focusId="room-topic-preview"
+                description="Show the room topic below room names in spaces and Home."
+                after={
+                  <Switch
+                    variant="Primary"
+                    value={roomTopicPreview}
+                    onChange={setRoomTopicPreview}
+                  />
+                }
+              />
+            </SequenceCard>
+
+            <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+              <SettingTile
+                title="Room Message Preview"
+                focusId="room-message-preview"
+                description="Show the latest message below room names in spaces and Home."
+                after={
+                  <Switch
+                    variant="Primary"
+                    value={roomMessagePreview}
+                    onChange={setRoomMessagePreview}
+                  />
                 }
               />
             </SequenceCard>
@@ -922,16 +1057,30 @@ export function Appearance({
                     <Text size="T200">
                       When do you want to show the specific room icons in the sidebar?
                     </Text>
-                    {(showRoomIcon === ShowRoomIcon.Always &&
-                      'Always show icons, and fallback to initials') ||
-                      (showRoomIcon === ShowRoomIcon.Strict &&
-                        'Show icons when available, but fallback to hashes') ||
-                      (showRoomIcon === ShowRoomIcon.Smart &&
-                        'Show icons only when sidebar is minimized, else icons.') ||
-                      (showRoomIcon === ShowRoomIcon.Never &&
-                        'Never show icons, always only the hashes.') ||
-                      ''}
-                    <span style={{ opacity: '50%' }}>{' (current)'}</span>
+                    {showRoomIcon === ShowRoomIcon.Always && (
+                      <>
+                        {'Always show icons, and fallback to initials'}
+                        <span style={{ opacity: '50%' }}>{' (current)'}</span>
+                      </>
+                    )}
+                    {showRoomIcon === ShowRoomIcon.Strict && (
+                      <>
+                        {'Show icons when available, but fallback to hashes'}
+                        <span style={{ opacity: '50%' }}>{' (current)'}</span>
+                      </>
+                    )}
+                    {showRoomIcon === ShowRoomIcon.Smart && (
+                      <>
+                        {'Show icons only when sidebar is minimized, else icons.'}
+                        <span style={{ opacity: '50%' }}>{' (current)'}</span>
+                      </>
+                    )}
+                    {showRoomIcon === ShowRoomIcon.Never && (
+                      <>
+                        {'Never show icons, always only the hashes.'}
+                        <span style={{ opacity: '50%' }}>{' (current)'}</span>
+                      </>
+                    )}
                   </>
                 }
                 after={<SelectShowRoomIcon />}

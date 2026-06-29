@@ -22,7 +22,16 @@ import {
 } from '$types/matrix-sdk';
 import { createLogger } from '$utils/debug';
 import { createDebugLogger } from '$utils/debugLogger';
+import { completeRoomNavigation } from '$utils/perfTelemetry';
 import * as Sentry from '@sentry/react';
+import { CustomStateEvent } from '$types/matrix/room';
+import {
+  classifyCryptoStoreIndexedDbError,
+  getCryptoStoreRecoveryAction,
+  hasRecentServiceWorkerControllerChange,
+  maybeResetCryptoStoreRecoveryReloadCount,
+} from './cryptoStoreErrors';
+import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 
 const log = createLogger('slidingSync');
 const debugLog = createDebugLogger('slidingSync');
@@ -43,12 +52,26 @@ export const LIST_SEARCH = 'search';
 export const LIST_ROOM_SEARCH = 'room_search';
 // Dynamic list key used for space-scoped room views.
 export const LIST_SPACE = 'space';
-// One event of timeline per list room is enough to compute unread counts;
-// the full history is loaded when the user opens the room.
-const LIST_TIMELINE_LIMIT = 1;
-const DEFAULT_LIST_PAGE_SIZE = 250;
+// No timeline events for list rooms by default: server-provided notification_count
+// and summary fields should carry the room list. Message previews can opt into a
+// tiny timeline window, but startup must not hydrate every visible room like
+// classic sync.
+// Value 0 means state-only (no timeline events in list responses).
+// Setting this above 0 triggers decryptCriticalEvents() per sync, so encrypted rooms
+// with many threads/reactions may produce "Decrypted event is not in room" warnings.
+// The message-preview feature can override this via ClientRoot when previews are enabled.
+const DEFAULT_LIST_TIMELINE_LIMIT = 0;
+const DEFAULT_LIST_PAGE_SIZE = 30;
 const DEFAULT_POLL_TIMEOUT_MS = 20000;
 const DEFAULT_MAX_ROOMS = 5000;
+const FORCE_RESUBSCRIPTION_RESTORE_TIMEOUT_MS = 5000;
+const HEALTH_CHECK_INTERVAL_MS = 15_000;
+const HEALTH_STALE_AFTER_MS = 30_000;
+const HEALTH_RETRY_COOLDOWN_MS = 30_000;
+const SPACE_GRAPH_WARMUP_INITIAL_DELAY_MS = 2500;
+const SPACE_GRAPH_WARMUP_INTERVAL_MS = 1500;
+const DEFAULT_SPACE_GRAPH_WARMUP_ROOMS = 300;
+const ROOM_PREFETCH_TTL_MS = 12_000;
 
 // Sort order for MSC4186 (Simplified Sliding Sync): most recently active first,
 // then alphabetical as a tiebreaker. by_notification_level is MSC3575-only and
@@ -59,7 +82,7 @@ const LIST_SORT_ORDER = ['by_recency', 'by_name'];
 // Encrypted rooms get [*,*] required_state; unencrypted rooms also request lazy members.
 const UNENCRYPTED_SUBSCRIPTION_KEY = 'unencrypted';
 // Timeline limit for the active-room subscription (full history load).
-// List entries always use LIST_TIMELINE_LIMIT=1 for lightweight previews.
+// List entries use a configurable timeline limit (default 0; raised when message previews are enabled).
 const ACTIVE_ROOM_TIMELINE_LIMIT = 50;
 
 export type PartialSlidingSyncRequest = {
@@ -73,11 +96,15 @@ export type SlidingSyncConfig = {
   proxyBaseUrl?: string;
   bootstrapClassicOnColdCache?: boolean;
   listPageSize?: number;
+  listTimelineLimit?: number;
   timelineLimit?: number;
   pollTimeoutMs?: number;
   maxRooms?: number;
+  spaceGraphWarmupRooms?: number;
   includeInviteList?: boolean;
   probeTimeoutMs?: number;
+  onCryptoStoreRecoveryExhausted?: () => void;
+  pageLevelRecoveryEnabled?: boolean;
 };
 
 export type SlidingSyncListDiagnostics = {
@@ -90,6 +117,8 @@ export type SlidingSyncDiagnostics = {
   proxyBaseUrl: string;
   timelineLimit: number;
   listPageSize: number;
+  lastSuccessfulSyncAgeMs: number | null;
+  healthy: boolean;
   lists: SlidingSyncListDiagnostics[];
 };
 
@@ -99,30 +128,27 @@ const clampPositive = (value: number | undefined, fallback: number): number => {
 };
 
 // Minimal required_state for list entries; enough to render the room list sidebar,
-// compute unread state, and build the space hierarchy without fetching full room history.
+// compute unread state, build the space hierarchy, and keep alias-based room links
+// available without fetching full room history.
 // Notes:
-//   - RoomName/RoomCanonicalAlias are omitted: sliding sync returns the room name as a
-//     top-level field in every list response, so fetching them as state events is redundant.
-//   - MSC3575_STATE_KEY_LAZY is omitted: lazy-loading members is only needed when the
-//     user is actively viewing a room; loading them for every list entry wastes bandwidth.
-//   - SpaceChild with wildcard is required: the roomToParents atom reads m.space.child
-//     state events (one per child, keyed by child room ID) to build the space hierarchy.
-//     Without these events the SDK has no parent→child mapping, so all rooms appear as
-//     orphans in the Home view and spaces appear empty.
-//   - im.ponies.room_emotes with wildcard is required: custom emoji/sticker packs are
-//     stored as im.ponies.room_emotes state events (one per pack, keyed by pack state key).
-//     getGlobalImagePacks reads these from pack rooms listed in im.ponies.emote_rooms
-//     account data; imagePackRooms also reads them from parent spaces. Without these
-//     events all list-entry rooms would show no emoji or sticker packs.
+//   - RoomName is omitted: sliding sync returns the room name as a top-level field
+//     in every list response, so fetching it as a state event is redundant.
+//   - MSC3575_STATE_KEY_LAZY is included only when `includeMembers=true` (i.e. when
+//     message previews are enabled and listTimelineLimit > 0). Lazy loading brings in
+//     m.room.member state events for senders of the preview timeline events so that
+//     display names resolve correctly. When previews are disabled, lazy loading is
+//     omitted to avoid wasteful member fetches for every list entry.
 //   - m.room.topic is required: topics are displayed for joined child rooms in space
 //     lobby (RoomItem → LocalRoomSummaryLoader → useLocalRoomSummary) and in the
 //     invite list. Without this event the topic always shows as blank for non-active
 //     rooms.
-//   - m.room.canonical_alias is required: getCanonicalAlias() is used in several places
-//     for non-active rooms — notification serverName extraction, mention autocomplete
-//     alias display, and getCanonicalAliasOrRoomId for navigation. Without it, aliases
-//     fall back silently to room IDs.
-const buildListRequiredState = (): MSC3575RoomSubscription['required_state'] => [
+//   - Room emoji packs and abbreviations are inherited from ancestor spaces by the
+//     composer and message renderer. Keep them in state-only list windows so cold
+//     sliding-sync sessions do not lose inherited rendering until a parent space is
+//     opened as the active room.
+const buildListRequiredState = (
+  includeMembers: boolean
+): MSC3575RoomSubscription['required_state'] => [
   [EventType.RoomJoinRules, ''],
   [EventType.RoomAvatar, ''],
   [EventType.RoomTombstone, ''],
@@ -131,9 +157,10 @@ const buildListRequiredState = (): MSC3575RoomSubscription['required_state'] => 
   [EventType.RoomTopic, ''],
   [EventType.RoomCanonicalAlias, ''],
   [EventType.RoomMember, MSC3575_STATE_KEY_ME],
-  ['m.space.child', MSC3575_WILDCARD],
-  ['im.ponies.room_emotes', MSC3575_WILDCARD],
-  ['moe.sable.room.abbreviations', ''],
+  [EventType.SpaceChild, MSC3575_WILDCARD],
+  [CustomStateEvent.PoniesRoomEmotes, MSC3575_WILDCARD],
+  [CustomStateEvent.RoomAbbreviations, ''],
+  ...(includeMembers ? [[EventType.RoomMember, MSC3575_STATE_KEY_LAZY] as [string, string]] : []),
 ];
 
 // For an active encrypted room: fetch everything so the client can decrypt all events.
@@ -153,21 +180,24 @@ const buildUnencryptedSubscription = (timelineLimit: number): MSC3575RoomSubscri
   ],
 });
 
-const buildLists = (pageSize: number, includeInviteList: boolean): Map<string, MSC3575List> => {
+const buildLists = (
+  pageSize: number,
+  includeInviteList: boolean,
+  listTimelineLimit: number
+): Map<string, MSC3575List> => {
   const lists = new Map<string, MSC3575List>();
-  const listRequiredState = buildListRequiredState();
+  const listRequiredState = buildListRequiredState(listTimelineLimit > 0);
 
-  // Start with a reasonable initial range that will quickly expand to full list
-  // Since timeline_limit=1, loading many rooms is very cheap
-  // This prevents the white page issue from progressive loading delays
-  const initialRange = Math.min(pageSize, 100);
+  // Start with the visible room-list window only. Sliding sync wins by not
+  // hydrating all cached rooms at startup; follow-up range changes should come
+  // from UI demand such as scrolling, show-more, or a space-filter change.
+  const initialRange = Math.max(1, pageSize);
 
   lists.set(LIST_JOINED, {
     ranges: [[0, Math.max(0, initialRange - 1)]],
     sort: LIST_SORT_ORDER,
-    timeline_limit: LIST_TIMELINE_LIMIT,
+    timeline_limit: listTimelineLimit,
     required_state: listRequiredState,
-    slow_get_all_rooms: true,
     filters: { is_invite: false },
   });
 
@@ -175,9 +205,8 @@ const buildLists = (pageSize: number, includeInviteList: boolean): Map<string, M
     lists.set(LIST_INVITES, {
       ranges: [[0, Math.max(0, initialRange - 1)]],
       sort: LIST_SORT_ORDER,
-      timeline_limit: LIST_TIMELINE_LIMIT,
+      timeline_limit: listTimelineLimit,
       required_state: listRequiredState,
-      slow_get_all_rooms: true,
       filters: { is_invite: true },
     });
   }
@@ -185,9 +214,8 @@ const buildLists = (pageSize: number, includeInviteList: boolean): Map<string, M
   lists.set(LIST_DMS, {
     ranges: [[0, Math.max(0, initialRange - 1)]],
     sort: LIST_SORT_ORDER,
-    timeline_limit: LIST_TIMELINE_LIMIT,
+    timeline_limit: listTimelineLimit,
     required_state: listRequiredState,
-    slow_get_all_rooms: true,
     filters: { is_dm: true },
   });
 
@@ -200,8 +228,11 @@ const getListEndIndex = (list: MSC3575List | null): number => {
 };
 
 // MSC4186 presence extension: requests `extensions.presence` in every sliding sync
-// poll and feeds received `m.presence` events into the SDK's User objects so that
-// components using `useUserPresence` see live updates (same path as regular /sync).
+// poll.  NOTE: Synapse's MSC4186 implementation does not currently support this
+// extension (its get_extensions_response only handles to_device, e2ee, account_data,
+// receipts, typing, and thread_subscriptions).  The extension is kept here so that
+// clients automatically benefit if/when server support is added; live presence for
+// now is handled by the direct REST fallback in useUserPresence.
 class ExtensionPresence implements Extension<{ enabled: boolean }, { events?: object[] }> {
   private enabled = true;
 
@@ -249,15 +280,46 @@ export class SlidingSyncManager {
 
   private readonly maxRooms: number;
 
+  private readonly spaceGraphWarmupRooms: number;
+
   private readonly listKeys: string[];
 
   private readonly activeRoomSubscriptions = new Set<string>();
 
+  private readonly activeRoomSubscriptionRefs = new Map<string, number>();
+
+  private readonly prefetchedRoomSubscriptions = new Set<string>();
+
+  private readonly prefetchedRoomSubscriptionTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+
+  private readonly ptrRefreshRooms = new Set<string>();
+
+  private readonly visitedRoomsThisSession = new Set<string>();
+
+  private roomSubscriptionFlushTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private lastFlushedRoomSubscriptionsKey = '';
+
   private readonly listPageSize: number;
+
+  private readonly listTimelineLimit: number;
 
   private readonly roomTimelineLimit: number;
 
   private readonly onConnectionChange: () => void;
+
+  private readonly initialRoomCount: number;
+
+  private readonly initialWarmCache: boolean;
+
+  private readonly loadedRoomIds = new Set<string>();
+
+  private readonly loadedListCoverageEnd = new Map<string, number>();
+
+  private lastOnlineState = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
   private readonly onLifecycle: (state: SlidingSyncState, resp: unknown, err?: Error) => void;
 
@@ -265,6 +327,9 @@ export class SlidingSyncManager {
     event: unknown,
     member: { userId: string; roomId: string; membership?: string }
   ) => void;
+
+  private readonly onCryptoStoreRecoveryExhausted: () => void;
+  private readonly pageLevelRecoveryEnabled: boolean;
 
   private presenceExtension!: ExtensionPresence;
 
@@ -274,7 +339,36 @@ export class SlidingSyncManager {
 
   private syncCount = 0;
 
+  private consecutiveCryptoStoreErrors = 0;
+
   private previousListCounts: Map<string, number> = new Map();
+
+  /**
+   * When non-null, contains the set of room IDs that were active subscriptions
+   * before a force-reset was scheduled (pull-to-refresh). The rooms are
+   * temporarily cleared from activeRoomSubscriptions so the server processes
+   * one empty-subscription cycle, and then restored here so the server treats
+   * them as fresh subscriptions and returns initial:true with full data and
+   * backward-pagination tokens.
+   */
+  private pendingResubscriptions: Set<string> | null = null;
+  private pendingResubscriptionRestoreTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private pendingForceResetWaiters: Array<
+    (reason: 'request_finished' | 'timeout' | 'disposed') => void
+  > = [];
+
+  private healthCheckTimer: ReturnType<typeof setInterval> | undefined;
+
+  private spaceGraphWarmupTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private spaceGraphWarmupStarted = false;
+
+  private lastSuccessfulSyncAt = 0;
+
+  private lastHealthRetryAt = 0;
+
+  private attachWallClockAt: number | null = null;
 
   /**
    * One-shot RoomData listeners keyed by roomId, used to measure the latency
@@ -299,20 +393,30 @@ export class SlidingSyncManager {
   public constructor(
     private readonly mx: MatrixClient,
     private readonly proxyBaseUrl: string,
-    config: SlidingSyncConfig
+    config: SlidingSyncConfig,
+    initialWarmCache?: boolean
   ) {
     const listPageSize = clampPositive(config.listPageSize, DEFAULT_LIST_PAGE_SIZE);
     const pollTimeoutMs = clampPositive(config.pollTimeoutMs, DEFAULT_POLL_TIMEOUT_MS);
     this.probeTimeoutMs = clampPositive(config.probeTimeoutMs, 5000);
+    this.onCryptoStoreRecoveryExhausted = config.onCryptoStoreRecoveryExhausted ?? (() => {});
+    this.pageLevelRecoveryEnabled = config.pageLevelRecoveryEnabled !== false;
     this.maxRooms = clampPositive(config.maxRooms, DEFAULT_MAX_ROOMS);
+    this.spaceGraphWarmupRooms = Math.min(
+      this.maxRooms,
+      clampPositive(config.spaceGraphWarmupRooms, DEFAULT_SPACE_GRAPH_WARMUP_ROOMS)
+    );
     this.listPageSize = listPageSize;
     const includeInviteList = config.includeInviteList !== false;
+    this.listTimelineLimit = clampPositive(config.listTimelineLimit, DEFAULT_LIST_TIMELINE_LIMIT);
 
     const roomTimelineLimit = clampPositive(config.timelineLimit, ACTIVE_ROOM_TIMELINE_LIMIT);
     this.roomTimelineLimit = roomTimelineLimit;
+    this.initialRoomCount = mx.getRooms().length;
+    this.initialWarmCache = initialWarmCache ?? this.initialRoomCount > 0;
 
     const defaultSubscription = buildEncryptedSubscription(roomTimelineLimit);
-    const lists = buildLists(listPageSize, includeInviteList);
+    const lists = buildLists(listPageSize, includeInviteList, this.listTimelineLimit);
     this.listKeys = Array.from(lists.keys());
     this.slidingSync = new SlidingSync(proxyBaseUrl, lists, defaultSubscription, mx, pollTimeoutMs);
 
@@ -342,21 +446,147 @@ export class SlidingSyncManager {
         isInitialSync: !this.initialSyncCompleted,
       });
 
+      // Add breadcrumb for all state transitions (not just errors) to have full picture before crashes
+      const roomsInResponse = (resp as MSC3575SlidingSyncResponse)?.rooms
+        ? Object.keys((resp as MSC3575SlidingSyncResponse).rooms).length
+        : 0;
+      Sentry.addBreadcrumb({
+        category: 'sync.slidingSync',
+        message: `Sliding sync state: ${state}`,
+        data: {
+          prevState: 'unknown',
+          newState: state,
+          syncNumber: this.syncCount,
+          roomsInResponse,
+          hasError: !!err,
+        },
+        level: state === SlidingSyncState.RequestFinished ? 'info' : err ? 'error' : 'warning',
+      });
+
       if (err) {
+        const errorMsg = err.message ?? '';
+        const cryptoStoreErrorType = classifyCryptoStoreIndexedDbError(errorMsg);
+        const isCryptoStoreError = cryptoStoreErrorType !== undefined;
+
+        if (isCryptoStoreError) {
+          this.consecutiveCryptoStoreErrors += 1;
+        } else {
+          // Non-crypto error (e.g. network) breaks the consecutive run
+          this.consecutiveCryptoStoreErrors = 0;
+        }
+
         debugLog.error('sync', 'Sliding sync error', {
           error: err,
-          errorMessage: err.message,
+          errorMessage: errorMsg,
           syncNumber: this.syncCount,
           state,
+          isCryptoStoreError,
+          consecutiveCryptoStoreErrors: this.consecutiveCryptoStoreErrors,
         });
         Sentry.metrics.count('sable.sync.error', 1, {
-          attributes: { transport: 'sliding', state },
+          attributes: {
+            transport: 'sliding',
+            state,
+            crypto_store_error: isCryptoStoreError,
+          },
         });
+
+        // Capture crypto store errors to Sentry with additional context
+        if (isCryptoStoreError) {
+          Sentry.captureMessage('Crypto store IndexedDB error during sync', {
+            level: 'error',
+            tags: {
+              component: 'crypto-store',
+              sync_transport: 'sliding',
+              error_type: cryptoStoreErrorType,
+            },
+            extra: {
+              errorMessage: errorMsg,
+              syncState: state,
+              syncNumber: this.syncCount,
+              consecutiveCryptoStoreErrors: this.consecutiveCryptoStoreErrors,
+              userId: this.mx.getUserId(),
+              recovery_recommendation:
+                'Matrix SDK WASM crypto layer issue - client will attempt to reconnect',
+            },
+          });
+
+          // When a service worker controller change occurred, the IDB connection
+          // is very likely stale (especially on Safari). Reload immediately.
+          // Otherwise, tolerate a couple of transient errors before forcing reload.
+          const swChanged = hasRecentServiceWorkerControllerChange();
+          const threshold = swChanged ? 1 : 3;
+          if (
+            this.pageLevelRecoveryEnabled &&
+            !this.disposed &&
+            this.consecutiveCryptoStoreErrors >= threshold
+          ) {
+            log.warn(
+              `SlidingSyncManager: ${this.consecutiveCryptoStoreErrors} consecutive crypto store errors ` +
+                `(swChanged=${swChanged}) — reloading to recover IDB connections`
+            );
+            Sentry.addBreadcrumb({
+              category: 'sync.slidingSync',
+              message: 'Reloading page to recover stale IDB connections',
+              level: 'error',
+              data: {
+                consecutiveCryptoStoreErrors: this.consecutiveCryptoStoreErrors,
+                swChanged,
+                threshold,
+              },
+            });
+            Sentry.metrics.count('sable.sync.crypto_store_reload', 1, {
+              attributes: { transport: 'sliding', sw_changed: swChanged },
+            });
+            const recoveryAction = getCryptoStoreRecoveryAction();
+            if (recoveryAction === 'clear_cache') {
+              this.onCryptoStoreRecoveryExhausted();
+            } else if (recoveryAction === 'reload') {
+              reloadWithTelemetry('crypto_store_idb_recovery');
+            }
+            return;
+          }
+        }
+
+        // Detect M_UNKNOWN_POS error (sliding sync position lost)
+        const errorData = err as { errcode?: string; httpStatus?: number };
+        if (
+          errorData.errcode === 'M_UNKNOWN_POS' ||
+          (err.message && err.message.includes('M_UNKNOWN_POS'))
+        ) {
+          Sentry.addBreadcrumb({
+            category: 'sync.slidingSync',
+            message: 'Sliding sync position lost (M_UNKNOWN_POS) — full resync required',
+            data: {
+              syncNumber: this.syncCount,
+              roomsLoaded: this.mx.getRooms().length,
+              errorMessage: err.message,
+            },
+            level: 'error',
+          });
+          Sentry.captureMessage('Sliding sync M_UNKNOWN_POS detected', {
+            level: 'warning',
+            tags: { sync_transport: 'sliding' },
+            extra: {
+              syncNumber: this.syncCount,
+              roomCount: this.mx.getRooms().length,
+            },
+          });
+        }
       }
 
       if (this.disposed) {
         debugLog.warn('sync', 'Sync lifecycle called after disposal', { state });
         return;
+      }
+
+      if (
+        !err &&
+        (state === SlidingSyncState.RequestFinished || state === SlidingSyncState.Complete)
+      ) {
+        this.lastSuccessfulSyncAt = Date.now();
+        this.consecutiveCryptoStoreErrors = 0;
+        maybeResetCryptoStoreRecoveryReloadCount();
       }
 
       // Before room data is processed, reset live timelines for active rooms that
@@ -366,18 +596,123 @@ export class SlidingSyncManager {
       // timeline alongside new events. Resetting here — before the SDK's
       // onRoomData listener runs — ensures the fresh batch lands on a clean
       // timeline with a correct backward pagination token.
+      //
+      // IMPORTANT: We must be conservative about resets to avoid breaking forward
+      // pagination. Only reset when we're certain the local timeline is genuinely
+      // stale, not just when there's no overlap (server may be sending an extended
+      // range that includes older events not in the local timeline).
       if (state === SlidingSyncState.RequestFinished && resp && !err) {
-        const rooms = (resp as MSC3575SlidingSyncResponse).rooms ?? {};
+        const response = resp as MSC3575SlidingSyncResponse & {
+          lists?: Record<
+            string,
+            { ops?: Array<{ range?: [number, number]; room_ids?: string[] }> }
+          >;
+        };
+        const rooms = response.rooms ?? {};
+        Object.keys(rooms).forEach((roomId) => this.loadedRoomIds.add(roomId));
+        Object.entries(response.lists ?? {}).forEach(([key, listData]) => {
+          listData.ops?.forEach((op) => {
+            const start = op.range?.[0];
+            const roomIds = op.room_ids ?? [];
+            if (typeof start !== 'number' || roomIds.length === 0) return;
+            const loadedEnd = start + roomIds.length - 1;
+            const previousEnd = this.loadedListCoverageEnd.get(key) ?? -1;
+            this.loadedListCoverageEnd.set(key, Math.max(previousEnd, loadedEnd));
+          });
+        });
         Object.entries(rooms)
           .filter(([, roomData]) => roomData.initial || roomData.limited)
           .filter(([roomId]) => this.activeRoomSubscriptions.has(roomId))
-          .forEach(([roomId]) => {
+          .forEach(([roomId, roomData]) => {
             const room = this.mx.getRoom(roomId);
             if (!room) return;
             const timelineSet = room.getUnfilteredTimelineSet();
-            if (timelineSet.getLiveTimeline().getEvents().length === 0) return;
-            timelineSet.resetLiveTimeline();
+            const liveTimeline = timelineSet.getLiveTimeline();
+            const localEvents = liveTimeline.getEvents();
+
+            // Empty timeline: reset is fine, no flicker
+            if (localEvents.length === 0) return;
+
+            // Check for event overlap with server data
+            const serverEvents = roomData.timeline ?? [];
+            if (serverEvents.length === 0) {
+              // No incoming events: preserve local timeline
+              return;
+            }
+
+            // Build set of local event IDs for fast lookup
+            const localIds = new Set(localEvents.map((e) => e.getId()));
+            const serverIds = serverEvents.map((e) => e.event_id);
+
+            // Check if any server event ID exists in local timeline
+            const hasOverlap = serverIds.some((id) => localIds.has(id));
+
+            if (hasOverlap) {
+              // Overlap detected: SDK will merge naturally, no reset needed
+              // This prevents flicker when reopening recently-viewed rooms
+              return;
+            }
+
+            // No direct overlap found. Before resetting, check if this is just an
+            // extended range (server sending older events) vs. a genuinely stale
+            // timeline (local events are from a different timeline branch).
+            //
+            // Strategy: if the newest server event is older than the oldest local
+            // event, the timelines are disjoint and we should preserve the local
+            // timeline to maintain forward pagination capability. The SDK will
+            // naturally merge them when the user paginates backward.
+            //
+            // Only reset if we detect the local timeline is truly stale (e.g., the
+            // server has newer events that aren't in the local timeline, indicating
+            // the local timeline is from an old session or after a gap).
+            if (serverEvents.length > 0 && localEvents.length > 0) {
+              const newestServerEvent = serverEvents[serverEvents.length - 1];
+              const oldestLocalEvent = localEvents[0];
+              const newestServerTs = newestServerEvent?.origin_server_ts ?? 0;
+              const oldestLocalTs = oldestLocalEvent?.getTs() ?? 0;
+
+              // If server's newest event is older than local's oldest event, the
+              // server is giving us historical events that fill in the gap before
+              // our current timeline. Don't reset — let the SDK link them.
+              if (newestServerTs < oldestLocalTs) {
+                return;
+              }
+            }
+
+            // Check if this room has been visited in this session - skip automatic
+            // resets to avoid blanking the UI when the user is actively viewing the room.
+            // Exception: allow resets during PTR (room is in ptrRefreshRooms set).
+            const isPTRMode = this.ptrRefreshRooms.has(roomId);
+            if (!isPTRMode && this.visitedRoomsThisSession.has(roomId)) {
+              debugLog.info('sync', 'Skipping automatic timeline reset for visited room', {
+                roomId,
+                localEvents: localEvents.length,
+                serverEvents: serverEvents.length,
+              });
+              return;
+            }
+
+            // No overlap and server has newer events: local timeline is stale, reset needed
+            debugLog.info('sync', 'Resetting timeline', {
+              roomId,
+              isPTR: isPTRMode,
+              localEvents: localEvents.length,
+              serverEvents: serverEvents.length,
+            });
+            this.resetRoomTimelines(roomId, isPTRMode ? 'ptr_initial' : 'stale_initial');
+
+            // If this was a PTR refresh, remove from the set now that reset is complete
+            if (isPTRMode) {
+              this.ptrRefreshRooms.delete(roomId);
+            }
           });
+
+        // If a force-resubscription cycle was scheduled (pull-to-refresh), restore
+        // all subscriptions now that the server has seen the empty-subscription
+        // request.  On the next sync cycle the server will treat these as new
+        // subscriptions and return initial:true with fresh data and backward-
+        // pagination tokens, which the block above will then handle.
+        this.restorePendingResubscriptions('request_finished');
       }
 
       if (err || !resp || state !== SlidingSyncState.Complete) return;
@@ -395,13 +730,20 @@ export class SlidingSyncManager {
         totalRoomCount += currentCount;
 
         if (currentCount !== previousCount) {
+          const deltaValue = currentCount - previousCount;
           changes[key] = {
             previous: previousCount,
             current: currentCount,
-            delta: currentCount - previousCount,
+            delta: deltaValue,
           };
           this.previousListCounts.set(key, currentCount);
           hasChanges = true;
+
+          // Track batch size distribution for observability
+          Sentry.metrics.distribution('sliding_sync.batch_size', Math.abs(deltaValue), {
+            unit: 'none',
+            attributes: { list: key, direction: deltaValue > 0 ? 'added' : 'removed' },
+          });
         }
       });
 
@@ -439,9 +781,12 @@ export class SlidingSyncManager {
         });
         this.initialSyncSpan?.end();
         this.initialSyncSpan = null;
-      }
 
-      this.expandListsToKnownCount();
+        Sentry.metrics.distribution('sable.sync.first_list_window_rooms', this.loadedRoomIds.size, {
+          attributes: { transport: 'sliding' },
+        });
+        this.scheduleSpaceGraphWarmup();
+      }
 
       Sentry.metrics.distribution('sable.sync.processing_ms', syncDuration, {
         attributes: { transport: 'sliding' },
@@ -460,11 +805,13 @@ export class SlidingSyncManager {
       if (member.membership !== KnownMembership.Leave && member.membership !== KnownMembership.Ban)
         return;
       if (!this.activeRoomSubscriptions.has(member.roomId)) return;
-      this.unsubscribeFromRoom(member.roomId);
+      this.unsubscribeFromRoom(member.roomId, true);
     };
 
     this.onConnectionChange = () => {
       const isOnline = navigator.onLine;
+      const wasOnline = this.lastOnlineState;
+      this.lastOnlineState = isOnline;
       const connectionInfo =
         typeof navigator !== 'undefined'
           ? (navigator as unknown as { connection?: NetworkInformation }).connection
@@ -474,6 +821,7 @@ export class SlidingSyncManager {
 
       debugLog.info('network', `Network connectivity changed: ${isOnline ? 'online' : 'offline'}`, {
         online: isOnline,
+        wasOnline,
         effectiveType,
         downlink: downlink ? `${downlink} Mbps` : undefined,
       });
@@ -482,9 +830,16 @@ export class SlidingSyncManager {
         debugLog.warn('network', 'Device went offline - sync paused', {
           syncNumber: this.syncCount,
         });
-      } else {
-        debugLog.info('network', 'Device back online - sync will resume', {
+      } else if (!wasOnline) {
+        debugLog.info('network', 'Device back online - triggering immediate resync', {
           syncNumber: this.syncCount,
+        });
+        this.slidingSync.resend();
+      } else {
+        debugLog.info('network', 'Ignored online-only network change for sliding sync', {
+          syncNumber: this.syncCount,
+          effectiveType,
+          downlink: downlink ? `${downlink} Mbps` : undefined,
         });
       }
     };
@@ -500,6 +855,7 @@ export class SlidingSyncManager {
     });
 
     this.attachTime = performance.now();
+    this.attachWallClockAt = Date.now();
     this.initialSyncSpan = Sentry.startInactiveSpan({
       name: 'sync.initial',
       op: 'matrix.sync',
@@ -526,6 +882,7 @@ export class SlidingSyncManager {
       window.addEventListener('online', this.onConnectionChange);
       window.addEventListener('offline', this.onConnectionChange);
     }
+    this.healthCheckTimer = setInterval(() => this.checkSyncHealth(), HEALTH_CHECK_INTERVAL_MS);
 
     debugLog.info('sync', 'Sliding sync listeners attached successfully', {
       hasConnectionAPI: !!connection,
@@ -544,8 +901,28 @@ export class SlidingSyncManager {
     // Clean up pending room-data latency listeners before marking disposed.
     // SlidingSync.stop() will removeAllListeners anyway, but this keeps the Map tidy.
     this.pendingRoomDataListeners.clear();
+    if (this.roomSubscriptionFlushTimer) {
+      clearTimeout(this.roomSubscriptionFlushTimer);
+      this.roomSubscriptionFlushTimer = undefined;
+    }
+    if (this.pendingResubscriptionRestoreTimer) {
+      clearTimeout(this.pendingResubscriptionRestoreTimer);
+      this.pendingResubscriptionRestoreTimer = undefined;
+    }
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = undefined;
+    }
+    if (this.spaceGraphWarmupTimer) {
+      clearTimeout(this.spaceGraphWarmupTimer);
+      this.spaceGraphWarmupTimer = undefined;
+    }
+    this.prefetchedRoomSubscriptionTimers.forEach((timer) => clearTimeout(timer));
+    this.prefetchedRoomSubscriptionTimers.clear();
+    this.prefetchedRoomSubscriptions.clear();
 
     this.disposed = true;
+    this.resolvePendingForceResetWaiters('disposed');
     // Stop the SDK's internal polling loop and abort any in-flight requests.
     this.slidingSync.stop();
     this.slidingSync.removeListener(SlidingSyncEvent.Lifecycle, this.onLifecycle);
@@ -574,15 +951,224 @@ export class SlidingSyncManager {
     });
   }
 
+  /**
+   * Abort any in-flight sliding sync request and retry immediately.
+   * Safe to call at any time; if the sync is healthy the next poll just fires sooner.
+   */
+  public retryNow(): void {
+    if (this.disposed) return;
+    this.slidingSync.resend();
+  }
+
+  private checkSyncHealth(): void {
+    if (this.disposed) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
+    const now = Date.now();
+    const fallbackStart = this.attachWallClockAt ?? now;
+    const lastProgressAt =
+      this.lastSuccessfulSyncAt > 0 ? this.lastSuccessfulSyncAt : fallbackStart;
+    const staleForMs = now - lastProgressAt;
+    if (staleForMs < HEALTH_STALE_AFTER_MS) return;
+    if (now - this.lastHealthRetryAt < HEALTH_RETRY_COOLDOWN_MS) return;
+
+    this.lastHealthRetryAt = now;
+    debugLog.warn('sync', 'Sliding sync stale; requesting immediate retry', {
+      staleForMs,
+      syncNumber: this.syncCount,
+    });
+    Sentry.metrics.count('sable.sync.health_retry', 1, {
+      attributes: { transport: 'sliding' },
+    });
+    this.retryNow();
+  }
+
+  private scheduleSpaceGraphWarmup(): void {
+    if (this.disposed || this.spaceGraphWarmupStarted) return;
+    this.spaceGraphWarmupStarted = true;
+    this.spaceGraphWarmupTimer = setTimeout(
+      () => this.expandSpaceGraphWarmup(),
+      SPACE_GRAPH_WARMUP_INITIAL_DELAY_MS
+    );
+  }
+
+  private expandSpaceGraphWarmup(): void {
+    this.spaceGraphWarmupTimer = undefined;
+    if (this.disposed) return;
+
+    const listData = this.slidingSync.getListData(LIST_JOINED);
+    if (!listData) {
+      this.spaceGraphWarmupTimer = setTimeout(
+        () => this.expandSpaceGraphWarmup(),
+        SPACE_GRAPH_WARMUP_INTERVAL_MS
+      );
+      return;
+    }
+
+    const knownCount = listData.joinedCount ?? 0;
+    if (knownCount <= 0) return;
+
+    const currentEnd = getListEndIndex(this.slidingSync.getListParams(LIST_JOINED));
+    const warmupEnd = Math.min(knownCount - 1, this.maxRooms - 1, this.spaceGraphWarmupRooms - 1);
+    if (currentEnd >= warmupEnd) return;
+
+    const nextEnd = Math.min(warmupEnd, currentEnd + this.listPageSize);
+    this.requestListWindow(LIST_JOINED, nextEnd);
+    Sentry.metrics.count('sable.sync.space_graph_warmup_expand', 1, {
+      attributes: { transport: 'sliding' },
+    });
+
+    this.spaceGraphWarmupTimer = setTimeout(
+      () => this.expandSpaceGraphWarmup(),
+      SPACE_GRAPH_WARMUP_INTERVAL_MS
+    );
+  }
+
+  /**
+   * Force a full re-subscription for all currently active room subscriptions.
+   *
+   * Immediately resets the live timeline of every active room so stale or
+   * out-of-order in-memory data is cleared synchronously.  Then clears all
+   * room subscriptions and triggers a sync with an empty room_subscriptions
+   * map.  When RequestFinished fires for that empty-subscription cycle, the
+   * subscriptions are restored; the server treats them as brand-new and
+   * returns initial:true with a full event window and a valid backward-
+   * pagination token for each room on the following cycle.
+   *
+   * This recovers from stale or out-of-order in-memory timeline state that
+   * cannot be fixed by a normal delta sync.  Called by pull-to-refresh.
+   */
+  public scheduleForceReset(): void {
+    if (this.disposed) {
+      this.resolvePendingForceResetWaiters('disposed');
+      return;
+    }
+    if (this.pendingResubscriptionRestoreTimer) {
+      clearTimeout(this.pendingResubscriptionRestoreTimer);
+      this.pendingResubscriptionRestoreTimer = undefined;
+    }
+    // Save the current subscriptions before modifying anything.
+    this.pendingResubscriptions = new Set(this.activeRoomSubscriptions);
+
+    // Mark these rooms as undergoing PTR refresh so the reset logic allows
+    // timeline resets even for visited rooms.
+    this.ptrRefreshRooms.clear();
+    this.pendingResubscriptions.forEach((roomId) => {
+      this.ptrRefreshRooms.add(roomId);
+      this.resetRoomTimelines(roomId, 'force_reset');
+    });
+
+    // Clear subscriptions so the next sync request carries an empty
+    // room_subscriptions map.  When RequestFinished fires, the subscriptions
+    // are restored; the server then treats them as brand-new and returns
+    // initial:true with a full event window and a valid prev_batch token.
+    // The timeline resets will happen automatically when initial:true arrives.
+    this.activeRoomSubscriptions.clear();
+    this.slidingSync.modifyRoomSubscriptions(new Set());
+    this.slidingSync.resend();
+    this.pendingResubscriptionRestoreTimer = setTimeout(() => {
+      this.pendingResubscriptionRestoreTimer = undefined;
+      this.restorePendingResubscriptions('timeout');
+    }, FORCE_RESUBSCRIPTION_RESTORE_TIMEOUT_MS);
+  }
+
+  public waitForPendingForceReset(): Promise<'request_finished' | 'timeout' | 'disposed'> {
+    if (this.disposed) return Promise.resolve('disposed');
+    if (this.pendingResubscriptions === null) return Promise.resolve('request_finished');
+
+    return new Promise((resolve) => {
+      this.pendingForceResetWaiters.push(resolve);
+    });
+  }
+
+  private resolvePendingForceResetWaiters(reason: 'request_finished' | 'timeout' | 'disposed') {
+    if (this.pendingForceResetWaiters.length === 0) return;
+    const waiters = this.pendingForceResetWaiters.splice(0);
+    waiters.forEach((resolve) => resolve(reason));
+  }
+
+  private restorePendingResubscriptions(reason: 'request_finished' | 'timeout'): void {
+    if (this.disposed || this.pendingResubscriptions === null) return;
+    if (this.pendingResubscriptionRestoreTimer) {
+      clearTimeout(this.pendingResubscriptionRestoreTimer);
+      this.pendingResubscriptionRestoreTimer = undefined;
+    }
+
+    const toRestore = this.pendingResubscriptions;
+    this.pendingResubscriptions = null;
+    this.resolvePendingForceResetWaiters(reason);
+    toRestore.forEach((roomId) => this.activeRoomSubscriptions.add(roomId));
+    this.slidingSync.modifyRoomSubscriptions(new Set(this.activeRoomSubscriptions));
+    debugLog.info('sync', 'Restored force-reset room subscriptions', {
+      reason,
+      roomCount: this.activeRoomSubscriptions.size,
+      syncNumber: this.syncCount,
+    });
+    // Explicitly trigger a sync to fetch fresh data with initial:true.
+    // Without this, modifyRoomSubscriptions alone may not trigger a new
+    // request if the sync loop is idle.
+    this.slidingSync.resend();
+  }
+
+  private resetRoomTimelines(roomId: string, reason: string): boolean {
+    const room = this.mx.getRoom(roomId);
+    if (!room) return false;
+    room.resetLiveTimeline();
+    Sentry.metrics.count('sable.timeline.room_reset', 1, {
+      attributes: { room_id: roomId, reason },
+    });
+    Sentry.addBreadcrumb({
+      category: 'sync.timeline',
+      message: 'Room timeline reset',
+      level: 'warning',
+      data: { roomId, reason, syncNumber: this.syncCount },
+    });
+    return true;
+  }
+
   public setPresenceEnabled(enabled: boolean): void {
     this.presenceExtension.setEnabled(enabled);
   }
 
+  /**
+   * Synthesizes an own-presence update into the SDK store.
+   * MSC4186 servers never echo back the client's own m.presence events, so after
+   * calling mx.setPresence() we manually build a synthetic event and feed it into
+   * the SDK's User object — exactly what ExtensionPresence.onResponse does for others.
+   */
+  public updateOwnPresence(presence: string, statusMsg: string): void {
+    const userId = this.mx.getUserId();
+    if (!userId) return;
+    const mapper = this.mx.getEventMapper();
+    const rawEvent = {
+      type: 'm.presence',
+      sender: userId,
+      content: { presence, status_msg: statusMsg, currently_active: presence === 'online' },
+    };
+    const event = mapper(rawEvent as Parameters<typeof mapper>[0]);
+    let user = this.mx.store.getUser(userId);
+    if (user) {
+      user.setPresenceEvent(event);
+    } else {
+      user = User.createUser(userId, this.mx);
+      user.setPresenceEvent(event);
+      this.mx.store.storeUser(user);
+    }
+    this.mx.emit(ClientEvent.Event, event);
+  }
+
   public getDiagnostics(): SlidingSyncDiagnostics {
+    const lastSuccessfulSyncAgeMs =
+      this.lastSuccessfulSyncAt > 0 ? Date.now() - this.lastSuccessfulSyncAt : null;
     return {
       proxyBaseUrl: this.proxyBaseUrl,
       timelineLimit: this.roomTimelineLimit,
       listPageSize: this.listPageSize,
+      lastSuccessfulSyncAgeMs,
+      healthy:
+        lastSuccessfulSyncAgeMs !== null &&
+        lastSuccessfulSyncAgeMs < HEALTH_STALE_AFTER_MS &&
+        !this.disposed,
       lists: this.listKeys.map((key) => {
         const listData = this.slidingSync.getListData(key);
         const params = this.slidingSync.getListParams(key);
@@ -595,137 +1181,98 @@ export class SlidingSyncManager {
     };
   }
 
-  private expandListsToKnownCount(): void {
-    // Stop expanding once we've loaded all rooms - prevents continuous updates
-    if (this.listsFullyLoaded) return;
+  public isFullyLoaded(): boolean {
+    return this.listsFullyLoaded;
+  }
 
-    let allListsComplete = true;
-    let expandedAny = false;
+  /**
+   * Check if we have a warm cache (existing rooms loaded from IndexedDB).
+   * If true, we can show the UI while sync continues in the background.
+   */
+  public hasWarmCache(): boolean {
+    return this.initialWarmCache;
+  }
 
-    const expansionStartTime = performance.now();
-    const expansionDetails: Record<
-      string,
-      {
-        status: string;
-        knownCount: number;
-        currentEnd?: number;
-        desiredEnd?: number;
-        previousEnd?: number;
-        newEnd?: number;
-        roomsToLoad?: number;
-      }
-    > = {};
+  /**
+   * Check if the first requested sliding-sync list window has arrived.
+   * The UI should render from server-provided positions and placeholders rather
+   * than block until hundreds or all rooms have been hydrated.
+   */
+  public hasSufficientRoomsLoaded(): boolean {
+    let sawListData = false;
 
-    this.listKeys.forEach((key) => {
+    for (const key of this.listKeys) {
       const listData = this.slidingSync.getListData(key);
-      const knownCount = listData?.joinedCount ?? 0;
-      if (knownCount <= 0) {
-        expansionDetails[key] = { status: 'empty', knownCount: 0 };
-        return;
-      }
+      if (!listData) continue;
+      sawListData = true;
+      const knownCount = listData.joinedCount ?? 0;
+      if (knownCount <= 0) continue;
 
-      const existing = this.slidingSync.getListParams(key);
-      const currentEnd = getListEndIndex(existing);
+      const params = this.slidingSync.getListParams(key);
+      const requestedEnd = getListEndIndex(params);
+      if (requestedEnd < 0) continue;
+      const requiredEnd = Math.min(knownCount, requestedEnd + 1) - 1;
+      const rangeEnd = this.loadedListCoverageEnd.get(key) ?? -1;
+      if (rangeEnd < requiredEnd) return false;
+    }
 
-      // Calculate how many rooms we still need to load
-      const maxEnd = Math.min(knownCount, this.maxRooms) - 1;
+    if (sawListData) return true;
 
-      if (currentEnd >= maxEnd) {
-        // This list is fully loaded
-        expansionDetails[key] = { status: 'complete', knownCount, currentEnd };
-        return;
-      }
+    return this.loadedRoomIds.size > 0;
+  }
 
-      allListsComplete = false;
+  public isListReady(listKey: string): boolean {
+    const listData = this.slidingSync.getListData(listKey);
+    if (!listData) return false;
+    const knownCount = listData.joinedCount ?? 0;
+    if (knownCount <= 0) return true;
 
-      // Progressive expansion: load in moderate chunks to balance speed with stability
-      // Chunk size reduced to 100 to prevent timeline ordering issues when opening rooms
-      // while lists are still expanding. Rooms should get at least one clean sync from
-      // their list before the active subscription requests a high timeline limit.
-      const chunkSize = 100;
-      const desiredEnd = Math.min(currentEnd + chunkSize, maxEnd);
+    const params = this.slidingSync.getListParams(listKey);
+    const requestedEnd = getListEndIndex(params);
+    if (requestedEnd < 0) return false;
+    const requiredEnd = Math.min(knownCount, requestedEnd + 1) - 1;
+    const rangeEnd = this.loadedListCoverageEnd.get(listKey) ?? -1;
+    return rangeEnd >= requiredEnd;
+  }
 
-      if (desiredEnd === currentEnd) {
-        expansionDetails[key] = {
-          status: 'complete',
-          knownCount,
-          currentEnd,
-          desiredEnd,
-        };
-        return;
-      }
+  /**
+   * Expand a list only when the UI needs more rows. This keeps startup
+   * viewport-driven while still allowing virtualized room lists to page forward
+   * as the user approaches the loaded tail.
+   */
+  public requestListWindow(listKey: string, endIndex: number): void {
+    if (this.disposed) return;
+    if (!Number.isFinite(endIndex) || endIndex < 0) return;
+    const params = this.slidingSync.getListParams(listKey);
+    if (!params) return;
 
-      this.slidingSync.setListRanges(key, [[0, desiredEnd]]);
-      expandedAny = true;
+    const knownCount = this.slidingSync.getListData(listKey)?.joinedCount ?? 0;
+    const requestedEnd = Math.min(Math.round(endIndex), this.maxRooms - 1);
+    const cappedEnd = knownCount > 0 ? Math.min(requestedEnd, knownCount - 1) : requestedEnd;
+    const currentEnd = getListEndIndex(params);
+    if (cappedEnd <= currentEnd) return;
 
-      expansionDetails[key] = {
-        status: 'expanding',
-        knownCount,
-        previousEnd: currentEnd,
-        newEnd: desiredEnd,
-        roomsToLoad: desiredEnd - currentEnd,
-      };
-
-      debugLog.info('sync', `Expanding list "${key}" to full range`, {
-        list: key,
-        knownCount,
-        previousEnd: currentEnd,
-        newEnd: desiredEnd,
-        roomsToLoad: desiredEnd - currentEnd,
-      });
-
-      if (knownCount > this.maxRooms) {
-        log.warn(
-          `Sliding Sync list "${key}" capped at ${this.maxRooms}/${knownCount} rooms for ${this.mx.getUserId()}`
-        );
-        debugLog.warn('sync', `List "${key}" exceeds maxRooms limit`, {
-          list: key,
-          knownCount,
-          maxRooms: this.maxRooms,
-          cappedCount: this.maxRooms,
-        });
-      }
+    this.slidingSync.setListRanges(listKey, [[0, cappedEnd]]);
+    Sentry.metrics.count('sable.sync.list_window_expand', 1, {
+      attributes: { list: listKey, transport: 'sliding' },
     });
+    debugLog.info('sync', 'Expanded sliding sync list window on demand', {
+      list: listKey,
+      previousEnd: currentEnd,
+      newEnd: cappedEnd,
+      knownCount,
+      maxRooms: this.maxRooms,
+    });
+  }
 
-    const expansionDuration = performance.now() - expansionStartTime;
-    const hasExpansions = Object.values(expansionDetails).some((d) => d.status === 'expanding');
-
-    // Mark as fully loaded once all lists are complete
-    if (allListsComplete) {
-      this.listsFullyLoaded = true;
-      log.log(`Sliding Sync all lists fully loaded for ${this.mx.getUserId()}`);
-      const totalRooms = this.listKeys.reduce(
-        (sum, key) => sum + (this.slidingSync.getListData(key)?.joinedCount ?? 0),
-        0
-      );
-      const listsLoadedMs =
-        this.attachTime != null ? Math.round(performance.now() - this.attachTime) : 0;
-      Sentry.metrics.distribution('sable.sync.lists_loaded_ms', listsLoadedMs, {
-        attributes: { transport: 'sliding' },
-      });
-      Sentry.metrics.gauge('sable.sync.total_rooms', totalRooms, {
-        attributes: { transport: 'sliding' },
-      });
-    } else if (expandedAny) {
-      log.log(`Sliding Sync lists expanding... for ${this.mx.getUserId()}`);
-    }
-
-    if (hasExpansions) {
-      debugLog.info('sync', 'List expansion completed', {
-        syncNumber: this.syncCount,
-        lists: expansionDetails,
-        timeElapsed: `${expansionDuration.toFixed(2)}ms`,
-      });
-    }
-
-    if (expansionDuration > 500) {
-      debugLog.warn('sync', 'Slow list expansion detected', {
-        duration: `${expansionDuration.toFixed(2)}ms`,
-        expandedLists: Object.keys(expansionDetails).filter(
-          (key) => expansionDetails[key]?.status === 'expanding'
-        ),
-      });
-    }
+  public getListDiagnostics(listKey: string): SlidingSyncListDiagnostics | undefined {
+    const params = this.slidingSync.getListParams(listKey);
+    if (!params) return undefined;
+    return {
+      key: listKey,
+      knownCount: this.slidingSync.getListData(listKey)?.joinedCount ?? 0,
+      rangeEnd: getListEndIndex(params),
+    };
   }
 
   /**
@@ -741,10 +1288,10 @@ export class SlidingSyncManager {
     let list = this.slidingSync.getListParams(listKey);
     if (!list) {
       list = {
-        ranges: [[0, 20]],
+        ranges: [[0, Math.max(0, this.listPageSize - 1)]],
         sort: LIST_SORT_ORDER,
-        timeline_limit: LIST_TIMELINE_LIMIT,
-        required_state: buildListRequiredState(),
+        timeline_limit: this.listTimelineLimit,
+        required_state: buildListRequiredState(this.listTimelineLimit > 0),
         ...updateArgs,
       };
     } else {
@@ -814,7 +1361,8 @@ export class SlidingSyncManager {
           [EventType.RoomCanonicalAlias, ''],
           [EventType.RoomMember, MSC3575_STATE_KEY_ME],
           ['m.space.child', MSC3575_WILDCARD],
-          ['im.ponies.room_emotes', MSC3575_WILDCARD],
+          [CustomStateEvent.PoniesRoomEmotes, MSC3575_WILDCARD],
+          [CustomStateEvent.RoomAbbreviations, ''],
         ];
 
         while (hasMore) {
@@ -893,11 +1441,35 @@ export class SlidingSyncManager {
     const filters: MSC3575List['filters'] = spaceId
       ? { is_invite: false, spaces: [spaceId] }
       : { is_invite: false };
+    const initialSpaceRangeEnd = Math.min(
+      Math.max(this.listPageSize * 2 - 1, this.listPageSize - 1),
+      this.maxRooms - 1
+    );
     this.ensureListRegistered(LIST_SPACE, {
       filters,
-      ranges: spaceId ? [[0, Math.min(this.listPageSize - 1, 499)]] : [[0, 0]],
+      ranges: spaceId ? [[0, initialSpaceRangeEnd]] : [[0, 0]],
       sort: LIST_SORT_ORDER,
     });
+  }
+
+  public prefetchRoom(roomId: string, ttlMs = ROOM_PREFETCH_TTL_MS): void {
+    if (this.disposed || this.activeRoomSubscriptions.has(roomId)) return;
+
+    const existingTimer = this.prefetchedRoomSubscriptionTimers.get(roomId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    this.prefetchedRoomSubscriptions.add(roomId);
+    this.prefetchedRoomSubscriptionTimers.set(
+      roomId,
+      setTimeout(() => {
+        this.prefetchedRoomSubscriptionTimers.delete(roomId);
+        this.prefetchedRoomSubscriptions.delete(roomId);
+        this.flushRoomSubscriptions();
+      }, ttlMs)
+    );
+    this.flushRoomSubscriptions();
   }
 
   /**
@@ -912,8 +1484,21 @@ export class SlidingSyncManager {
    */
   public subscribeToRoom(roomId: string): void {
     if (this.disposed) return;
+    const prefetchTimer = this.prefetchedRoomSubscriptionTimers.get(roomId);
+    if (prefetchTimer) {
+      clearTimeout(prefetchTimer);
+      this.prefetchedRoomSubscriptionTimers.delete(roomId);
+    }
+    this.prefetchedRoomSubscriptions.delete(roomId);
+    const refCount = this.activeRoomSubscriptionRefs.get(roomId) ?? 0;
+    this.activeRoomSubscriptionRefs.set(roomId, refCount + 1);
+    if (this.activeRoomSubscriptions.has(roomId)) return;
     const room = this.mx.getRoom(roomId);
     const isEncrypted = this.mx.isRoomEncrypted(roomId);
+
+    // Mark this room as visited - timeline resets will skip visited rooms
+    this.visitedRoomsThisSession.add(roomId);
+
     if (room && !isEncrypted) {
       // Only use the unencrypted (lazy-load) subscription when we are certain
       // the room is unencrypted.  Unknown rooms fall through to the safer
@@ -921,7 +1506,7 @@ export class SlidingSyncManager {
       this.slidingSync.useCustomSubscription(roomId, UNENCRYPTED_SUBSCRIPTION_KEY);
     }
     this.activeRoomSubscriptions.add(roomId);
-    this.slidingSync.modifyRoomSubscriptions(new Set(this.activeRoomSubscriptions));
+    this.scheduleRoomSubscriptionFlush();
     Sentry.metrics.gauge('sable.sync.active_subscriptions', this.activeRoomSubscriptions.size, {
       attributes: { transport: 'sliding' },
     });
@@ -966,6 +1551,7 @@ export class SlidingSyncManager {
       Sentry.metrics.distribution('sable.sync.room_sub_event_count', eventCount, {
         attributes: { transport: 'sliding' },
       });
+      completeRoomNavigation(roomId, 'subscription_data', eventCount);
       Sentry.addBreadcrumb({
         category: 'sync.sliding',
         message: `Room subscription data arrived (${eventCount} events, ${latencyMs}ms)`,
@@ -984,8 +1570,17 @@ export class SlidingSyncManager {
    * Rooms that are still in a list will continue to receive background updates.
    * This is a no-op after dispose().
    */
-  public unsubscribeFromRoom(roomId: string): void {
+  public unsubscribeFromRoom(roomId: string, force = false): void {
     if (this.disposed) return;
+    this.pendingResubscriptions?.delete(roomId);
+    this.ptrRefreshRooms.delete(roomId);
+    const refCount = this.activeRoomSubscriptionRefs.get(roomId) ?? 0;
+    if (!force && refCount > 1) {
+      this.activeRoomSubscriptionRefs.set(roomId, refCount - 1);
+      return;
+    }
+    this.activeRoomSubscriptionRefs.delete(roomId);
+    if (!this.activeRoomSubscriptions.has(roomId)) return;
     // Clean up any pending first-data latency listener for this room.
     const pendingListener = this.pendingRoomDataListeners.get(roomId);
     if (pendingListener) {
@@ -993,7 +1588,7 @@ export class SlidingSyncManager {
       this.pendingRoomDataListeners.delete(roomId);
     }
     this.activeRoomSubscriptions.delete(roomId);
-    this.slidingSync.modifyRoomSubscriptions(new Set(this.activeRoomSubscriptions));
+    this.scheduleRoomSubscriptionFlush();
     Sentry.metrics.gauge('sable.sync.active_subscriptions', this.activeRoomSubscriptions.size, {
       attributes: { transport: 'sliding' },
     });
@@ -1002,6 +1597,26 @@ export class SlidingSyncManager {
       remainingSubscriptions: this.activeRoomSubscriptions.size,
       syncCycle: this.syncCount,
     });
+  }
+
+  private scheduleRoomSubscriptionFlush(): void {
+    if (this.disposed || this.roomSubscriptionFlushTimer) return;
+    this.roomSubscriptionFlushTimer = setTimeout(() => {
+      this.roomSubscriptionFlushTimer = undefined;
+      this.flushRoomSubscriptions();
+    }, 100);
+  }
+
+  private flushRoomSubscriptions(): void {
+    if (this.disposed) return;
+    const nextSubscriptions = [
+      ...new Set([...this.activeRoomSubscriptions, ...this.prefetchedRoomSubscriptions]),
+    ].toSorted();
+    const nextKey = nextSubscriptions.join('\u0000');
+    if (nextKey === this.lastFlushedRoomSubscriptionsKey) return;
+
+    this.lastFlushedRoomSubscriptionsKey = nextKey;
+    this.slidingSync.modifyRoomSubscriptions(new Set(nextSubscriptions));
   }
 
   public static async probe(

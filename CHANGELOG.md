@@ -1,5 +1,91 @@
 # Sable Client Changelog
 
+## 1.18.4 (2026-06-19)
+
+### Fixes
+
+* Fix Tauri SSO add-account callbacks, complete cross-signing reset recovery in-app, and start dormant background sessions from shared crypto stores so encrypted messages recover after account switches. ([#178](<https://github.com/CloudHub-Social/Charm/pull/178>) by @Just-Insane)
+* Harden avatar color extraction so unsupported images fall back cleanly instead of throwing during canvas rendering. ([#168](<https://github.com/CloudHub-Social/Charm/pull/168>) by @Just-Insane)
+* Improve desktop PWA idle-resume recovery, background notification client diagnostics, and related stability telemetry. ([#162](<https://github.com/CloudHub-Social/Charm/pull/162>) by @Just-Insane)
+* Prefer shorter sidebar-aware notification jump paths, wait for target room parent graphs before restoring non-DM clicks, and keep history jumps anchored while media and previews finish reflowing. ([#153](<https://github.com/CloudHub-Social/Charm/pull/153>) by @Just-Insane)
+* Harden startup event handling so malformed or placeholder Matrix events always carry a stable non-empty type. ([#174](<https://github.com/CloudHub-Social/Charm/pull/174>) by @Just-Insane)
+* Harden media and config loading so expected client-side failures degrade cleanly without noisy error capture. ([#175](<https://github.com/CloudHub-Social/Charm/pull/175>) by @Just-Insane)
+* Keep mobile room actions reachable by exposing members and widgets from the room menu, render widgets in a mobile overlay, and trigger the composer keyboard pre-lift on touch-first PWA input paths. ([#177](<https://github.com/CloudHub-Social/Charm/pull/177>) by @Just-Insane)
+* Restore the missing mobile timeline right gutter and keep composer text inset from right-side actions. ([#151](<https://github.com/CloudHub-Social/Charm/pull/151>) by @Just-Insane)
+* Improve notification routing, composer ergonomics, and startup resilience. ([#160](<https://github.com/CloudHub-Social/Charm/pull/160>) by @Just-Insane)
+* Harden encrypted push enrichment, notification restore, DM deep-link recovery, and related telemetry. ([#150](<https://github.com/CloudHub-Social/Charm/pull/150>) by @Just-Insane)
+* Unify compact preview rendering, bookmark fallbacks, and direct media preview chrome so formatted text and attachments degrade consistently outside the main timeline. ([#176](<https://github.com/CloudHub-Social/Charm/pull/176>) by @Just-Insane)
+* Fix race-prone sliding sync unread and direct-message ordering state. ([#99](<https://github.com/CloudHub-Social/Charm/pull/99>) by @Just-Insane)
+* Reduce theme flashing by reapplying cached remote theme and tweak CSS before async startup finishes. ([#152](<https://github.com/CloudHub-Social/Charm/pull/152>) by @Just-Insane)
+* Improve timeline correctness, notification diagnostics, and config failure resilience. ([#172](<https://github.com/CloudHub-Social/Charm/pull/172>) by @Just-Insane)
+* Clarify unsupported-browser push state and avoid treating missing web push support as an actionable failure. ([#173](<https://github.com/CloudHub-Social/Charm/pull/173>) by @Just-Insane)
+
+### Notes
+
+* Add a Playwright smoke CI workflow and document the remaining manual Sentry and GitHub issue wiring. ([#166](<https://github.com/CloudHub-Social/Charm/pull/166>) by @Just-Insane)
+* Run Charm through a Worker-first Cloudflare asset proxy so observability, invocation logs, and drain integrations can capture real site traffic. ([#169](<https://github.com/CloudHub-Social/Charm/pull/169>) by @Just-Insane)
+
+## 1.18.3 (2026-06-18)
+
+### Features
+
+* Add 'Show Results' to show their poll's result before casting an answer ([#67](<https://github.com/CloudHub-Social/Charm/pull/67>) by @Just-Insane)
+
+### Fixes
+
+* Deploy integration builds directly to the Charm production Worker while keeping the release OpenTofu path available. ([#72](<https://github.com/CloudHub-Social/Charm/pull/72>) by @Just-Insane)
+* Improve startup, sliding sync navigation, and media loading responsiveness with targeted telemetry and deferred non-critical work. ([#124](<https://github.com/CloudHub-Social/Charm/pull/124>) by @Just-Insane)
+* Restore Charm runtime config defaults and keep installed PWAs registered when using Clear Cache and Reload. ([#131](<https://github.com/CloudHub-Social/Charm/pull/131>) by @Just-Insane)
+* Make Clear Cache & Reload fully reset browser caches and service-worker state so the app does not reopen with mixed old/new UI assets, and harden About update checks to fail gracefully when startup state is stale. ([#128](<https://github.com/CloudHub-Social/Charm/pull/128>) by @Just-Insane)
+* Fix the follow-up emoji runtime regression by adding Twemoji diagnostics, tune system emoji sizing to better match Discord on mobile, and reduce the oversized DM navigation gutter spacing. ([#144](<https://github.com/CloudHub-Social/Charm/pull/144>) by @Just-Insane)
+* Standardize system emoji rendering so the emoji picker and timeline more closely match the mobile message reaction menu. ([#136](<https://github.com/CloudHub-Social/Charm/pull/136>) by @Just-Insane)
+* Pull in upstream `v1.18.3` emoji updates, refresh Twemoji and emoji detection data, and fix Charm's remaining inline and picker emoji alignment regressions on mobile. ([#140](<https://github.com/CloudHub-Social/Charm/pull/140>) by @7w1, @Just-Insane)
+* Reduce foreground connection-lost banners caused by desktop network-quality changes. ([#55](<https://github.com/CloudHub-Social/Charm/pull/55>) by @Just-Insane)
+* Keep jump-to-message targets anchored while surrounding history and media previews settle, and avoid aggressive foreground service worker claims after idle Safari PWA resumes. ([#115](<https://github.com/CloudHub-Social/Charm/pull/115>) by @Just-Insane)
+* Keep jumped timeline views from snapping back to the live bottom after a successful jump-to-message action. ([#114](<https://github.com/CloudHub-Social/Charm/pull/114>) by @Just-Insane)
+* Defer lazy authenticated media resolution until images approach the viewport so large emoji and sticker pack views do not block visible media behind offscreen fetches. ([#80](<https://github.com/CloudHub-Social/Charm/pull/80>) by @Just-Insane)
+* Reuse the shared media cache for room avatars and warm emoji and sticker media after the picker opens. ([#71](<https://github.com/CloudHub-Social/Charm/pull/71>) by @Just-Insane)
+* Cache media dimensions for images, videos, and previews so timeline attachments can reserve stable space across renders. ([#75](<https://github.com/CloudHub-Social/Charm/pull/75>) by @Just-Insane)
+* Suppress service-worker OS push notifications when a live foreground client confirms the app is visible. ([#68](<https://github.com/CloudHub-Social/Charm/pull/68>) by @Just-Insane)
+* Fix mobile message sending, preserve jump-to-message context during timeline refreshes, and add PWA freeze diagnostics for service worker recovery. ([#112](<https://github.com/CloudHub-Social/Charm/pull/112>) by @Just-Insane)
+* Fix recent mobile composer, timeline anchoring, and theme startup regressions across room and thread views. ([#139](<https://github.com/CloudHub-Social/Charm/pull/139>) by @Just-Insane)
+* Prevent duplicate visibility pusher toggles from piling up during sync recovery, and add an explicit retry action to the degraded sync banner. ([#61](<https://github.com/CloudHub-Social/Charm/pull/61>) by @Just-Insane)
+* Preserve reply notifications and thread context when sending polls as replies. ([#102](<https://github.com/CloudHub-Social/Charm/pull/102>) by @Just-Insane)
+* Revert the fork-specific foreground suppression and startup reconciliation changes so push registration, page visibility, and service-worker notification handling follow the upstream model again. ([#117](<https://github.com/CloudHub-Social/Charm/pull/117>) by @Just-Insane)
+* Fix location and pinned poll edge cases from the upstream sync. ([#56](<https://github.com/CloudHub-Social/Charm/pull/56>) by @Just-Insane)
+* Tighten DM preview truncation, keep bookmark previews local-only, and show decrypted notification text correctly. ([#110](<https://github.com/CloudHub-Social/Charm/pull/110>) by @Just-Insane)
+* Fix preview rendering across notifications, room list previews, and bookmarks. ([#108](<https://github.com/CloudHub-Social/Charm/pull/108>) by @Just-Insane)
+* Harden startup, notification routing, and service-worker recovery by guarding passive web-push reconciliation on unsupported browsers, preserving `/to/...` deep-link restores across login and notification flows, fixing background notification client teardown, improving notification-click recovery after app restarts, and adding smoke coverage for startup and session-restore paths. ([#121](<https://github.com/CloudHub-Social/Charm/pull/121>) by @Just-Insane)
+* Fix production PWA service worker registration and default the login homeserver to cloudhub.social. ([#132](<https://github.com/CloudHub-Social/Charm/pull/132>) by @Just-Insane)
+* Harden PWA push and resume recovery by restoring lazy service-worker reclaim on foreground return, re-arming web push on startup, routing room notification restores through the canonical `/to/...` deep-link path, and adding telemetry that distinguishes warm resume from cold launch after notification clicks. ([#120](<https://github.com/CloudHub-Social/Charm/pull/120>) by @Just-Insane)
+* Keep web push registered across visibility changes, and only defer page notifications to push when a usable push transport is actually ready. This also preserves the resumed-PWA media/session recovery work so push and authenticated fetches do not silently fail after the app is suspended or restored. ([#116](<https://github.com/CloudHub-Social/Charm/pull/116>) by @Just-Insane)
+* Fix PWA recovery after long sessions, keep jumped-to messages anchored during timeline updates, and restore mobile timeline divider spacing. ([#146](<https://github.com/CloudHub-Social/Charm/pull/146>) by @Just-Insane)
+* Retain renderable media URLs for picker images and chat avatars so warmed media is reused across remounts. ([#73](<https://github.com/CloudHub-Social/Charm/pull/73>) by @Just-Insane)
+* Use the correct reply arrow direction in reply previews. ([#77](<https://github.com/CloudHub-Social/Charm/pull/77>) by @Just-Insane)
+* Tighten sliding sync startup readiness, unread reconciliation, folder badge aggregation, and transport diagnostics. ([#97](<https://github.com/CloudHub-Social/Charm/pull/97>) by @Just-Insane)
+* Fix sliding sync direct-message ordering, unread badges, and unread divider placement when timeline data is correct but derived room state lags. ([#101](<https://github.com/CloudHub-Social/Charm/pull/101>) by @Just-Insane)
+* Reduce sliding sync startup and direct-message list reordering churn. ([#79](<https://github.com/CloudHub-Social/Charm/pull/79>) by @Just-Insane)
+* Preserve sliding sync warm-cache startup detection when rooms restore from persisted sync state. ([#81](<https://github.com/CloudHub-Social/Charm/pull/81>) by @Just-Insane)
+* Reduce sliding sync startup work by loading visible room windows on demand instead of prefetching broad room data. ([#104](<https://github.com/CloudHub-Social/Charm/pull/104>) by @Just-Insane)
+* Fix sliding sync warm-cache detection so saved Matrix SDK sync data starts sliding sync instead of repeatedly falling back to classic cold-cache bootstrap. ([#74](<https://github.com/CloudHub-Social/Charm/pull/74>) by @Just-Insane)
+* Harden startup and notification recovery by fixing settings initialization before route loaders run, improving notification-click fallback handling across account switches and app restarts, and stabilizing background notification clients during effect reruns. ([#122](<https://github.com/CloudHub-Social/Charm/pull/122>) by @Just-Insane)
+* Fix production service worker evaluation by shimming document metadata for the rust crypto WASM loader. ([#133](<https://github.com/CloudHub-Social/Charm/pull/133>) by @Just-Insane)
+* Fix recent timeline layout regressions by restoring composer vertical alignment, preserving the avatar gutter in modern message rows, and slightly increasing bundled Twemoji sizing to better match adjacent text and custom emoji. ([#135](<https://github.com/CloudHub-Social/Charm/pull/135>) by @Just-Insane)
+* Restore Twemoji-aware system emoji rendering in sent messages and keep the message composer aligned with the final timeline appearance. ([#138](<https://github.com/CloudHub-Social/Charm/pull/138>) by @Just-Insane)
+* Tighten room read-state actions so unread prompts clear more reliably, add a visible manual refresh path for desktop room lists, and expose an About-screen update check backed by the existing web service-worker update flow. ([#125](<https://github.com/CloudHub-Social/Charm/pull/125>) by @Just-Insane)
+* Stop visible-window recovery code from repeatedly aborting healthy sliding sync polls, and auto-clear the transient connecting banner after startup. ([#60](<https://github.com/CloudHub-Social/Charm/pull/60>) by @Just-Insane)
+* Make more Icon changes ([#67](<https://github.com/CloudHub-Social/Charm/pull/67>) by @Just-Insane)
+* Migrate the app icon API to Phosphor-backed icons. ([#65](<https://github.com/CloudHub-Social/Charm/pull/65>) by @Just-Insane)
+* Use the outline bell for room-list mention notification indicators. ([#69](<https://github.com/CloudHub-Social/Charm/pull/69>) by @Just-Insane)
+* Normalize internal `src/app` imports to use the existing `$...` aliases and enforce alias usage for cross-folder app imports. ([#126](<https://github.com/CloudHub-Social/Charm/pull/126>) by @Just-Insane)
+* Refine message action and room notification icons after the Phosphor migration. ([#66](<https://github.com/CloudHub-Social/Charm/pull/66>) by @Just-Insane)
+* Fix jump-to-message scrolling after context loads and apply the saved theme during startup before synced settings finish loading. ([#59](<https://github.com/CloudHub-Social/Charm/pull/59>) by @Just-Insane)
+* Simplify app visibility handling by removing automatic foreground sync retries and focus/online service-worker session resyncs, and delay the reconnecting banner so short resume reconnects do not alarm users. ([#62](<https://github.com/CloudHub-Social/Charm/pull/62>) by @Just-Insane)
+* Sync the latest `upstream/dev` into Charm's `integration` branch, pulling in the upstream 1.18.2 release updates, explore-server improvements, room-leave handling, and related UI/runtime fixes while preserving Charm-specific navigation previews, branding, and notification behavior. ([#123](<https://github.com/CloudHub-Social/Charm/pull/123>) by @7w1, @Just-Insane)
+* Sync upstream 1.18.1 release updates and add upstream sync PR automation. ([#70](<https://github.com/CloudHub-Social/Charm/pull/70>) by @7w1, @Just-Insane, @nushea)
+* Update several low-risk runtime dependencies to current non-major releases. ([#129](<https://github.com/CloudHub-Social/Charm/pull/129>) by @Just-Insane)
+* Update DOM sanitization and translation backend dependencies to current security releases. ([#127](<https://github.com/CloudHub-Social/Charm/pull/127>) by @Just-Insane)
+
 ## 1.18.3 (2026-06-17)
 
 ### Fixes
@@ -43,53 +129,63 @@ You can check here for emoji changes:
 
 ### Features
 
-* Added configurable max pronoun pill count and max pill length rendering settings. ([#904](<https://github.com/SableClient/Sable/pull/904>) by @7w1)
-* Adds the ability to hover/tap over `...` to see the rest of someone's pronouns. ([#904](<https://github.com/SableClient/Sable/pull/904>) by @7w1)
-* Support rendering `matrix:` URIs in incoming messages. ([#935](<https://github.com/SableClient/Sable/pull/935>) by @7w1)
-* Added an inline add-reaction button at the end of message reaction lists. ([#934](<https://github.com/SableClient/Sable/pull/934>) by @7w1)
-* Add button to silently dismiss Invite ([#936](<https://github.com/SableClient/Sable/pull/936>) by @nushea)
-* Highlight message that you are about to reply to! ([#897](<https://github.com/SableClient/Sable/pull/897>) by @nushea)
-* Add Location styling with a modal! ([#927](<https://github.com/SableClient/Sable/pull/927>) by @nushea)
-
-#### Added more hidden timeline events with settings and rendering. ([#934](<https://github.com/SableClient/Sable/pull/934>) by @7w1)
-
-##### Settings
-
-- Added a master Show Hidden Events toggle with per-type sub-toggles for message edits, redactions, reactions, and other unrecognized events
-- Sub-toggles stay visible beneath the master toggle and are disabled while hidden events are off
-
-##### Timeline rendering
-
-- Show message edits as timeline events with reply navigation and an inline word/line diff between versions
-- Show reactions, message redactions, and reaction redactions as timeline events
-- Keep redacted reactions in the timeline as tombstones with redaction events linking back to them when possible
-- Improve reply-chip previews for edits, redactions, reactions, and redacted targets
-
-##### Safeguards
-
-- Hide forward, delete, and other message actions on timeline meta events that cannot be forwarded or meaningfully deleted
-- Disallow forwarding deleted messages and other non-message event types
-
-#### Add polls! ([#916](<https://github.com/SableClient/Sable/pull/916>) by @nushea)
-
-##### Add Polls with a new Menu for adding items
-
-- The polls have a simple style for showing and interfacing with poll events
-- There is now a simple interface for creating polls which integrates the spec
-- Now the Plus button on the bottom left can open a menu for selecting what to send, which will be useful for future options as well
-- For the people that prefer to only add files with that button they can disable the menu and still create polls with the /poll command
-- You can see who voted for what in a clear menu
+* Added configurable max pronoun pill count and max pill length rendering settings.
+* Adds the ability to hover/tap over `...` to see the rest of someone's pronouns.
+* Support rendering `matrix:` URIs in incoming messages.
+* Added an inline add-reaction button at the end of message reaction lists.
+* Add button to silently dismiss invites.
+* Highlight message that you are about to reply to.
+* Add Location styling with a modal.
+* Added more hidden timeline events with settings and rendering for edits, redactions, reactions, and other unrecognized events.
+* Add polls with creation, rendering, voting, and response viewing support.
+* Add build-time experiment flag injection, typed deterministic bucketing helpers, and a DevTools panel to force-rotate Megolm encryption sessions per room.
+* Show group DM composite avatars in the sidebar DM list.
+* Add experimental Discord-style edit-in-input toggle.
+* Add Ctrl+Alt+Up/Down keyboard shortcuts to cycle through editable messages.
+* Add IndexedDB-backed persistent search index for all rooms via a MiniSearch web worker with multi-tab write safety and LRU eviction. Note: indexed message text is stored unencrypted in IndexedDB.
+* Add in-memory encrypted message search with room/DM scoping, member picker avatars, and > quick-switcher prefix.
+* Add persistent Cache API for media storage; skip caching failed media requests.
+* Add message bookmarks (MSC4438). Users can bookmark messages for easy retrieval via a new Bookmarks section in the home sidebar. Gated by an operator `config.json` experiment flag (`experiments.messageBookmarks`) and a per-user experimental settings toggle.
+* Add configurable message grouping time threshold setting.
+* Add poll duration picker with hour presets and custom date input to PollCreator.
+* Show topic and last-message preview below room and DM names in the sidebar.
+* Prefetch recently-visited rooms on sliding sync complete.
+* Add experimental Tiptap-based message composer behind a settings toggle.
 
 ### Fixes
 
-* Change image rendering to allow enabling anti-aliasing in the image viewer ([#919](<https://github.com/SableClient/Sable/pull/919>) by @nushea)
-* Fix crash during scrubbing before duration duration appears. ([#902](<https://github.com/SableClient/Sable/pull/902>) by @7w1)
-* Fixed lists rendering `p` html tags on new lines. ([#906](<https://github.com/SableClient/Sable/pull/906>) by @7w1)
-* Fix math parsing inside of color blocks not being parsed properly. ([#910](<https://github.com/SableClient/Sable/pull/910>) by @7w1)
-* Fixed nested lists having wrong indentation levels when editing. ([#906](<https://github.com/SableClient/Sable/pull/906>) by @7w1)
-* Fix missing filename breaking edits, and missing a fallback, and codeblock titles overflowing ([#917](<https://github.com/SableClient/Sable/pull/917>) by @nushea)
-* Fix unset User Profile cards having incorectly colored text. ([#896](<https://github.com/SableClient/Sable/pull/896>) by @nushea)
-* Migrated all icons to Phosphor Icons and added a setting to display globe/lock icon instead of the hash tag for the room sidebar. ([#934](<https://github.com/SableClient/Sable/pull/934>) by @7w1)
+* Preserve addAccount parameter through SSO redirect.
+* Change image rendering to allow enabling anti-aliasing in the image viewer.
+* Route DM rooms to /direct before checking space parents to fix incorrect navigation.
+* Skip displayCheck on FocusTrap activation in the emoji board to prevent focus trap errors.
+* Fix crash during scrubbing before duration appears.
+* Fixed lists rendering `p` html tags on new lines.
+* Fix math parsing inside of color blocks not being parsed properly.
+* Fixed nested lists having wrong indentation levels when editing.
+* Fix phantom unread dot badges when server reports zero unreads or when you sent the latest message.
+* Fix missing filename breaking edits, add a fallback, and prevent codeblock titles overflowing.
+* Fix unset User Profile cards having incorrectly colored text.
+* Migrated all icons to Phosphor Icons and added a setting to display globe/lock icon instead of the hash tag for the room sidebar.
+* Fix iOS PWA foreground lifecycle churn by avoiding forced sync retries, removing unused bfcache sync pause helpers, and stopping visibility-driven web pusher re-registration.
+* Fix iOS sync resume, network latency retries, iPad layout, and connecting banner during fast-path sync. Add missing items to mobile long-press message menu; fix bookmark toggle and iOS keyboard cover.
+* Pause mobile search backfill unless the PWA is foreground-focused to reduce background network pressure on Matrix sync.
+* Require focused mobile pages before suppressing service-worker push notifications, including encrypted minimal-push relay responses.
+* Fix notification routing, in-app banners for All Messages rooms, and background audio for loud non-DM rooms.
+* Fix presence: optimistic badge updates, own-status sync, idle timer on desktop, and REST API fallback.
+* Fix mobile PWA push reliability by confirming visible clients before suppressing OS notifications, buffering SW push telemetry, supporting declarative Web Push fallback payloads, and restoring foreground SW session refresh.
+* Exclude enterForNewline from cross-device settings sync.
+* Avoid aborting sliding-sync requests for online-only network change events; retry immediately only after a real offline-to-online transition.
+* Reduce mobile sync diagnostic noise by de-duplicating service-worker sync-health updates and raising the MatrixRTC listener threshold for large room lists.
+* Fix timeline scroll recovery, loading spinner position, autopag loop, blank notification room, and ArrowUp-to-edit routing.
+* Restore the dotted splash background during the early boot loading screen.
+* Fix Charm rebrand follow-ups for desktop SSO callbacks, fork bug-report routing, and legacy Sable web-push pusher cleanup.
+* Recheck system theme on PWA foreground restores to avoid transient opposite-theme flashes.
+
+### Notes
+
+* Rebrand the fork-local app distribution from Sable to Charm while preserving attribution to Sable and Cinny.
+* Fix integration-trunk release automation so Knope only versions `package.json` and does not prepare a new release from release-PR merge commits.
+* Move fork-local CI, release, deployment, and branch workflow automation from `dev` to the `integration` trunk.
 
 ## 1.17.0 (2026-05-22)
 

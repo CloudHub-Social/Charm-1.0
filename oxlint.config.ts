@@ -53,6 +53,35 @@ export default defineConfig({
   },
   overrides: [
     {
+      files: ['src/app/**/*.{js,jsx,ts,tsx}'],
+      excludeFiles: [
+        'src/app/hooks/useAppVisibility.ts',
+        'src/app/hooks/useTheme.ts',
+        'src/app/pages/client/ClientNonUIFeatures.tsx',
+        'src/app/pages/client/ClientRoot.tsx',
+      ],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              {
+                group: [
+                  '../*',
+                  '../../*',
+                  '../../../*',
+                  '../../../../*',
+                  '../../../../../*',
+                  '../../../../../../*',
+                ],
+                message: 'Use the existing $... aliases for cross-folder imports in src/app.',
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
       files: ['**/*.ts', '**/*.tsx', '**/*.cts', '**/*.mts'],
       rules: {
         'typescript/no-unused-vars': [
@@ -71,6 +100,19 @@ export default defineConfig({
       rules: {
         'typescript/unbound-method': 'off',
         'typescript/no-unsafe-enum-comparison': 'off',
+      },
+    },
+    {
+      files: [
+        'src/app/hooks/useAppVisibility.ts',
+        'src/app/pages/client/BackgroundNotifications.tsx',
+        'src/app/hooks/useSearchIndex.tsx',
+        'src/client/initMatrix.ts',
+        'src/client/slidingSync.ts',
+        'src/serviceWorkerBootstrap.ts',
+      ],
+      rules: {
+        'typescript/no-floating-promises': 'error',
       },
     },
   ],

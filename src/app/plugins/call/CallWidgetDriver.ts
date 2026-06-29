@@ -24,8 +24,8 @@ import {
   type TimelineEvents,
 } from '$types/matrix-sdk';
 import { getCallCapabilities } from './utils';
-import { downloadMedia, mxcUrlToHttp } from '../../utils/matrix';
-import { createDebugLogger } from '../../utils/debugLogger';
+import { downloadMedia, mxcUrlToHttp } from '$utils/matrix';
+import { createDebugLogger } from '$utils/debugLogger';
 
 const debugLog = createDebugLogger('CallWidgetDriver');
 
@@ -48,7 +48,7 @@ export class CallWidgetDriver extends WidgetDriver {
     }
 
     debugLog.info('call', 'Initializing CallWidgetDriver', { roomId: inRoomId, deviceId });
-    this.allowedCapabilities = getCallCapabilities(inRoomId, mx.getSafeUserId(), deviceId);
+    this.allowedCapabilities = getCallCapabilities(mx, inRoomId, mx.getSafeUserId(), deviceId);
   }
 
   public async validateCapabilities(requested: Set<Capability>): Promise<Set<Capability>> {
@@ -357,7 +357,10 @@ export class CallWidgetDriver extends WidgetDriver {
     if (!httpUrl) {
       throw new Error('Call widget failed to download file! No http url!');
     }
-    const blob = await downloadMedia(httpUrl);
+    const blob = await downloadMedia(httpUrl, {
+      getAccessToken: () => this.mx.getAccessToken(),
+      sessionScope: this.mx.getUserId() ?? undefined,
+    });
     return { file: blob };
   }
 

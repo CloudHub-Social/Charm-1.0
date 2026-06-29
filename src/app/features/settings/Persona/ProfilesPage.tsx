@@ -1,6 +1,6 @@
 import { PageNavContent } from '$components/page';
 import { Box } from 'folds';
-import { SettingsSectionPage } from '../SettingsSectionPage';
+import { SettingsSectionPage } from '$features/settings/SettingsSectionPage';
 import { PerMessageProfileOverview } from './PerMessageProfileOverview';
 import { PKCompatSettings } from './PKCompat';
 
@@ -17,11 +17,7 @@ export function PerMessageProfilePage({ requestBack, requestClose }: PerMessageP
           grow="Yes"
           gap="200"
           style={{
-            paddingLeft: '20px',
-            paddingRight: '20px',
-            paddingTop: '10px',
-            marginRight: '5px',
-            marginLeft: '5px',
+            padding: '16px',
           }}
           direction="Column"
           shrink="No"

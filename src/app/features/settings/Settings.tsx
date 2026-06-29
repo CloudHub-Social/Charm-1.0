@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
 import type { IconProps } from '@phosphor-icons/react';
 import {
@@ -13,6 +13,7 @@ import {
   OverlayCenter,
   Text,
 } from 'folds';
+import { isTauri } from '@tauri-apps/api/core';
 import FocusTrap from 'focus-trap-react';
 import { PageNav, PageNavContent, PageNavHeader, PageRoot } from '$components/page';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
@@ -48,12 +49,17 @@ import {
 import { About } from './about';
 import { Account } from './account';
 import { Cosmetics } from './cosmetics/Cosmetics';
-import { DeveloperTools } from './developer-tools';
 import { Devices } from './devices';
+
+// Lazy-load DeveloperTools to reduce Settings bundle size
+const DeveloperTools = lazy(() =>
+  import('./developer-tools').then((m) => ({ default: m.DeveloperTools }))
+);
 import { EmojisStickers } from './emojis-stickers';
 import { Experimental } from './experimental/Experimental';
 import { General } from './general';
 import { KeyboardShortcuts } from './keyboard-shortcuts';
+import { Desktop } from './desktop';
 import { Notifications } from './notifications';
 import { PerMessageProfilePage } from './Persona/ProfilesPage';
 import { settingsSections, type SettingsSectionId } from './routes';
@@ -68,6 +74,7 @@ export enum SettingsPages {
   PerMessageProfilesPage,
   NotificationPage,
   DevicesPage,
+  DesktopPage,
   EmojisStickersPage,
   CosmeticsPage,
   DeveloperToolsPage,
@@ -95,6 +102,7 @@ const settingsMenuIcons: Record<
   appearance: { icon: Palette },
   notifications: { icon: Bell },
   devices: { icon: DevicesIcon },
+  desktop: { icon: DevicesIcon },
   emojis: { icon: Smiley },
   'developer-tools': { icon: Terminal },
   experimental: { icon: Flask },
@@ -108,6 +116,7 @@ const settingsPageToSectionId: Record<SettingsPages, SettingsSectionId> = {
   [SettingsPages.PerMessageProfilesPage]: 'persona',
   [SettingsPages.NotificationPage]: 'notifications',
   [SettingsPages.DevicesPage]: 'devices',
+  [SettingsPages.DesktopPage]: 'desktop',
   [SettingsPages.EmojisStickersPage]: 'emojis',
   [SettingsPages.CosmeticsPage]: 'appearance',
   [SettingsPages.DeveloperToolsPage]: 'developer-tools',
@@ -123,6 +132,7 @@ const settingsSectionIdToPage: Record<SettingsSectionId, SettingsPages> = {
   appearance: SettingsPages.CosmeticsPage,
   notifications: SettingsPages.NotificationPage,
   devices: SettingsPages.DevicesPage,
+  desktop: SettingsPages.DesktopPage,
   emojis: SettingsPages.EmojisStickersPage,
   'developer-tools': SettingsPages.DeveloperToolsPage,
   experimental: SettingsPages.ExperimentalPage,
@@ -132,7 +142,7 @@ const settingsSectionIdToPage: Record<SettingsSectionId, SettingsPages> = {
 
 const settingsSectionComponents: Record<
   SettingsSectionId,
-  (props: { requestBack?: () => void; requestClose: () => void }) => JSX.Element
+  ComponentType<{ requestBack?: () => void; requestClose: () => void }>
 > = {
   general: General,
   account: Account,
@@ -140,6 +150,7 @@ const settingsSectionComponents: Record<
   appearance: Cosmetics,
   notifications: Notifications,
   devices: Devices,
+  desktop: Desktop,
   emojis: EmojisStickers,
   'developer-tools': DeveloperTools,
   experimental: Experimental,
@@ -166,7 +177,11 @@ function SettingsSectionViewport({
 }) {
   useSettingsFocus();
   const Section = settingsSectionComponents[section];
-  return <Section requestBack={requestBack} requestClose={requestClose} />;
+  return (
+    <Suspense fallback={null}>
+      <Section requestBack={requestBack} requestClose={requestClose} />
+    </Suspense>
+  );
 }
 
 export function Settings({
@@ -186,6 +201,7 @@ export function Settings({
     : undefined;
 
   const [showPersona] = useSetting(settingsAtom, 'showPersonaSetting');
+  const showDesktop = isTauri();
   const settingsLinkBaseUrl = useSettingsLinkBaseUrl();
   const screenSize = useScreenSizeContext();
   const isControlled = activeSection !== undefined;
@@ -199,7 +215,12 @@ export function Settings({
   });
 
   const visibleSection = useMemo<SettingsSectionId | null>(() => {
-    if (isControlled) return activeSection;
+    if (isControlled) {
+      if (activeSection === 'desktop' && !showDesktop) {
+        return null;
+      }
+      return activeSection;
+    }
 
     if (legacyActivePage === undefined) {
       return null;
@@ -209,18 +230,25 @@ export function Settings({
     if (section === 'persona' && !showPersona) {
       return 'general';
     }
+    if (section === 'desktop' && !showDesktop) {
+      return 'general';
+    }
     return section;
-  }, [activeSection, isControlled, legacyActivePage, showPersona]);
+  }, [activeSection, isControlled, legacyActivePage, showDesktop, showPersona]);
 
   const menuItems = useMemo<SettingsMenuItem[]>(
     () =>
       settingsSections
-        .filter((section) => showPersona || section.id !== 'persona')
-        .map((section) => {
-          const icon = settingsMenuIcons[section.id];
-          return { id: section.id, name: section.label, ...icon };
-        }),
-    [showPersona]
+        .filter(
+          (section) =>
+            (showPersona || section.id !== 'persona') && (showDesktop || section.id !== 'desktop')
+        )
+        .map((section) => ({
+          id: section.id,
+          name: section.label,
+          ...settingsMenuIcons[section.id],
+        })),
+    [showDesktop, showPersona]
   );
 
   const handleSelectSection = (section: SettingsSectionId) => {

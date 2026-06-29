@@ -2,12 +2,15 @@ import { Text } from 'folds';
 import type { RenderElementProps, RenderLeafProps } from 'slate-react';
 import { useFocused, useSelected, useSlate } from 'slate-react';
 import { useAtomValue } from 'jotai';
+import classNames from 'classnames';
 
 import * as css from '$styles/CustomHtml.css';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { mxcUrlToHttp } from '$utils/matrix';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { AuthenticatedImg } from '$components/AuthenticatedImg';
 import { nicknamesAtom } from '$state/nicknames';
+import { isFixedCellEmoji } from '$plugins/emoji';
 import { BlockType } from './types';
 import { formatMentionElementDisplayName, getBeginCommand } from './utils';
 import type { CommandElement, EmoticonElement, LinkElement, MentionElement } from './slate';
@@ -85,15 +88,25 @@ function RenderEmoticonElement({
   return (
     <span className={css.EmoticonBase} {...attributes}>
       <span
-        className={css.Emoticon({
-          focus: selected && focused,
-        })}
+        className={classNames(
+          element.key.startsWith('mxc://')
+            ? css.CustomEmoticon({
+                focus: selected && focused,
+              })
+            : css.Emoticon({
+                focus: selected && focused,
+              }),
+          !element.key.startsWith('mxc://') && css.SystemEmoji,
+          !element.key.startsWith('mxc://') &&
+            isFixedCellEmoji(element.key) &&
+            css.SystemEmojiFixedCell
+        )}
         contentEditable={false}
       >
         {element.key.startsWith('mxc://') ? (
-          <img
+          <AuthenticatedImg
             className={css.EmoticonImg}
-            src={mxcUrlToHttp(mx, element.key, useAuthentication) ?? element.key}
+            src={mxcUrlToHttp(mx, element.key, useAuthentication) ?? undefined}
             alt={element.shortcode}
           />
         ) : (
@@ -167,6 +180,22 @@ export function RenderElement({ attributes, element, children }: RenderElementPr
   }
 }
 
-export function RenderLeaf({ attributes, children }: RenderLeafProps) {
+export function RenderLeaf({ attributes, children, leaf }: RenderLeafProps) {
+  if (leaf.systemEmoji) {
+    return (
+      <span {...attributes} className={css.EmoticonBase}>
+        <span
+          className={classNames(
+            css.SystemEmoji,
+            leaf.systemEmojiFixedCell && css.SystemEmojiFixedCell
+          )}
+          title={leaf.systemEmojiTitle}
+        >
+          {children}
+        </span>
+      </span>
+    );
+  }
+
   return <span {...attributes}>{children}</span>;
 }

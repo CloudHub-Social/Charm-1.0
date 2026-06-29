@@ -43,10 +43,14 @@ export function setFallbackSession(
   userId: string,
   baseUrl: string
 ) {
-  localStorage.setItem('cinny_access_token', accessToken);
-  localStorage.setItem('cinny_device_id', deviceId);
-  localStorage.setItem('cinny_user_id', userId);
-  localStorage.setItem('cinny_hs_base_url', baseUrl);
+  try {
+    localStorage.setItem('cinny_access_token', accessToken);
+    localStorage.setItem('cinny_device_id', deviceId);
+    localStorage.setItem('cinny_user_id', userId);
+    localStorage.setItem('cinny_hs_base_url', baseUrl);
+  } catch {
+    // QuotaExceededError: write best-effort; ignore if storage is full
+  }
 }
 export const removeFallbackSession = () => {
   localStorage.removeItem('cinny_hs_base_url');
@@ -167,10 +171,38 @@ export const activeSessionIdAtom = atom<string | undefined, [string | undefined]
 export type PendingNotification = {
   roomId: string;
   eventId?: string;
+  jumpMode?: 'notification_live' | 'history_context';
+  joinCall?: boolean;
   targetSessionId?: string;
+  requestedAt?: number;
+  swClickId?: string;
+  source?:
+    | 'to_room_event'
+    | 'service_worker_click'
+    | 'foreground_notification'
+    | 'background_notification';
 };
 
 export const pendingNotificationAtom = atom<PendingNotification | null>(null);
+
+export const createPendingNotification = ({
+  roomId,
+  eventId,
+  jumpMode,
+  joinCall,
+  targetSessionId,
+  swClickId,
+  source,
+}: Omit<PendingNotification, 'requestedAt'>): PendingNotification => ({
+  roomId,
+  eventId,
+  jumpMode,
+  joinCall,
+  targetSessionId,
+  requestedAt: Date.now(),
+  swClickId,
+  source,
+});
 
 // ─── In-app notification banner ────────────────────────────────────────────
 

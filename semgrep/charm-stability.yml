@@ -1,0 +1,112 @@
+rules:
+  - id: charm-no-async-dom-listener-callbacks
+    message: >-
+      Avoid async DOM event listeners in Charm runtime code. Keep the listener synchronous and
+      explicitly `void` any traced async recovery work so failures stay observable.
+    languages:
+      - typescript
+      - javascript
+    severity: WARNING
+    paths:
+      include:
+        - '**/src/app/hooks/useAppVisibility.ts'
+        - '**/src/app/pages/client/BackgroundNotifications.tsx'
+        - '**/src/client/initMatrix.ts'
+        - '**/src/client/slidingSync.ts'
+        - '**/src/serviceWorkerBootstrap.ts'
+    pattern-regex: (?s)\baddEventListener\s*\([^,]+,\s*async\b
+
+  - id: charm-no-async-timer-callbacks
+    message: >-
+      Avoid async timer callbacks in Charm runtime code. Wrap async work in a synchronous timer
+      callback and `void` a monitored promise instead.
+    languages:
+      - typescript
+      - javascript
+    severity: WARNING
+    paths:
+      include:
+        - '**/src/app/hooks/useAppVisibility.ts'
+        - '**/src/app/pages/client/BackgroundNotifications.tsx'
+        - '**/src/client/initMatrix.ts'
+        - '**/src/client/slidingSync.ts'
+        - '**/src/serviceWorkerBootstrap.ts'
+    pattern-regex: (?s)\b(?:window\.)?set(?:Timeout|Interval)\s*\(\s*async\b
+
+  - id: charm-runtime-reload-needs-telemetry
+    message: >-
+      Route runtime-triggered reloads through `reloadWithTelemetry()` so Sentry captures the reason
+      before the page unloads.
+    languages:
+      - typescript
+      - javascript
+    severity: ERROR
+    paths:
+      include:
+        - '**/src/index.tsx'
+        - '**/src/app/components/DefaultErrorPage.tsx'
+        - '**/src/app/components/telemetry-consent/TelemetryConsentBanner.tsx'
+        - '**/src/app/features/settings/general/General.tsx'
+        - '**/src/app/pages/client/ClientRoot.tsx'
+        - '**/src/app/pages/client/sidebar/AccountSwitcherTab.tsx'
+        - '**/src/app/pages/auth/reset-password/PasswordResetForm.tsx'
+        - '**/src/app/pages/auth/register/PasswordRegisterForm.tsx'
+        - '**/src/app/utils/appUpdates.ts'
+        - '**/src/serviceWorkerBootstrap.ts'
+        - '**/src/client/initMatrix.ts'
+    pattern: window.location.reload()
+
+  - id: charm-no-unsafe-dangerously-set-inner-html
+    message: >-
+      Keep `dangerouslySetInnerHTML` confined to the approved sanitization/rendering helpers.
+      New uses must go through an explicitly reviewed HTML sanitization path first.
+    languages:
+      - typescript
+      - javascript
+    severity: ERROR
+    paths:
+      include:
+        - '**/src/**/*.tsx'
+        - '**/src/**/*.jsx'
+      exclude:
+        - '**/src/app/plugins/react-custom-html-parser.tsx'
+        - '**/src/app/components/code-highlight/CodeHighlightRenderer.tsx'
+    pattern-regex: dangerouslySetInnerHTML
+
+  - id: charm-window-open-needs-noopener
+    message: >-
+      Opening a new tab without explicit `noopener,noreferrer` leaves the new page with access to
+      the opener window. Pass the feature string when using `window.open(..., '_blank')`.
+    languages:
+      - typescript
+      - javascript
+    severity: ERROR
+    paths:
+      include:
+        - '**/src/**/*.ts'
+        - '**/src/**/*.tsx'
+        - '**/src/**/*.js'
+        - '**/src/**/*.jsx'
+    pattern: window.open($URL, '_blank')
+
+  - id: charm-no-sensitive-console-logging
+    message: >-
+      Do not send access tokens, passwords, secrets, or raw session tokens to the console. Route
+      operational details through the structured debug logger with scrubbed fields instead.
+    languages:
+      - typescript
+      - javascript
+    severity: ERROR
+    paths:
+      include:
+        - '**/src/**/*.ts'
+        - '**/src/**/*.tsx'
+        - '**/src/**/*.js'
+        - '**/src/**/*.jsx'
+    patterns:
+      - pattern-either:
+          - pattern: console.$METHOD($SECRET)
+          - pattern: console.$METHOD(..., $SECRET, ...)
+      - metavariable-regex:
+          metavariable: $SECRET
+          regex: '(?i)[A-Za-z0-9_$.]*(accessToken|refreshToken|sessionToken|apiKey|password|secret|token)[A-Za-z0-9_$.]*'

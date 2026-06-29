@@ -41,7 +41,7 @@ import type { DateFormat, MessageSpacing, CaptionPosition } from '$state/setting
 import { MessageLayout, RightSwipeAction, settingsAtom } from '$state/settings';
 import { SettingTile } from '$components/setting-tile';
 import { KeySymbol } from '$utils/key-symbol';
-import { isMacOS, mobileOrTablet } from '$utils/user-agent';
+import { isMacOS, isPhone, mobileOrTablet } from '$utils/user-agent';
 import { stopPropagation } from '$utils/keyboard';
 import { useMessageLayoutItems } from '$hooks/useMessageLayout';
 import { useCaptionPositionItems } from '$hooks/useCaptionPosition';
@@ -54,7 +54,8 @@ import { resolveSlidingEnabled } from '$client/initMatrix';
 import { isKeyHotkey } from 'is-hotkey';
 import { settingsSyncLastSyncedAtom, settingsSyncStatusAtom } from '$hooks/useSettingsSync';
 import { exportSettingsAsJson, importSettingsFromJson } from '$utils/settingsSync';
-import { SettingsSectionPage } from '../SettingsSectionPage';
+import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
+import { SettingsSectionPage } from '$features/settings/SettingsSectionPage';
 
 type DateHintProps = {
   hasChanges: boolean;
@@ -426,6 +427,7 @@ function Editor({ isMobile }: Readonly<{ isMobile: boolean }>) {
   const [hideActivity, setHideActivity] = useSetting(settingsAtom, 'hideActivity');
   const [hideReads, setHideReads] = useSetting(settingsAtom, 'hideReads');
   const [sendPresence, setSendPresence] = useSetting(settingsAtom, 'sendPresence');
+  const [autoIdlePresence, setAutoIdlePresence] = useSetting(settingsAtom, 'autoIdlePresence');
   const [mentionInReplies, setMentionInReplies] = useSetting(settingsAtom, 'mentionInReplies');
 
   return (
@@ -493,6 +495,28 @@ function Editor({ isMobile }: Readonly<{ isMobile: boolean }>) {
           after={<Switch variant="Primary" value={sendPresence} onChange={setSendPresence} />}
         />
       </SequenceCard>
+      {sendPresence && (
+        <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+          <SettingTile
+            title="Auto-Idle"
+            focusId="auto-idle-presence"
+            description="Automatically appear unavailable after a period of inactivity or when the app isn't active."
+            after={
+              <Switch variant="Primary" value={autoIdlePresence} onChange={setAutoIdlePresence} />
+            }
+          />
+        </SequenceCard>
+      )}
+      {sendPresence && autoIdlePresence && (
+        <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+          <SettingTile
+            title="Idle Timeout"
+            focusId="presence-idle-timeout"
+            description="Minutes of inactivity before appearing unavailable."
+            after={<PresenceIdleTimeoutInput />}
+          />
+        </SequenceCard>
+      )}
       <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
         <SettingTile
           title="Send notifications for replies"
@@ -857,6 +881,52 @@ function EmojiSelectorThresholdInput() {
   );
 }
 
+function PresenceIdleTimeoutInput() {
+  const [idleTimeoutMins, setIdleTimeoutMins] = useSetting(settingsAtom, 'presenceIdleTimeoutMins');
+  const [inputValue, setInputValue] = useState(String(idleTimeoutMins ?? 5));
+
+  const handleChange: ChangeEventHandler<HTMLInputElement> = (evt) => {
+    const val = evt.target.value;
+    setInputValue(val);
+    const parsed = Number.parseInt(val, 10);
+    if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= 60) {
+      setIdleTimeoutMins(parsed);
+    }
+  };
+
+  const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = (evt) => {
+    if (isKeyHotkey('escape', evt)) {
+      evt.stopPropagation();
+      setInputValue(idleTimeoutMins.toString());
+      (evt.target as HTMLInputElement).blur();
+    }
+    if (isKeyHotkey('enter', evt)) {
+      (evt.target as HTMLInputElement).blur();
+    }
+  };
+
+  return (
+    <Box alignItems="Center" gap="200">
+      <Input
+        style={{ width: toRem(80) }}
+        variant={Number.parseInt(inputValue, 10) === idleTimeoutMins ? 'Secondary' : 'Success'}
+        size="300"
+        radii="300"
+        type="number"
+        min="1"
+        max="60"
+        value={inputValue}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        outlined
+      />
+      <Text size="T200" priority="300">
+        min
+      </Text>
+    </Box>
+  );
+}
+
 function Calls() {
   const [alwaysShowCallButton, setAlwaysShowCallButton] = useSetting(
     settingsAtom,
@@ -935,6 +1005,11 @@ function Messages() {
     settingsAtom,
     'hideMembershipInReadOnly'
   );
+  const [structuredMarkdownAssist, setStructuredMarkdownAssist] = useSetting(
+    settingsAtom,
+    'structuredMarkdownAssist'
+  );
+  const [emojiAutoExpand, setEmojiAutoExpand] = useSetting(settingsAtom, 'emojiAutoExpand');
 
   const [messageLayout] = useSetting(settingsAtom, 'messageLayout');
   const [rightBubbles, setRightBubbles] = useSetting(settingsAtom, 'useRightBubbles');
@@ -967,6 +1042,28 @@ function Messages() {
           title="Emoji Selector Character Threshold"
           focusId="emoji-selector-threshold"
           after={<EmojiSelectorThresholdInput />}
+        />
+      </SequenceCard>
+      <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+        <SettingTile
+          title="Structured Markdown Assist"
+          focusId="structured-markdown-assist"
+          description="Continue quotes and lists when you press Enter, and exit cleanly from empty continuation lines."
+          after={
+            <Switch
+              variant="Primary"
+              value={structuredMarkdownAssist}
+              onChange={setStructuredMarkdownAssist}
+            />
+          }
+        />
+      </SequenceCard>
+      <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+        <SettingTile
+          title="Emoji Auto-Expand"
+          focusId="emoji-auto-expand"
+          description='Expand basic emoticons such as ":)" into emoji while typing.'
+          after={<Switch variant="Primary" value={emojiAutoExpand} onChange={setEmojiAutoExpand} />}
         />
       </SequenceCard>
       {messageLayout === MessageLayout.Bubble && (
@@ -1051,12 +1148,7 @@ function Messages() {
           }
         />
       </SequenceCard>
-      <SequenceCard
-        className={SequenceCardStyle}
-        variant="SurfaceVariant"
-        direction="Column"
-        style={{ opacity: showHiddenEvents ? 1 : 0.5 }}
-      >
+      <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
         <SettingTile
           title="Show Edit Events"
           focusId="hidden-event-edits"
@@ -1087,7 +1179,6 @@ function Messages() {
               value={showTombstoneEvents}
               onChange={setShowTombstoneEvents}
               title={getTombstoneSettingToggleTitle(showTombstoneEvents)}
-              disabled={!showHiddenEvents}
             />
           }
         />
@@ -1379,7 +1470,9 @@ export function Sync() {
         slidingSyncOptIn: value,
       },
     });
-    window.location.reload();
+    reloadWithTelemetry('sliding_sync_opt_in_changed', {
+      enabled: value,
+    });
   };
 
   return (
@@ -1392,6 +1485,7 @@ export function Sync() {
         variant="SurfaceVariant"
         direction="Column"
         style={{ opacity: serverSlidingEnabled ? 1 : 0.5 }}
+        gap="400"
       >
         <SettingTile
           title="Use Sliding Sync"
@@ -1410,11 +1504,11 @@ export function Sync() {
                 </a>
                 .{' '}
                 <a
-                  href="https://github.com/SableClient/Sable/issues/39"
+                  href="https://github.com/CloudHub-Social/Charm/issues/39"
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Known issues (Sable GitHub)
+                  Known issues (Charm GitHub)
                 </a>
                 .
               </>
@@ -1490,7 +1584,7 @@ function SettingsSyncSection() {
         <SettingTile
           title="Sync across devices"
           focusId="sync-across-devices"
-          description="Store your settings in your Matrix account so they follow you to any Sable instance. Notification and zoom preferences are kept per-device."
+          description="Store your settings in your Matrix account so they follow you to any Charm instance. Notification and zoom preferences are kept per-device."
           after={<Switch variant="Primary" value={syncEnabled} onChange={setSyncEnabled} />}
         />
         {syncEnabled && (
@@ -1590,7 +1684,7 @@ function DiagnosticsAndPrivacy() {
           focusId="error-reporting"
           description={
             isSentryConfigured
-              ? 'Send anonymous crash reports to help improve Sable. No messages, room names, or personal data are included.'
+              ? 'Send anonymous crash reports to help improve Charm. No messages, room names, or personal data are included.'
               : 'Error reporting is not configured for this build.'
           }
           after={
@@ -1620,7 +1714,7 @@ function DiagnosticsAndPrivacy() {
       <Box gap="200" wrap="Wrap" style={{ paddingTop: '4px' }}>
         <Button
           as="a"
-          href="https://github.com/SableClient/Sable/blob/dev/docs/PRIVACY.md"
+          href="https://github.com/CloudHub-Social/Charm/blob/integration/docs/PRIVACY.md"
           rel="noreferrer noopener"
           target="_blank"
           variant="Secondary"
@@ -1645,7 +1739,7 @@ export function General({ requestBack, requestClose }: Readonly<GeneralProps>) {
             <Box direction="Column" gap="700">
               <DateAndTime />
               <Gestures isMobile={mobileOrTablet()} />
-              <Editor isMobile={mobileOrTablet()} />
+              <Editor isMobile={isPhone()} />
               <Messages />
               <Embeds />
               <Calls />

@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
   merge_group:
-    branches: [dev]
+    branches: [integration]
 
 permissions: {}
 
@@ -28,7 +28,7 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         if: steps.labels.outputs.skip == 'false'
         with:
           fetch-depth: 0
@@ -51,7 +51,7 @@ jobs:
           fi
 
       - name: Manage changeset comment
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           SKIP: ${{ steps.labels.outputs.skip }}
           CHANGESET_FOUND: ${{ steps.check.outputs.found }}
@@ -101,7 +101,7 @@ jobs:
 
             Replace \`patch\` with \`major\`, \`minor\`, \`patch\`, \`docs\`, or \`note\` as appropriate.
 
-            📖 Read more in [CONTRIBUTING.md](https://github.com/SableClient/Sable/blob/dev/CONTRIBUTING.md#release-notes-and-versioning-knope).
+            📖 Read more in [CONTRIBUTING.md](../blob/integration/CONTRIBUTING.md#release-notes-and-versioning-knope).
 
             > If this PR is internal/maintenance with no user-facing impact, a maintainer can add the \`internal\` label to skip this check.`;
 

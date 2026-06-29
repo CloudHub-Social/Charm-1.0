@@ -1,0 +1,110 @@
+name: Cloudflare Worker Integration Deploy
+
+on:
+  push:
+    branches:
+      - integration
+    paths:
+      - 'src/**'
+      - 'worker/**'
+      - 'public/**'
+      - 'config.json'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/inject-client-config.js'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - '.github/workflows/cloudflare-dev-deploy.yml'
+      - '.github/actions/setup/**'
+
+concurrency:
+  group: cloudflare-worker-integration-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    env:
+      CLIENT_CONFIG_OVERRIDES_JSON: ${{ vars.CLIENT_CONFIG_OVERRIDES_JSON }}
+      CLIENT_CONFIG_OVERRIDES_STRICT: ${{ vars.CLIENT_CONFIG_OVERRIDES_STRICT || 'false' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Prepare preview metadata
+        id: metadata
+        shell: bash
+        run: |
+          short_sha="$(git rev-parse --short=7 HEAD)"
+
+          {
+            echo "short_sha=$short_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set Sentry build environment
+        env:
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_SENTRY_TOOLBAR: 'false'
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        shell: bash
+        run: |
+          echo "VITE_SENTRY_DSN=$VITE_SENTRY_DSN" >> "$GITHUB_ENV"
+          echo "VITE_SENTRY_ENVIRONMENT=production" >> "$GITHUB_ENV"
+          echo "VITE_SENTRY_TOOLBAR=$VITE_SENTRY_TOOLBAR" >> "$GITHUB_ENV"
+          echo "SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN" >> "$GITHUB_ENV"
+          echo "SENTRY_ORG=$SENTRY_ORG" >> "$GITHUB_ENV"
+          echo "SENTRY_PROJECT=$SENTRY_PROJECT" >> "$GITHUB_ENV"
+
+      - name: Set build hash
+        shell: bash
+        run: |
+          echo "VITE_BUILD_HASH=${{ steps.metadata.outputs.short_sha }}" >> "$GITHUB_ENV"
+
+      - name: Setup app and build
+        uses: ./.github/actions/setup
+        with:
+          build: 'true'
+
+      - name: Deploy Worker to production
+        id: deploy
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
+        with:
+          apiToken: ${{ secrets.TF_CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.TF_VAR_ACCOUNT_ID }}
+          command: >
+            deploy
+            -c dist/charm/wrangler.json
+            --keep-vars
+            --tag ${{ steps.metadata.outputs.short_sha }}
+            --message ${{ steps.metadata.outputs.short_sha }}
+
+      - name: Publish summary
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs['deployment-url'] || 'https://charm.cloudhub.social' }}
+          SHORT_SHA: ${{ steps.metadata.outputs.short_sha }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const deploymentUrl = process.env.DEPLOYMENT_URL;
+            const shortSha = process.env.SHORT_SHA?.slice(0, 7);
+            const now = new Date().toUTCString().replace(':00 GMT', ' UTC');
+
+            const tableRow = "| ✅ Production deployment successful! | <a href='" + deploymentUrl + "'>" + deploymentUrl + "</a> | " + shortSha + " | `integration` | " + now + " |";
+            const comment = [
+              `## Deploying with &nbsp;<a href="https://workers.dev"><img alt="Cloudflare Workers" src="https://workers.cloudflare.com/logo.svg" width="16"></a> &nbsp;Cloudflare Workers (integration → production)`,
+              ``,
+              `| Status | URL | Commit | Source | Updated (UTC) |`,
+              `| - | - | - | - | - |`,
+              tableRow,
+            ].join("\n");
+
+            await core.summary.addRaw(comment).write();

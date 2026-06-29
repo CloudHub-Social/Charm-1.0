@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MatrixClient } from '$types/matrix-sdk';
 import type { IPreviewUrlResponse } from '$types/matrix-sdk';
 import { Box, IconButton, Scroll, Spinner, Text, as, color, config, toRem } from 'folds';
@@ -11,23 +11,31 @@ import { safeDecodeUrl } from '$plugins/react-custom-html-parser';
 import * as css from './UrlPreviewCard.css';
 import * as urlPreviewChrome from './UrlPreview.css';
 import { UrlPreview, UrlPreviewContent, UrlPreviewDescription } from './UrlPreview';
-import { AudioContent, ImageContent, VideoContent } from '../message';
-import { Image, MediaControl, Video } from '../media';
-import { ImageViewer } from '../image-viewer';
+import { AudioContent, ImageContent, VideoContent } from '$components/message';
+import { Image, MediaControl, Video } from '$components/media';
+import { ImageViewer } from '$components/image-viewer';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import type { IImageInfo } from '$types/matrix/common';
 import { MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME } from '$unstable/prefixes';
+import { useMediaMetadata } from '$hooks/useMediaMetadata';
+import { getScopedMediaCacheKey } from '$utils/mediaTransport';
 
 const linkStyles = { color: color.Success.Main };
 
 // Module-level in-flight deduplication: prevents N+1 concurrent requests when a
 // large event batch renders many UrlPreviewCard instances for the same URL.
 // Scoped by MatrixClient to avoid cross-account dedup if multiple clients exist.
-// Inner cache keyed by URL only (not ts) â€ Ethe same URL shows the same preview
-// regardless of which message referenced it. Promises are evicted after settling
+// Keyed by `${url}:${ts}` — promises are evicted after settling
 // so a later render can retry after network recovery.
 const previewRequestCache = new WeakMap<MatrixClient, Map<string, Promise<IPreviewUrlResponse>>>();
+
+// Settled-result cache keyed by `${url}:${ts}`: honours the Matrix spec requirement
+// that `ts` selects the point-in-time snapshot of a URL's Open Graph metadata.
+// Successful entries are stored indefinitely for the session; error entries expire
+// after 60 s to suppress retry storms without masking recovery.
+type SettledEntry = { ok: true; data: IPreviewUrlResponse } | { ok: false; expiry: number };
+const previewResultCache = new WeakMap<MatrixClient, Map<string, SettledEntry>>();
 
 const getClientCache = (mx: MatrixClient): Map<string, Promise<IPreviewUrlResponse>> => {
   let clientCache = previewRequestCache.get(mx);
@@ -38,14 +46,27 @@ const getClientCache = (mx: MatrixClient): Map<string, Promise<IPreviewUrlRespon
   return clientCache;
 };
 
-const openMediaInNewTab = async (url: string | undefined) => {
+const getResultCache = (mx: MatrixClient): Map<string, SettledEntry> => {
+  let resultCache = previewResultCache.get(mx);
+  if (!resultCache) {
+    resultCache = new Map();
+    previewResultCache.set(mx, resultCache);
+  }
+  return resultCache;
+};
+
+const openMediaInNewTab = async (url: string | undefined, accessToken: string | null) => {
   if (!url) {
-    console.warn('Attempted to open an empty url');
+    console.warn('[UrlPreview] Attempted to open an empty url');
     return;
   }
-  const blob = await downloadMedia(url);
-  const blobUrl = URL.createObjectURL(blob);
-  window.open(blobUrl, '_blank');
+  try {
+    const blob = await downloadMedia(url, accessToken);
+    const blobUrl = URL.createObjectURL(blob);
+    window.open(blobUrl, '_blank', 'noopener,noreferrer');
+  } catch (err) {
+    console.error('[UrlPreview] Failed to open media in new tab', err);
+  }
 };
 
 function ogPositiveDimension(value: unknown): number | undefined {
@@ -74,6 +95,40 @@ function isLikelyPlayableOgVideo(prev: IPreviewUrlResponse): boolean {
   return false;
 }
 
+function isAnimatedDirectImage(url: string, mimeType?: string): boolean {
+  const resolvedMime = typeof mimeType === 'string' ? mimeType.toLowerCase() : '';
+  if (resolvedMime === 'image/gif' || resolvedMime === 'image/apng') {
+    return true;
+  }
+
+  return /\.(gif|apng)(\?|#|$)/i.test(url);
+}
+
+function normalizeDirectRemoteUrl(url: string): string | undefined {
+  const trimmed = url.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return undefined;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined;
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+const buildDirectMediaInfo = (
+  metadata: ReturnType<typeof useMediaMetadata> | undefined
+): IImageInfo | undefined => {
+  if (!metadata?.width || !metadata?.height) return undefined;
+
+  return {
+    w: metadata.width,
+    h: metadata.height,
+    ...(metadata.mimeType ? { mimetype: metadata.mimeType } : {}),
+  };
+};
+
 export const UrlPreviewCard = as<
   'div',
   {
@@ -81,64 +136,271 @@ export const UrlPreviewCard = as<
     url: string;
     ts?: number;
     mediaType?: string | null;
+    mediaAutoLoad?: boolean;
     bundle?: IPreviewUrlResponse;
   }
->(({ urlPreview, url, ts, mediaType, bundle, ...props }, ref) => {
+>(({ urlPreview, url, ts, mediaType, mediaAutoLoad = true, bundle, ...props }, ref) => {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
   const [linkPreviewImageMaxHeight] = useSetting(settingsAtom, 'linkPreviewImageMaxHeight');
+  const [autoplayGifs] = useSetting(settingsAtom, 'autoplayGifs');
+  const [imageError, setImageError] = useState(false);
+  const [directMediaError, setDirectMediaError] = useState(false);
+  const directAnimatedPreviewRef = useRef<{
+    url: string;
+    isAnimated: boolean;
+  }>();
 
   const isDirect = !!mediaType;
 
   const [previewStatus, loadPreview] = useAsyncCallback(
-    useCallback(() => {
-      if (isDirect) return Promise.resolve(null);
-      if (!ts && !bundle) return Promise.resolve(null);
+    useCallback(async () => {
+      if (isDirect) return null;
+      if (!ts && !bundle) return null;
       if (urlPreview && ts) {
+        const resultCache = getResultCache(mx);
+        const cacheKey = `${url}:${ts}`;
+        const settled = resultCache.get(cacheKey);
+        if (settled !== undefined) {
+          if (settled.ok) return settled.data;
+          if (settled.expiry > Date.now()) return null;
+          resultCache.delete(cacheKey);
+        }
+
         const clientCache = getClientCache(mx);
-        const cached = clientCache.get(url);
-        if (cached !== undefined) return cached;
-        const previewResult = mx?.getUrlPreview(url, ts);
-        clientCache.set(url, previewResult);
-        previewResult.finally(() => clientCache.delete(url));
-        return previewResult;
+        const cached = clientCache.get(cacheKey);
+        if (cached !== undefined) {
+          try {
+            return await cached;
+          } catch {
+            return null;
+          }
+        }
+
+        try {
+          const previewResult = mx?.getUrlPreview(url, ts);
+          if (!previewResult) return null;
+          clientCache.set(cacheKey, previewResult);
+          const preview = await previewResult;
+          clientCache.delete(cacheKey);
+          resultCache.set(cacheKey, { ok: true, data: preview });
+          return preview;
+        } catch {
+          // Synapse returns 502/404/403 when the external URL is unreachable, forbidden,
+          // or the preview service is unavailable. Suppress for 60 s to avoid hammering
+          // a failing endpoint, then allow a retry after the TTL expires.
+          clientCache.delete(cacheKey);
+          resultCache.set(cacheKey, { ok: false, expiry: Date.now() + 60_000 });
+          return null;
+        }
       }
-      return Promise.resolve(bundle);
+      return bundle ?? null;
     }, [isDirect, ts, bundle, urlPreview, mx, url])
   );
 
   useEffect(() => {
-    loadPreview();
+    // Suppress unhandled rejection — errors are captured by useAsyncCallback
+    // (status set to Error) and the component returns null in that state.
+    loadPreview().catch(() => undefined);
   }, [url, loadPreview]);
 
-  if (previewStatus.status === AsyncStatus.Error) return null;
+  const previewData =
+    previewStatus.status === AsyncStatus.Success ? (previewStatus.data ?? undefined) : undefined;
+  const previewImageUrl = useMemo(() => {
+    if (!previewData?.['og:image']) return undefined;
+    return mxcUrlToHttp(mx, previewData['og:image'], useAuthentication, 256, 256, 'scale', false);
+  }, [mx, previewData, useAuthentication]);
+  const previewImageMetadataUrl = useMemo(() => {
+    if (!previewData?.['og:image']) return undefined;
+    return mxcUrlToHttp(mx, previewData['og:image'], useAuthentication);
+  }, [mx, previewData, useAuthentication]);
+  const previewVideoUrl = useMemo(() => {
+    const raw = previewData?.['og:video'];
+    if (typeof raw !== 'string') return undefined;
+    const videoUrl = raw.trim();
+    if (!videoUrl) return undefined;
+    if (videoUrl.startsWith('mxc://')) return mxcUrlToHttp(mx, videoUrl, useAuthentication);
+    return videoUrl.startsWith('http') ? videoUrl : undefined;
+  }, [mx, previewData, useAuthentication]);
+  const previewImageMetadata = useMediaMetadata(
+    previewImageMetadataUrl ? getScopedMediaCacheKey(previewImageMetadataUrl) : undefined
+  );
+  const previewVideoMetadata = useMediaMetadata(
+    previewVideoUrl ? getScopedMediaCacheKey(previewVideoUrl) : undefined
+  );
+  const directMediaMetadata = useMediaMetadata(isDirect ? getScopedMediaCacheKey(url) : undefined);
+
+  // Reset imageError when URL changes
+  useEffect(() => {
+    setImageError(false);
+    setDirectMediaError(false);
+  }, [url]);
+
+  const mediaWellStyle = useMemo(
+    () => ({
+      width: '100%',
+      maxHeight: toRem(linkPreviewImageMaxHeight),
+      aspectRatio: '16 / 9',
+      flexShrink: 1,
+      minHeight: 0,
+      overflow: 'hidden',
+      position: 'relative' as const,
+    }),
+    [linkPreviewImageMaxHeight]
+  );
+
+  const previewThumbMaxEdge = Math.min(
+    2048,
+    Math.max(1, Math.round(Math.max(1, linkPreviewImageMaxHeight) * 2))
+  );
+
+  const renderCardShell = (
+    label: React.ReactNode,
+    media?: React.ReactNode,
+    description?: React.ReactNode
+  ) => (
+    <Box
+      grow="Yes"
+      direction="Column"
+      style={{
+        overflow: 'hidden',
+        width: '100%',
+      }}
+    >
+      <UrlPreviewContent
+        style={{
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+        }}
+      >
+        <Text
+          style={linkStyles}
+          truncate
+          as="a"
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          size="T200"
+          priority="300"
+        >
+          {label}
+        </Text>
+        {description}
+      </UrlPreviewContent>
+      {media}
+    </Box>
+  );
+
+  const renderDirectMedia = () => {
+    if (mediaType !== 'image' && mediaType !== 'video') {
+      return renderCardShell(safeDecodeUrl(url));
+    }
+
+    const directMediaInfo = buildDirectMediaInfo(directMediaMetadata);
+    const directMediaUrl = normalizeDirectRemoteUrl(url);
+    const body = safeDecodeUrl(url);
+    if (directAnimatedPreviewRef.current?.url !== url) {
+      directAnimatedPreviewRef.current = {
+        url,
+        isAnimated: isAnimatedDirectImage(body, directMediaMetadata?.mimeType),
+      };
+    }
+    const directAspectRatio =
+      directMediaInfo?.w && directMediaInfo?.h
+        ? `${directMediaInfo.w} / ${directMediaInfo.h}`
+        : '16 / 9';
+    const freezeAnimatedPreview =
+      mediaType === 'image' &&
+      !autoplayGifs &&
+      (directAnimatedPreviewRef.current?.isAnimated ?? false);
+
+    if (directMediaError || !directMediaUrl || freezeAnimatedPreview || !mediaAutoLoad) {
+      return renderCardShell(body);
+    }
+
+    return renderCardShell(
+      body,
+      <Box
+        shrink="No"
+        className={urlPreviewChrome.UrlPreviewMediaWell}
+        style={{ ...mediaWellStyle, aspectRatio: directAspectRatio }}
+      >
+        {mediaType === 'image' ? (
+          <Box
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Image
+              info={directMediaInfo}
+              alt={body}
+              title={body}
+              src={directMediaUrl}
+              loading="lazy"
+              onError={() => setDirectMediaError(true)}
+              style={{
+                display: 'block',
+                maxWidth: '100%',
+                maxHeight: '100%',
+                width: 'auto',
+                height: 'auto',
+                objectFit: 'contain',
+                objectPosition: 'center',
+              }}
+            />
+          </Box>
+        ) : (
+          <Box
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Video
+              title={body}
+              src={directMediaUrl}
+              controls
+              preload="metadata"
+              onError={() => setDirectMediaError(true)}
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          </Box>
+        )}
+      </Box>
+    );
+  };
 
   const renderContent = (prev: IPreviewUrlResponse) => {
     const siteName = prev['og:site_name'];
     const title = prev['og:title'];
     const description = prev['og:description'];
-    const imgUrl = mxcUrlToHttp(
-      mx,
-      prev['og:image'] || '',
-      useAuthentication,
-      256,
-      256,
-      'scale',
-      false
-    );
+    const imgUrl = previewImageUrl;
     const handleAuxClick = (ev: React.MouseEvent) => {
       if (!prev['og:image']) {
-        console.warn('No image');
+        console.warn('[UrlPreview] No image available');
         return;
       }
       if (ev.button === 1) {
         ev.preventDefault();
         const mxcUrl = mxcUrlToHttp(mx, prev['og:image'], /* useAuthentication */ true);
         if (!mxcUrl) {
-          console.error('Error converting mxc:// url.');
+          console.error('[UrlPreview] Error converting mxc:// url');
           return;
         }
-        openMediaInNewTab(mxcUrl);
+        openMediaInNewTab(mxcUrl, mx.getAccessToken());
       }
     };
 
@@ -146,13 +408,21 @@ export const UrlPreviewCard = as<
     const videoH = prev['og:video'] ? ogPositiveDimension(prev['og:video:height']) : undefined;
     const ogImgW = ogPositiveDimension(prev['og:image:width']);
     const ogImgH = ogPositiveDimension(prev['og:image:height']);
+    const cachedVideoW = prev['og:video'] ? previewVideoMetadata?.width : undefined;
+    const cachedVideoH = prev['og:video'] ? previewVideoMetadata?.height : undefined;
+    const cachedImgW = prev['og:image'] ? previewImageMetadata?.width : undefined;
+    const cachedImgH = prev['og:image'] ? previewImageMetadata?.height : undefined;
 
     const aspectRatio =
       videoW && videoH
         ? `${videoW} / ${videoH}`
-        : ogImgW && ogImgH
-          ? `${ogImgW} / ${ogImgH}`
-          : undefined;
+        : cachedVideoW && cachedVideoH
+          ? `${cachedVideoW} / ${cachedVideoH}`
+          : ogImgW && ogImgH
+            ? `${ogImgW} / ${ogImgH}`
+            : cachedImgW && cachedImgH
+              ? `${cachedImgW} / ${cachedImgH}`
+              : undefined;
 
     const previewBlurRaw =
       typeof prev['matrix:image:blurhash'] === 'string' ? prev['matrix:image:blurhash'].trim() : '';
@@ -161,11 +431,14 @@ export const UrlPreviewCard = as<
       const matrixSize = prev['matrix:image:size'];
       const size =
         typeof matrixSize === 'number' && Number.isFinite(matrixSize) ? matrixSize : undefined;
-      if (ogImgW && ogImgH) {
+      const resolvedImageW = ogImgW ?? cachedImgW;
+      const resolvedImageH = ogImgH ?? cachedImgH;
+      if (resolvedImageW && resolvedImageH) {
         return {
-          w: ogImgW,
-          h: ogImgH,
+          w: resolvedImageW,
+          h: resolvedImageH,
           ...(size !== undefined ? { size } : {}),
+          ...(previewImageMetadata?.mimeType ? { mimetype: previewImageMetadata.mimeType } : {}),
           ...(previewBlurRaw ? { [MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME]: previewBlurRaw } : {}),
         };
       }
@@ -180,65 +453,18 @@ export const UrlPreviewCard = as<
       return undefined;
     })();
 
-    const previewThumbMaxEdge = Math.min(
-      2048,
-      Math.max(1, Math.round(Math.max(1, linkPreviewImageMaxHeight) * 2))
-    );
     const showOgVideo = isLikelyPlayableOgVideo(prev);
 
-    return (
-      <Box
-        grow="Yes"
-        direction="Column"
-        style={{
-          overflow: 'hidden',
-          width: '100%',
-        }}
-      >
-        <UrlPreviewContent
-          style={{
-            minWidth: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-          }}
-        >
-          <Text
-            style={linkStyles}
-            truncate
-            as="a"
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            size="T200"
-            priority="300"
-          >
-            {typeof siteName === 'string' && `${siteName} | `}
-            {safeDecodeUrl(url)}
-          </Text>
-          {title && (
-            <Text truncate priority="400">
-              <b>{title}</b>
-            </Text>
-          )}
-          {description && (
-            <Text size="T200" priority="300">
-              <UrlPreviewDescription>{description}</UrlPreviewDescription>
-            </Text>
-          )}
-        </UrlPreviewContent>
+    return renderCardShell(
+      typeof siteName === 'string' ? `${siteName} | ${safeDecodeUrl(url)}` : safeDecodeUrl(url),
+      <>
         {showOgVideo && (
           <Box
             shrink="No"
             className={urlPreviewChrome.UrlPreviewMediaWell}
             style={{
-              width: '100%',
-              maxHeight: toRem(linkPreviewImageMaxHeight),
+              ...mediaWellStyle,
               aspectRatio: aspectRatio ?? '16 / 9',
-              flexShrink: 1,
-              minHeight: 0,
-              overflow: 'hidden',
-              position: 'relative',
             }}
           >
             <VideoContent
@@ -254,7 +480,11 @@ export const UrlPreviewCard = as<
               mimeType={(prev['og:video:type'] as string) ?? ''}
               renderVideo={(vidProps) => (
                 <Video
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                  }}
                   {...vidProps}
                 />
               )}
@@ -262,18 +492,13 @@ export const UrlPreviewCard = as<
             />
           </Box>
         )}
-        {!showOgVideo && prev['og:image'] && (
+        {!showOgVideo && prev['og:image'] && !imageError && (
           <Box
             shrink="No"
             className={urlPreviewChrome.UrlPreviewMediaWell}
             style={{
-              width: '100%',
-              maxHeight: toRem(linkPreviewImageMaxHeight),
+              ...mediaWellStyle,
               aspectRatio: aspectRatio ?? '16 / 9',
-              flexShrink: 1,
-              minHeight: 0,
-              overflow: 'hidden',
-              position: 'relative',
             }}
           >
             <ImageContent
@@ -289,8 +514,16 @@ export const UrlPreviewCard = as<
               onAuxClick={handleAuxClick}
               body={prev['og:title']}
               url={prev['og:image']}
+              mimeType={(typeof prev['og:image:type'] === 'string'
+                ? prev['og:image:type']
+                : (ogImageInfo?.mimetype ?? '')
+              ).trim()}
               info={ogImageInfo}
               matrixThumbnailMaxEdge={previewThumbMaxEdge}
+              cacheThumbnailMetadataAsMedia
+              allowDirectAnimatedImage={autoplayGifs}
+              onError={() => setImageError(true)}
+              suppressErrorUI
               renderViewer={(p) => <ImageViewer {...p} />}
               renderImage={(p) => (
                 <Image
@@ -320,15 +553,47 @@ export const UrlPreviewCard = as<
             />
           </Box>
         )}
-      </Box>
+      </>,
+      <>
+        {title && (
+          <Text truncate priority="400">
+            <b>{title}</b>
+          </Text>
+        )}
+        {description && (
+          <Text size="T200" priority="300">
+            <UrlPreviewDescription>{description}</UrlPreviewDescription>
+          </Text>
+        )}
+      </>
     );
   };
 
   let previewContent;
-  if (previewStatus.status === AsyncStatus.Success) {
+  if (isDirect) {
+    previewContent = renderDirectMedia();
+  } else if (previewStatus.status === AsyncStatus.Success) {
     previewContent = previewStatus.data ? (
       renderContent(previewStatus.data)
     ) : (
+      <UrlPreviewContent>
+        <Text
+          style={linkStyles}
+          truncate
+          as="a"
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          size="T200"
+          priority="300"
+        >
+          {safeDecodeUrl(url)}
+        </Text>
+      </UrlPreviewContent>
+    );
+  } else if (previewStatus.status === AsyncStatus.Error) {
+    // Show minimal link fallback instead of hiding entire preview
+    previewContent = (
       <UrlPreviewContent>
         <Text
           style={linkStyles}
@@ -352,29 +617,7 @@ export const UrlPreviewCard = as<
     );
   }
   return (
-    <UrlPreview
-      {...props}
-      ref={ref}
-      style={
-        isDirect
-          ? {
-              background: 'transparent',
-              border: 'none',
-              padding: 0,
-              boxShadow: 'none',
-              display: 'inline-block',
-              verticalAlign: 'middle',
-              width: 'max-content',
-              minWidth: 0,
-              maxWidth: '100%',
-              margin: 0,
-              alignSelf: 'start',
-            }
-          : {
-              alignSelf: 'start',
-            }
-      }
-    >
+    <UrlPreview {...props} ref={ref} style={{ alignSelf: 'start' }}>
       {previewContent}
     </UrlPreview>
   );

@@ -19,6 +19,9 @@ import * as Sentry from '@sentry/react';
 import { getEventReactions, getStateEvent } from './room';
 import { getReactionContent } from './messageReaction';
 import { matchMxId, validMxId } from './mxIdHelper';
+import { fetchMediaBlob, type MediaTransportOptions } from './mediaTransport';
+
+export { getMxIdServer } from './mxIdHelper';
 
 const DOMAIN_REGEX = /\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b/;
 
@@ -33,13 +36,13 @@ export const isRoomId = (id: string): boolean => id.startsWith('!');
 export const isRoomAlias = (id: string): boolean => validMxId(id) && id.startsWith('#');
 
 export const getCanonicalAliasRoomId = (mx: MatrixClient, alias: string): string | undefined =>
-  mx
-    .getRooms()
-    ?.find(
-      (room) =>
-        room.getCanonicalAlias() === alias &&
-        getStateEvent(room, EventType.RoomTombstone) === undefined
-    )?.roomId;
+  mx.getRooms()?.find((room) => {
+    if (getStateEvent(room, EventType.RoomTombstone) !== undefined) return false;
+
+    if (room.getCanonicalAlias() === alias) return true;
+
+    return room.getAltAliases().includes(alias);
+  })?.roomId;
 
 export const getCanonicalAliasOrRoomId = (mx: MatrixClient, roomId: string): string => {
   const room = mx.getRoom(roomId);
@@ -128,14 +131,144 @@ export const encryptFile = async <T extends File | Blob>(
   };
 };
 
+/**
+ * Helper to encode ArrayBuffer as base64 (no padding, URL-safe).
+ * Used for encryption keys and IVs per Matrix spec.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const encodeBase64 = (buffer: Uint8Array): string => {
+  const bytes = Array.from(buffer);
+  const binaryString = bytes.map((b) => String.fromCharCode(b)).join('');
+  return btoa(binaryString).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+};
+
+/**
+ * Helper to encode ArrayBuffer as unpadded standard base64.
+ * Used for Matrix encrypted attachment SHA-256 hashes.
+ */
+const encodeUnpaddedBase64 = (buffer: Uint8Array): string => {
+  const bytes = Array.from(buffer);
+  const binaryString = bytes.map((b) => String.fromCharCode(b)).join('');
+  return btoa(binaryString).replace(/=/g, '');
+};
+
+/**
+ * Decrypt an encrypted Matrix attachment, verify its SHA-256 hash, and return a Blob.
+ *
+ * Safety: Each call uses independent key material and IV/counter state. The
+ * `decryptAttachment` implementation from browser-encrypt-attachment imports
+ * a fresh CryptoKey for each call and uses a non-mutated copy of the IV for
+ * AES-CTR mode, so concurrent decryption calls (e.g., from main client + search
+ * backfill worker) do not share mutable state.
+ */
 export const decryptFile = async (
   dataBuffer: ArrayBuffer,
   type: string,
-  encInfo: EncryptedAttachmentInfo
+  encInfo: EncryptedAttachmentInfo,
+  /** Optional context for diagnostics (eventId, roomId, mxc URL) */
+  context?: {
+    eventId?: string;
+    roomId?: string;
+    mediaUrl?: string;
+  }
 ): Promise<Blob> => {
-  const dataArray = await decryptAttachment(dataBuffer, encInfo);
-  const blob = new Blob([dataArray], { type });
-  return blob;
+  try {
+    // DIAGNOSTIC: Verify hash of encrypted bytes (ciphertext), not decrypted output.
+    // Matrix encrypted attachments store SHA-256 as unpadded base64.
+    const downloadedBytes = new Uint8Array(dataBuffer);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', downloadedBytes);
+    const actualHash = encodeUnpaddedBase64(new Uint8Array(hashBuffer));
+    const expectedHash = encInfo.hashes?.sha256;
+    const normalizedExpectedHash = expectedHash?.replace(/=+$/g, '');
+    const normalizedEncInfo: EncryptedAttachmentInfo =
+      typeof normalizedExpectedHash === 'string' && normalizedExpectedHash !== expectedHash
+        ? {
+            ...encInfo,
+            hashes: {
+              ...encInfo.hashes,
+              sha256: normalizedExpectedHash,
+            },
+          }
+        : encInfo;
+
+    // Decrypt the attachment
+    const decryptedData = await decryptAttachment(dataBuffer, normalizedEncInfo);
+
+    if (normalizedExpectedHash && actualHash !== normalizedExpectedHash) {
+      // Hash mismatch — log to Sentry with diagnostic context
+      const roomType = context?.roomId?.startsWith('!')
+        ? 'room'
+        : context?.roomId?.startsWith('#')
+          ? 'alias'
+          : 'unknown';
+
+      Sentry.captureException(new Error('Mismatched SHA-256 digest'), {
+        level: 'error',
+        tags: { component: 'media.decrypt', room_type: roomType },
+        extra: {
+          eventId: context?.eventId,
+          roomId: context?.roomId,
+          expectedHash: normalizedExpectedHash.slice(0, 16) + '...',
+          actualHash: actualHash.slice(0, 16) + '...',
+          mediaUrl: context?.mediaUrl,
+          encryptedSize: dataBuffer.byteLength,
+          decryptedSize: decryptedData.byteLength,
+        },
+      });
+
+      // Throw a specific error that calling code can catch and handle gracefully
+      const error = new Error('Media integrity check failed: SHA-256 hash mismatch');
+      error.name = 'MediaIntegrityError';
+      throw error;
+    }
+
+    const blob = new Blob([decryptedData], { type });
+    return blob;
+  } catch (err) {
+    // Re-throw known integrity errors as-is
+    if (err instanceof Error && err.name === 'MediaIntegrityError') {
+      throw err;
+    }
+
+    // Log other decryption failures to Sentry
+    Sentry.captureException(err, {
+      level: 'error',
+      tags: { component: 'media.decrypt' },
+      extra: {
+        eventId: context?.eventId,
+        roomId: context?.roomId,
+        mediaUrl: context?.mediaUrl,
+        encryptedSize: dataBuffer.byteLength,
+        errorName: err instanceof Error ? err.name : 'Unknown',
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+    });
+
+    throw err;
+  }
+};
+
+/**
+ * Safely decrypt an encrypted attachment with integrity checking.
+ * Returns null on MediaIntegrityError to allow graceful fallback rendering.
+ */
+export const decryptFileSafe = async (
+  dataBuffer: ArrayBuffer,
+  type: string,
+  encInfo: EncryptedAttachmentInfo,
+  context?: { eventId?: string; roomId?: string; mediaUrl?: string }
+): Promise<Blob | null> => {
+  try {
+    return await decryptFile(dataBuffer, type, encInfo, context);
+  } catch (err) {
+    if (err instanceof Error && err.name === 'MediaIntegrityError') {
+      // Integrity error already logged to Sentry by decryptFile
+      // Return null to signal the caller to show a broken media placeholder
+      return null;
+    }
+    // Re-throw unexpected errors
+    throw err;
+  }
 };
 
 export type TUploadContent = File;
@@ -332,19 +465,30 @@ export const mxcUrlToHttp = (
     useAuthentication
   );
 
-export const downloadMedia = async (src: string): Promise<Blob> => {
-  // this request is authenticated by service worker
-  const res = await fetch(src, { method: 'GET' });
-  const blob = await res.blob();
-  return blob;
-};
+const normalizeMediaOptions = (
+  options?: MediaTransportOptions | string | null
+): MediaTransportOptions | undefined =>
+  typeof options === 'string' || options === null ? { accessToken: options } : options;
+
+export const downloadMedia = async (
+  src: string,
+  options?: MediaTransportOptions | string | null
+): Promise<Blob> => fetchMediaBlob(src, normalizeMediaOptions(options));
 
 export const downloadEncryptedMedia = async (
   src: string,
-  decryptContent: (buf: ArrayBuffer) => Promise<Blob>
+  decryptContent: (buf: ArrayBuffer) => Promise<Blob | null>,
+  /** Forwarded to {@link downloadMedia} — see its doc for context. */
+  accessToken?: string | null
 ): Promise<Blob> => {
-  const encryptedContent = await downloadMedia(src);
+  const encryptedContent = await downloadMedia(src, { accessToken, metadataCacheKey: null });
   const decryptedContent = await decryptContent(await encryptedContent.arrayBuffer());
+
+  if (!decryptedContent) {
+    // decryptFileSafe returned null due to integrity failure
+    // Return an empty blob so the UI can show a broken media placeholder
+    throw new Error('media_integrity_failure');
+  }
 
   return decryptedContent;
 };

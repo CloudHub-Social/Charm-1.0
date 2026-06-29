@@ -35,8 +35,11 @@ export const BlockQuote = style([
   DefaultReset,
   MarginSpaced,
   {
-    paddingLeft: config.space.S200,
-    borderLeft: `${config.borderWidth.B700} solid ${color.SurfaceVariant.ContainerLine}`,
+    display: 'block',
+    padding: `${config.space.S100} ${config.space.S200} ${config.space.S100} ${config.space.S300}`,
+    borderLeft: `${config.borderWidth.B700} solid ${color.SurfaceVariant.OnContainer}`,
+    backgroundColor: color.SurfaceVariant.Container,
+    borderRadius: config.radii.R300,
     fontStyle: 'italic',
   },
 ]);
@@ -245,7 +248,6 @@ export const Emoticon = recipe({
       display: 'inline-flex',
       justifyContent: 'center',
       alignItems: 'center',
-
       height: '1em',
       minWidth: '1em',
       fontSize: '1.33em',
@@ -253,6 +255,56 @@ export const Emoticon = recipe({
       verticalAlign: 'middle',
       position: 'relative',
       top: '-0.35em',
+      borderRadius: config.radii.R300,
+    },
+  ],
+  variants: {
+    focus: {
+      true: {
+        boxShadow: `0 0 0 ${config.borderWidth.B300} ${color.SurfaceVariant.OnContainer}`,
+      },
+    },
+  },
+});
+
+export const SystemEmoji = style({
+  selectors: {
+    '&&': {
+      fontFamily:
+        'var(--font-emoji), "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
+      display: 'inline-flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      height: '1em',
+      minWidth: '1em',
+      fontSize: 'var(--sable-system-emoji-font-size, 1.33em)',
+      lineHeight: '1em',
+      verticalAlign: 'middle',
+      position: 'relative',
+      top: 'var(--sable-system-emoji-top-offset, -0.35em)',
+      textAlign: 'center',
+    },
+  },
+});
+
+export const SystemEmojiFixedCell = style({
+  width: '1em',
+});
+
+export const CustomEmoticon = recipe({
+  base: [
+    DefaultReset,
+    {
+      display: 'inline-flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      height: '1em',
+      minWidth: '1em',
+      fontSize: 'var(--sable-custom-emoji-font-size, 1.33em)',
+      lineHeight: '1em',
+      verticalAlign: 'middle',
+      position: 'relative',
+      top: 'var(--sable-custom-emoji-top-offset, -0.35em)',
       borderRadius: config.radii.R300,
     },
   ],

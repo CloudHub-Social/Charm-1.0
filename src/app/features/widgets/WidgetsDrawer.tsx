@@ -35,13 +35,16 @@ import { usePowerLevelsContext } from '$hooks/usePowerLevels';
 import { useRoomCreators } from '$hooks/useRoomCreators';
 import { useRoomPermissions } from '$hooks/useRoomPermissions';
 
+import * as Sentry from '@sentry/react';
 import { createLogger } from '$utils/debug';
+import { createDebugLogger } from '$utils/debugLogger';
 import { WidgetIframe } from './WidgetIframe';
 import * as css from './WidgetsDrawer.css';
 import { IntegrationManager } from './IntegrationManager';
 import { CustomStateEvent } from '$types/matrix/room';
 import { SidebarResizer } from '$pages/client/sidebar/SidebarResizer';
-import { mobileOrTablet } from '$utils/user-agent';
+import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
+import { isPhoneLayoutDevice } from '$utils/user-agent';
 
 type WidgetsDrawerHeaderProps = {
   activeWidget: RoomWidget | null;
@@ -49,6 +52,7 @@ type WidgetsDrawerHeaderProps = {
 };
 
 const log = createLogger('WidgetsDrawer');
+const debugLog = createDebugLogger('WidgetsDrawer');
 
 function WidgetDrawerHeader({ activeWidget, onBack }: WidgetsDrawerHeaderProps) {
   const setWidgetDrawer = useSetSetting(settingsAtom, 'isWidgetDrawer');
@@ -130,6 +134,21 @@ function AddWidgetForm({ room, onAdded }: AddWidgetFormProps) {
       onAdded();
     } catch (err) {
       log.error('Failed to add widget:', err);
+      debugLog.error('general', 'Widget add failed', {
+        roomId: room.roomId,
+        widgetName: name.trim(),
+        error: err instanceof Error ? err.message : String(err),
+      });
+      Sentry.captureException(err, {
+        tags: { widget_operation: 'add' },
+        contexts: {
+          widget: {
+            roomId: room.roomId,
+            name: name.trim(),
+            url: url.substring(0, 100),
+          },
+        },
+      });
     } finally {
       setAdding(false);
     }
@@ -229,6 +248,7 @@ type WidgetsDrawerProps = {
 
 export function WidgetsDrawer({ room }: WidgetsDrawerProps) {
   const mx = useMatrixClient();
+  const screenSize = useScreenSizeContext();
   const widgets = useRoomWidgets(room);
   const [activeWidget, setActiveWidget] = useState<RoomWidget | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -256,22 +276,43 @@ export function WidgetsDrawer({ room }: WidgetsDrawerProps) {
       }
     } catch (err) {
       log.error('Failed to remove widget:', err);
+      debugLog.error('general', 'Widget remove failed', {
+        roomId: room.roomId,
+        widgetId: widget.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      Sentry.captureException(err, {
+        tags: { widget_operation: 'remove' },
+        contexts: {
+          widget: {
+            roomId: room.roomId,
+            widgetId: widget.id,
+            widgetName: widget.name,
+          },
+        },
+      });
     }
   };
 
   const handleBack = () => setActiveWidget(null);
+  const isDesktopLayout = screenSize === ScreenSize.Desktop;
+  const isPhoneLayout = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();
 
   return (
     <Box
       className={css.WidgetsDrawer}
+      grow={isDesktopLayout ? undefined : 'Yes'}
       shrink="No"
       direction="Column"
       style={{
         position: 'relative',
-        width: !mobileOrTablet() ? toRem(curWidth) : 'inherit',
+        width: isDesktopLayout ? toRem(curWidth) : '100%',
+        height: '100%',
+        minHeight: 0,
+        backgroundColor: 'var(--sable-surface)',
       }}
     >
-      {!mobileOrTablet() && (
+      {isDesktopLayout && (
         <SidebarResizer
           setCurWidth={setCurWidth}
           sidebarWidth={widgetSidebarWidth}
@@ -287,7 +328,7 @@ export function WidgetsDrawer({ room }: WidgetsDrawerProps) {
           <WidgetIframe key={activeWidget.id} widget={activeWidget} roomId={room.roomId} mx={mx} />
         </Box>
       ) : (
-        <Scroll variant="Background" visibility="Hover">
+        <Scroll variant="Background" visibility="Hover" style={{ minHeight: 0 }}>
           <Box direction="Column" gap="100" style={{ padding: config.space.S200 }}>
             {widgets.length === 0 && !showAddForm && (
               <Box style={{ padding: config.space.S300 }}>
@@ -347,6 +388,7 @@ export function WidgetsDrawer({ room }: WidgetsDrawerProps) {
         room={room}
         open={showIntegrationManager}
         onClose={() => setShowIntegrationManager(false)}
+        fullScreen={isPhoneLayout}
       />
     </Box>
   );

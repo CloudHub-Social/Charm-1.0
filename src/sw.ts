@@ -1,9 +1,34 @@
+/* eslint-disable no-console */
 /// <reference lib="WebWorker" />
 
 /* oxlint-disable no-console, unicorn/require-post-message-target-origin */
-import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
+import { precacheAndRoute, cleanupOutdatedCaches, matchPrecache } from 'workbox-precaching';
 
 import { createPushNotifications } from './sw/pushNotification';
+import {
+  buildDeclarativeNotificationOptions,
+  getEncryptedMinimalPushFocusDecision,
+  isDeclarativeWebPushPayload,
+  isForegroundSuppressionExemptPushPayload,
+  isMinimalPushPayload,
+  shouldBypassUnreadZeroShortCircuit,
+} from './sw/pushRouting';
+import { persistLaunchContext } from './launch-context-persistence';
+import { readPersistedSession } from './sw-session-persistence';
+import {
+  selectPersistedSessionCandidate,
+  shouldClearMediaCacheAfterSessionRemoval,
+} from './sw-session-state';
+import {
+  buildNotificationClickTargetUrl,
+  didWindowClientActivationSucceed,
+  rankNotificationClickClients,
+  type ServiceWorkerNotificationClickData,
+} from './sw-notification-click';
+import {
+  buildNotificationBreadcrumb,
+  buildNotificationMetricAttributes,
+} from './app/utils/notificationTelemetry';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -12,13 +37,20 @@ let notificationSoundEnabled = true;
 // The clients.matchAll() visibilityState is unreliable on iOS Safari PWA,
 // so we use this explicit flag as a fallback.
 let appIsVisible = false;
+let appVisibleHeartbeatAt = 0;
 let showMessageContent = false;
 let showEncryptedMessageContent = false;
 let clearNotificationsOnRead = false;
-const { handlePushNotificationPushData } = createPushNotifications(self, () => ({
-  showMessageContent,
-  showEncryptedMessageContent,
-}));
+let focusMode: 'off' | 'focus' | 'dnd' = 'off';
+const APP_VISIBLE_HEARTBEAT_MAX_AGE_MS = 20_000;
+const { handlePushNotificationPushData } = createPushNotifications(
+  self,
+  () => ({
+    showMessageContent,
+    showEncryptedMessageContent,
+  }),
+  postSentryMetric
+);
 
 /** Cache key used to persist notification settings across SW restarts (iOS kills the SW frequently). */
 const SW_SETTINGS_CACHE = 'sable-sw-settings-v1';
@@ -27,6 +59,53 @@ const SW_SETTINGS_URL = '/sw-settings-meta';
 /** Cache key used to persist the active session so push-event fetches work after SW restart. */
 const SW_SESSION_CACHE = 'sable-sw-session-v1';
 const SW_SESSION_URL = '/sw-session-meta';
+
+/** Cache key used to persist push telemetry until a window can drain it into Sentry. */
+const SW_PUSH_TELEMETRY_CACHE = 'sable-sw-push-telemetry-v1';
+const SW_PUSH_TELEMETRY_URL = '/sw-push-telemetry';
+const SW_PUSH_TELEMETRY_LIMIT = 50;
+const SW_RUNTIME_ASSET_CACHE = 'sable-runtime-assets-v1';
+const SW_RUNTIME_ASSET_CACHE_MAX_ENTRIES = 80;
+
+/** Cache for authenticated Matrix media responses — keyed by URL. */
+const SW_MEDIA_CACHE = 'sable-media-sw-v2';
+
+function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout?: () => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      onTimeout?.();
+      reject(new Error(`Timed out after ${ms}ms`));
+    }, ms);
+
+    promise
+      .then((value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+}
+
+type PushTelemetryEvent =
+  | 'received'
+  | 'claim_clients'
+  | 'stale_focus_ignored'
+  | 'decrypt_no_client'
+  | 'decrypt_failed'
+  | 'shown_os'
+  | 'decrypt_timeout'
+  | 'fetch_fallback'
+  | 'handler_error';
+
+type PushTelemetryRecord = {
+  id: string;
+  event: PushTelemetryEvent;
+  timestamp: number;
+  data?: Record<string, string | number | boolean>;
+};
 
 async function persistSettings() {
   try {
@@ -39,6 +118,7 @@ async function persistSettings() {
           showMessageContent,
           showEncryptedMessageContent,
           clearNotificationsOnRead,
+          focusMode,
         }),
         { headers: { 'Content-Type': 'application/json' } }
       )
@@ -61,17 +141,41 @@ async function loadPersistedSettings() {
       showEncryptedMessageContent = s.showEncryptedMessageContent;
     if (typeof s.clearNotificationsOnRead === 'boolean')
       clearNotificationsOnRead = s.clearNotificationsOnRead;
+    if (s.focusMode === 'off' || s.focusMode === 'focus' || s.focusMode === 'dnd') {
+      focusMode = s.focusMode;
+    }
   } catch {
     // Ignore — stale or missing cache is fine; we fall back to defaults.
   }
 }
 
+async function trimCacheEntries(cacheName: string, maxEntries: number): Promise<void> {
+  try {
+    const cache = await self.caches.open(cacheName);
+    const keys = await cache.keys();
+    const surplus = keys.length - maxEntries;
+    if (surplus <= 0) return;
+    await Promise.all(keys.slice(0, surplus).map((request) => cache.delete(request)));
+  } catch {
+    // Ignore cache trim failures.
+  }
+}
+
+function focusedWindowClientCount(clients: readonly Client[]): number {
+  return clients.filter((client) => (client as WindowClient).focused).length;
+}
+
+function visibleWindowClientCount(clients: readonly Client[]): number {
+  return clients.filter((client) => (client as WindowClient).visibilityState === 'visible').length;
+}
+
 async function persistSession(session: SessionInfo): Promise<void> {
   try {
     const cache = await self.caches.open(SW_SESSION_CACHE);
+    const sessionWithTimestamp = { ...session, persistedAt: Date.now() };
     await cache.put(
       SW_SESSION_URL,
-      new Response(JSON.stringify(session), {
+      new Response(JSON.stringify(sessionWithTimestamp), {
         headers: { 'Content-Type': 'application/json' },
       })
     );
@@ -93,14 +197,8 @@ async function loadPersistedSession(): Promise<SessionInfo | undefined> {
   try {
     const cache = await self.caches.open(SW_SESSION_CACHE);
     const response = await cache.match(SW_SESSION_URL);
-    if (!response) return undefined;
-    const s = await response.json();
-    if (typeof s.accessToken === 'string' && typeof s.baseUrl === 'string') {
-      return {
-        accessToken: s.accessToken,
-        baseUrl: s.baseUrl,
-        userId: typeof s.userId === 'string' ? s.userId : undefined,
-      };
+    if (response) {
+      return readPersistedSession(await response.json());
     }
     return undefined;
   } catch {
@@ -111,9 +209,19 @@ async function loadPersistedSession(): Promise<SessionInfo | undefined> {
 type SessionInfo = {
   accessToken: string;
   baseUrl: string;
-  /** Matrix user ID of the account, used to identify which account a push belongs to. */
   userId?: string;
+  persistedAt?: number;
 };
+
+async function syncPersistedSessionFromLiveSessions(): Promise<void> {
+  const persistedSession = selectPersistedSessionCandidate(sessions.values());
+  if (persistedSession) {
+    await persistSession(persistedSession);
+    return;
+  }
+
+  await clearPersistedSession();
+}
 
 /**
  * Store session per client (tab)
@@ -128,8 +236,8 @@ const sessions = new Map<string, SessionInfo>();
  */
 let preloadedSession: SessionInfo | undefined;
 
-const clientToResolve = new Map<string, (value: SessionInfo | undefined) => void>();
-const clientToSessionPromise = new Map<string, Promise<SessionInfo | undefined>>();
+const clientToSessionWaiters = new Map<string, Set<(value: SessionInfo | undefined) => void>>();
+const clientWithPendingSessionRequest = new Set<string>();
 
 async function cleanupDeadClients() {
   const activeClients = await self.clients.matchAll();
@@ -138,14 +246,28 @@ async function cleanupDeadClients() {
   Array.from(sessions.keys()).forEach((id) => {
     if (!activeIds.has(id)) {
       sessions.delete(id);
-      clientToResolve.delete(id);
-      clientToSessionPromise.delete(id);
+      clientToSessionWaiters.delete(id);
+      clientWithPendingSessionRequest.delete(id);
     }
   });
 }
 
-function setSession(clientId: string, accessToken: unknown, baseUrl: unknown, userId?: unknown) {
+async function setSession(
+  clientId: string,
+  accessToken: unknown,
+  baseUrl: unknown,
+  userId?: unknown
+) {
+  await cleanupDeadClients();
+
   if (typeof accessToken === 'string' && typeof baseUrl === 'string') {
+    // Only clear the media cache when the token actually changes (new account or
+    // token rotation). Normal page reloads with the same token should keep the
+    // cache intact so cached images survive reload without re-downloading.
+    const isSameToken =
+      preloadedSession?.accessToken === accessToken ||
+      [...sessions.values()].some((s) => s.accessToken === accessToken);
+
     const info: SessionInfo = {
       accessToken,
       baseUrl,
@@ -157,40 +279,78 @@ function setSession(clientId: string, accessToken: unknown, baseUrl: unknown, us
     console.debug('[SW] setSession: stored', clientId, baseUrl);
     // Persist so push-event fetches work after iOS restarts the SW.
     persistSession(info).catch(() => undefined);
+    // Clear media cache only when the access token changes (login as different
+    // account, or token rotation) to avoid serving content from the wrong session.
+    if (!isSameToken) {
+      self.caches.delete(SW_MEDIA_CACHE).catch(() => undefined);
+    }
   } else {
     // Logout or invalid session
+    const removedSession = sessions.get(clientId) ?? preloadedSession;
     sessions.delete(clientId);
     preloadedSession = undefined;
     console.debug('[SW] setSession: removed', clientId);
-    clearPersistedSession().catch(() => undefined);
+    syncPersistedSessionFromLiveSessions().catch(() => undefined);
+    if (shouldClearMediaCacheAfterSessionRemoval(removedSession?.accessToken, sessions.values())) {
+      self.caches.delete(SW_MEDIA_CACHE).catch(() => undefined);
+    }
   }
 
-  const resolveSession = clientToResolve.get(clientId);
-  if (resolveSession) {
-    resolveSession(sessions.get(clientId));
-    clientToResolve.delete(clientId);
-    clientToSessionPromise.delete(clientId);
+  const resolveSessionWaiters = clientToSessionWaiters.get(clientId);
+  if (resolveSessionWaiters) {
+    const session = sessions.get(clientId);
+    resolveSessionWaiters.forEach((resolveSession) => resolveSession(session));
+    clientToSessionWaiters.delete(clientId);
+    clientWithPendingSessionRequest.delete(clientId);
   }
 }
 
-function requestSession(client: Client): Promise<SessionInfo | undefined> {
-  const promise =
-    clientToSessionPromise.get(client.id) ??
-    new Promise((resolve) => {
-      clientToResolve.set(client.id, resolve);
+function requestSession(client: Client): {
+  promise: Promise<SessionInfo | undefined>;
+  cancel: () => void;
+} {
+  let active = true;
+  let resolveWaiter: ((value: SessionInfo | undefined) => void) | undefined;
+
+  const promise = new Promise<SessionInfo | undefined>((resolve) => {
+    resolveWaiter = (value) => {
+      if (!active) return;
+      active = false;
+      resolve(value);
+    };
+
+    const waiters = clientToSessionWaiters.get(client.id) ?? new Set();
+    waiters.add(resolveWaiter);
+    clientToSessionWaiters.set(client.id, waiters);
+
+    if (!clientWithPendingSessionRequest.has(client.id)) {
+      clientWithPendingSessionRequest.add(client.id);
       client.postMessage({ type: 'requestSession' });
-    });
+    }
+  });
 
-  if (!clientToSessionPromise.has(client.id)) {
-    clientToSessionPromise.set(client.id, promise);
-  }
+  return {
+    promise,
+    cancel: () => {
+      if (!active || !resolveWaiter) return;
+      active = false;
 
-  return promise;
+      const waiters = clientToSessionWaiters.get(client.id);
+      if (!waiters) return;
+
+      waiters.delete(resolveWaiter);
+      if (waiters.size === 0) {
+        clientToSessionWaiters.delete(client.id);
+        clientWithPendingSessionRequest.delete(client.id);
+      }
+    },
+  };
 }
 
 async function requestSessionWithTimeout(
   clientId: string,
-  timeoutMs = 3000
+  timeoutMs = 3000,
+  options?: { logTimeout?: boolean }
 ): Promise<SessionInfo | undefined> {
   const client = await self.clients.get(clientId);
   if (!client) {
@@ -198,11 +358,26 @@ async function requestSessionWithTimeout(
     return undefined;
   }
 
-  const sessionPromise = requestSession(client);
+  const { promise: sessionPromise, cancel: cancelSessionRequest } = requestSession(client);
+  const { logTimeout = true } = options ?? {};
 
   const timeout = new Promise<undefined>((resolve) => {
     setTimeout(() => {
       console.warn('[SW] requestSessionWithTimeout: timed out after', timeoutMs, 'ms', clientId);
+      cancelSessionRequest();
+      if (logTimeout) {
+        postSentryBreadcrumb(
+          'service_worker.session',
+          'Session request to client timed out',
+          'warning',
+          {
+            timeoutMs,
+          }
+        ).catch(() => undefined);
+        postSentryMetric('sable.sw.session_request_timeout', 1, {
+          timeout_ms: timeoutMs,
+        }).catch(() => undefined);
+      }
       resolve(undefined);
     }, timeoutMs);
   });
@@ -210,32 +385,368 @@ async function requestSessionWithTimeout(
   return Promise.race([sessionPromise, timeout]);
 }
 
+async function postSentryMetric(
+  metricName: string,
+  value: number,
+  attributes?: Record<string, string | number | boolean>
+): Promise<void> {
+  try {
+    const windowClients = await self.clients.matchAll({ type: 'window' });
+    windowClients.forEach((client) => {
+      client.postMessage({
+        type: 'sentryMetric',
+        metricName,
+        value,
+        attributes,
+      });
+    });
+  } catch (error) {
+    console.debug('[SW] Failed to post Sentry metric:', error);
+  }
+}
+
+async function postSentryBreadcrumb(
+  category: string,
+  message: string,
+  level: 'debug' | 'info' | 'warning' | 'error' = 'info',
+  data?: Record<string, string | number | boolean | undefined>
+): Promise<void> {
+  try {
+    const windowClients = await self.clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true,
+    });
+    windowClients.forEach((client) => {
+      client.postMessage({
+        type: 'sentryBreadcrumb',
+        category,
+        message,
+        level,
+        data,
+      });
+    });
+  } catch (error) {
+    console.debug('[SW] Failed to post Sentry breadcrumb:', error);
+  }
+}
+
+const createRecordId = (prefix: string): string =>
+  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+async function readPushTelemetryRecords(): Promise<PushTelemetryRecord[]> {
+  try {
+    const cache = await self.caches.open(SW_PUSH_TELEMETRY_CACHE);
+    const response = await cache.match(SW_PUSH_TELEMETRY_URL);
+    if (!response) return [];
+    const records = await response.json();
+    return Array.isArray(records) ? (records as PushTelemetryRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writePushTelemetryRecords(records: PushTelemetryRecord[]): Promise<void> {
+  try {
+    const cache = await self.caches.open(SW_PUSH_TELEMETRY_CACHE);
+    await cache.put(
+      SW_PUSH_TELEMETRY_URL,
+      new Response(JSON.stringify(records.slice(-SW_PUSH_TELEMETRY_LIMIT)), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+  } catch {
+    // Telemetry must never affect push delivery.
+  }
+}
+
+async function recordPushTelemetry(
+  event: PushTelemetryEvent,
+  data?: Record<string, string | number | boolean>
+): Promise<void> {
+  const records = await readPushTelemetryRecords();
+  records.push({
+    id: createRecordId('push'),
+    event,
+    timestamp: Date.now(),
+    data,
+  });
+  await writePushTelemetryRecords(records);
+}
+
+async function drainPushTelemetryRecords(): Promise<PushTelemetryRecord[]> {
+  const records = await readPushTelemetryRecords();
+  if (records.length === 0) return [];
+  await writePushTelemetryRecords([]);
+  return records;
+}
+
+function pushTelemetryPayloadType(pushData: unknown): string {
+  if (isDeclarativeWebPushPayload(pushData)) return 'declarative';
+  return isMinimalPushPayload(pushData) ? 'minimal' : 'full';
+}
+
 // ---------------------------------------------------------------------------
-// Encrypted push — decryption relay
+// Strategy 7+: Additional Cache Priming
 // ---------------------------------------------------------------------------
 
 /**
- * The shape returned by the client tab after decrypting an encrypted push event.
- * Also used as a partial pushData object for handlePushNotificationPushData.
+ * Prefetch well-known Matrix client configuration.
+ * This endpoint is frequently requested and safe to cache aggressively.
+ * Tracks success/failure and timing via Sentry metrics.
  */
+async function prefetchWellKnown(session: SessionInfo): Promise<void> {
+  const startTime = performance.now();
+  try {
+    const baseUrl = new URL(session.baseUrl);
+    const wellKnownUrl = `${baseUrl.origin}/.well-known/matrix/client`;
+
+    console.debug('[SW] Prefetching well-known...');
+    const response = await fetch(wellKnownUrl, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+
+    const duration = performance.now() - startTime;
+    if (response.ok) {
+      console.debug('[SW] Well-known prefetch succeeded');
+      await postSentryMetric('sable.sw.prefetch_ms', duration, {
+        endpoint: 'well_known',
+        status: 'success',
+      });
+    } else {
+      console.debug('[SW] Well-known prefetch failed:', response.status);
+      await postSentryMetric('sable.sw.prefetch_ms', duration, {
+        endpoint: 'well_known',
+        status: 'error',
+        http_status: String(response.status),
+      });
+    }
+  } catch (error) {
+    const duration = performance.now() - startTime;
+    console.debug('[SW] Well-known prefetch error:', error);
+    await postSentryMetric('sable.sw.prefetch_ms', duration, {
+      endpoint: 'well_known',
+      status: 'exception',
+    });
+  }
+}
+
+/**
+ * Prefetch homeserver capabilities to warm cache.
+ * This is requested during client initialization.
+ * Tracks success/failure and timing via Sentry metrics.
+ */
+async function prefetchCapabilities(session: SessionInfo): Promise<void> {
+  const startTime = performance.now();
+  try {
+    const capabilitiesUrl = `${session.baseUrl}/_matrix/client/v3/capabilities`;
+
+    console.debug('[SW] Prefetching capabilities...');
+    const response = await fetch(capabilitiesUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+        Accept: 'application/json',
+      },
+    });
+
+    const duration = performance.now() - startTime;
+    if (response.ok) {
+      console.debug('[SW] Capabilities prefetch succeeded');
+      await postSentryMetric('sable.sw.prefetch_ms', duration, {
+        endpoint: 'capabilities',
+        status: 'success',
+      });
+    } else {
+      console.debug('[SW] Capabilities prefetch failed:', response.status);
+      await postSentryMetric('sable.sw.prefetch_ms', duration, {
+        endpoint: 'capabilities',
+        status: 'error',
+        http_status: String(response.status),
+      });
+    }
+  } catch (error) {
+    const duration = performance.now() - startTime;
+    console.debug('[SW] Capabilities prefetch error:', error);
+    await postSentryMetric('sable.sw.prefetch_ms', duration, {
+      endpoint: 'capabilities',
+      status: 'exception',
+    });
+  }
+}
+
+/**
+ * Prefetch user profile data (display name, avatar).
+ * This is shown immediately on client load.
+ * Tracks success/failure and timing via Sentry metrics.
+ */
+async function prefetchUserProfile(session: SessionInfo): Promise<void> {
+  if (!session.userId) {
+    console.debug('[SW] Cannot prefetch user profile: userId not available');
+    return;
+  }
+
+  const startTime = performance.now();
+  try {
+    const profileUrl = `${session.baseUrl}/_matrix/client/v3/profile/${encodeURIComponent(session.userId)}`;
+
+    console.debug('[SW] Prefetching user profile...');
+    const response = await fetch(profileUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+        Accept: 'application/json',
+      },
+    });
+
+    const duration = performance.now() - startTime;
+    if (response.ok) {
+      console.debug('[SW] User profile prefetch succeeded');
+      await postSentryMetric('sable.sw.prefetch_ms', duration, {
+        endpoint: 'user_profile',
+        status: 'success',
+      });
+    } else {
+      console.debug('[SW] User profile prefetch failed:', response.status);
+      await postSentryMetric('sable.sw.prefetch_ms', duration, {
+        endpoint: 'user_profile',
+        status: 'error',
+        http_status: String(response.status),
+      });
+    }
+  } catch (error) {
+    const duration = performance.now() - startTime;
+    console.debug('[SW] User profile prefetch error:', error);
+    await postSentryMetric('sable.sw.prefetch_ms', duration, {
+      endpoint: 'user_profile',
+      status: 'exception',
+    });
+  }
+}
+
+type PrefetchPolicy = 'all' | 'core_only' | 'skip';
+
+function getStartupPrefetchPolicy(): {
+  policy: PrefetchPolicy;
+  reason: string;
+} {
+  const connection = (
+    navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+    }
+  ).connection as { saveData?: boolean; effectiveType?: string } | undefined;
+
+  if (connection?.saveData) {
+    return { policy: 'skip', reason: 'save_data' };
+  }
+
+  const effectiveType = connection?.effectiveType;
+  if (effectiveType === 'slow-2g' || effectiveType === '2g') {
+    return { policy: 'skip', reason: effectiveType };
+  }
+  if (effectiveType === '3g') {
+    return { policy: 'core_only', reason: effectiveType };
+  }
+
+  return { policy: 'all', reason: effectiveType ?? 'default' };
+}
+
 type DecryptionResult = {
   eventId: string;
   success: boolean;
   eventType?: string;
+  effectiveType?: string;
   content?: unknown;
   sender_display_name?: string;
   room_name?: string;
-  /** document.visibilityState reported by the responding app tab. */
   visibilityState?: string;
+  focused?: boolean;
+  failureReason?: string;
+  attempts?: number;
+  syncState?: string;
 };
 
-/** Pending decryption requests keyed by event_id. */
 const decryptionPendingMap = new Map<string, (result: DecryptionResult) => void>();
+type NotificationClickWaiter = {
+  resolve: (handled: boolean) => void;
+  settled: boolean;
+  timeoutId: ReturnType<typeof setTimeout>;
+};
 
-/**
- * Fetch a single raw Matrix event from the homeserver.
- * Returns undefined on error (e.g. network failure, auth error, redacted event).
- */
+const notificationClickPendingMap = new Map<string, NotificationClickWaiter>();
+const SW_FETCH_RETRY_DELAYS_MS = [250, 750] as const;
+const NOTIFICATION_CLICK_HANDLED_TIMEOUT_MS = 4_000;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+async function fetchWithNetworkRetry(
+  url: string,
+  init: RequestInit,
+  label: string,
+  attempt = 0
+): Promise<Response | undefined> {
+  try {
+    const res = await fetch(url, init);
+    if (res.ok || res.status < 500 || attempt >= SW_FETCH_RETRY_DELAYS_MS.length) {
+      return res;
+    }
+    console.warn(`[SW ${label}] HTTP ${res.status}; retrying`, { attempt });
+  } catch (err) {
+    if (attempt >= SW_FETCH_RETRY_DELAYS_MS.length) {
+      console.warn(`[SW ${label}] network error`, err);
+      return undefined;
+    }
+    console.warn(`[SW ${label}] network error; retrying`, { attempt, err });
+  }
+
+  const retryDelay = SW_FETCH_RETRY_DELAYS_MS[attempt];
+  if (retryDelay === undefined) return undefined;
+  await sleep(retryDelay);
+  return fetchWithNetworkRetry(url, init, label, attempt + 1);
+}
+
+async function waitForNotificationClickHandled(
+  clickId: string,
+  timeoutMs = NOTIFICATION_CLICK_HANDLED_TIMEOUT_MS
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      const waiter = notificationClickPendingMap.get(clickId);
+      if (waiter) {
+        settleNotificationClickWaiter(clickId, waiter, false);
+      }
+    }, timeoutMs);
+
+    notificationClickPendingMap.set(clickId, {
+      timeoutId,
+      settled: false,
+      resolve,
+    });
+  });
+}
+
+function createNotificationClickHandledWaiter(
+  clickId: string,
+  timeoutMs = NOTIFICATION_CLICK_HANDLED_TIMEOUT_MS
+) {
+  return waitForNotificationClickHandled(clickId, timeoutMs);
+}
+
+function settleNotificationClickWaiter(
+  clickId: string,
+  waiter: NotificationClickWaiter,
+  handled: boolean
+) {
+  if (waiter.settled) return;
+  waiter.settled = true;
+  clearTimeout(waiter.timeoutId);
+  notificationClickPendingMap.delete(clickId);
+  waiter.resolve(handled);
+}
+
 async function fetchRawEvent(
   baseUrl: string,
   accessToken: string,
@@ -244,9 +755,14 @@ async function fetchRawEvent(
 ): Promise<Record<string, unknown> | undefined> {
   try {
     const url = `${baseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/event/${encodeURIComponent(eventId)}`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const res = await fetchWithNetworkRetry(
+      url,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+      'fetchRawEvent'
+    );
+    if (!res) return undefined;
     if (!res.ok) {
       console.warn('[SW fetchRawEvent] HTTP', res.status, 'for', eventId);
       return undefined;
@@ -269,9 +785,14 @@ async function fetchRoomName(
 ): Promise<string | undefined> {
   try {
     const url = `${baseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.name`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const res = await fetchWithNetworkRetry(
+      url,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+      'fetchRoomName'
+    );
+    if (!res) return undefined;
     if (!res.ok) return undefined;
     const data = (await res.json()) as Record<string, unknown>;
     const { name } = data;
@@ -298,9 +819,14 @@ async function fetchMemberInfo(
 ): Promise<MemberInfo> {
   try {
     const url = `${baseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.member/${encodeURIComponent(userId)}`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const res = await fetchWithNetworkRetry(
+      url,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+      'fetchMemberInfo'
+    );
+    if (!res) return { displayname: undefined, avatarUrl: undefined };
     if (!res.ok) return { displayname: undefined, avatarUrl: undefined };
     const data = (await res.json()) as Record<string, unknown>;
     const displayname =
@@ -328,9 +854,14 @@ async function fetchRoomAvatar(
 ): Promise<string | undefined> {
   try {
     const url = `${baseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.avatar`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const res = await fetchWithNetworkRetry(
+      url,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+      'fetchRoomAvatar'
+    );
+    if (!res) return undefined;
     if (!res.ok) return undefined;
     const data = (await res.json()) as Record<string, unknown>;
     const avatarUrl = data.url;
@@ -369,16 +900,28 @@ function mxidLocalpart(userId: string): string {
 
 /**
  * Post a decryptPushEvent request to one of the open window clients and wait
- * up to 5 s for the pushDecryptResult reply.
+ * up to 8 s for the pushDecryptResult reply.
+ *
+ * 8 s: iOS bfcache restores can take 5–7 s before the MatrixClient finishes
+ * loading crypto keys from IDB, so 5 s was too tight.
  */
 async function requestDecryptionFromClient(
   windowClients: readonly Client[],
   rawEvent: Record<string, unknown>
 ): Promise<DecryptionResult | undefined> {
   const eventId = rawEvent.event_id as string;
+  const rankedClients = Array.from(windowClients).toSorted((left, right) => {
+    const leftWindow = left as WindowClient;
+    const rightWindow = right as WindowClient;
+    const leftScore =
+      (leftWindow.visibilityState === 'visible' ? 2 : 0) + (leftWindow.focused ? 1 : 0);
+    const rightScore =
+      (rightWindow.visibilityState === 'visible' ? 2 : 0) + (rightWindow.focused ? 1 : 0);
+    return rightScore - leftScore;
+  });
 
   // Chain clients sequentially using reduce to avoid await-in-loop and for-of.
-  return Array.from(windowClients).reduce(
+  const result = await rankedClients.reduce(
     async (prevPromise, client) => {
       const prev = await prevPromise;
       if (prev?.success) return prev;
@@ -392,7 +935,7 @@ async function requestDecryptionFromClient(
           decryptionPendingMap.delete(eventId);
           console.warn('[SW decryptRelay] timed out waiting for client', client.id);
           resolve(undefined);
-        }, 5000);
+        }, 8000);
       });
 
       try {
@@ -410,6 +953,12 @@ async function requestDecryptionFromClient(
     },
     Promise.resolve(undefined) as Promise<DecryptionResult | undefined>
   );
+
+  if (!result && windowClients.length > 0) {
+    console.warn('[SW] All clients timed out waiting for push decryption');
+  }
+
+  return result;
 }
 
 /**
@@ -420,17 +969,102 @@ async function requestDecryptionFromClient(
 async function handleMinimalPushPayload(
   roomId: string,
   eventId: string,
-  windowClients: readonly Client[]
+  windowClients: readonly Client[],
+  options?: {
+    hasVisibleClient?: boolean;
+    unreadCount?: number;
+  }
 ): Promise<void> {
+  const applyMinimalPushVisibilityAndBadgePolicy = async (
+    payload: unknown,
+    policyOptions: {
+      hasVisibleClient?: boolean;
+      unreadCount?: number;
+      clearBadgeWhenUnreadMissing?: boolean;
+      skipVisibleClientSuppression?: boolean;
+      skipUnreadZeroShortCircuit?: boolean;
+    } = options ?? {}
+  ): Promise<boolean> => {
+    const bypassForegroundSuppression = isForegroundSuppressionExemptPushPayload(payload);
+    const bypassUnreadZeroShortCircuit = shouldBypassUnreadZeroShortCircuit(payload);
+
+    try {
+      if (typeof policyOptions.unreadCount === 'number') {
+        if (policyOptions.unreadCount === 0) {
+          await (
+            self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
+          ).clearAppBadge?.();
+          if (clearNotificationsOnRead && !bypassUnreadZeroShortCircuit) {
+            const notifs = await self.registration.getNotifications();
+            notifs.forEach((n) => n.close());
+          }
+          if (!bypassUnreadZeroShortCircuit && !policyOptions.skipUnreadZeroShortCircuit) {
+            return true;
+          }
+        } else {
+          await (
+            self.navigator as unknown as {
+              setAppBadge?: (count: number) => Promise<void>;
+            }
+          ).setAppBadge?.(policyOptions.unreadCount);
+        }
+      } else if (policyOptions.clearBadgeWhenUnreadMissing) {
+        await (
+          self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
+        ).clearAppBadge?.();
+      }
+    } catch {
+      // Badging API absent — continue to show the notification.
+    }
+
+    if (
+      policyOptions.hasVisibleClient &&
+      !policyOptions.skipVisibleClientSuppression &&
+      !bypassForegroundSuppression
+    ) {
+      console.debug('[SW push] suppressing OS notification — app is visible');
+      return true;
+    }
+
+    return false;
+  };
+
   // On iOS the SW is killed and restarted for every push, clearing the in-memory sessions
   // Map.  Fall back to the Cache Storage copy that was written when the user last opened
   // the app (same pattern as settings persistence).
   const session = getAnyStoredSession() ?? (await loadPersistedSession());
 
   if (!session) {
+    if (
+      await applyMinimalPushVisibilityAndBadgePolicy(undefined, {
+        clearBadgeWhenUnreadMissing: true,
+        unreadCount: options?.unreadCount,
+        skipVisibleClientSuppression: true,
+      })
+    ) {
+      await recordPushTelemetry('fetch_fallback', {
+        payload_type: 'minimal',
+        reason: 'missing_session_suppressed',
+        has_clients: windowClients.length > 0,
+      });
+      return;
+    }
     // No session anywhere — app was never opened since install, or the user logged out.
     // Show a minimal actionable notification so the user can tap through to the room.
     console.debug('[SW push] minimal payload: no session, showing generic notification');
+    await postSentryBreadcrumb(
+      buildNotificationBreadcrumb(
+        'push',
+        'push_fallback_missing_session',
+        { has_window_clients: windowClients.length > 0 },
+        'warning'
+      ).category,
+      'push_fallback_missing_session',
+      'warning',
+      buildNotificationMetricAttributes({
+        has_window_clients: windowClients.length > 0,
+      })
+    );
     await self.registration.showNotification('New Message', {
       body: undefined,
       icon: '/public/res/logo-maskable/logo-maskable-180x180.png',
@@ -439,6 +1073,15 @@ async function handleMinimalPushPayload(
       renotify: true,
       data: { room_id: roomId, event_id: eventId },
     } as NotificationOptions);
+    await recordPushTelemetry('fetch_fallback', {
+      payload_type: 'minimal',
+      reason: 'missing_session',
+      has_clients: windowClients.length > 0,
+    });
+    await recordPushTelemetry('shown_os', {
+      payload_type: 'minimal',
+      fallback: true,
+    });
     return;
   }
 
@@ -450,6 +1093,33 @@ async function handleMinimalPushPayload(
   ]);
 
   if (!rawEvent) {
+    if (
+      await applyMinimalPushVisibilityAndBadgePolicy(undefined, {
+        clearBadgeWhenUnreadMissing: true,
+        unreadCount: options?.unreadCount,
+        skipVisibleClientSuppression: true,
+      })
+    ) {
+      await recordPushTelemetry('fetch_fallback', {
+        payload_type: 'minimal',
+        reason: 'raw_event_fetch_failed_suppressed',
+        has_clients: windowClients.length > 0,
+      });
+      return;
+    }
+    await postSentryBreadcrumb(
+      buildNotificationBreadcrumb(
+        'push',
+        'push_fallback_raw_event_fetch_failed',
+        { has_window_clients: windowClients.length > 0 },
+        'warning'
+      ).category,
+      'push_fallback_raw_event_fetch_failed',
+      'warning',
+      buildNotificationMetricAttributes({
+        has_window_clients: windowClients.length > 0,
+      })
+    );
     await self.registration.showNotification('New Message', {
       body: undefined,
       icon: '/public/res/logo-maskable/logo-maskable-180x180.png',
@@ -458,11 +1128,21 @@ async function handleMinimalPushPayload(
       renotify: true,
       data: { room_id: roomId, event_id: eventId, user_id: session.userId },
     } as NotificationOptions);
+    await recordPushTelemetry('fetch_fallback', {
+      payload_type: 'minimal',
+      reason: 'raw_event_fetch_failed',
+      has_clients: windowClients.length > 0,
+    });
+    await recordPushTelemetry('shown_os', {
+      payload_type: 'minimal',
+      fallback: true,
+    });
     return;
   }
 
   const eventType = rawEvent.type as string | undefined;
   const sender = rawEvent.sender as string | undefined;
+
   // Fetch sender's member state — gives us both display name and avatar URL.
   const memberInfo = sender
     ? await fetchMemberInfo(session.baseUrl, session.accessToken, roomId, sender)
@@ -490,25 +1170,146 @@ async function handleMinimalPushPayload(
         ? await requestDecryptionFromClient(windowClients, rawEvent)
         : undefined;
 
-    // If the relay responded and the app is currently visible, the in-app UI is already
-    // displaying the message — skip the OS notification entirely.
-    if (result?.visibilityState === 'visible') return;
+    if (windowClients.length === 0) {
+      await recordPushTelemetry('decrypt_no_client', {
+        payload_type: 'minimal',
+      });
+    }
+
+    // Track decryption relay results
+    postSentryMetric('sable.push.decrypt_relay', 1, {
+      ...buildNotificationMetricAttributes({
+        success: result?.success ?? false,
+        visibility_state: result?.visibilityState ?? 'unknown',
+        has_clients: windowClients.length > 0,
+        timed_out: result === undefined && windowClients.length > 0,
+        failure_reason:
+          result?.failureReason ?? (windowClients.length > 0 ? 'timeout' : 'no_client'),
+        sync_state: result?.syncState ?? 'unknown',
+        attempts: result?.attempts ?? 0,
+      }),
+    }).catch(() => undefined);
+
+    if (result === undefined && windowClients.length > 0) {
+      await recordPushTelemetry('decrypt_timeout', { payload_type: 'minimal' });
+    }
+    if (result && !result.success) {
+      await recordPushTelemetry('decrypt_failed', {
+        payload_type: 'minimal',
+        failure_reason: result.failureReason ?? 'unknown',
+        sync_state: result.syncState ?? 'unknown',
+        attempts: result.attempts ?? 0,
+      });
+    }
+
+    const focusedClientCount = focusedWindowClientCount(windowClients);
+    const browserVisibleClientCount = visibleWindowClientCount(windowClients);
+    if (getEncryptedMinimalPushFocusDecision(focusedClientCount) === 'ignore_stale_focus') {
+      // iOS standalone PWAs can report a bfcached/background page as focused.
+      // A push event is our only reliable wake-up path in that state, so do not
+      // let stale WindowClient focus suppress the OS notification.
+      await recordPushTelemetry('stale_focus_ignored', {
+        payload_type: 'minimal',
+        focused_client_count: focusedClientCount,
+        browser_visible_client_count: browserVisibleClientCount,
+        visibility_state: result?.visibilityState ?? 'unknown',
+      });
+    }
 
     if (result?.success) {
+      await postSentryBreadcrumb(
+        buildNotificationBreadcrumb(
+          'push',
+          'push_decrypted_via_client',
+          {
+            has_focused_client: focusedClientCount > 0,
+            browser_visible_client_count: browserVisibleClientCount,
+            visible: false,
+            has_window_clients: windowClients.length > 0,
+            attempts: result.attempts,
+            sync_state: result.syncState,
+          },
+          'info'
+        ).category,
+        'push_decrypted_via_client',
+        'info',
+        buildNotificationMetricAttributes({
+          has_focused_client: focusedClientCount > 0,
+          browser_visible_client_count: browserVisibleClientCount,
+          visible: false,
+          has_window_clients: windowClients.length > 0,
+          attempts: result.attempts,
+          sync_state: result.syncState,
+        })
+      );
       // App was backgrounded but not frozen — decryption succeeded.
+      if (
+        await applyMinimalPushVisibilityAndBadgePolicy(
+          {
+            type: result.eventType,
+            effectiveType: result.effectiveType,
+            content: result.content,
+          },
+          {
+            clearBadgeWhenUnreadMissing: true,
+            hasVisibleClient: options?.hasVisibleClient,
+            unreadCount: options?.unreadCount,
+          }
+        )
+      ) {
+        return;
+      }
       // Prefer the server-fetched display name (authoritative) over the relay's SDK cache
       // value, which may be stale or missing if the SDK hasn't fully synced yet.
       await handlePushNotificationPushData({
         ...baseData,
         type: result.eventType,
+        effectiveType: result.effectiveType,
         content: result.content as { notification_type?: string; membership?: string } | undefined,
         sender_display_name: senderDisplay,
         // Prefer relay's room name (has m.direct / computed SDK name); fall back to state fetch.
         room_name: result.room_name || resolvedRoomName,
         room_avatar_url: notificationAvatarUrl,
       });
+      await recordPushTelemetry('shown_os', {
+        payload_type: 'minimal',
+        encrypted: true,
+      });
     } else {
+      await postSentryBreadcrumb(
+        buildNotificationBreadcrumb(
+          'push',
+          'push_fallback_encrypted_content',
+          {
+            timed_out: result === undefined && windowClients.length > 0,
+            has_window_clients: windowClients.length > 0,
+            failure_reason: result?.failureReason,
+            attempts: result?.attempts,
+            sync_state: result?.syncState,
+          },
+          'warning'
+        ).category,
+        'push_fallback_encrypted_content',
+        'warning',
+        buildNotificationMetricAttributes({
+          timed_out: result === undefined && windowClients.length > 0,
+          has_window_clients: windowClients.length > 0,
+          failure_reason: result?.failureReason,
+          attempts: result?.attempts,
+          sync_state: result?.syncState,
+        })
+      );
       // App is frozen or fully closed — show "Encrypted message" fallback.
+      if (
+        await applyMinimalPushVisibilityAndBadgePolicy(undefined, {
+          clearBadgeWhenUnreadMissing: true,
+          hasVisibleClient: options?.hasVisibleClient,
+          unreadCount: options?.unreadCount,
+          skipUnreadZeroShortCircuit: true,
+        })
+      ) {
+        return;
+      }
       await handlePushNotificationPushData({
         ...baseData,
         type: 'm.room.encrypted',
@@ -517,9 +1318,23 @@ async function handleMinimalPushPayload(
         room_name: resolvedRoomName,
         room_avatar_url: notificationAvatarUrl,
       });
+      await recordPushTelemetry('shown_os', {
+        payload_type: 'minimal',
+        encrypted: true,
+        fallback: true,
+      });
     }
   } else {
     // Unencrypted event — we have the plaintext, show it.
+    if (
+      await applyMinimalPushVisibilityAndBadgePolicy(rawEvent, {
+        clearBadgeWhenUnreadMissing: true,
+        hasVisibleClient: options?.hasVisibleClient,
+        unreadCount: options?.unreadCount,
+      })
+    ) {
+      return;
+    }
     await handlePushNotificationPushData({
       ...baseData,
       type: eventType,
@@ -528,22 +1343,83 @@ async function handleMinimalPushPayload(
       room_name: resolvedRoomName,
       room_avatar_url: notificationAvatarUrl,
     });
+    await recordPushTelemetry('shown_os', {
+      payload_type: 'minimal',
+      encrypted: false,
+    });
   }
 }
 
 self.addEventListener('install', (event: ExtendableEvent) => {
-  event.waitUntil(self.skipWaiting());
+  event.waitUntil(
+    Promise.all([
+      self.skipWaiting(),
+      postSentryBreadcrumb('service_worker', 'Service worker install event', 'info'),
+      postSentryMetric('sable.sw.install', 1),
+    ])
+  );
 });
+
+let claimClientsOnActivate = false;
 
 self.addEventListener('activate', (event: ExtendableEvent) => {
   event.waitUntil(
     (async () => {
-      await self.clients.claim();
+      const activationStartedAt = performance.now();
+      // Do NOT call clients.claim() here.
+      //
+      // Calling clients.claim() in activate evicts iOS bfcache entries: it fires
+      // controllerchange on every client — including cached ones — and iOS evicts
+      // any page whose SW controller changes while it is in bfcache.  On iOS PWA
+      // (no browser chrome) this looks identical to a hard reload: the user sees
+      // the splash screen instead of an instant restore.
+      //
+      // Pages detect a stale/missing controller on every foreground event
+      // (pageshow[persisted] and visibilitychange→visible) and send CLAIM_CLIENTS
+      // so the SW claims them lazily once they are already visible.  New page
+      // navigations are automatically controlled by the active SW without an
+      // explicit claim.
       await cleanupDeadClients();
+      if (claimClientsOnActivate) {
+        await self.clients.claim();
+        claimClientsOnActivate = false;
+      }
       // Pre-load the persisted session into memory so that media fetches arriving
       // before the first setSession message from the page are immediately
-      // authenticated rather than falling through to a 3-second timeout.
+      // authenticated. If the token is expired, the media fetch will get a 401
+      // and the UI will show a retry button.
       preloadedSession = await loadPersistedSession();
+      await postSentryBreadcrumb('service_worker', 'Service worker activated', 'info', {
+        hasPreloadedSession: !!preloadedSession,
+      });
+      await postSentryMetric('sable.sw.activate_ms', performance.now() - activationStartedAt, {
+        has_preloaded_session: !!preloadedSession,
+      });
+
+      // Prefetch critical non-sync data on activation to warm browser cache.
+      // Sliding sync request state is owned by the foreground Matrix client.
+      // Fire-and-forget: don't block activation on these optional optimizations.
+      if (preloadedSession) {
+        const { policy, reason } = getStartupPrefetchPolicy();
+        const prefetchTasks =
+          policy === 'skip'
+            ? []
+            : [
+                prefetchWellKnown(preloadedSession),
+                prefetchCapabilities(preloadedSession),
+                ...(policy === 'all' ? [prefetchUserProfile(preloadedSession)] : []),
+              ];
+
+        void postSentryMetric('sable.sw.prefetch_startup_policy', 1, {
+          policy,
+          reason,
+        });
+
+        Promise.allSettled(prefetchTasks).catch(() => {
+          // Silently ignore — these are best-effort optimizations
+        });
+      }
+
       // Proactively request sessions from all window clients so the sessions Map
       // is pre-populated after a SW restart, rather than waiting for the first
       // media fetch to trigger requestSessionWithTimeout.
@@ -565,8 +1441,54 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
   const { type, accessToken, baseUrl, userId } = data as Record<string, unknown>;
 
   if (type === 'setSession') {
-    setSession(client.id, accessToken, baseUrl, userId);
-    event.waitUntil(cleanupDeadClients());
+    event.waitUntil(
+      (async () => {
+        await setSession(client.id, accessToken, baseUrl, userId);
+        const persisted = sessions.get(client.id);
+        await postSentryBreadcrumb(
+          'service_worker.session',
+          'Service worker session updated',
+          'info',
+          {
+            hasSession: !!persisted,
+            sessionCount: sessions.size,
+          }
+        );
+      })()
+    );
+  }
+  if (type === 'setAppVisible') {
+    if (typeof (data as { visible?: unknown }).visible === 'boolean') {
+      appIsVisible = (data as { visible: boolean }).visible;
+      appVisibleHeartbeatAt = appIsVisible ? Date.now() : 0;
+    }
+  }
+  if (type === 'CLAIM_CLIENTS') {
+    // Sent by the page on pageshow[persisted] or visibilitychange→visible when it
+    // detects that its SW controller is stale (e.g. after iOS killed and restarted
+    // the SW while the page was in bfcache or in the foreground under memory
+    // pressure).  Claiming here — after the page is visible — never evicts bfcache.
+    event.waitUntil(
+      (async () => {
+        const claimStartedAt = performance.now();
+        await self.clients.claim();
+        // Re-request sessions from all newly-claimed clients to repopulate the
+        // sessions Map. Fire-and-forget: responses come via setSession messages.
+        const claimedClients = await self.clients.matchAll({ type: 'window' });
+        claimedClients.forEach((c) => c.postMessage({ type: 'requestSession' }));
+        await recordPushTelemetry('claim_clients', {
+          client_count: claimedClients.length,
+          duration_ms: Math.round(performance.now() - claimStartedAt),
+        });
+        await postSentryBreadcrumb('service_worker', 'Service worker claimed clients', 'warning', {
+          claimedClientCount: claimedClients.length,
+          durationMs: Math.round(performance.now() - claimStartedAt),
+        });
+        await postSentryMetric('sable.sw.claim_clients', 1, {
+          client_count: claimedClients.length,
+        });
+      })()
+    );
   }
   if (type === 'pushDecryptResult') {
     // Resolve a pending decryption request from handleMinimalPushPayload
@@ -579,10 +1501,34 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
       }
     }
   }
-  if (type === 'setAppVisible') {
-    if (typeof (data as { visible?: unknown }).visible === 'boolean') {
-      appIsVisible = (data as { visible: boolean }).visible;
+  if (type === 'notificationClickHandled') {
+    const { clickId } = data as { clickId?: unknown };
+    if (typeof clickId === 'string') {
+      const waiter = notificationClickPendingMap.get(clickId);
+      if (waiter) {
+        settleNotificationClickWaiter(clickId, waiter, true);
+      }
     }
+  }
+  if (type === 'drainPushTelemetry') {
+    const { requestId } = data as { requestId?: unknown };
+    event.waitUntil(
+      (async () => {
+        const records = await drainPushTelemetryRecords();
+        client.postMessage({
+          type: 'pushTelemetryRecords',
+          requestId: typeof requestId === 'string' ? requestId : undefined,
+          records,
+        });
+      })()
+    );
+  }
+  if (type === 'ping') {
+    const requestId = (data as { requestId?: unknown }).requestId;
+    if (typeof requestId === 'string') {
+      client.postMessage({ type: 'pong', requestId, timestamp: Date.now() });
+    }
+    event.waitUntil(Promise.resolve());
   }
   if (type === 'setNotificationSettings') {
     if (
@@ -607,6 +1553,11 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
       clearNotificationsOnRead = (data as { clearNotificationsOnRead: boolean })
         .clearNotificationsOnRead;
     }
+    const fm = (data as { focusMode?: unknown }).focusMode;
+    if (fm === 'off' || fm === 'focus' || fm === 'dnd') {
+      focusMode = fm;
+      console.debug('[SW setNotificationSettings] focusMode updated to:', focusMode);
+    }
     // Persist so settings survive SW restart (iOS kills the SW aggressively).
     event.waitUntil(persistSettings());
   }
@@ -615,12 +1566,24 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
 const MEDIA_PATHS = [
   '/_matrix/client/v1/media/download',
   '/_matrix/client/v1/media/thumbnail',
+  '/_matrix/client/v1/media/preview_url',
+  '/_matrix/client/v3/media/download',
+  '/_matrix/client/v3/media/thumbnail',
+  '/_matrix/client/v3/media/preview_url',
+  '/_matrix/client/r0/media/download',
+  '/_matrix/client/r0/media/thumbnail',
+  '/_matrix/client/r0/media/preview_url',
+  '/_matrix/client/unstable/org.matrix.msc3916/media/download',
+  '/_matrix/client/unstable/org.matrix.msc3916/media/thumbnail',
+  '/_matrix/client/unstable/org.matrix.msc3916/media/preview_url',
   // Legacy unauthenticated endpoints — servers that require auth return 404/403
   // for these when no token is present, so intercept and add auth here too.
   '/_matrix/media/v3/download',
   '/_matrix/media/v3/thumbnail',
+  '/_matrix/media/v3/preview_url',
   '/_matrix/media/r0/download',
   '/_matrix/media/r0/thumbnail',
+  '/_matrix/media/r0/preview_url',
 ];
 
 function mediaPath(url: string): boolean {
@@ -639,6 +1602,14 @@ function validMediaRequest(url: string, baseUrl: string): boolean {
   });
 }
 
+function getMatchingSessions(url: string): SessionInfo[] {
+  return [...sessions.values()].filter((s) => validMediaRequest(url, s.baseUrl));
+}
+
+function isAuthFailureStatus(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
 function fetchConfig(token: string): RequestInit {
   return {
     headers: {
@@ -648,18 +1619,268 @@ function fetchConfig(token: string): RequestInit {
   };
 }
 
+async function validateSession(session: SessionInfo): Promise<SessionInfo | undefined> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const response = await fetch(`${session.baseUrl}/_matrix/client/v3/account/whoami`, {
+      ...fetchConfig(session.accessToken),
+      signal: controller.signal,
+    });
+    return response.ok ? session : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function getValidatedPersistedSession(url: string): Promise<SessionInfo | undefined> {
+  const persisted = await loadPersistedSession();
+  const validated = persisted ? await validateSession(persisted) : undefined;
+  if (validated && validMediaRequest(url, validated.baseUrl)) {
+    return validated;
+  }
+
+  return undefined;
+}
+
+async function resolveFirstUsableMediaSession(
+  url: string,
+  liveSessionPromise: Promise<SessionInfo | undefined>,
+  persistedSessionPromise: Promise<SessionInfo | undefined>
+): Promise<SessionInfo | undefined> {
+  const pendingSettles = [
+    liveSessionPromise.then((session) => ({ session })),
+    persistedSessionPromise.then((session) => ({ session })),
+  ];
+
+  const drainPendingSettles = async (
+    remainingSettles: Array<Promise<{ session: SessionInfo | undefined }>>
+  ): Promise<SessionInfo | undefined> => {
+    if (remainingSettles.length === 0) return undefined;
+
+    const settled = await Promise.race(
+      remainingSettles.map((pending, index) =>
+        pending.then((result) => ({
+          index,
+          result,
+        }))
+      )
+    );
+
+    const nextSettles = remainingSettles.filter((_, index) => index !== settled.index);
+    const { session } = settled.result;
+    if (session && validMediaRequest(url, session.baseUrl)) {
+      return session;
+    }
+
+    return drainPendingSettles(nextSettles);
+  };
+
+  return drainPendingSettles(pendingSettles);
+}
+
+async function getLiveWindowSessions(url: string, clientId: string): Promise<SessionInfo[]> {
+  const collected: SessionInfo[] = [];
+  const seen = new Set<string>();
+
+  const add = (session?: SessionInfo) => {
+    if (!session || !validMediaRequest(url, session.baseUrl)) return;
+    const key = `${session.baseUrl}\x00${session.accessToken}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    collected.push(session);
+  };
+
+  if (clientId) {
+    add(await requestSessionWithTimeout(clientId, 1500));
+    return collected;
+  }
+
+  const windowClients = await self.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  });
+  const liveSessions = await Promise.all(
+    windowClients.map((client) => requestSessionWithTimeout(client.id, 750))
+  );
+  liveSessions.forEach((session) => add(session));
+
+  return collected;
+}
+
+async function fetchMediaWithRetry(
+  url: string,
+  token: string,
+  redirect: RequestRedirect,
+  clientId: string,
+  preferredRetrySessions: Array<SessionInfo | Promise<SessionInfo | undefined> | undefined> = []
+): Promise<Response> {
+  let response = await fetch(url, { ...fetchConfig(token), redirect });
+  if (!isAuthFailureStatus(response.status)) return response;
+
+  const attemptedTokens = new Set<string>([token]);
+  const retrySessions: SessionInfo[] = [];
+  const seenSessions = new Set<string>();
+
+  const addRetrySession = (session?: SessionInfo) => {
+    if (!session || !validMediaRequest(url, session.baseUrl)) return;
+    const key = `${session.baseUrl}\x00${session.accessToken}`;
+    if (seenSessions.has(key)) return;
+    seenSessions.add(key);
+    retrySessions.push(session);
+  };
+
+  if (clientId) addRetrySession(sessions.get(clientId));
+  getMatchingSessions(url).forEach((session) => addRetrySession(session));
+  addRetrySession(preloadedSession);
+  addRetrySession(await loadPersistedSession());
+  (await Promise.all(preferredRetrySessions.map((session) => Promise.resolve(session)))).forEach(
+    (session) => addRetrySession(session)
+  );
+  (await getLiveWindowSessions(url, clientId)).forEach((session) => addRetrySession(session));
+
+  /* eslint-disable no-await-in-loop */
+  for (let i = 0; i < retrySessions.length; i += 1) {
+    const candidate = retrySessions[i];
+    if (candidate && !attemptedTokens.has(candidate.accessToken)) {
+      attemptedTokens.add(candidate.accessToken);
+      response = await fetch(url, {
+        ...fetchConfig(candidate.accessToken),
+        redirect,
+      });
+      if (!isAuthFailureStatus(response.status)) {
+        return response;
+      }
+    }
+  }
+  /* eslint-enable no-await-in-loop */
+
+  return response;
+}
+
 self.addEventListener('message', (event: ExtendableMessageEvent) => {
-  if (event.data.type === 'togglePush') {
-    const token = event.data?.token;
+  const data = event.data;
+  if (!data || typeof data !== 'object' || !('type' in data)) return;
+
+  if (data.type === 'SKIP_WAITING_AND_CLAIM') {
+    claimClientsOnActivate = true;
+    self.skipWaiting();
+    return;
+  }
+
+  if (data.type === 'SKIP_WAITING') {
+    // Client requested the waiting SW to activate immediately (user clicked update banner)
+    self.skipWaiting();
+    return;
+  }
+
+  if (data.type === 'togglePush') {
+    const token = 'token' in data ? data.token : undefined;
     const fetchOptions = fetchConfig(token);
     event.waitUntil(
-      fetch(`${event.data.url}/_matrix/client/v3/pushers/set`, {
+      fetch(`${data.url}/_matrix/client/v3/pushers/set`, {
         method: 'POST',
         ...fetchOptions,
-        body: JSON.stringify(event.data.pusherData),
+        body: JSON.stringify(data.pusherData),
       })
     );
   }
+});
+
+// Asset validation: prevent caching HTML responses for JavaScript/CSS assets.
+// After a new deployment, stale HTML might reference old hashed asset URLs that
+// no longer exist. The server returns a 404 HTML page, which Safari refuses to
+// execute as JavaScript, causing "text/html is not a valid JavaScript MIME type"
+// errors. This handler validates asset responses and deletes bad cache entries.
+self.addEventListener('fetch', (event: FetchEvent) => {
+  const { url, method } = event.request;
+  const parsedUrl = new URL(url);
+
+  // Skip audio files — let them pass through without validation
+  const isAudio =
+    parsedUrl.pathname.endsWith('.ogg') ||
+    parsedUrl.pathname.endsWith('.mp3') ||
+    parsedUrl.pathname.endsWith('.webm') ||
+    parsedUrl.pathname.endsWith('.wav');
+
+  // Only intercept GET requests to /assets/ paths (but not audio files)
+  if (method !== 'GET' || !parsedUrl.pathname.startsWith('/assets/') || isAudio) return;
+
+  event.respondWith(
+    (async () => {
+      const runtimeCache = await self.caches.open(SW_RUNTIME_ASSET_CACHE);
+
+      // Try precache first, then validated runtime cache fallback.
+      let response =
+        (await matchPrecache(event.request)) ?? (await runtimeCache.match(event.request));
+
+      if (!response) {
+        // Not in cache, fetch from network
+        try {
+          response = await fetch(event.request);
+        } catch (networkError) {
+          // Network error - try returning cached version if it exists
+          const cachedResponse = await runtimeCache.match(event.request);
+          if (cachedResponse) return cachedResponse;
+          throw networkError;
+        }
+      }
+
+      // Validate response before using/caching it
+      const contentType = response.headers.get('content-type') || '';
+      const isJavaScript =
+        parsedUrl.pathname.endsWith('.js') || parsedUrl.pathname.endsWith('.mjs');
+      const isCSS = parsedUrl.pathname.endsWith('.css');
+      const isWASM = parsedUrl.pathname.endsWith('.wasm');
+
+      // Check if response is valid for the requested asset type
+      const isValidResponse =
+        response.ok &&
+        response.status >= 200 &&
+        response.status < 300 &&
+        !contentType.includes('text/html');
+
+      // Additional MIME type validation for specific asset types
+      const hasValidMimeType =
+        (isJavaScript &&
+          (contentType.includes('javascript') || contentType.includes('ecmascript'))) ||
+        (isCSS && contentType.includes('css')) ||
+        (isWASM && contentType.includes('wasm')) ||
+        (!isJavaScript && !isCSS && !isWASM);
+
+      if (!isValidResponse || !hasValidMimeType) {
+        // Invalid response (likely a 404 HTML page) - delete from cache
+        await runtimeCache.delete(event.request);
+
+        console.warn(
+          '[SW] Deleted invalid asset cache entry:',
+          parsedUrl.pathname,
+          'status:',
+          response.status,
+          'content-type:',
+          contentType
+        );
+
+        // Return a synthetic error response
+        return new Response('Asset not available', {
+          status: 404,
+          statusText: 'Asset Not Found',
+          headers: { 'Content-Type': 'text/plain' },
+        });
+      }
+
+      // Valid network responses go into a bounded runtime cache, never the precache namespace.
+      if (response && !response.redirected && !(await matchPrecache(event.request))) {
+        await runtimeCache.put(event.request, response.clone());
+        await trimCacheEntries(SW_RUNTIME_ASSET_CACHE, SW_RUNTIME_ASSET_CACHE_MAX_ENTRIES);
+      }
+
+      return response;
+    })()
+  );
 });
 
 self.addEventListener('fetch', (event: FetchEvent) => {
@@ -668,37 +1889,22 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   if (method !== 'GET' || !mediaPath(url)) return;
 
   const { clientId } = event;
-
-  // For browser sub-resource loads (images, video, audio, etc.), 'follow' is
-  // the correct mode: the auth header is sent to the Matrix server which owns
-  // the first hop; any CDN redirect it issues is followed natively by the
-  // Fetch machinery.  'manual' would return an opaque-redirect Response that
-  // the browser cannot render as an <img>/<video>/etc.
   const redirect: RequestRedirect = 'follow';
 
+  // Fast path: active session for this window
   const session = clientId ? sessions.get(clientId) : undefined;
   if (session && validMediaRequest(url, session.baseUrl)) {
-    event.respondWith(fetch(url, { ...fetchConfig(session.accessToken), redirect }));
+    event.respondWith(fetchMediaWithRetry(url, session.accessToken, redirect, clientId));
     return;
   }
 
-  // Since widgets like element call have their own client ids,
-  // we need this logic. We just go through the sessions list and get a session
-  // with the right base url. Media requests to a homeserver simply are fine with any account
-  // on the homeserver authenticating it, so this is fine. But it can be technically wrong.
-  // If you have two tabs for different users on the same homeserver, it might authenticate
-  // as the wrong one.
-  // Thus any logic in the future which cares about which user is authenticating the request
-  // might break this. Also, again, it is technically wrong.
-  // Also checks preloadedSession — populated from cache at SW activate — for the window
-  // between SW restart and the first live setSession arriving from the page.
-  const byBaseUrl =
-    [...sessions.values()].find((s) => validMediaRequest(url, s.baseUrl)) ??
-    (preloadedSession && validMediaRequest(url, preloadedSession.baseUrl)
-      ? preloadedSession
-      : undefined);
+  // Widget fast path: match by baseUrl (Element Call, etc)
+  // Since widgets like Element Call have their own client ids, we need to find
+  // a session that matches the homeserver. Media requests to a homeserver work
+  // with any authenticated account on that homeserver.
+  const byBaseUrl = [...sessions.values()].find((s) => validMediaRequest(url, s.baseUrl));
   if (byBaseUrl) {
-    event.respondWith(fetch(url, { ...fetchConfig(byBaseUrl.accessToken), redirect }));
+    event.respondWith(fetchMediaWithRetry(url, byBaseUrl.accessToken, redirect, clientId));
     return;
   }
 
@@ -708,10 +1914,15 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     event.respondWith(
       loadPersistedSession().then((persisted) => {
         if (persisted && validMediaRequest(url, persisted.baseUrl)) {
-          return fetch(url, {
-            ...fetchConfig(persisted.accessToken),
-            redirect,
-          });
+          return fetchMediaWithRetry(url, persisted.accessToken, redirect, '');
+        }
+        const matching = getMatchingSessions(url);
+        const [matchingSession] = matching;
+        if (matching.length === 1 && matchingSession) {
+          return fetchMediaWithRetry(url, matchingSession.accessToken, redirect, '');
+        }
+        if (preloadedSession && validMediaRequest(url, preloadedSession.baseUrl)) {
+          return fetchMediaWithRetry(url, preloadedSession.accessToken, redirect, '');
         }
         return fetch(event.request);
       })
@@ -719,35 +1930,108 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     return;
   }
 
+  const syncByBaseUrl = getMatchingSessions(url);
+  const [syncSession] = syncByBaseUrl;
+  if (syncByBaseUrl.length === 1 && syncSession) {
+    event.respondWith(fetchMediaWithRetry(url, syncSession.accessToken, redirect, clientId));
+    return;
+  }
+  if (preloadedSession && validMediaRequest(url, preloadedSession.baseUrl)) {
+    event.respondWith(fetchMediaWithRetry(url, preloadedSession.accessToken, redirect, clientId));
+    return;
+  }
+
   event.respondWith(
-    requestSessionWithTimeout(clientId).then(async (s) => {
-      // Primary: session received from the live client window.
-      if (s && validMediaRequest(url, s.baseUrl)) {
-        return fetch(url, { ...fetchConfig(s.accessToken), redirect });
+    withTimeout(
+      (async () => {
+        const liveSessionPromise = requestSessionWithTimeout(clientId, 3000, {
+          logTimeout: false,
+        });
+        const persistedSessionPromise = getValidatedPersistedSession(url);
+
+        const resolvedSession =
+          (await resolveFirstUsableMediaSession(
+            url,
+            liveSessionPromise,
+            persistedSessionPromise
+          )) ??
+          (await liveSessionPromise) ??
+          (await persistedSessionPromise);
+
+        if (resolvedSession && validMediaRequest(url, resolvedSession.baseUrl)) {
+          if (resolvedSession === preloadedSession) {
+            console.debug('[SW fetch] Using preloaded session fallback', {
+              url,
+              clientId,
+            });
+          } else if (resolvedSession !== sessions.get(clientId)) {
+            console.debug('[SW fetch] Using validated persisted session fallback', {
+              url,
+              clientId,
+            });
+          }
+          return fetchMediaWithRetry(url, resolvedSession.accessToken, redirect, clientId, [
+            liveSessionPromise,
+          ]);
+        }
+
+        await postSentryBreadcrumb(
+          'service_worker.session',
+          'Session request to client timed out',
+          'warning',
+          {
+            timeoutMs: 3000,
+            usedPersistedFallback: false,
+          }
+        ).catch(() => undefined);
+        await postSentryMetric('sable.sw.session_request_timeout', 1, {
+          timeout_ms: 3000,
+          used_persisted_fallback: false,
+        }).catch(() => undefined);
+
+        console.warn('[SW fetch] No valid session for media request — returning 401', {
+          url,
+          clientId,
+          hasSession: !!sessions.get(clientId),
+        });
+        // SABLE-4Y fix: Return synthetic 401 instead of attempting unauthenticated
+        // fetch. Prevents network requests that will fail with 401 anyway, and
+        // allows client-side blob cache to handle auth failures gracefully.
+        return new Response(
+          JSON.stringify({
+            errcode: 'M_MISSING_TOKEN',
+            error: 'No session available',
+          }),
+          {
+            status: 401,
+            statusText: 'Unauthorized',
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      })(),
+      15000,
+      () => {
+        console.error('[SW fetch] Global timeout after 15s — SW may be stuck', {
+          url,
+          clientId,
+        });
       }
-      // Fallback: try the persisted session (helps when SW restarts on iOS and
-      // the client window hasn't responded to requestSession yet).
-      const persisted = await loadPersistedSession();
-      if (persisted && validMediaRequest(url, persisted.baseUrl)) {
-        return fetch(url, { ...fetchConfig(persisted.accessToken), redirect });
-      }
-      console.warn(
-        '[SW fetch] No valid session for media request',
-        { url, clientId, hasSession: !!s },
-        'falling back to unauthenticated fetch'
-      );
-      return fetch(event.request);
-    })
+    ).catch(
+      () =>
+        new Response(
+          JSON.stringify({
+            errcode: 'M_TIMEOUT',
+            error: 'Service worker media fetch timeout',
+          }),
+          {
+            status: 504,
+            statusText: 'Gateway Timeout',
+            headers: { 'Content-Type': 'application/json' },
+          }
+        )
+    )
   );
 });
-
-// Detect a minimal (event_id_only) payload: has room_id + event_id but no
-// event type field — meaning the homeserver stripped the event content.
-function isMinimalPushPayload(data: unknown): data is { room_id: string; event_id: string } {
-  if (!data || typeof data !== 'object') return false;
-  const d = data as Record<string, unknown>;
-  return typeof d.room_id === 'string' && typeof d.event_id === 'string' && !d.type;
-}
 
 const onPushNotification = async (event: PushEvent) => {
   if (!event?.data) return;
@@ -761,44 +2045,113 @@ const onPushNotification = async (event: PushEvent) => {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }),
   ]);
 
-  // If the app is open and visible, skip the OS push notification — the in-app
-  // pill notification handles the alert instead.
-  // Combine clients.matchAll() visibility with the explicit appIsVisible flag
-  // because iOS Safari PWA often returns empty or stale results from matchAll().
-  const hasVisibleClient =
-    appIsVisible || clients.some((client) => client.visibilityState === 'visible');
+  const focusedClientCount = focusedWindowClientCount(clients);
+  const browserVisibleClientCount = visibleWindowClientCount(clients);
+  const hasRecentAppVisibilityHeartbeat =
+    appIsVisible && Date.now() - appVisibleHeartbeatAt <= APP_VISIBLE_HEARTBEAT_MAX_AGE_MS;
+  const hasVisibleClient = hasRecentAppVisibilityHeartbeat || browserVisibleClientCount > 0;
+
   console.debug(
     '[SW push] appIsVisible:',
     appIsVisible,
+    '| hasRecentAppVisibilityHeartbeat:',
+    hasRecentAppVisibilityHeartbeat,
+    '| focusedClientCount:',
+    focusedClientCount,
+    '| browserVisibleClientCount:',
+    browserVisibleClientCount,
     '| clients:',
-    clients.map((c) => ({ url: c.url, visibility: c.visibilityState }))
+    clients.map((c) => ({
+      url: c.url,
+      visibility: c.visibilityState,
+      focused: c.focused,
+    }))
   );
   console.debug('[SW push] hasVisibleClient:', hasVisibleClient);
-  if (hasVisibleClient) {
+
+  const pushData = event.data.json();
+  const payloadType = pushTelemetryPayloadType(pushData);
+  console.debug('[SW push] raw payload:', JSON.stringify(pushData, null, 2));
+
+  // Track push notification arrival before any payload-specific early return.
+  await recordPushTelemetry('received', {
+    has_clients: clients.length > 0,
+    focused_client_count: focusedClientCount,
+    browser_visible_client_count: browserVisibleClientCount,
+    payload_type: payloadType,
+  });
+  postSentryMetric('sable.push.received', 1, {
+    has_clients: clients.length > 0,
+    focused_client_count: focusedClientCount,
+    browser_visible_client_count: browserVisibleClientCount,
+    payload_type: payloadType,
+  }).catch(() => undefined);
+  postSentryBreadcrumb('notification.push', 'Push received by service worker', 'info', {
+    clientCount: clients.length,
+    focusedClientCount,
+    browserVisibleClientCount,
+    payloadType,
+  }).catch(() => undefined);
+
+  // event_id_only format: fetch the event ourselves first so call/invite
+  // classification can happen before foreground suppression or unread-zero
+  // early returns.
+  if (isMinimalPushPayload(pushData)) {
+    const unreadCount =
+      typeof (pushData as { unread?: unknown }).unread === 'number'
+        ? (pushData as { unread?: number }).unread
+        : undefined;
+    console.debug('[SW push] minimal payload detected — fetching event', pushData.event_id);
+    await handleMinimalPushPayload(pushData.room_id, pushData.event_id, clients, {
+      hasVisibleClient,
+      unreadCount,
+    });
+    return;
+  }
+
+  const bypassForegroundSuppression = isForegroundSuppressionExemptPushPayload(pushData);
+  const bypassUnreadZeroShortCircuit = shouldBypassUnreadZeroShortCircuit(pushData);
+
+  if (hasVisibleClient && !bypassForegroundSuppression) {
     console.debug('[SW push] suppressing OS notification — app is visible');
     return;
   }
 
-  const pushData = event.data.json();
-  console.debug('[SW push] raw payload:', JSON.stringify(pushData, null, 2));
-
   try {
-    if (typeof pushData?.unread === 'number') {
+    const declarativeBadge =
+      isDeclarativeWebPushPayload(pushData) && pushData.notification.app_badge !== undefined
+        ? Number(pushData.notification.app_badge)
+        : undefined;
+    if (typeof declarativeBadge === 'number' && Number.isFinite(declarativeBadge)) {
+      if (declarativeBadge <= 0) {
+        await (
+          self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
+        ).clearAppBadge?.();
+      } else {
+        await (
+          self.navigator as unknown as {
+            setAppBadge?: (count: number) => Promise<void>;
+          }
+        ).setAppBadge?.(declarativeBadge);
+      }
+    } else if (typeof pushData?.unread === 'number') {
       if (pushData.unread === 0) {
         // All messages read elsewhere — clear the home-screen badge and,
         // if the user opted in, dismiss outstanding lock-screen notifications.
         await (
           self.navigator as unknown as { clearAppBadge?: () => Promise<void> }
         ).clearAppBadge?.();
-        if (clearNotificationsOnRead) {
+        if (clearNotificationsOnRead && !bypassUnreadZeroShortCircuit) {
           const notifs = await self.registration.getNotifications();
           notifs.forEach((n) => n.close());
         }
-        return;
+        if (!bypassUnreadZeroShortCircuit) return;
       }
       // unread > 0: update the PWA badge with the current count.
       await (
-        self.navigator as unknown as { setAppBadge?: (count: number) => Promise<void> }
+        self.navigator as unknown as {
+          setAppBadge?: (count: number) => Promise<void>;
+        }
       ).setAppBadge?.(pushData.unread);
     } else {
       // No unread field in payload — clear badge to avoid a stale count.
@@ -810,32 +2163,48 @@ const onPushNotification = async (event: PushEvent) => {
     // Badging API absent (Firefox/Gecko) — continue to show the notification.
   }
 
-  // event_id_only format: fetch the event ourselves and (for E2EE rooms) try
-  // to relay decryption to an open app tab.
-  if (isMinimalPushPayload(pushData)) {
-    console.debug('[SW push] minimal payload detected — fetching event', pushData.event_id);
-    await handleMinimalPushPayload(pushData.room_id, pushData.event_id, clients);
+  if (isDeclarativeWebPushPayload(pushData)) {
+    const { title, options } = buildDeclarativeNotificationOptions(pushData);
+    await self.registration.showNotification(title, options);
+    await recordPushTelemetry('shown_os', { payload_type: 'declarative' });
     return;
   }
 
   await handlePushNotificationPushData(pushData);
+  await recordPushTelemetry('shown_os', { payload_type: 'full' });
 };
 
 // ---------------------------------------------------------------------------
 // Push handler
 // ---------------------------------------------------------------------------
 
-self.addEventListener('push', (event: PushEvent) => event.waitUntil(onPushNotification(event)));
+self.addEventListener('push', (event: PushEvent) =>
+  event.waitUntil(
+    onPushNotification(event).catch(async (error: unknown) => {
+      await recordPushTelemetry('handler_error', {
+        error_type: error instanceof Error ? error.name : 'unknown',
+      });
+      await postSentryBreadcrumb('notification.push', 'Push handler failed', 'error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    })
+  )
+);
 
 self.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.notification.close();
 
-  const { data } = event.notification;
+  const { data } = event.notification as Notification & {
+    data?: ServiceWorkerNotificationClickData;
+  };
   const { scope } = self.registration;
 
   const pushUserId: string | undefined = data?.user_id ?? undefined;
   const pushRoomId: string | undefined = data?.room_id ?? undefined;
   const pushEventId: string | undefined = data?.event_id ?? undefined;
+  const pushNavigate: string | undefined =
+    typeof data?.navigate === 'string' ? data.navigate : undefined;
   const isInvite = data?.content?.membership === 'invite';
 
   console.debug('[SW notificationclick] notification data:', JSON.stringify(data, null, 2));
@@ -843,75 +2212,138 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
     pushUserId,
     pushRoomId,
     pushEventId,
+    pushNavigate,
     isInvite,
     scope,
   });
 
   const isCall = data?.isCall === true;
 
-  // Build a canonical deep-link URL.
-  //
-  // Room messages: /to/:user_id/:room_id/:event_id?
-  //   e.g. https://sable.cloudhub.social/to/%40alice%3Aserver/%21room%3Aserver/%24event%3Aserver
-  //   The :user_id segment ensures ToRoomEvent switches to the correct account
-  //   before navigating — required for background-account notifications.
-  //
-  // Invites: /inbox/invites/?uid=:user_id
-  //   Navigates straight to the invites page for the correct account.
-  let targetUrl: string;
-  if (isInvite) {
-    const u = new URL('inbox/invites/', scope);
-    if (pushUserId) u.searchParams.set('uid', pushUserId);
-    targetUrl = u.href;
-  } else if (pushUserId && pushRoomId) {
-    const callParam = isCall ? '?joinCall=true' : '';
-    const segments = pushEventId
-      ? `to/${encodeURIComponent(pushUserId)}/${encodeURIComponent(pushRoomId)}/${encodeURIComponent(pushEventId)}/${callParam}`
-      : `to/${encodeURIComponent(pushUserId)}/${encodeURIComponent(pushRoomId)}/${callParam}`;
-    targetUrl = new URL(segments, scope).href;
-  } else {
-    // Fallback: no room ID or no user ID in payload.
-    targetUrl = new URL('inbox/notifications/', scope).href;
-  }
+  const targetUrl = buildNotificationClickTargetUrl(scope, data ?? {});
 
   console.debug('[SW notificationclick] targetUrl:', targetUrl);
+  postSentryBreadcrumb(
+    buildNotificationBreadcrumb(
+      'click',
+      'click_received',
+      {
+        has_user_id: !!pushUserId,
+        has_room_id: !!pushRoomId,
+        has_event_id: !!pushEventId,
+        is_invite: isInvite,
+        is_call: isCall,
+      },
+      'info'
+    ).category,
+    'click_received',
+    'info',
+    buildNotificationMetricAttributes({
+      has_user_id: !!pushUserId,
+      has_room_id: !!pushRoomId,
+      has_event_id: !!pushEventId,
+      is_invite: isInvite,
+      is_call: isCall,
+    })
+  ).catch(() => undefined);
+  postSentryMetric('sable.notification.clicked', 1, {
+    ...buildNotificationMetricAttributes({
+      has_user_id: !!pushUserId,
+      has_room_id: !!pushRoomId,
+      has_event_id: !!pushEventId,
+      is_invite: isInvite,
+      is_call: isCall,
+    }),
+  }).catch(() => undefined);
 
   event.waitUntil(
     (async () => {
+      await persistLaunchContext({
+        source: 'notification_click',
+        clickedAt: Date.now(),
+        userId: pushUserId,
+        roomId: pushRoomId,
+        eventId: pushEventId,
+        targetUrl,
+      }).catch(() => undefined);
+
       const clientList = (await self.clients.matchAll({
         type: 'window',
         includeUncontrolled: true,
       })) as WindowClient[];
+      const rankedClients = rankNotificationClickClients(clientList, scope);
 
       console.debug(
         '[SW notificationclick] window clients:',
-        clientList.map((c) => ({
+        rankedClients.map((c) => ({
           url: c.url,
           visibility: c.visibilityState,
           focused: c.focused,
         }))
       );
 
-      for (const wc of clientList) {
+      for (const wc of rankedClients) {
         console.debug('[SW notificationclick] postMessage to existing client:', wc.url);
         try {
-          // Post notification data directly to the running app so its
-          // ServiceWorkerClickHandler can call setActiveSessionId + setPending
-          // (same path as the pill-style in-app banner) without navigating to
-          // the /to/ route first.
+          const clickId = createRecordId('notification-click');
+          const clickHandledPromise = createNotificationClickHandledWaiter(clickId);
+
           wc.postMessage({
             type: 'notificationClick',
+            clickId,
+            targetUrl,
             userId: pushUserId,
             roomId: pushRoomId,
             eventId: pushEventId,
+            navigate: pushNavigate,
             isInvite,
             isCall,
           });
+
+          // Give already-live clients a chance to route without forcing a reload.
+          // This preserves in-app account switching and room-restore behavior when
+          // the handler is ready, but still falls back if the message is dropped.
           // oxlint-disable-next-line no-await-in-loop
-          await wc.focus();
-          return;
+          const focusedClient = await wc.focus();
+          const handledByLiveClient =
+            didWindowClientActivationSucceed(focusedClient) &&
+            // oxlint-disable-next-line no-await-in-loop
+            (await clickHandledPromise);
+          if (handledByLiveClient) {
+            return;
+          }
+
+          if (typeof wc.navigate === 'function') {
+            // oxlint-disable-next-line no-await-in-loop
+            const navigatedClient = await wc.navigate(targetUrl);
+            if (!didWindowClientActivationSucceed(navigatedClient)) {
+              continue;
+            }
+            // oxlint-disable-next-line no-await-in-loop
+            const refocusedClient = await navigatedClient.focus();
+            if (!didWindowClientActivationSucceed(refocusedClient)) {
+              continue;
+            }
+            return;
+          }
         } catch (err) {
           console.debug('[SW notificationclick] postMessage/focus failed:', err);
+          postSentryBreadcrumb(
+            buildNotificationBreadcrumb(
+              'click',
+              'click_focus_existing_client_failed',
+              {
+                error: err instanceof Error ? err.message : String(err),
+                target_url: targetUrl,
+              },
+              'warning'
+            ).category,
+            'click_focus_existing_client_failed',
+            'warning',
+            buildNotificationMetricAttributes({
+              error: err instanceof Error ? err.message : String(err),
+              target_url: targetUrl,
+            })
+          ).catch(() => undefined);
         }
       }
 
@@ -920,10 +2352,57 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
       console.debug('[SW notificationclick] falling back to openWindow()', targetUrl);
       if (self.clients.openWindow) {
         await self.clients.openWindow(targetUrl);
+        await postSentryBreadcrumb(
+          buildNotificationBreadcrumb(
+            'click',
+            'click_opened_new_window',
+            { target_url: targetUrl },
+            'info'
+          ).category,
+          'click_opened_new_window',
+          'info',
+          buildNotificationMetricAttributes({ target_url: targetUrl })
+        );
       }
     })()
   );
 });
 
 precacheAndRoute(self.__WB_MANIFEST);
+
 cleanupOutdatedCaches();
+
+// SABLE-5G: Catch-all fetch handler for navigation requests
+// Handles FetchEvent.respondWith errors when precached assets fail to load
+// (e.g., right after SW update when old cached URLs are being cleaned up).
+// Falls back to serving cached index.html for navigation requests.
+self.addEventListener('fetch', (event: FetchEvent) => {
+  const { request } = event;
+  // Only handle navigation requests (document loads)
+  if (request.mode !== 'navigate') {
+    return;
+  }
+
+  event.respondWith(
+    (async () => {
+      try {
+        // Try network first
+        return await fetch(request);
+      } catch (fetchError) {
+        console.debug('[SW fetch fallback] Network fetch failed, trying cache:', fetchError);
+        // Network failed, try to serve cached index.html
+        try {
+          const cachedResponse = await matchPrecache('/index.html');
+          if (cachedResponse) {
+            console.debug('[SW fetch fallback] Serving cached index.html');
+            return cachedResponse;
+          }
+        } catch (cacheError) {
+          console.error('[SW fetch fallback] Failed to serve cached index.html:', cacheError);
+        }
+        // Both network and cache failed, rethrow original error
+        throw fetchError;
+      }
+    })()
+  );
+});

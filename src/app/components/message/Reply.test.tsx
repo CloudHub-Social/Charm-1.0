@@ -48,6 +48,10 @@ vi.mock('$hooks/useMediaAuthentication', () => ({
   useMediaAuthentication: () => false,
 }));
 
+vi.mock('$hooks/useRenderableMediaUrl', () => ({
+  useRenderableMediaUrl: (src: string | undefined) => src,
+}));
+
 vi.mock('$hooks/useIgnoredUsers', () => ({
   useIgnoredUsers: () => [],
 }));
@@ -72,7 +76,7 @@ vi.mock('$hooks/useMentionClickHandler', () => ({
 }));
 
 vi.mock('$features/settings/useSettingsLinkBaseUrl', () => ({
-  useSettingsLinkBaseUrl: () => 'https://app.sable.moe',
+  useSettingsLinkBaseUrl: () => 'https://charm.cloudhub.social',
 }));
 
 vi.mock('$utils/room', async (importActual) => {

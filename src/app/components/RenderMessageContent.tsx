@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { memo, useMemo, useCallback } from 'react';
 import type { IPreviewUrlResponse, MatrixClient, MatrixEvent, Room } from '$types/matrix-sdk';
-import { MsgType } from '$types/matrix-sdk';
+import { M_POLL_START, MsgType } from '$types/matrix-sdk';
 import { parseSettingsLink } from '$features/settings/settingsLink';
 import { useSettingsLinkBaseUrl } from '$features/settings/useSettingsLinkBaseUrl';
 import { testMatrixTo } from '$plugins/matrix-to';
@@ -40,16 +40,16 @@ import {
   TweakPreviewUrlCard,
   youtubeUrl,
 } from './url-preview';
-import { isHttpsFullSableCssUrl } from '../theme/previewUrls';
+import { isHttpsFullSableCssUrl } from '$app/theme/previewUrls';
 import { Image, MediaControl, PersistedVolumeVideo } from './media';
 import { ImageViewer } from './image-viewer';
 import { PdfViewer } from './Pdf-viewer';
 import { TextViewer } from './text-viewer';
 import { ClientSideHoverFreeze } from './ClientSideHoverFreeze';
 import { CuteEventType, MCuteEvent } from './message/MCuteEvent';
-import { PollEvent } from './message/PollEvent';
 import { M_TEXT } from 'matrix-js-sdk';
 import type { IImageInfo } from '$types/matrix/common';
+import { PollEvent } from '$features/room/poll/PollEvent';
 
 type RenderMessageContentProps = {
   displayName: string;
@@ -74,8 +74,11 @@ type RenderMessageContentProps = {
 
 const getMediaType = (url: string) => {
   const cleanUrl = url.toLowerCase();
-  if (cleanUrl.match(/\.(mp4|webm|ogg)$/i)) return 'video';
-  if (cleanUrl.match(/\.(png|jpg|jpeg|gif|webp)$/i) || cleanUrl.match(/@(jpeg|webp|png|jpg)$/i))
+  if (cleanUrl.match(/\.(mp4|webm|ogg)(\?|#|$)/i)) return 'video';
+  if (
+    cleanUrl.match(/\.(png|jpg|jpeg|gif|webp|apng)(\?|#|$)/i) ||
+    cleanUrl.match(/@(jpeg|webp|png|jpg)(\?|#|$)/i)
+  )
     return 'image';
   return null;
 };
@@ -83,6 +86,8 @@ const getMediaType = (url: string) => {
 const isSableChatEmbedCandidate = (url: string): boolean =>
   /^https:\/\//i.test(url) &&
   (/\.preview\.sable\.css(\?|#|$)/i.test(url) || isHttpsFullSableCssUrl(url));
+
+const isAnimatedDirectImageUrl = (url: string): boolean => /\.(gif|apng)(\?|#|$)/i.test(url);
 
 const CAPTION_STYLE: CSSProperties = { marginTop: config.space.S200, maxWidth: '100%' };
 const TEXT_STYLE: CSSProperties = { maxWidth: '100%' };
@@ -113,6 +118,7 @@ function RenderMessageContentInternal({
   const [captionPosition] = useSetting(settingsAtom, 'captionPosition');
   const [themeChatSableWidgets] = useSetting(settingsAtom, 'themeChatSableWidgetsEnabled');
   const [multiplePreviews] = useSetting(settingsAtom, 'multiplePreviews');
+  const [clientPreviewYoutube] = useSetting(settingsAtom, 'clientPreviewYoutube');
   const settingsLinkBaseUrl = useSettingsLinkBaseUrl();
   const captionPositionMap = {
     [CaptionPosition.Above]: 'column-reverse',
@@ -154,13 +160,47 @@ function RenderMessageContentInternal({
         ? filteredUrls.filter((u) => isHttpsFullSableCssUrl(u))
         : [];
 
-      const analyzed = filteredUrls.map((url) => ({
-        url,
-        type: getMediaType(url),
-      }));
-      const mediaLinks = analyzed.filter((item) => item.type !== null);
-      const previewCandidates = mediaLinks.length > 0 ? mediaLinks : analyzed;
-      const toRender = multiplePreviews ? previewCandidates : [previewCandidates[0]!];
+      const analyzed = filteredUrls.map((url) => {
+        const type = getMediaType(url);
+        const directMediaRenderable =
+          clientUrlPreview &&
+          mediaAutoLoad !== false &&
+          (type === 'video' ||
+            (type === 'image' && (autoplayGifs || !isAnimatedDirectImageUrl(url))));
+
+        return {
+          url,
+          type,
+          directMediaRenderable,
+        };
+      });
+      const previewCandidates = analyzed.filter(({ url, directMediaRenderable }) => {
+        if (directMediaRenderable) return true;
+        if (!themeChatSableWidgets && isSableChatEmbedCandidate(url)) return false;
+        if (clientUrlPreview && clientPreviewYoutube && youtubeUrl(url)) return true;
+        if (urlPreview) return true;
+        return false;
+      });
+      const prioritizedCandidates = previewCandidates.some(
+        ({ directMediaRenderable }) => directMediaRenderable
+      )
+        ? [
+            ...previewCandidates.filter(({ directMediaRenderable }) => directMediaRenderable),
+            ...previewCandidates.filter(({ directMediaRenderable }) => !directMediaRenderable),
+          ]
+        : previewCandidates;
+      if (
+        prioritizedCandidates.length === 0 &&
+        themeToRender.length === 0 &&
+        tweakCandidateUrls.length === 0
+      ) {
+        return undefined;
+      }
+      const toRender = multiplePreviews
+        ? prioritizedCandidates
+        : prioritizedCandidates[0]
+          ? [prioritizedCandidates[0]]
+          : [];
       return (
         <UrlPreviewHolder>
           {themeToRender.map((url) => (
@@ -170,25 +210,53 @@ function RenderMessageContentInternal({
             <TweakPreviewUrlCard key={`tweak:${url}`} url={url} />
           ))}
           {toRender.map((item) => {
-            const { url, type } = item;
+            const { url, type, directMediaRenderable } = item;
             if (themeToRender.includes(url)) return null;
             if (tweakCandidateUrls.includes(url)) return null;
-            if (type) {
-              return <UrlPreviewCard urlPreview key={url} url={url} ts={ts} mediaType={type} />;
+            if (type && directMediaRenderable) {
+              return (
+                <UrlPreviewCard
+                  urlPreview
+                  key={url}
+                  url={url}
+                  ts={ts}
+                  mediaType={type}
+                  mediaAutoLoad={mediaAutoLoad}
+                />
+              );
             }
             if (!themeChatSableWidgets && isSableChatEmbedCandidate(url)) return null;
-            if (clientUrlPreview && youtubeUrl(url)) {
+            if (clientUrlPreview && clientPreviewYoutube && youtubeUrl(url)) {
               return <ClientPreview key={url} url={url} />;
             }
             if (urlPreview) {
-              return <UrlPreviewCard urlPreview key={url} url={url} ts={ts} mediaType={type} />;
+              return (
+                <UrlPreviewCard
+                  urlPreview
+                  key={url}
+                  url={url}
+                  ts={ts}
+                  mediaType={directMediaRenderable ? type : undefined}
+                  mediaAutoLoad={mediaAutoLoad}
+                />
+              );
             }
             return null;
           })}
         </UrlPreviewHolder>
       );
     },
-    [multiplePreviews, themeChatSableWidgets, settingsLinkBaseUrl, clientUrlPreview, urlPreview, ts]
+    [
+      multiplePreviews,
+      themeChatSableWidgets,
+      settingsLinkBaseUrl,
+      clientUrlPreview,
+      clientPreviewYoutube,
+      urlPreview,
+      ts,
+      mediaAutoLoad,
+      autoplayGifs,
+    ]
   );
   const renderBundledPreviews = useCallback(
     (bundles: IPreviewUrlResponse[]) => (
@@ -205,8 +273,10 @@ function RenderMessageContentInternal({
     ),
     [urlPreview]
   );
-  const messageUrlsPreview = urlPreview || themeChatSableWidgets ? renderUrlsPreview : undefined;
+  const messageUrlsPreview =
+    urlPreview || clientUrlPreview || themeChatSableWidgets ? renderUrlsPreview : undefined;
   const messageBundlePreview = bundledPreview ? renderBundledPreviews : undefined;
+  const composeBundledPreviewsWithUrls = bundledPreview && !urlPreview && clientUrlPreview;
 
   const renderCaption = () => {
     const hasCaption = content.body && (content.body as string).trim().length > 0;
@@ -225,6 +295,7 @@ function RenderMessageContentInternal({
             renderBody={renderBody}
             renderUrlsPreview={messageUrlsPreview}
             renderBundledPreviews={messageBundlePreview}
+            composeBundledPreviewsWithUrls={composeBundledPreviewsWithUrls}
           />
         );
       return (
@@ -246,6 +317,7 @@ function RenderMessageContentInternal({
             renderBody={renderBody}
             renderUrlsPreview={messageUrlsPreview}
             renderBundledPreviews={messageBundlePreview}
+            composeBundledPreviewsWithUrls={composeBundledPreviewsWithUrls}
             style={TEXT_STYLE}
           />
         </Box>
@@ -310,6 +382,7 @@ function RenderMessageContentInternal({
         renderBody={renderBody}
         renderUrlsPreview={messageUrlsPreview}
         renderBundledPreviews={messageBundlePreview}
+        composeBundledPreviewsWithUrls={composeBundledPreviewsWithUrls}
         style={TEXT_STYLE}
       />
     );
@@ -335,6 +408,7 @@ function RenderMessageContentInternal({
         renderBody={renderBody}
         renderUrlsPreview={messageUrlsPreview}
         renderBundledPreviews={messageBundlePreview}
+        composeBundledPreviewsWithUrls={composeBundledPreviewsWithUrls}
       />
     );
   }
@@ -347,6 +421,7 @@ function RenderMessageContentInternal({
         renderBody={renderBody}
         renderUrlsPreview={messageUrlsPreview}
         renderBundledPreviews={messageBundlePreview}
+        composeBundledPreviewsWithUrls={composeBundledPreviewsWithUrls}
       />
     );
   }
@@ -460,10 +535,10 @@ function RenderMessageContentInternal({
         }
       />
     );
-  if (content['org.matrix.msc3381.poll.start']) {
+  if (content[M_POLL_START.name]) {
     if (mEvent && mx && room)
-      return <PollEvent content={content} mEvent={mEvent} mx={mx} room={room} />;
-    else return <UnsupportedContent />;
+      //set canEnd to false here because the browser is really not place to end polls regardless and adding it would increase the complexity a lot
+      return <PollEvent mEvent={mEvent} room={room} canEnd={false} />;
   }
   return (
     <UnsupportedContent

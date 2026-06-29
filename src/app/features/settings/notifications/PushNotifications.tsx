@@ -1,6 +1,6 @@
 import type { MatrixClient } from '$types/matrix-sdk';
 import { createDebugLogger } from '$utils/debugLogger';
-import type { ClientConfig } from '../../../hooks/useClientConfig';
+import type { ClientConfig } from '$hooks/useClientConfig';
 
 const debugLog = createDebugLogger('PushNotifications');
 
@@ -8,6 +8,46 @@ type PushSubscriptionState = [
   PushSubscriptionJSON | null,
   (subscription: PushSubscription | null) => void,
 ];
+
+export class UnsupportedPushEnvironmentError extends Error {
+  constructor() {
+    super('Push messaging is not supported in this browser.');
+    this.name = 'UnsupportedPushEnvironmentError';
+  }
+}
+
+export function isWebPushSupported(): boolean {
+  return 'serviceWorker' in navigator && 'PushManager' in window;
+}
+
+function postTogglePushMessage(data: {
+  url: string;
+  token: string | null | undefined;
+  pusherData: unknown;
+}): void {
+  if (!('serviceWorker' in navigator)) return;
+
+  const message = {
+    type: 'togglePush' as const,
+    ...data,
+  };
+  const posted = new Set<ServiceWorker>();
+  const postToWorker = (worker: ServiceWorker | null | undefined) => {
+    if (!worker || posted.has(worker)) return;
+    posted.add(worker);
+    // oxlint-disable-next-line unicorn/require-post-message-target-origin
+    worker.postMessage(message);
+  };
+
+  postToWorker(navigator.serviceWorker.controller);
+  navigator.serviceWorker.ready
+    .then((registration) => {
+      postToWorker(registration.active);
+      postToWorker(registration.waiting);
+      postToWorker(registration.installing);
+    })
+    .catch(() => undefined);
+}
 
 export async function requestBrowserNotificationPermission(): Promise<NotificationPermission> {
   if (!('Notification' in window)) {
@@ -32,12 +72,12 @@ export async function enablePushNotifications(
   clientConfig: ClientConfig,
   pushSubscriptionAtom: PushSubscriptionState
 ): Promise<void> {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    debugLog.error(
+  if (!isWebPushSupported()) {
+    debugLog.warn(
       'notification',
       'Push messaging not supported - missing serviceWorker or PushManager'
     );
-    throw new Error('Push messaging is not supported in this browser.');
+    throw new UnsupportedPushEnvironmentError();
   }
   debugLog.info('notification', 'Enabling push notifications');
   const [pushSubAtom, setPushSubscription] = pushSubscriptionAtom;
@@ -69,9 +109,8 @@ export async function enablePushNotifications(
       },
       append: false,
     };
-    navigator.serviceWorker.controller?.postMessage({
+    postTogglePushMessage({
       url: mx.baseUrl,
-      type: 'togglePush',
       pusherData,
       token: mx.getAccessToken(),
     });
@@ -118,9 +157,8 @@ export async function enablePushNotifications(
     append: false,
   };
 
-  navigator.serviceWorker.controller?.postMessage({
+  postTogglePushMessage({
     url: mx.baseUrl,
-    type: 'togglePush',
     pusherData,
     token: mx.getAccessToken(),
   });
@@ -144,9 +182,8 @@ export async function disablePushNotifications(
     pushkey: pushSubAtom?.keys?.p256dh,
   };
 
-  navigator.serviceWorker.controller?.postMessage({
+  postTogglePushMessage({
     url: mx.baseUrl,
-    type: 'togglePush',
     pusherData,
     token: mx.getAccessToken(),
   });
@@ -172,16 +209,34 @@ export async function deRegisterAllPushers(mx: MatrixClient): Promise<void> {
 export async function togglePusher(
   mx: MatrixClient,
   clientConfig: ClientConfig,
-  visible: boolean,
+  shouldEnable: boolean,
   usePushNotifications: boolean,
-  pushSubscriptionAtom: PushSubscriptionState,
-  keepEnabledWhenVisible = false
+  pushSubscriptionAtom: PushSubscriptionState
 ): Promise<void> {
-  if (usePushNotifications) {
-    if (visible && !keepEnabledWhenVisible) {
-      await disablePushNotifications(mx, clientConfig, pushSubscriptionAtom);
-    } else {
-      await enablePushNotifications(mx, clientConfig, pushSubscriptionAtom);
-    }
+  if (!usePushNotifications) return;
+  if (!isWebPushSupported()) {
+    debugLog.info('notification', 'Skipping passive push reconciliation on unsupported browser');
+    return;
   }
+  if (shouldEnable) {
+    await enablePushNotifications(mx, clientConfig, pushSubscriptionAtom);
+  } else {
+    await disablePushNotifications(mx, clientConfig, pushSubscriptionAtom);
+  }
+}
+
+export async function reconcilePushNotifications(
+  mx: MatrixClient,
+  clientConfig: ClientConfig,
+  shouldEnable: boolean,
+  usePushNotifications: boolean,
+  pushSubscriptionAtom: PushSubscriptionState
+): Promise<void> {
+  if (!usePushNotifications) return;
+  if (!isWebPushSupported()) {
+    debugLog.info('notification', 'Skipping startup push reconciliation on unsupported browser');
+    return;
+  }
+
+  await togglePusher(mx, clientConfig, shouldEnable, usePushNotifications, pushSubscriptionAtom);
 }

@@ -1,11 +1,13 @@
 import type { MouseEventHandler } from 'react';
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import type { RectCords } from 'folds';
 import {
   Avatar,
   Box,
   Button,
+  Icon,
+  Icons,
   IconButton,
   Menu,
   MenuItem,
@@ -16,6 +18,7 @@ import {
 } from 'folds';
 import {
   At,
+  ArrowsClockwise,
   Checks,
   composerIcon,
   DotsThreeOutlineVerticalIcon,
@@ -28,6 +31,7 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import FocusTrap from 'focus-trap-react';
 import { useNavigate } from 'react-router-dom';
+import type { RoomEventHandlerMap } from '$types/matrix-sdk';
 import { RoomEvent } from '$types/matrix-sdk';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { factoryRoomIdByActivity } from '$utils/sort';
@@ -39,8 +43,9 @@ import {
   NavEmptyLayout,
   NavItem,
   NavItemContent,
+  NavLink,
 } from '$components/nav';
-import { getDirectCreatePath, getDirectRoomPath } from '$pages/pathUtils';
+import { getDirectCreatePath, getDirectRoomPath, getDirectSearchPath } from '$pages/pathUtils';
 import { getCanonicalAliasOrRoomId } from '$utils/matrix';
 import { useSelectedRoom } from '$hooks/router/useSelectedRoom';
 import { VirtualTile } from '$components/virtualizer';
@@ -60,47 +65,86 @@ import {
   getRoomNotificationMode,
   useRoomsNotificationPreferencesContext,
 } from '$hooks/useRoomsNotificationPreferences';
-import { useDirectCreateSelected } from '$hooks/router/useDirectSelected';
+import { useDirectCreateSelected, useDirectSearchSelected } from '$hooks/router/useDirectSelected';
 import { useDirectRooms } from './useDirectRooms';
 import { SidebarResizer } from '$pages/client/sidebar/SidebarResizer';
+import { isPhoneLayoutDevice } from '$utils/user-agent';
 import { useScreenSizeContext, ScreenSize } from '$hooks/useScreenSize';
+import { usePullToRefresh } from '$hooks/usePullToRefresh';
+import { getSlidingSyncManager } from '$client/initMatrix';
+import { LIST_DMS } from '$client/slidingSync';
+import { getNextSlidingSyncListWindowEnd } from '$client/slidingSyncListPaging';
+import { allRoomsAtom } from '$state/room-list/roomList';
+import { markStartupRoomListReady } from '$utils/perfTelemetry';
+import {
+  ensureManualRefreshSpinStyle,
+  getManualRefreshSpinStyle,
+  triggerManualRefresh,
+} from '$utils/manualRefresh';
 import { isResizingSidebarAtom } from '$state/isResizingSidebar';
 
 type DirectMenuProps = {
+  isRefreshing: boolean;
+  onRefresh: () => void | Promise<void>;
   requestClose: () => void;
 };
-const DirectMenu = forwardRef<HTMLDivElement, DirectMenuProps>(({ requestClose }, ref) => {
-  const mx = useMatrixClient();
-  const [hideReads] = useSetting(settingsAtom, 'hideReads');
-  const orphanRooms = useDirectRooms();
-  const unread = useRoomsUnread(orphanRooms, roomToUnreadAtom);
+const DirectMenu = forwardRef<HTMLDivElement, DirectMenuProps>(
+  ({ isRefreshing, onRefresh, requestClose }, ref) => {
+    const mx = useMatrixClient();
+    const [hideReads] = useSetting(settingsAtom, 'hideReads');
+    const orphanRooms = useDirectRooms();
+    const unread = useRoomsUnread(orphanRooms, roomToUnreadAtom);
 
-  const handleMarkAsRead = () => {
-    if (!unread) return;
-    orphanRooms.forEach((rId) => markAsRead(mx, rId, hideReads));
-    requestClose();
-  };
+    const handleMarkAsRead = () => {
+      if (!unread) return;
+      orphanRooms.forEach((rId) => markAsRead(mx, rId, hideReads));
+      requestClose();
+    };
 
-  return (
-    <Menu ref={ref} style={{ maxWidth: toRem(160), width: '100vw' }}>
-      <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
-        <MenuItem
-          onClick={handleMarkAsRead}
-          size="300"
-          after={menuIcon(Checks)}
-          radii="300"
-          aria-disabled={!unread}
-        >
-          <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
-            Mark as Read
-          </Text>
-        </MenuItem>
-      </Box>
-    </Menu>
-  );
-});
+    return (
+      <Menu ref={ref} style={{ maxWidth: toRem(160), width: '100vw' }}>
+        <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
+          <MenuItem
+            onClick={handleMarkAsRead}
+            size="300"
+            after={menuIcon(Checks)}
+            radii="300"
+            disabled={!unread}
+          >
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              Mark as Read
+            </Text>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              void onRefresh();
+            }}
+            size="300"
+            after={menuIcon(ArrowsClockwise, {
+              style: getManualRefreshSpinStyle(isRefreshing),
+            })}
+            radii="300"
+            disabled={isRefreshing}
+          >
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              Refresh
+            </Text>
+          </MenuItem>
+        </Box>
+      </Menu>
+    );
+  }
+);
 
-function DirectHeader({ hideText }: { hideText?: boolean }) {
+function DirectHeader({
+  hideText,
+  isRefreshing,
+  onRefresh,
+}: {
+  hideText?: boolean;
+  isRefreshing: boolean;
+  onRefresh: () => void | Promise<void>;
+}) {
   const [menuAnchor, setMenuAnchor] = useState<RectCords>();
 
   const handleOpenMenu: MouseEventHandler<HTMLButtonElement> = (evt) => {
@@ -153,7 +197,11 @@ function DirectHeader({ hideText }: { hideText?: boolean }) {
               escapeDeactivates: stopPropagation,
             }}
           >
-            <DirectMenu requestClose={() => setMenuAnchor(undefined)} />
+            <DirectMenu
+              isRefreshing={isRefreshing}
+              onRefresh={onRefresh}
+              requestClose={() => setMenuAnchor(undefined)}
+            />
           </FocusTrap>
         }
       />
@@ -196,6 +244,7 @@ export function Direct() {
   useNavToActivePathMapper('direct');
   const scrollRef = useRef<HTMLDivElement>(null);
   const directs = useDirectRooms();
+  const allRoomCount = useAtomValue(allRoomsAtom).length;
   const notificationPreferences = useRoomsNotificationPreferencesContext();
   const roomToUnread = useAtomValue(roomToUnreadAtom);
   const navigate = useNavigate();
@@ -211,6 +260,7 @@ export function Direct() {
   const [joinCallOnSingleClick] = useSetting(settingsAtom, 'joinCallOnSingleClick');
 
   const createDirectSelected = useDirectCreateSelected();
+  const searchSelected = useDirectSearchSelected();
 
   const selectedRoomId = useSelectedRoom();
   const noRoomToDisplay = directs.length === 0;
@@ -220,23 +270,36 @@ export function Direct() {
   // Without this, DMs only re-sort when you switch rooms because getLastActiveTimestamp()
   // is internal SDK state not tracked by React dependencies.
   const [activityCounter, setActivityCounter] = useState(0);
-  const directsSetRef = useRef(directs);
-  directsSetRef.current = directs;
+  const timelineActivityStartRef = useRef(Date.now());
 
   useEffect(() => {
-    const handleTimeline = () => {
-      // Increment counter to trigger re-sort when any timeline event happens
+    const handleTimeline: RoomEventHandlerMap[RoomEvent.Timeline] = (
+      mEvent,
+      room,
+      _toStartOfTimeline,
+      _removed,
+      data
+    ) => {
+      const eventId = mEvent.getId();
+      const isRecentSlidingSyncEvent =
+        !!room &&
+        !!eventId &&
+        mEvent.getTs() >= timelineActivityStartRef.current - 60 * 1000 &&
+        !room.hasUserReadEvent(mx.getSafeUserId(), eventId);
+      if (!data.liveEvent && !isRecentSlidingSyncEvent) return;
+      // Increment counter to trigger re-sort when a new timeline event arrives.
       setActivityCounter((prev) => prev + 1);
     };
 
     // Listen to timeline events only for direct message rooms
-    directsSetRef.current.forEach((roomId) => {
+    const listenedRoomIds = Array.from(directs);
+    listenedRoomIds.forEach((roomId) => {
       const room = mx.getRoom(roomId);
       room?.on(RoomEvent.Timeline, handleTimeline);
     });
 
     return () => {
-      directsSetRef.current.forEach((roomId) => {
+      listenedRoomIds.forEach((roomId) => {
         const room = mx.getRoom(roomId);
         room?.off(RoomEvent.Timeline, handleTimeline);
       });
@@ -262,14 +325,55 @@ export function Direct() {
     estimateSize: () => 38,
     overscan: 10,
   });
+  const virtualItems = virtualizer.getVirtualItems();
+  const lastVirtualIndex = virtualItems.at(-1)?.index ?? -1;
+  const requestedEmptyListExpansionRef = useRef(false);
+
+  useEffect(() => {
+    const manager = getSlidingSyncManager(mx);
+    const diagnostics = manager?.getListDiagnostics(LIST_DMS);
+    if (!manager || !diagnostics) return;
+    const allowEmptyExpansion =
+      sortedDirects.length === 0 && !requestedEmptyListExpansionRef.current;
+    const nextEnd = getNextSlidingSyncListWindowEnd({
+      diagnostics,
+      itemCount: sortedDirects.length,
+      lastVirtualIndex,
+      allowEmptyExpansion,
+    });
+    if (nextEnd === undefined) return;
+    if (allowEmptyExpansion) requestedEmptyListExpansionRef.current = true;
+    manager.requestListWindow(LIST_DMS, nextEnd);
+  }, [mx, sortedDirects.length, allRoomCount, lastVirtualIndex]);
+
+  useEffect(() => {
+    if (sortedDirects.length > 0 || allRoomCount === 0) {
+      markStartupRoomListReady('direct', sortedDirects.length);
+    }
+  }, [sortedDirects.length, allRoomCount]);
 
   const handleCategoryClick = useCategoryHandler(setClosedCategories, (categoryId) =>
     closedCategories.has(categoryId)
   );
 
   const screenSize = useScreenSizeContext();
-  const isMobile = screenSize === ScreenSize.Mobile;
+  const isMobile = isPhoneLayoutDevice() || screenSize === ScreenSize.Mobile;
   const hideText = curWidth <= 80 && !isMobile;
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  useEffect(() => {
+    ensureManualRefreshSpinStyle();
+  }, []);
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await triggerManualRefresh(mx);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [mx, isRefreshing]);
+
+  usePullToRefresh(scrollRef, mx);
 
   return (
     <Box
@@ -280,7 +384,7 @@ export function Direct() {
       }}
     >
       <PageNav>
-        <DirectHeader hideText={hideText} />
+        <DirectHeader hideText={hideText} isRefreshing={isRefreshing} onRefresh={handleRefresh} />
         {noRoomToDisplay ? (
           <DirectEmpty />
         ) : (
@@ -311,6 +415,34 @@ export function Direct() {
                     </NavItemContent>
                   </NavButton>
                 </NavItem>
+                <NavItem variant="Background" radii="400" aria-selected={searchSelected}>
+                  <NavLink to={getDirectSearchPath()}>
+                    <NavItemContent>
+                      <Box
+                        as="span"
+                        grow="Yes"
+                        alignItems="Center"
+                        justifyContent="Start"
+                        gap="200"
+                      >
+                        <Avatar
+                          size={hideText ? undefined : '200'}
+                          radii="400"
+                          style={hideText ? { width: '100%' } : undefined}
+                        >
+                          <Icon src={Icons.Search} size="100" filled={searchSelected} />
+                        </Avatar>
+                        <Box as="span" grow="Yes">
+                          {!hideText && (
+                            <Text as="span" size="Inherit" truncate>
+                              Message Search
+                            </Text>
+                          )}
+                        </Box>
+                      </Box>
+                    </NavItemContent>
+                  </NavLink>
+                </NavItem>
               </NavCategory>
               <NavCategory>
                 <NavCategoryHeader>
@@ -329,7 +461,7 @@ export function Direct() {
                     overflow: 'clip',
                   }}
                 >
-                  {virtualizer.getVirtualItems().map((vItem) => {
+                  {virtualItems.map((vItem) => {
                     const roomId = sortedDirects[vItem.index];
                     if (!roomId) return null;
                     const room = mx.getRoom(roomId);

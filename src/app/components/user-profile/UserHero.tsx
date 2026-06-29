@@ -24,7 +24,7 @@ import { stopPropagation } from '$utils/keyboard';
 import { useRoom } from '$hooks/useRoom';
 import { useSableCosmetics } from '$hooks/useSableCosmetics';
 import { useNickname } from '$hooks/useNickname';
-import { useBlobCache } from '$hooks/useBlobCache';
+import { useRenderableMediaUrl } from '$hooks/useRenderableMediaUrl';
 import { ImageViewer } from '$components/image-viewer';
 import { AvatarPresence, PresenceBadge } from '$components/presence';
 import { UserAvatar } from '$components/user-avatar';
@@ -54,8 +54,8 @@ export function UserHero({ userId, avatarUrl, bannerUrl, presence, autoplayGifs 
   const [viewAvatar, setViewAvatar] = useState<string>();
   const [isFullStatus, setIsFullStatus] = useState(false);
 
-  const cachedBannerUrl = useBlobCache(bannerUrl);
-  const cachedAvatarUrl = useBlobCache(avatarUrl);
+  const cachedBannerUrl = useRenderableMediaUrl(bannerUrl);
+  const cachedAvatarUrl = useRenderableMediaUrl(avatarUrl);
 
   const coverUrl = cachedBannerUrl || cachedAvatarUrl;
   const isFallbackCover = !cachedBannerUrl && !!cachedAvatarUrl;
@@ -248,7 +248,7 @@ export function UserHeroName({ displayName, userId, server, customHeroCards }: U
   const [isHovered, setIsHovered] = useState(false);
   const isSuccess = useRef(false);
 
-  // Sable username color and fonts
+  // Sable-compatible username color and fonts
   const { color, font } = useSableCosmetics(userId, useRoom(), customHeroCards);
   const shownName = nick ?? displayName ?? username ?? userId;
 
@@ -272,11 +272,12 @@ export function UserHeroName({ displayName, userId, server, customHeroCards }: U
       <Box alignItems="Center" gap="100" wrap="Wrap">
         <Text size="T200" className={classNames(BreakWord, LineClamp3)} title={username}>
           <Chip
-            onClick={() => {
-              if (username && server) {
-                copyToClipboard(`@${username}:${server}`);
-                isSuccess.current = true;
-              } else isSuccess.current = false;
+            onClick={async () => {
+              isSuccess.current = !!(
+                username &&
+                server &&
+                (await copyToClipboard(`@${username}:${server}`))
+              );
               setCopied();
             }}
             style={{ backgroundColor: '#0000', padding: '0' }}
@@ -285,7 +286,7 @@ export function UserHeroName({ displayName, userId, server, customHeroCards }: U
             before={`@${username}`}
             after={
               copied || isHovered ? (
-                profileIcon(copied ? (isSuccess ? Check : CrossIcon) : CopyIcon)
+                profileIcon(copied ? (isSuccess.current ? Check : CrossIcon) : CopyIcon)
               ) : (
                 <></>
               )

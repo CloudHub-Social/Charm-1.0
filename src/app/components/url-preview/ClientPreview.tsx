@@ -6,11 +6,12 @@ import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { encodeBlurHash } from '$utils/blurHash';
-import { Attachment, AttachmentBox, AttachmentHeader } from '../message/attachment';
-import { Image } from '../media';
+import { fetch } from '$utils/fetch';
+import { Attachment, AttachmentBox, AttachmentHeader } from '$components/message/attachment';
+import { Image } from '$components/media';
 import { UrlPreview } from './UrlPreview';
-import { VideoContent } from '../message';
-import { MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME } from '../../../unstable/prefixes';
+import { VideoContent } from '$components/message';
+import { MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME } from '$unstable/prefixes';
 
 interface OEmbed {
   type: 'photo' | 'video' | 'link' | 'rich';
@@ -30,10 +31,15 @@ interface OEmbed {
   height?: number;
 }
 
-async function oEmbedData(url: string): Promise<OEmbed> {
-  const data = await fetch(url).then((resp) => resp.json());
-
-  return data;
+async function oEmbedData(url: string): Promise<OEmbed | null> {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return null; // Silently suppress failed oEmbed lookups (401, 403, etc.)
+    return await resp.json();
+  } catch {
+    // Non-JSON response or network error — treat as no embed available
+    return null;
+  }
 }
 
 export type EmbedHeaderProps = {
@@ -66,7 +72,11 @@ type EmbedOpenButtonProps = {
 };
 export function EmbedOpenButton({ url }: EmbedOpenButtonProps) {
   return (
-    <IconButton size="300" radii="300" onClick={() => window.open(url, '_blank')}>
+    <IconButton
+      size="300"
+      radii="300"
+      onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+    >
       {sizedIcon(Link, '100')}
     </IconButton>
   );

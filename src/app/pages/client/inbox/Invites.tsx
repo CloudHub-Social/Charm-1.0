@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Avatar,
   Badge,
@@ -77,6 +77,8 @@ import { useRoomNavigate } from '$hooks/useRoomNavigate';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { BackRouteHandler } from '$components/BackRouteHandler';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { useCachedMxcConverter } from '$hooks/useCachedMxcConverter';
+import type { MxcConverter } from '$utils/room';
 
 import { testBadWords } from '$plugins/bad-words';
 import { allRoomsAtom } from '$state/room-list/roomList';
@@ -88,6 +90,8 @@ import { EventType } from '$types/matrix-sdk';
 import { CustomAccountDataEvent } from '$types/matrix/accountData';
 import { updateInviteList } from '$state/updateInvites';
 import { useDismissedInviteList } from '$hooks/useDismissedInvites';
+import { getSlidingSyncManager } from '$client/initMatrix';
+import { LIST_INVITES } from '$client/slidingSync';
 
 const COMPACT_CARD_WIDTH = 548;
 
@@ -113,14 +117,15 @@ export const makeInviteData = (
   mx: MatrixClient,
   room: Room,
   useAuthentication: boolean,
-  nicknames: Record<string, string>
+  nicknames: Record<string, string>,
+  converter?: MxcConverter
 ): InviteData => {
   const userId = mx.getSafeUserId();
   const direct = isDirectInvite(room, userId);
 
   const roomAvatar = direct
-    ? getDirectRoomAvatarUrl(mx, room, 96, useAuthentication)
-    : getRoomAvatarUrl(mx, room, 96, useAuthentication);
+    ? getDirectRoomAvatarUrl(mx, room, 96, useAuthentication, converter)
+    : getRoomAvatarUrl(mx, room, 96, useAuthentication, converter);
   const roomName = room.name || room.getCanonicalAlias() || room.roomId;
   const roomTopic =
     getStateEvent(room, EventType.RoomTopic)?.getContent<RoomTopicEventContent>()?.topic ??
@@ -178,7 +183,9 @@ const dismissInvite = (mx: MatrixClient, roomId: string, onDismiss: () => void) 
     const newDismissList = dismissedInvites ? [...dismissedInvites.roomIds, roomId] : [roomId];
     mx.setAccountData(CustomAccountDataEvent.SableDismissedInvites as keyof AccountDataEvents, {
       roomIds: newDismissList,
-    }).finally(onDismiss);
+    })
+      .then(onDismiss)
+      .catch(() => undefined);
   }
 };
 
@@ -189,11 +196,13 @@ const undismissInvite = (mx: MatrixClient, roomId: string, onDismiss: () => void
   )?.getContent<{
     roomIds: string[];
   }>();
-  const newIgnores = dismissedInvites?.roomIds.filter((item) => roomId != item);
-  if (newIgnores !== dismissedInvites) {
+  if (dismissedInvites?.roomIds.includes(roomId)) {
+    const newIgnores = dismissedInvites.roomIds.filter((item) => roomId != item);
     mx.setAccountData(CustomAccountDataEvent.SableDismissedInvites as keyof AccountDataEvents, {
       roomIds: newIgnores,
-    }).finally(onDismiss);
+    })
+      .then(onDismiss)
+      .catch(() => undefined);
   }
 };
 
@@ -837,11 +846,20 @@ function DismissedInvites({
 export function Invites() {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
+  const convertMxc = useCachedMxcConverter();
   const { navigateRoom, navigateSpace } = useRoomNavigate();
   const allRooms = useAtomValue(allRoomsAtom);
   const allInviteIds = useAtomValue(allInvitesAtom);
   const nicknames = useAtomValue(nicknamesAtom);
   const [updateInvites, setUpdateInvites] = useAtom(updateInviteList);
+
+  useEffect(() => {
+    const manager = getSlidingSyncManager(mx);
+    const diagnostics = manager?.getListDiagnostics(LIST_INVITES);
+    if (!manager || !diagnostics) return;
+    if (diagnostics.knownCount > 0 && diagnostics.rangeEnd + 1 >= diagnostics.knownCount) return;
+    manager.requestListWindow(LIST_INVITES, diagnostics.rangeEnd + 30);
+  }, [mx, allInviteIds.length]);
 
   const dismissedInvitesIds = useDismissedInviteList();
 
@@ -850,7 +868,7 @@ export function Invites() {
   const invitesData = allInviteIds
     .map((inviteId) => mx.getRoom(inviteId))
     .filter((inviteRoom) => !!inviteRoom)
-    .map((inviteRoom) => makeInviteData(mx, inviteRoom, useAuthentication, nicknames));
+    .map((inviteRoom) => makeInviteData(mx, inviteRoom, useAuthentication, nicknames, convertMxc));
 
   const [knownInvites, unknownInvites, spamInvites, dismissedInvites] = useMemo(() => {
     const known: InviteData[] = [];

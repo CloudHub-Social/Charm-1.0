@@ -12,9 +12,9 @@ import { isRoomId } from '$utils/matrix';
 import type { SortFunc } from '$utils/sort';
 import { byOrderKey, byTsOldToNew, factoryRoomIdByActivity } from '$utils/sort';
 import { useMatrixClient } from './useMatrixClient';
-import { makeLobbyCategoryId } from '../state/closedLobbyCategories';
+import { makeLobbyCategoryId } from '$state/closedLobbyCategories';
 import { useStateEventCallback } from './useStateEventCallback';
-import { ErrorCode } from '../cs-errorcode';
+import { ErrorCode } from '$app/cs-errorcode';
 
 export type HierarchyItemSpace = {
   roomId: string;
@@ -202,10 +202,11 @@ export const useSpaceHierarchy = (
   return hierarchy;
 };
 
-const getSpaceJoinedHierarchy = (
+export const getSpaceJoinedHierarchy = (
   rootSpaceId: string,
   getRoom: GetRoomCallback,
   excludeRoom: (parentId: string, roomId: string, depth: number) => boolean,
+  excludeBranchRoom: (parentId: string, roomId: string, depth: number) => boolean,
   sortRoomItems: (parentId: string, items: HierarchyItem[]) => HierarchyItem[]
 ): HierarchyItem[] => {
   const spaceItems: HierarchyItemSpace[] = getHierarchySpaces(
@@ -222,7 +223,7 @@ const getSpaceJoinedHierarchy = (
    * @param visited - Set used to prevent recursion errors.
    * @returns True if the space or any descendant contains non-space rooms.
    */
-  const getContainsRoom = (spaceId: string, visited: Set<string> = new Set()) => {
+  const getContainsRoom = (spaceId: string, depth: number, visited: Set<string> = new Set()) => {
     // Prevent infinite recursion
     if (visited.has(spaceId)) return false;
     visited.add(spaceId);
@@ -236,11 +237,12 @@ const getSpaceJoinedHierarchy = (
       if (!isValidChild(childEvent)) return false;
       const childId = childEvent.getStateKey();
       if (!childId || !isRoomId(childId)) return false;
+      if (excludeBranchRoom(spaceId, childId, depth)) return false;
       const room = getRoom(childId);
       if (!room) return false;
 
       if (!room.isSpaceRoom()) return true;
-      return getContainsRoom(childId, visited);
+      return getContainsRoom(childId, depth + 1, visited);
     });
   };
 
@@ -259,7 +261,7 @@ const getSpaceJoinedHierarchy = (
       return true;
     });
 
-    if (!getContainsRoom(spaceItem.roomId)) return [];
+    if (!getContainsRoom(spaceItem.roomId, spaceItem.depth)) return [];
 
     const childItems: HierarchyItemRoom[] = [];
     joinedRoomEvents.forEach((childEvent) => {
@@ -287,6 +289,7 @@ export const useSpaceJoinedHierarchy = (
   spaceId: string,
   getRoom: GetRoomCallback,
   excludeRoom: (parentId: string, roomId: string, depth: number) => boolean,
+  excludeBranchRoom: (parentId: string, roomId: string, depth: number) => boolean,
   sortByActivity: (spaceId: string) => boolean
 ): HierarchyItem[] => {
   const mx = useMatrixClient();
@@ -304,13 +307,15 @@ export const useSpaceJoinedHierarchy = (
   );
 
   const [hierarchyAtom] = useState(() =>
-    atom(getSpaceJoinedHierarchy(spaceId, getRoom, excludeRoom, sortRoomItems))
+    atom(getSpaceJoinedHierarchy(spaceId, getRoom, excludeRoom, excludeBranchRoom, sortRoomItems))
   );
   const [hierarchy, setHierarchy] = useAtom(hierarchyAtom);
 
   useEffect(() => {
-    setHierarchy(getSpaceJoinedHierarchy(spaceId, getRoom, excludeRoom, sortRoomItems));
-  }, [mx, spaceId, setHierarchy, getRoom, excludeRoom, sortRoomItems]);
+    setHierarchy(
+      getSpaceJoinedHierarchy(spaceId, getRoom, excludeRoom, excludeBranchRoom, sortRoomItems)
+    );
+  }, [mx, spaceId, setHierarchy, getRoom, excludeRoom, excludeBranchRoom, sortRoomItems]);
 
   useStateEventCallback(
     mx,
@@ -321,10 +326,12 @@ export const useSpaceJoinedHierarchy = (
         if (!eventRoomId) return;
 
         if (spaceId === eventRoomId || getAllParents(roomToParents, eventRoomId).has(spaceId)) {
-          setHierarchy(getSpaceJoinedHierarchy(spaceId, getRoom, excludeRoom, sortRoomItems));
+          setHierarchy(
+            getSpaceJoinedHierarchy(spaceId, getRoom, excludeRoom, excludeBranchRoom, sortRoomItems)
+          );
         }
       },
-      [spaceId, roomToParents, setHierarchy, getRoom, excludeRoom, sortRoomItems]
+      [spaceId, roomToParents, setHierarchy, getRoom, excludeRoom, excludeBranchRoom, sortRoomItems]
     )
   );
 
@@ -356,7 +363,7 @@ export const useFetchSpaceHierarchyLevel = (
   );
 
   const queryResponse = useInfiniteQuery({
-    refetchOnMount: enable,
+    enabled: enable,
     queryKey: [roomId, 'hierarchy_level'],
     initialPageParam: undefined,
     queryFn: fetchLevel,
@@ -414,4 +421,164 @@ export const useFetchSpaceHierarchyLevel = (
     error,
     rooms,
   };
+};
+
+/**
+ * Fetches space hierarchy levels for multiple rooms one-at-a-time to avoid
+ * triggering N parallel requests (and subsequent 429 rate limiting).
+ *
+ * @param roomIds - Ordered list of space room IDs to fetch hierarchy for.
+ * @returns A Map from roomId to FetchSpaceHierarchyLevelData.
+ */
+export const useSequentialSpaceHierarchies = (
+  roomIds: string[]
+): Map<string, FetchSpaceHierarchyLevelData> => {
+  const mx = useMatrixClient();
+  // Pre-populate on first render so children immediately see fetching:true
+  // and skip their own useFetchSpaceHierarchyLevel queries.
+  const [results, setResults] = useState<Map<string, FetchSpaceHierarchyLevelData>>(() => {
+    const m = new Map<string, FetchSpaceHierarchyLevelData>();
+    roomIds.forEach((id) => m.set(id, { fetching: true, error: null, rooms: new Map() }));
+    return m;
+  });
+  const fetchedRef = useRef<Set<string>>(new Set());
+  const pendingRef = useRef<string[]>([]);
+  const processingRef = useRef(false);
+
+  // Stable join so the effect only re-runs when the room list actually changes.
+  const roomIdsKey = roomIds.join(',');
+
+  useEffect(() => {
+    // Prune stale IDs so removed rooms can be re-fetched if they reappear,
+    // and so we don't waste requests on rooms no longer in the hierarchy.
+    const currentSet = new Set(roomIds);
+    fetchedRef.current.forEach((id) => {
+      if (!currentSet.has(id)) fetchedRef.current.delete(id);
+    });
+    pendingRef.current = pendingRef.current.filter((id) => currentSet.has(id));
+
+    const newIds = roomIds.filter((id) => !fetchedRef.current.has(id));
+    if (newIds.length === 0) return;
+
+    newIds.forEach((id) => fetchedRef.current.add(id));
+    pendingRef.current = [...pendingRef.current, ...newIds];
+
+    // Eagerly mark all queued IDs as fetching so child components see a
+    // non-undefined hierarchyData immediately and skip their own queries.
+    setResults((prev) => {
+      const next = new Map(prev);
+      newIds.forEach((id) => {
+        if (!next.has(id)) next.set(id, { fetching: true, error: null, rooms: new Map() });
+      });
+      return next;
+    });
+
+    let cancelled = false;
+
+    const processQueue = async () => {
+      // If another instance is running and hasn't been cancelled yet, the new
+      // items we added to pendingRef will be picked up by that queue naturally.
+      // Only skip if an active (non-cancelled) queue is already running.
+      if (processingRef.current) return;
+      processingRef.current = true;
+
+      while (pendingRef.current.length > 0) {
+        if (cancelled) break;
+        const roomId = pendingRef.current.shift();
+        if (!roomId) continue;
+
+        if (!cancelled) {
+          setResults((prev) => {
+            const next = new Map(prev);
+            next.set(roomId, { fetching: true, error: null, rooms: new Map() });
+            return next;
+          });
+        }
+
+        const roomsMap: Map<string, IHierarchyRoom> = new Map();
+        let nextBatch: string | undefined;
+        let pageCount = 0;
+        let fetchError: Error | null = null;
+        let retry = true;
+        let retryCount = 0;
+        const MAX_RETRIES = 5;
+
+        while (retry && retryCount <= MAX_RETRIES) {
+          if (cancelled) break;
+          retry = false;
+          try {
+            do {
+              if (cancelled) break;
+              // eslint-disable-next-line no-await-in-loop
+              const result = await mx.getRoomHierarchy(roomId, PER_PAGE_COUNT, 1, false, nextBatch);
+              result.rooms.forEach((r) => roomsMap.set(r.room_id, r));
+              nextBatch = result.next_batch;
+              pageCount += 1;
+            } while (nextBatch && pageCount <= MAX_AUTO_PAGE_COUNT);
+          } catch (err) {
+            if (
+              err instanceof MatrixError &&
+              err.errcode === (ErrorCode.M_LIMIT_EXCEEDED as string)
+            ) {
+              const { retry_after_ms: delay } = err.data;
+              if (typeof delay === 'number') {
+                // eslint-disable-next-line no-await-in-loop
+                await new Promise<void>((resolve) => {
+                  setTimeout(resolve, delay);
+                });
+                // Reset and retry this same roomId (up to MAX_RETRIES).
+                roomsMap.clear();
+                nextBatch = undefined;
+                pageCount = 0;
+                retryCount += 1;
+                if (retryCount <= MAX_RETRIES) {
+                  retry = true;
+                } else {
+                  fetchError = err instanceof Error ? err : new Error(String(err));
+                }
+              } else {
+                fetchError = err instanceof Error ? err : new Error(String(err));
+              }
+            } else {
+              fetchError = err instanceof Error ? err : new Error(String(err));
+            }
+          }
+        }
+
+        if (cancelled) {
+          // Fetch was interrupted mid-flight; remove from fetchedRef so this
+          // room is re-queued on the next effect run rather than stuck forever.
+          fetchedRef.current.delete(roomId);
+          break;
+        }
+
+        setResults((prev) => {
+          const next = new Map(prev);
+          next.set(roomId, {
+            fetching: false,
+            error: fetchError,
+            rooms: roomsMap,
+          });
+          return next;
+        });
+      }
+
+      // Only reset the flag if we weren't cancelled — if we were, the cleanup
+      // already reset it so the next effect's processQueue can start fresh.
+      if (!cancelled) processingRef.current = false;
+    };
+
+    processQueue();
+    return () => {
+      cancelled = true;
+      // Reset so the next effect invocation can start a fresh queue for any
+      // items that were added to pendingRef during this run.
+      processingRef.current = false;
+    };
+    // roomIds identity changes every render; roomIdsKey is the stable
+    // serialization used as the effect dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomIdsKey, mx]);
+
+  return results;
 };

@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   defaultSettings,
+  getSettings,
   mergePersistedSettings,
+  primeRuntimeSettingsDefaults,
   sanitizeSettingsDefaults,
   resetRuntimeSettingsDefaults,
+  setSettings,
 } from '$state/settings';
 
 beforeEach(() => {
@@ -30,6 +33,72 @@ describe('mergePersistedSettings', () => {
     localStorage.setItem('settings', JSON.stringify({ monochromeMode: true }));
     const merged = mergePersistedSettings(localStorage.getItem('settings'), {});
     expect(merged.saturationLevel).toBe(0);
+  });
+
+  it('restores explicitly cleared theme values after a reload', () => {
+    setSettings({
+      ...defaultSettings,
+      themeId: undefined,
+      lightThemeId: undefined,
+      darkThemeId: undefined,
+      themeRemoteManualFullUrl: undefined,
+      themeRemoteLightFullUrl: undefined,
+      themeRemoteDarkFullUrl: undefined,
+      themeRemoteManualKind: undefined,
+      themeRemoteLightKind: undefined,
+      themeRemoteDarkKind: undefined,
+      arboriumLightTheme: undefined,
+      arboriumDarkTheme: undefined,
+    });
+
+    const merged = mergePersistedSettings(localStorage.getItem('settings'), {});
+
+    expect(merged.themeId).toBeUndefined();
+    expect(merged.lightThemeId).toBeUndefined();
+    expect(merged.darkThemeId).toBeUndefined();
+    expect(merged.arboriumLightTheme).toBeUndefined();
+    expect(merged.arboriumDarkTheme).toBeUndefined();
+  });
+
+  it('keeps deployer theme defaults when untouched optional theme fields stay undefined', () => {
+    primeRuntimeSettingsDefaults({ themeId: 'deployer-theme' });
+
+    setSettings({
+      ...getSettings(),
+      twitterEmoji: false,
+    });
+
+    const merged = mergePersistedSettings(localStorage.getItem('settings'), {});
+
+    expect(merged.themeId).toBe('deployer-theme');
+  });
+
+  it('persists an explicit theme clear when a deployer default was previously active', () => {
+    primeRuntimeSettingsDefaults({ themeId: 'deployer-theme' });
+
+    setSettings({
+      ...getSettings(),
+      themeId: undefined,
+    });
+
+    const merged = mergePersistedSettings(localStorage.getItem('settings'), {});
+
+    expect(merged.themeId).toBeUndefined();
+  });
+
+  it('persists an explicit clear after a manual theme selection', () => {
+    setSettings({
+      ...getSettings(),
+      themeId: 'dark-theme',
+    });
+    setSettings({
+      ...getSettings(),
+      themeId: undefined,
+    });
+
+    const merged = mergePersistedSettings(localStorage.getItem('settings'), {});
+
+    expect(merged.themeId).toBeUndefined();
   });
 });
 
@@ -87,5 +156,28 @@ describe('sanitizeSettingsDefaults', () => {
     });
     expect(sanitizeSettingsDefaults({ iconEmptySizePx: -1 })).toEqual({});
     expect(sanitizeSettingsDefaults({ iconEmptySizePx: 32.5 })).toEqual({});
+  });
+
+  it('accepts the new notification and composer settings', () => {
+    expect(
+      sanitizeSettingsDefaults({
+        notificationDeviceScope: 'active_client_only',
+        emojiAutoExpand: true,
+        structuredMarkdownAssist: false,
+      })
+    ).toEqual({
+      notificationDeviceScope: 'active_client_only',
+      emojiAutoExpand: true,
+      structuredMarkdownAssist: false,
+    });
+    expect(sanitizeSettingsDefaults({ notificationDeviceScope: 'invalid-scope' })).toEqual({});
+  });
+});
+
+describe('primeRuntimeSettingsDefaults', () => {
+  it('updates getSettings before atoms are bootstrapped', () => {
+    primeRuntimeSettingsDefaults({ defaultLandingScreen: 'direct' });
+
+    expect(getSettings().defaultLandingScreen).toBe('direct');
   });
 });

@@ -1,8 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import parse from 'html-react-parser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Text } from 'folds';
 import * as customHtmlCss from '$styles/CustomHtml.css';
 import { buildAbbrReplaceTextNode } from '$components/message/RenderBody';
+import { isJumboEmojiText } from '$utils/emojiDetection';
 import { sanitizeCustomHtml } from '$utils/sanitize';
 import {
   LINKIFY_OPTS,
@@ -37,6 +39,10 @@ const { CodeHighlightRenderer } = vi.hoisted(() => ({
 
 vi.mock('$components/code-highlight', () => ({
   CodeHighlightRenderer,
+}));
+
+vi.mock('$hooks/useRenderableMediaUrl', () => ({
+  useRenderableMediaUrl: (src: string | undefined) => src,
 }));
 
 const createMatrixClient = (overrides: Record<string, unknown> = {}) =>
@@ -149,6 +155,33 @@ describe('react custom html parser', () => {
     const img = container.querySelector('img');
     expect(img).toBeInTheDocument();
     expect(img).toHaveAttribute('height', '32');
+  });
+
+  it('matches newer Unicode emoji for inline scaling and jumbo detection', () => {
+    render(<div data-testid="emoji-root">{scaleSystemEmoji('🫩')}</div>);
+
+    expect(screen.getByTestId('emoji-root').querySelector('span')).toBeInTheDocument();
+    expect(isJumboEmojiText('🫩')).toBe(true);
+  });
+
+  it('renders Wordle-style square emoji with a fixed-width cell wrapper', () => {
+    render(<div data-testid="emoji-root">{scaleSystemEmoji('⬛🟨🟩')}</div>);
+
+    const fixedCells = screen
+      .getByTestId('emoji-root')
+      .querySelectorAll(`span.${customHtmlCss.SystemEmojiFixedCell}`);
+
+    expect(fixedCells).toHaveLength(3);
+  });
+
+  it('does not force regular emoji into a fixed-width cell', () => {
+    render(<div data-testid="emoji-root">{scaleSystemEmoji('🤔')}</div>);
+
+    const fixedCells = screen
+      .getByTestId('emoji-root')
+      .querySelectorAll(`span.${customHtmlCss.SystemEmojiFixedCell}`);
+
+    expect(fixedCells).toHaveLength(0);
   });
 
   it('clamps incoming inline image height to the configured max', () => {
@@ -407,6 +440,17 @@ describe('react custom html parser', () => {
     expect(logSpy).not.toHaveBeenCalled();
   });
 
+  it('does not fall back to rendering unsafe non-mxc image urls from unsanitized html', () => {
+    const unsafeUrl = ['javascript', 'alert(1)'].join(':');
+    const { container } = renderParsedHtml(
+      `<img src="${unsafeUrl}" alt="unsafe media" title="unsafe media" />`,
+      { sanitize: false }
+    );
+
+    expect(screen.getByText('unsafe media')).toBeInTheDocument();
+    expect(container.querySelector('img')).toBeNull();
+  });
+
   it('linkifies bare urls in formatted html text nodes even when abbreviation replacement runs', () => {
     const parserOptions = getReactCustomHtmlParser(createMatrixClient(), '!room:example.com', {
       settingsLinkBaseUrl,
@@ -475,6 +519,44 @@ describe('react custom html parser', () => {
     expect(container.textContent).toContain('one');
     expect(container.textContent).toContain('two');
     expect(container.textContent).toContain('bullet');
+  });
+
+  it('preserves literal blank lines inside parsed paragraphs', () => {
+    const { container } = renderMessage('<p>first line\n\nsecond line</p>');
+
+    const paragraph = container.querySelector('p');
+    expect(paragraph).toBeInTheDocument();
+    expect(paragraph).toHaveClass(customHtmlCss.Paragraph);
+  });
+
+  it('renders inline code with inherited text metrics instead of the old compressed code size', () => {
+    const { container } = renderMessage('<p>before <code>inline</code> after</p>');
+    const inlineCode = container.querySelector('code');
+
+    expect(inlineCode).toBeInTheDocument();
+
+    const { container: inheritReference } = render(
+      <Text as="code" size="Inherit" className={customHtmlCss.Code}>
+        inline
+      </Text>
+    );
+    const { container: compressedReference } = render(
+      <Text as="code" size="T300" className={customHtmlCss.Code}>
+        inline
+      </Text>
+    );
+
+    const inlineCodeClasses = new Set(inlineCode!.className.split(/\s+/).filter(Boolean));
+    const inheritClasses = new Set(
+      inheritReference.querySelector('code')!.className.split(/\s+/).filter(Boolean)
+    );
+    const compressedOnlyClasses = compressedReference
+      .querySelector('code')!
+      .className.split(/\s+/)
+      .filter((className) => className && !inheritClasses.has(className));
+
+    expect([...inheritClasses].every((className) => inlineCodeClasses.has(className))).toBe(true);
+    expect(compressedOnlyClasses.some((className) => inlineCodeClasses.has(className))).toBe(false);
   });
 });
 

@@ -32,7 +32,11 @@ export const TimelineFloat = recipe({
 export type TimelineFloatVariants = RecipeVariants<typeof TimelineFloat>;
 export const messageList = style({
   overflowY: 'scroll',
+  WebkitOverflowScrolling: 'touch',
+  overscrollBehaviorY: 'contain',
+  touchAction: 'pan-y',
   scrollbarGutter: 'stable',
+  overflowAnchor: 'none',
 
   '@supports': {
     'not selector(::-webkit-scrollbar)': {
@@ -71,6 +75,19 @@ export const messageList = style({
     },
     '&:hover::-webkit-scrollbar-track, &:has(*:hover)::-webkit-scrollbar-track': {
       backgroundColor: color.SurfaceVariant.ContainerActive,
+    },
+  },
+});
+
+export const dividerInset = style({
+  display: 'inline-flex',
+  justifyContent: 'center',
+  maxWidth: '100%',
+  paddingInline: config.space.S0,
+
+  '@media': {
+    '(max-width: 768px)': {
+      paddingInline: config.space.S200,
     },
   },
 });

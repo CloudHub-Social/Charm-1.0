@@ -37,6 +37,12 @@ export interface UseProcessedTimelineOptions {
    * where every reply legitimately has `threadRootId` set to the root.
    */
   skipThreadFilter?: boolean;
+  /**
+   * Minutes of inactivity before a new message from the same sender gets a
+   * full user header. Defaults to 2 (the original behaviour). Set higher
+   * (e.g. 15) for Discord-style compact grouping.
+   */
+  messageGroupingThreshold: number;
 }
 
 export interface ProcessedEvent {
@@ -63,6 +69,28 @@ export function getProcessedRowIndexForRawTimelineIndex(
   return undefined;
 }
 
+/** Raw timeline indices for skipped events can also advance to the next visible row when needed. */
+export function getProcessedRowIndexForRawTimelineIndexForward(
+  processedEvents: ProcessedEvent[],
+  startRawIndex: number
+): { rowIndex: number; focusRawIndex: number } | undefined {
+  const exactRowIndex = processedEvents.findIndex((e) => e.itemIndex === startRawIndex);
+  if (exactRowIndex >= 0) {
+    return {
+      rowIndex: exactRowIndex,
+      focusRawIndex: processedEvents[exactRowIndex]!.itemIndex,
+    };
+  }
+
+  const rowIndex = processedEvents.findIndex((e) => e.itemIndex >= startRawIndex);
+  if (rowIndex < 0) return undefined;
+
+  return {
+    rowIndex,
+    focusRawIndex: processedEvents[rowIndex]!.itemIndex,
+  };
+}
+
 const MESSAGE_EVENT_TYPES = new Set([
   'm.room.message',
   'm.room.message.encrypted',
@@ -87,7 +115,8 @@ type ProcessedEventDraft = Omit<
 const computeCollapseAndDividers = (
   drafts: ProcessedEventDraft[],
   mxUserId: string | null,
-  readUptoEventId: string | undefined
+  readUptoEventId: string | undefined,
+  messageGroupingThreshold: number
 ): ProcessedEvent[] => {
   let prevEvent: MatrixEvent | undefined;
   let isPrevRendered = false;
@@ -98,11 +127,6 @@ const computeCollapseAndDividers = (
     const { mEvent, eventSender } = draft;
     const type = mEvent.getType();
 
-    if (!newDivider && readUptoEventId) {
-      const prevId = prevEvent ? prevEvent.getId() : undefined;
-      newDivider = prevId === readUptoEventId;
-    }
-
     if (!dayDivider) {
       dayDivider = prevEvent ? !inSameDay(prevEvent.getTs(), mEvent.getTs()) : false;
     }
@@ -112,7 +136,9 @@ const computeCollapseAndDividers = (
     let collapsed = false;
     if (isPrevRendered && !dayDivider && prevEvent !== undefined) {
       if (isMessageEvent) {
-        const withinTimeThreshold = minuteDifference(prevEvent.getTs(), mEvent.getTs()) < 2;
+        const withinTimeThreshold =
+          messageGroupingThreshold > 0 &&
+          minuteDifference(prevEvent.getTs(), mEvent.getTs()) < messageGroupingThreshold;
         const senderMatch = prevEvent.getSender() === eventSender;
         const typeMatch = normalizeMessageType(prevEvent.getType()) === normalizeMessageType(type);
         const dividerOk = !newDivider || eventSender === mxUserId;
@@ -134,6 +160,7 @@ const computeCollapseAndDividers = (
 
     prevEvent = mEvent;
     isPrevRendered = true;
+    if (draft.id === readUptoEventId) newDivider = true;
     if (willRenderNewDivider) newDivider = false;
     if (willRenderDayDivider) dayDivider = false;
 
@@ -216,7 +243,8 @@ const mergeRelationReactions = (
   hideMemberInReadOnly: boolean,
   isReadOnly: boolean,
   mxUserId: string | null,
-  readUptoEventId: string | undefined
+  readUptoEventId: string | undefined,
+  messageGroupingThreshold: number
 ): ProcessedEvent[] => {
   if (hideMemberInReadOnly && isReadOnly) return result;
 
@@ -259,7 +287,12 @@ const mergeRelationReactions = (
 
   const mergedDrafts = mergeDraftsAndExtras(baseDrafts, allExtras);
 
-  return computeCollapseAndDividers(mergedDrafts, mxUserId, readUptoEventId);
+  return computeCollapseAndDividers(
+    mergedDrafts,
+    mxUserId,
+    readUptoEventId,
+    messageGroupingThreshold
+  );
 };
 
 const mergeRelationEdits = (
@@ -268,7 +301,8 @@ const mergeRelationEdits = (
   ignoredUsersSet: Set<string>,
   hiddenEventEdits: boolean,
   mxUserId: string | null,
-  readUptoEventId: string | undefined
+  readUptoEventId: string | undefined,
+  messageGroupingThreshold: number
 ): ProcessedEvent[] => {
   const existingIds = new Set(result.map((event) => event.id));
   const baseDrafts: ProcessedEvent[] = [];
@@ -308,7 +342,12 @@ const mergeRelationEdits = (
 
   const mergedDrafts = mergeDraftsAndExtras(baseDrafts, allExtras);
 
-  return computeCollapseAndDividers(mergedDrafts, mxUserId, readUptoEventId);
+  return computeCollapseAndDividers(
+    mergedDrafts,
+    mxUserId,
+    readUptoEventId,
+    messageGroupingThreshold
+  );
 };
 
 export function useProcessedTimeline({
@@ -323,6 +362,7 @@ export function useProcessedTimeline({
   isReadOnly,
   hideMemberInReadOnly,
   skipThreadFilter,
+  messageGroupingThreshold,
 }: UseProcessedTimelineOptions): ProcessedEvent[] {
   const {
     showHiddenEvents,
@@ -336,12 +376,29 @@ export function useProcessedTimeline({
   } = hiddenEvents;
 
   return useMemo(() => {
+    // Sort items by origin_server_ts so events always render in chronological
+    // order even when the SDK stores them in receipt order.  This is visible
+    // after a sliding-sync gap on mobile resume (TimelineReset delivers a full
+    // batch at once) and for bridge-backfilled or federated messages where
+    // receipt order ≠ timestamp order.  Receipt order is preserved as a
+    // tiebreaker so threading / causality is not affected.
+    const sortedItems = items.toSorted((a, b) => {
+      const [tlA, baseA] = getTimelineAndBaseIndex(linkedTimelines, a);
+      const [tlB, baseB] = getTimelineAndBaseIndex(linkedTimelines, b);
+      const evA = tlA ? getTimelineEvent(tlA, getTimelineRelativeIndex(a, baseA)) : null;
+      const evB = tlB ? getTimelineEvent(tlB, getTimelineRelativeIndex(b, baseB)) : null;
+      const tsA = evA?.getTs() ?? 0;
+      const tsB = evB?.getTs() ?? 0;
+      if (tsA !== tsB) return tsA - tsB;
+      return a - b; // receipt order tiebreaker keeps causally-related events stable
+    });
+
     let prevEvent: MatrixEvent | undefined;
     let isPrevRendered = false;
     let newDivider = false;
     let dayDivider = false;
 
-    const result = items.reduce<ProcessedEvent[]>((acc, item) => {
+    const result = sortedItems.reduce<ProcessedEvent[]>((acc, item) => {
       const [eventTimeline, baseIndex] = getTimelineAndBaseIndex(linkedTimelines, item);
       if (!eventTimeline) return acc;
 
@@ -354,10 +411,14 @@ export function useProcessedTimeline({
 
       const mEventId = mEvent.getId();
       if (!mEventId) return acc;
+      const skipEvent = () => {
+        if (mEventId === readUptoEventId) newDivider = true;
+        return acc;
+      };
 
       const eventSender = mEvent.getSender() ?? null;
 
-      if (eventSender && ignoredUsersSet.has(eventSender)) return acc;
+      if (eventSender && ignoredUsersSet.has(eventSender)) return skipEvent();
 
       const type = mEvent.getType();
       const isEdit = isEditEvent(mEvent);
@@ -365,26 +426,26 @@ export function useProcessedTimeline({
       const isRedactionEvt = mEvent.isRedaction();
 
       if (hideMemberInReadOnly && isReadOnly) {
-        if (isReaction) return acc;
+        if (isReaction) return skipEvent();
         if (
           isRedactionEvt &&
           getRedactionTargetEvent(timelineSet, mEvent)?.getType() === (EventType.Reaction as string)
         ) {
-          return acc;
+          return skipEvent();
         }
       }
 
       if (mEvent.isRedacted()) {
         const showMessageTombstone = showTombstoneEvents && isRedactableMessageType(type);
         const showReactionTombstone = hiddenEventReactionTombstone && isReaction;
-        if (!showMessageTombstone && !showReactionTombstone) return acc;
+        if (!showMessageTombstone && !showReactionTombstone) return skipEvent();
       }
 
       if (type === 'm.room.member') {
         const membershipChanged = isMembershipChanged(mEvent);
-        if (hideMemberInReadOnly && isReadOnly) return acc;
-        if (membershipChanged && hideMembershipEvents) return acc;
-        if (!membershipChanged && hideNickAvatarEvents) return acc;
+        if (hideMemberInReadOnly && isReadOnly) return skipEvent();
+        if (membershipChanged && hideMembershipEvents) return skipEvent();
+        if (!membershipChanged && hideNickAvatarEvents) return skipEvent();
       }
 
       const allowSpecificHiddenEvent =
@@ -413,28 +474,48 @@ export function useProcessedTimeline({
 
         if (!isStandardRendered) {
           if (Object.keys(mEvent.getContent()).length === 0 && !allowSpecificHiddenEvent)
-            return acc;
+            return skipEvent();
           if (!allowSpecificHiddenEvent) {
-            if (mEvent.getRelation()) return acc;
-            if (mEvent.isRedaction()) return acc;
+            if (mEvent.getRelation()) return skipEvent();
+            if (mEvent.isRedaction()) return skipEvent();
           }
         }
       }
 
+      // Extract thread root from m.relates_to even when SDK didn't set threadRootId
+      // (sliding sync bug where thread relations arrive without threadId resolved)
+      const actualThreadRoot = (() => {
+        if (threadRootId !== undefined) return threadRootId;
+        const relation =
+          mEvent.getRelation?.() ??
+          (
+            mEvent.getWireContent?.() as {
+              'm.relates_to'?: { rel_type?: unknown; event_id?: unknown };
+            }
+          )?.['m.relates_to'] ??
+          (
+            mEvent.getContent?.() as { 'm.relates_to'?: { rel_type?: unknown; event_id?: unknown } }
+          )?.['m.relates_to'];
+        if (relation?.rel_type === 'm.thread' && typeof relation.event_id === 'string') {
+          return relation.event_id;
+        }
+        return undefined;
+      })();
+
       if (
         !skipThreadFilter &&
-        threadRootId !== undefined &&
-        threadRootId !== mEventId &&
-        isThreadRelationEvent(mEvent, threadRootId)
+        actualThreadRoot !== undefined &&
+        actualThreadRoot !== mEventId &&
+        isThreadRelationEvent(mEvent, actualThreadRoot)
       )
-        return acc;
+        return skipEvent();
 
-      if (isEdit && !hiddenEventEdits) return acc;
+      if (isEdit && !hiddenEventEdits) return skipEvent();
       if (isReaction) {
         if (mEvent.isRedacted()) {
-          if (!hiddenEventReactionTombstone) return acc;
+          if (!hiddenEventReactionTombstone) return skipEvent();
         } else if (!hiddenEventReactions) {
-          return acc;
+          return skipEvent();
         }
       }
       if (
@@ -446,15 +527,17 @@ export function useProcessedTimeline({
           hiddenEventReactionRedactionTimeline
         )
       )
-        return acc;
-
-      if (!newDivider && readUptoEventId) {
-        const prevId = prevEvent ? prevEvent.getId() : undefined;
-        newDivider = prevId === readUptoEventId;
-      }
+        return skipEvent();
 
       if (!dayDivider) {
-        dayDivider = prevEvent ? !inSameDay(prevEvent.getTs(), mEvent.getTs()) : false;
+        // Only insert a day divider when moving *forward* to a new calendar day.
+        // Bridged messages (Discord, Signal, …) arrive with an origin_server_ts from
+        // an earlier day but are inserted at the end of the timeline by the SDK.
+        // Showing a backward day divider ("Yesterday" after "Today" messages) breaks
+        // the visual ordering, so we suppress dividers for out-of-order events.
+        dayDivider = prevEvent
+          ? !inSameDay(prevEvent.getTs(), mEvent.getTs()) && mEvent.getTs() > prevEvent.getTs()
+          : false;
       }
 
       const isMessageEvent = isMessageRow(mEvent);
@@ -462,7 +545,8 @@ export function useProcessedTimeline({
       let collapsed = false;
       if (isPrevRendered && !dayDivider && prevEvent !== undefined) {
         if (isMessageEvent) {
-          const withinTimeThreshold = minuteDifference(prevEvent.getTs(), mEvent.getTs()) < 2;
+          const withinTimeThreshold =
+            minuteDifference(prevEvent.getTs(), mEvent.getTs()) < messageGroupingThreshold;
           const senderMatch = prevEvent.getSender() === eventSender;
           const typeMatch =
             normalizeMessageType(prevEvent.getType()) === normalizeMessageType(type);
@@ -496,6 +580,7 @@ export function useProcessedTimeline({
 
       prevEvent = mEvent;
       isPrevRendered = true;
+      if (mEventId === readUptoEventId) newDivider = true;
       if (willRenderNewDivider) newDivider = false;
       if (willRenderDayDivider) dayDivider = false;
 
@@ -513,13 +598,15 @@ export function useProcessedTimeline({
         hideMemberInReadOnly,
         isReadOnly,
         mxUserId,
-        readUptoEventId
+        readUptoEventId,
+        messageGroupingThreshold
       ),
       linkedTimelines,
       ignoredUsersSet,
       hiddenEventEdits,
       mxUserId,
-      readUptoEventId
+      readUptoEventId,
+      messageGroupingThreshold
     );
   }, [
     items,
@@ -540,5 +627,6 @@ export function useProcessedTimeline({
     isReadOnly,
     hideMemberInReadOnly,
     skipThreadFilter,
+    messageGroupingThreshold,
   ]);
 }

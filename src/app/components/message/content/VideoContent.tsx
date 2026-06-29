@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Badge,
   Box,
@@ -20,13 +20,17 @@ import { BlurhashCanvas } from 'react-blurhash';
 import type { EncryptedAttachmentInfo } from 'browser-encrypt-attachment';
 import type { IThumbnailContent, IVideoInfo } from '$types/matrix/common';
 import { useMatrixClient } from '$hooks/useMatrixClient';
+import { useMediaUrlCacheContext } from '$hooks/useMediaUrlCacheContext';
 import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { bytesToSize, millisecondsToMinutesAndSeconds } from '$utils/common';
-import { decryptFile, downloadEncryptedMedia, downloadMedia, mxcUrlToHttp } from '$utils/matrix';
+import { decryptFileSafe, downloadEncryptedMedia, downloadMedia } from '$utils/matrix';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { useMediaMetadata } from '$hooks/useMediaMetadata';
+import { getScopedMediaCacheKey } from '$utils/mediaTransport';
+import { storeMediaMetadataForBlob } from '$utils/mediaMetadata';
 import { validBlurHash } from '$utils/blurHash';
 import * as css from './style.css';
-import { MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME } from '../../../../unstable/prefixes';
+import { MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME } from '$unstable/prefixes';
 
 type RenderVideoProps = {
   title: string;
@@ -45,6 +49,7 @@ type VideoContentProps = {
   autoPlay?: boolean;
   markedAsSpoiler?: boolean;
   spoilerReason?: string;
+  onError?: () => void;
   renderThumbnail?: () => ReactNode;
   renderVideo: (props: RenderVideoProps) => ReactNode;
 };
@@ -60,6 +65,7 @@ export const VideoContent = as<'div', VideoContentProps>(
       autoPlay,
       markedAsSpoiler,
       spoilerReason,
+      onError,
       renderThumbnail,
       renderVideo,
       ...props
@@ -68,7 +74,26 @@ export const VideoContent = as<'div', VideoContentProps>(
   ) => {
     const mx = useMatrixClient();
     const useAuthentication = useMediaAuthentication();
+    const mediaUrlCache = useMediaUrlCacheContext();
     const blurHash = validBlurHash(info.thumbnail_info?.[MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME]);
+    const rawMediaUrl = useMemo(() => {
+      if (url.startsWith('http')) return url;
+      return mediaUrlCache.get(mx, url, useAuthentication) ?? undefined;
+    }, [mediaUrlCache, mx, url, useAuthentication]);
+    const mediaMetadataKey = encInfo
+      ? getScopedMediaCacheKey(url)
+      : rawMediaUrl
+        ? getScopedMediaCacheKey(rawMediaUrl)
+        : undefined;
+    const mediaMetadata = useMediaMetadata(mediaMetadataKey);
+    const duration =
+      typeof info.duration === 'number' && Number.isFinite(info.duration) && info.duration > 0
+        ? info.duration
+        : mediaMetadata?.duration;
+    const byteSize =
+      typeof info.size === 'number' && Number.isFinite(info.size) && info.size > 0
+        ? info.size
+        : mediaMetadata?.byteSize;
 
     const [load, setLoad] = useState(false);
     const [error, setError] = useState(false);
@@ -79,23 +104,50 @@ export const VideoContent = as<'div', VideoContentProps>(
       useCallback(async () => {
         if (url.startsWith('http')) return url;
 
-        const mediaUrl = mxcUrlToHttp(mx, url, useAuthentication);
+        const mediaUrl = rawMediaUrl;
         if (!mediaUrl) throw new Error('Invalid media URL');
+
+        // Check blob cache first
+        const isEncrypted = !!encInfo;
+        const cachedBlob = mediaUrlCache.getBlob(url, isEncrypted, mimeType);
+        if (cachedBlob) return cachedBlob;
+
         const fileContent = encInfo
-          ? await downloadEncryptedMedia(mediaUrl, (encBuf) =>
-              decryptFile(encBuf, mimeType, encInfo)
+          ? await downloadEncryptedMedia(
+              mediaUrl,
+              (encBuf) => decryptFileSafe(encBuf, mimeType, encInfo, { mediaUrl }),
+              mx.getAccessToken()
             )
-          : await downloadMedia(mediaUrl);
-        return URL.createObjectURL(fileContent);
-      }, [mx, url, useAuthentication, mimeType, encInfo])
+          : await downloadMedia(mediaUrl, mx.getAccessToken());
+
+        const blobUrl = URL.createObjectURL(fileContent);
+        mediaUrlCache.setBlob(url, isEncrypted, blobUrl, mimeType);
+        void storeMediaMetadataForBlob(mediaMetadataKey, fileContent, 'video');
+        return blobUrl;
+      }, [mx, url, rawMediaUrl, mimeType, encInfo, mediaMetadataKey, mediaUrlCache])
     );
+
+    // When the source download succeeds, reset video-element error state so the
+    // Retry button doesn't flash before the <video> has had a chance to load.
+    useEffect(() => {
+      if (srcState.status === AsyncStatus.Success) {
+        setError(false);
+      }
+    }, [srcState.status]);
 
     const handleLoad = () => {
       setLoad(true);
+      setError(false);
     };
     const handleError = () => {
-      setLoad(false);
-      setError(true);
+      // Only show the error if the source download already succeeded — if
+      // it's still loading the video element may fire a transient error
+      // before the blob URL is ready.
+      if (srcState.status === AsyncStatus.Success) {
+        setLoad(false);
+        setError(true);
+        onError?.();
+      }
     };
 
     const handleRetry = () => {
@@ -198,12 +250,13 @@ export const VideoContent = as<'div', VideoContentProps>(
         )}
         {(srcState.status === AsyncStatus.Loading || srcState.status === AsyncStatus.Success) &&
           !load &&
+          !error &&
           !blurred && (
             <Box className={css.AbsoluteContainer} alignItems="Center" justifyContent="Center">
               <Spinner variant="Secondary" />
             </Box>
           )}
-        {(error || srcState.status === AsyncStatus.Error) && (
+        {!load && (error || srcState.status === AsyncStatus.Error) && (
           <Box
             className={css.AbsoluteContainer}
             alignItems="Center"
@@ -257,7 +310,7 @@ export const VideoContent = as<'div', VideoContentProps>(
             </Menu>
           </Box>
         )}
-        {!load && typeof info.size === 'number' && (
+        {!load && typeof byteSize === 'number' && (
           <Box
             className={css.AbsoluteFooter}
             justifyContent="SpaceBetween"
@@ -265,10 +318,10 @@ export const VideoContent = as<'div', VideoContentProps>(
             gap="200"
           >
             <Badge variant="Secondary" fill="Soft">
-              <Text size="L400">{millisecondsToMinutesAndSeconds(info.duration ?? 0)}</Text>
+              <Text size="L400">{millisecondsToMinutesAndSeconds(duration ?? 0)}</Text>
             </Badge>
             <Badge variant="Secondary" fill="Soft">
-              <Text size="L400">{bytesToSize(info.size)}</Text>
+              <Text size="L400">{bytesToSize(byteSize)}</Text>
             </Badge>
           </Box>
         )}

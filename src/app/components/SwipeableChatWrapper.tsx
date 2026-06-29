@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { motion, useMotionValue, useSpring } from 'framer-motion';
+import { motion, useMotionValue, useSpring } from 'motion/react';
 import { useDrag } from '@use-gesture/react';
 import { useAtomValue } from 'jotai';
 import { settingsAtom, RightSwipeAction } from '$state/settings';
@@ -44,8 +44,8 @@ export function SwipeableChatWrapper({
       if (active) {
         x.set(val);
       } else {
-        const swipeThreshold = 120;
-        const velocityThreshold = 0.5;
+        const swipeThreshold = 180;
+        const velocityThreshold = 1.2;
 
         if (val > swipeThreshold || (vx > velocityThreshold && dx > 0 && val > 0)) {
           onOpenSidebar?.();

@@ -1,3 +1,5 @@
+import { buildMessagePreviewFromContent } from './messagePreview';
+
 export const DEFAULT_NOTIFICATION_ICON = '/public/res/logo-maskable/logo-maskable-180x180.png';
 export const DEFAULT_NOTIFICATION_BADGE = '/public/res/logo-maskable/logo-maskable-72x72.png';
 export const DEFAULT_MESSAGE_PREVIEW = 'new message';
@@ -25,6 +27,7 @@ type NotificationPayload = {
 type NotificationPreviewInput = {
   content?: unknown;
   eventType?: string;
+  effectiveType?: string;
   isEncryptedRoom?: boolean;
   showMessageContent: boolean;
   showEncryptedMessageContent: boolean;
@@ -36,23 +39,26 @@ const getString = (value: unknown, fallback: string): string => {
   return normalized.length > 0 ? normalized : fallback;
 };
 
-const getBodyFromContent = (content: unknown): string | undefined => {
-  if (!content || typeof content !== 'object') return undefined;
-  const { body } = content as Record<string, unknown>;
-  if (typeof body !== 'string') return undefined;
-  const normalized = body.trim();
-  return normalized.length > 0 ? normalized : undefined;
-};
-
 export const resolveNotificationPreviewText = ({
   content,
   eventType,
+  effectiveType,
   isEncryptedRoom,
   showMessageContent,
   showEncryptedMessageContent,
 }: NotificationPreviewInput): string => {
+  const resolvedEventType = effectiveType ?? eventType;
+  const encryptedContext = isEncryptedRoom || eventType === 'm.room.encrypted';
+
+  if (!showMessageContent) {
+    return encryptedContext ? ENCRYPTED_MESSAGE_PREVIEW : DEFAULT_MESSAGE_PREVIEW;
+  }
+  if (encryptedContext && !showEncryptedMessageContent) {
+    return ENCRYPTED_MESSAGE_PREVIEW;
+  }
+
   // Handle reactions specially - show the reaction emoji
-  if (eventType === 'm.reaction' && content && typeof content === 'object') {
+  if (resolvedEventType === 'm.reaction' && content && typeof content === 'object') {
     const relatesTo = (content as Record<string, unknown>)['m.relates_to'];
     if (relatesTo && typeof relatesTo === 'object') {
       const { key } = relatesTo as Record<string, unknown>;
@@ -63,17 +69,21 @@ export const resolveNotificationPreviewText = ({
     return 'Added a reaction';
   }
 
-  const encryptedContext = isEncryptedRoom || eventType === 'm.room.encrypted';
+  const preview = buildMessagePreviewFromContent({
+    content:
+      content && typeof content === 'object' ? (content as Record<string, unknown>) : undefined,
+    eventType,
+    effectiveType,
+  });
+  if (preview?.text) return preview.text;
 
-  if (!showMessageContent) {
-    return encryptedContext ? ENCRYPTED_MESSAGE_PREVIEW : DEFAULT_MESSAGE_PREVIEW;
+  const fallbackBody =
+    resolvedEventType === 'm.room.message' && content && typeof content === 'object'
+      ? (content as Record<string, unknown>).body
+      : undefined;
+  if (typeof fallbackBody === 'string' && fallbackBody.trim()) {
+    return fallbackBody.trim();
   }
-  if (encryptedContext && !showEncryptedMessageContent) {
-    return ENCRYPTED_MESSAGE_PREVIEW;
-  }
-
-  const body = getBodyFromContent(content);
-  if (body) return body;
 
   return encryptedContext ? ENCRYPTED_MESSAGE_PREVIEW : DEFAULT_MESSAGE_PREVIEW;
 };

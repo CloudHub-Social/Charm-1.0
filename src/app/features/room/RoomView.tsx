@@ -20,6 +20,7 @@ import { useRoomCreators } from '$hooks/useRoomCreators';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { SwipeableChatWrapper } from '$components/SwipeableChatWrapper';
 import { BackRouteHandler } from '$components/BackRouteHandler';
+import { useKeyboardHeight } from '$hooks/ios-keyboard-fix/useKeyboardHeight';
 import { useOpenRoomSettings } from '$state/hooks/roomSettings';
 import { useSpaceOptionally } from '$hooks/useSpace';
 import { RoomSettingsPage } from '$state/roomSettings';
@@ -29,6 +30,7 @@ import { delayedEventsSupportedAtom } from '$state/scheduledMessages';
 import { useCallMembers, useCallSession } from '$hooks/useCall';
 import { callEmbedAtom } from '$state/callEmbed';
 import { useCallJoined } from '$hooks/useCallEmbed';
+import { useRoomTypingMember } from '$hooks/useRoomTypingMembers';
 import { CallView } from '$features/call/CallView';
 import { useRoom } from '$hooks/useRoom';
 import { RoomViewFollowing, RoomViewFollowingPlaceholder } from './RoomViewFollowing';
@@ -70,19 +72,29 @@ const shouldFocusMessageField = (evt: KeyboardEvent): boolean => {
   return true;
 };
 
-export function RoomView({ eventId }: { eventId?: string }) {
+export function RoomView({
+  eventId,
+  jumpMode,
+  hasDesktopRightDrawer = false,
+}: {
+  eventId?: string;
+  jumpMode?: 'notification_live' | 'history_context';
+  hasDesktopRightDrawer?: boolean;
+}) {
   const roomInputRef = useRef<HTMLDivElement>(null);
   const roomViewRef = useRef<HTMLDivElement>(null);
   const editLastMessageRef = useRef<(() => void) | undefined>();
 
-  const [hideReads] = useSetting(settingsAtom, 'hideReads');
+  const { isKeyboardVisible } = useKeyboardHeight();
   const screenSize = useScreenSizeContext();
+  const [hideReads] = useSetting(settingsAtom, 'hideReads');
 
   const room = useRoom();
   const { roomId } = room;
   const editor = useEditor();
 
   const mx = useMatrixClient();
+  const typingMembers = useRoomTypingMember(room.roomId);
 
   const tombstoneEvent = useStateEvent(room, EventType.RoomTombstone);
   const powerLevels = usePowerLevelsContext();
@@ -137,6 +149,8 @@ export function RoomView({ eventId }: { eventId?: string }) {
   const callEmbed = useAtomValue(callEmbedAtom);
   const isJoinedInThisRoom = useCallJoined(callEmbed) && callEmbed?.roomId === room.roomId;
   const showCallView = !room.isCallRoom() && (callMembers.length > 0 || isJoinedInThisRoom);
+  const hideFollowingBar = screenSize === ScreenSize.Mobile && isKeyboardVisible;
+  const hasTypingIndicator = typingMembers.some((receipt) => receipt.userId !== mx.getUserId());
 
   return (
     <BackRouteHandler>
@@ -153,6 +167,9 @@ export function RoomView({ eventId }: { eventId?: string }) {
                 key={roomId}
                 room={room}
                 eventId={eventId}
+                jumpMode={jumpMode}
+                hasDesktopRightDrawer={hasDesktopRightDrawer}
+                hasTypingIndicator={hasTypingIndicator}
                 editor={editor}
                 onEditorReset={handleResetEditor}
                 onEditLastMessageRef={editLastMessageRef}
@@ -160,7 +177,14 @@ export function RoomView({ eventId }: { eventId?: string }) {
               <RoomViewTyping room={room} />
               <GlobalModalManager />
             </Box>
-            <Box shrink="No" direction="Column">
+            <Box
+              shrink="No"
+              direction="Column"
+              style={{
+                backgroundColor: 'var(--sable-surface-container)',
+                paddingBottom: 0,
+              }}
+            >
               {canMessage && delayedEventsSupported && (
                 <ScheduledMessagesList room={room} onEditMessage={handleEditMessage} />
               )}
@@ -196,7 +220,11 @@ export function RoomView({ eventId }: { eventId?: string }) {
                   </>
                 )}
               </div>
-              {hideReads ? <RoomViewFollowingPlaceholder /> : <RoomViewFollowing room={room} />}
+              {hideFollowingBar ? null : hideReads ? (
+                <RoomViewFollowingPlaceholder />
+              ) : (
+                <RoomViewFollowing room={room} />
+              )}
             </Box>
           </SwipeableChatWrapper>
         </Page>
