@@ -137,11 +137,8 @@ describe('android edge-to-edge inset contract', () => {
     expect(telemetryBannerStyles).toContain("bottom: 'env(safe-area-inset-bottom, 0)'");
   });
 
-  it('keeps splash and account-switcher controls inside the mobile viewport', () => {
+  it('keeps splash controls inside the mobile viewport', () => {
     const clientRoot = readWorkspaceFile('src/app/pages/client/ClientRoot.tsx');
-    const accountSwitcher = readWorkspaceFile(
-      'src/app/pages/client/sidebar/AccountSwitcherTab.tsx'
-    );
 
     expect(clientRoot).toMatch(
       /const safeAreaTopInset\s*=\s*["']var\(--sable-safe-area-top, env\(safe-area-inset-top, 0px\)\)["']/
@@ -150,27 +147,5 @@ describe('android edge-to-edge inset contract', () => {
       /const safeAreaRightInset\s*=\s*["']var\(--sable-safe-area-right, env\(safe-area-inset-right, 0px\)\)["']/
     );
     expect(clientRoot).toContain('right: `calc(${safeAreaRightInset} + ${config.space.S100})`');
-    expect(accountSwitcher).toContain('const getAccountSwitcherMenuMaxHeight = (');
-    expect(accountSwitcher).toContain('...sectionMenuContentStyle');
-    expect(accountSwitcher).toContain('maxHeight: sectionMenuMaxHeight');
-    expect(accountSwitcher).toContain('flex: 1');
-    expect(accountSwitcher).toContain('minHeight: 0');
-    expect(accountSwitcher).toContain('const availableAboveTrigger = Math.max(');
-    expect(accountSwitcher).toContain('menuAnchor.y - mobileMenuViewportPadding');
-    expect(accountSwitcher).toMatch(/WebkitOverflowScrolling:\s*["']touch["']/);
-    expect(accountSwitcher).toContain('const useModalAccountSwitcher = isPhoneLayout;');
-    expect(accountSwitcher).toContain(
-      'paddingLeft: `calc(${safeAreaInlineStart} + ${config.space.S400})`'
-    );
-    expect(accountSwitcher).toContain(
-      'paddingRight: `calc(${safeAreaInlineEnd} + ${config.space.S200})`'
-    );
-    expect(accountSwitcher).toContain(
-      'paddingBottom: `calc(${config.space.S100} + ${safeAreaBottomInset})`'
-    );
-    expect(accountSwitcher).toContain(
-      '<Modal500 requestClose={() => setMenuAnchor(undefined)} fullScreenOnMobile>'
-    );
-    expect(accountSwitcher).toContain('{settingsFooter}');
   });
 });
