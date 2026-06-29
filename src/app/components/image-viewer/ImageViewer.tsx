@@ -145,8 +145,9 @@ export const ImageViewer = as<'div', ImageViewerProps>(
                     after={menuIcon(CopyIcon)}
                     onClick={async () => {
                       setMenuAnchor(undefined);
-                      const fileContent = await downloadMedia(src);
-                      await copyImageToClipboard(fileContent);
+                      // Pass the download promise directly so clipboard.write is
+                      // called while the click's user activation is still live.
+                      await copyImageToClipboard(downloadMedia(src));
                     }}
                   >
                     <Text size="T300" style={{ flexGrow: 1 }}>
