@@ -285,6 +285,24 @@ describe('room read markers', () => {
     });
   });
 
+  it('does not clamp highlight counts in state-only rooms with an empty live timeline', () => {
+    const room = makeRoom({
+      readUpToId: '$read-marker',
+      events: [],
+      total: 5,
+      highlight: 2,
+    });
+
+    expect(roomHaveUnread(room.client, room)).toBe(false);
+    // latestNotificationId is null (no events) → shouldClamp = liveEvents.length > 0 = false
+    // Server counts preserved: real highlights must not be cleared before timeline hydration.
+    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
+      roomId: '!room:example.com',
+      highlight: 2,
+      total: 5,
+    });
+  });
+
   it('does not synthesize a phantom dot when only a non-notifying reaction is unread', () => {
     const room = makeRoom({
       fullyReadId: '$event1',
