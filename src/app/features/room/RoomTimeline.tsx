@@ -849,14 +849,7 @@ export function RoomTimeline({
       return;
     }
     const evtTimeline = getEventTimeline(room, readUptoEventIdRef.current);
-    if (!evtTimeline) {
-      // Read marker predates the loaded timeline window (common in sliding-sync rooms
-      // where the fully-read marker is older than the timeline_limit fetch). The user
-      // is viewing the live end, so mark as read.
-      requestAnimationFrame(() => markAsRead(mx, room.roomId, hideReads));
-      return;
-    }
-    const latestTimeline = getFirstLinkedTimeline(evtTimeline, Direction.Forward);
+    const latestTimeline = evtTimeline && getFirstLinkedTimeline(evtTimeline, Direction.Forward);
     if (latestTimeline === room.getLiveTimeline()) {
       requestAnimationFrame(() => markAsRead(mx, room.roomId, hideReads));
     }
