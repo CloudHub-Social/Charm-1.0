@@ -509,10 +509,13 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
     notificationType !== NotificationType.MentionsAndKeywords;
 
   // If our latest main-timeline notification event is confirmed read, clamp its stale count.
-  // Only apply to the room (non-thread) portion so thread reply counts are preserved.
+  // Apply to both total and highlight: servers (especially in sliding sync) can report a
+  // non-zero highlight_count after the client has read the highlighted events, causing a
+  // phantom badge even when `highlight > 0`.  Subtract the room-level portion of each count
+  // so thread reply totals and thread highlights remain intact.
   // Guard: only clamp when the room has NO receipt-confirmed unread events; if roomHaveUnread
   // is true then there genuinely are unread messages and the SDK count is not fully stale.
-  if (userId && total > 0 && highlight === 0 && !roomHaveUnread(room.client, room)) {
+  if (userId && total > 0 && !roomHaveUnread(room.client, room)) {
     const roomTotal = room.getRoomUnreadNotificationCount(NotificationCountType.Total);
     if (roomTotal > 0) {
       const liveEvents = room.getLiveTimeline().getEvents();
@@ -537,8 +540,10 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
         (readMarkerId &&
           isEventAtOrBeforeReadMarker(liveEvents, latestNotificationId, readMarkerId))
       ) {
-        // Subtract only the stale main-timeline count; thread totals remain intact.
+        // Subtract stale main-timeline counts; thread totals and highlights remain intact.
         total -= roomTotal;
+        const roomHighlight = room.getRoomUnreadNotificationCount(NotificationCountType.Highlight);
+        highlight = Math.max(0, highlight - roomHighlight);
       }
     }
   }
