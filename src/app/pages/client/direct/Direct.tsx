@@ -281,12 +281,17 @@ export function Direct() {
       data
     ) => {
       const eventId = mEvent.getId();
-      const isRecentSlidingSyncEvent =
+      // Only treat a non-live (Sliding Sync) event as fresh activity when it was
+      // sent after the list mounted. Events backfilled on subscribe carry their
+      // original (older) timestamp; the initial sort already accounts for them,
+      // so counting them here caused the list to churn/re-sort for ~half a second
+      // every time it was opened (issue #482).
+      const isNewSlidingSyncEvent =
         !!room &&
         !!eventId &&
-        mEvent.getTs() >= timelineActivityStartRef.current - 60 * 1000 &&
+        mEvent.getTs() >= timelineActivityStartRef.current &&
         !room.hasUserReadEvent(mx.getSafeUserId(), eventId);
-      if (!data.liveEvent && !isRecentSlidingSyncEvent) return;
+      if (!data.liveEvent && !isNewSlidingSyncEvent) return;
       // Increment counter to trigger re-sort when a new timeline event arrives.
       setActivityCounter((prev) => prev + 1);
     };
