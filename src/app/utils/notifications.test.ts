@@ -41,6 +41,7 @@ function makeRoom(params: {
         ? (params.unreadHighlight ?? 0)
         : (params.unreadTotal ?? 0),
     getRoomUnreadNotificationCount: () => params.roomUnreadTotal ?? params.unreadTotal ?? 0,
+    setUnreadNotificationCount: vi.fn<() => void>(),
   } as unknown as Room;
 }
 
