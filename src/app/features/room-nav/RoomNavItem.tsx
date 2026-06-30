@@ -82,7 +82,12 @@ import { useCallPreferencesAtom } from '$state/hooks/callPreferences';
 import { CallControlState } from '$plugins/call/CallControlState';
 import { useAutoDiscoveryInfo } from '$hooks/useAutoDiscoveryInfo';
 import { livekitSupport } from '$hooks/useLivekitSupport';
-import { Presence, useGroupPresence, usePresenceLabel, useUserPresence } from '$hooks/useUserPresence';
+import {
+  Presence,
+  useGroupPresence,
+  usePresenceLabel,
+  useUserPresence,
+} from '$hooks/useUserPresence';
 import { useClientConfig } from '$hooks/useClientConfig';
 import { AvatarPresence, PresenceBadge } from '$components/presence';
 import { useGroupDMMembers } from '$hooks/useGroupDMMembers';
@@ -333,9 +338,7 @@ export function RoomNavItem({
   const { features } = useClientConfig();
   const groupPresenceLabel = usePresenceLabel();
   const groupRingColor =
-    features?.groupPresenceRing !== false &&
-    groupPresence &&
-    groupPresence !== Presence.Offline
+    features?.groupPresenceRing !== false && groupPresence && groupPresence !== Presence.Offline
       ? PresenceRingColor[groupPresence]
       : undefined;
 
@@ -516,7 +519,7 @@ export function RoomNavItem({
                           ) : undefined
                         }
                       >
-                        {(triggerRef) => (
+                        {(groupTriggerRef) => (
                           <AvatarPresence
                             badge={
                               !groupRingColor &&
@@ -528,7 +531,7 @@ export function RoomNavItem({
                                 />
                               ) : null
                             }
-                            ref={triggerRef}
+                            ref={groupTriggerRef}
                             aria-label={
                               groupRingColor && groupPresence
                                 ? groupPresenceLabel[groupPresence]
@@ -537,9 +540,7 @@ export function RoomNavItem({
                             style={hideTextStyling(hideText)}
                           >
                             <div
-                              className={
-                                hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow
-                              }
+                              className={hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow}
                               style={
                                 groupRingColor
                                   ? { boxShadow: `0 0 0 2px ${groupRingColor}` }
@@ -552,9 +553,7 @@ export function RoomNavItem({
                                   <Avatar
                                     key={member.userId}
                                     className={
-                                      hideText
-                                        ? css.GroupAvatarMiniHideText
-                                        : css.GroupAvatarMini
+                                      hideText ? css.GroupAvatarMiniHideText : css.GroupAvatarMini
                                     }
                                   >
                                     <UserAvatar
