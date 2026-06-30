@@ -515,6 +515,9 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
   // so thread reply totals and thread highlights remain intact.
   // Guard: only clamp when the room has NO receipt-confirmed unread events; if roomHaveUnread
   // is true then there genuinely are unread messages and the SDK count is not fully stale.
+  // Track how much of the room-level total was subtracted so the DM force-highlight
+  // guard below can use the post-clamp value instead of the raw (stale) SDK count.
+  let clampedRoomTotal = 0;
   if (userId && total > 0 && !roomHaveUnread(room.client, room)) {
     const roomTotal = room.getRoomUnreadNotificationCount(NotificationCountType.Total);
     if (roomTotal > 0) {
@@ -534,17 +537,16 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
       // no notification events from others in the live timeline, or the user has
       // already read the latest one, the SDK counter is stale — zero it out.
       // Guard: when latestNotificationId is absent, we can only safely clamp if the
-      // timeline is non-empty AND contains no events from other users at all.  A
+      // timeline is non-empty AND contains no confirmed events from other users.  A
       // sliding-sync window may deliver only non-notifying tail events (edits,
       // reactions, membership changes) from others while the real mention sits
-      // outside the loaded range — in that case liveEvents.length > 0 is true but
-      // the clamp must not fire.  Requiring no events from others ensures we only
-      // clamp when the entire loaded timeline belongs to the current user (whose
-      // own messages are implicitly read), not when the notification is simply
-      // absent from the current window.
+      // outside the loaded range — in that case we must not clamp.  Pending local
+      // echoes (isSending) are excluded: they are not server-accepted evidence and
+      // the earlier own-message fast path also avoids them.
       const readMarkerId = getRoomReadMarkerId(room, userId);
+      const confirmedEvents = liveEvents.filter((e) => !e.isSending());
       const allEventsFromSelf =
-        liveEvents.length > 0 && liveEvents.every((e) => e.isSending() || e.getSender() === userId);
+        confirmedEvents.length > 0 && confirmedEvents.every((e) => e.getSender() === userId);
       const shouldClamp = latestNotificationId
         ? room.hasUserReadEvent(userId, latestNotificationId) ||
           (!!readMarkerId &&
@@ -552,6 +554,7 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
         : allEventsFromSelf;
       if (shouldClamp) {
         // Subtract stale main-timeline counts; thread totals and highlights remain intact.
+        clampedRoomTotal = roomTotal;
         total = Math.max(0, total - roomTotal);
         const roomHighlight = room.getRoomUnreadNotificationCount(NotificationCountType.Highlight);
         highlight = Math.max(0, highlight - roomHighlight);
@@ -600,7 +603,10 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
   // member_count condition failures, or sliding sync with limited required_state).
   // Guard on room-level (non-thread) total: thread-only unreads in DMs should not
   // be force-highlighted — the thread's own push rules handle highlight there.
-  const roomLevelTotal = room.getRoomUnreadNotificationCount(NotificationCountType.Total);
+  const roomLevelTotal = Math.max(
+    0,
+    room.getRoomUnreadNotificationCount(NotificationCountType.Total) - clampedRoomTotal
+  );
   if (shouldForceDMHighlight && roomLevelTotal > 0 && highlight === 0) {
     return {
       roomId: room.roomId,
