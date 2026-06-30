@@ -70,12 +70,29 @@ export async function markAsRead(mx: MatrixClient, roomId: string, privateReceip
     });
   }
 
-  // unthreaded=true: threaded receipts for untracked threads bypass addReceiptToStructure, leaving getEventReadUpTo null.
+  // Keep legacy receipt path as a safety fallback for homeservers with partial support.
+  // Send it UNTHREADED: "mark room as read" is a whole-room action, and an unthreaded
+  // receipt is the only kind that overwrites a stale unthreaded receipt left pinned at a
+  // vanished event. A threaded (thread_id: "main") receipt lands in a different bucket and
+  // silently no-ops against such a marker (threaded receipts for untracked threads bypass
+  // addReceiptToStructure), leaving the server's notification_count and getEventReadUpTo stuck.
   await mx.sendReadReceipt(
     latestEvent,
     privateReceipt ? ReceiptType.ReadPrivate : ReceiptType.Read,
     true
   );
+
+  // Optimistically clear the local SDK unread counters. `setRoomReadMarkers`/
+  // `sendReadReceipt` already local-echo the read receipt, but the SDK never
+  // advances `m.fully_read` or the notification counters locally — those only
+  // move once sync echoes the change back. Under sliding sync that echo can lag
+  // or be clobbered when the room re-enters the window, leaving the badge stuck
+  // at a stale count even though the server is read. Zeroing the counters here
+  // (while the just-applied receipt echo makes `roomHaveUnread` false) lets the
+  // RoomEvent.UnreadNotifications listener drop the badge immediately, and a
+  // genuine later message will re-raise the counter through normal sync.
+  room.setUnreadNotificationCount(NotificationCountType.Total, 0);
+  room.setUnreadNotificationCount(NotificationCountType.Highlight, 0);
 
   // On Android (Tauri), dismiss the room's OS notification immediately so
   // it stays in sync with the read state instead of lingering until the
