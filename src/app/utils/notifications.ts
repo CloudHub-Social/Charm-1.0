@@ -70,10 +70,11 @@ export async function markAsRead(mx: MatrixClient, roomId: string, privateReceip
     });
   }
 
-  // Keep legacy receipt path as a safety fallback for homeservers with partial support.
+  // unthreaded=true: threaded receipts for untracked threads bypass addReceiptToStructure, leaving getEventReadUpTo null.
   await mx.sendReadReceipt(
     latestEvent,
-    privateReceipt ? ReceiptType.ReadPrivate : ReceiptType.Read
+    privateReceipt ? ReceiptType.ReadPrivate : ReceiptType.Read,
+    true
   );
 
   // On Android (Tauri), dismiss the room's OS notification immediately so
