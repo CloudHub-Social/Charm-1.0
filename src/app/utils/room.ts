@@ -533,15 +533,23 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
       // Trust roomHaveUnread: if it confirms nothing is unread and either there are
       // no notification events from others in the live timeline, or the user has
       // already read the latest one, the SDK counter is stale — zero it out.
-      // Guard: when latestNotificationId is absent because the timeline is empty
-      // (sliding sync with timeline_limit:0), we cannot confirm the room is read —
-      // skip the clamp to avoid clearing a real mention badge.
+      // Guard: when latestNotificationId is absent, we can only safely clamp if the
+      // timeline is non-empty AND contains no events from other users at all.  A
+      // sliding-sync window may deliver only non-notifying tail events (edits,
+      // reactions, membership changes) from others while the real mention sits
+      // outside the loaded range — in that case liveEvents.length > 0 is true but
+      // the clamp must not fire.  Requiring no events from others ensures we only
+      // clamp when the entire loaded timeline belongs to the current user (whose
+      // own messages are implicitly read), not when the notification is simply
+      // absent from the current window.
       const readMarkerId = getRoomReadMarkerId(room, userId);
+      const allEventsFromSelf =
+        liveEvents.length > 0 && liveEvents.every((e) => e.isSending() || e.getSender() === userId);
       const shouldClamp = latestNotificationId
         ? room.hasUserReadEvent(userId, latestNotificationId) ||
           (!!readMarkerId &&
             isEventAtOrBeforeReadMarker(liveEvents, latestNotificationId, readMarkerId))
-        : liveEvents.length > 0;
+        : allEventsFromSelf;
       if (shouldClamp) {
         // Subtract stale main-timeline counts; thread totals and highlights remain intact.
         total -= roomTotal;
