@@ -31,7 +31,7 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import FocusTrap from 'focus-trap-react';
 import { useNavigate } from 'react-router-dom';
-import type { RoomEventHandlerMap } from '$types/matrix-sdk';
+import type { Room, RoomEventHandlerMap } from '$types/matrix-sdk';
 import { RoomEvent } from '$types/matrix-sdk';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { factoryRoomIdByActivity } from '$utils/sort';
@@ -267,40 +267,46 @@ export function Direct() {
   const [closedCategories, setClosedCategories] = useAtom(useClosedNavCategoriesAtom());
 
   // Track timeline activity to trigger re-sorting when messages arrive.
-  // Without this, DMs only re-sort when you switch rooms because getLastActiveTimestamp()
-  // is internal SDK state not tracked by React dependencies.
+  // Without this, DMs only re-sort when you switch rooms because the activity
+  // timestamp is internal SDK state not tracked by React dependencies.
   const [activityCounter, setActivityCounter] = useState(0);
-  const timelineActivityStartRef = useRef(Date.now());
+  // Per-room activity timestamp already reflected in the current sort order.
+  // Seeded from each room's current value when we start listening, so non-live
+  // timeline re-emits (backfill, decryption, scrollback) — which are never newer
+  // than what is already shown — don't trigger a re-sort. Those re-emits made the
+  // list churn/re-sort for ~half a second every time it was opened (issue #482).
+  // Comparing against the room's own sort key (rather than wall-clock mount time)
+  // also re-sorts correctly for genuinely new events regardless of the
+  // `liveEvent` flag or clock skew.
+  const lastActivityTsRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
-    const handleTimeline: RoomEventHandlerMap[RoomEvent.Timeline] = (
-      mEvent,
-      room,
-      _toStartOfTimeline,
-      _removed,
-      data
-    ) => {
-      const eventId = mEvent.getId();
-      // Only treat a non-live (Sliding Sync) event as fresh activity when it was
-      // sent after the list mounted. Events backfilled on subscribe carry their
-      // original (older) timestamp; the initial sort already accounts for them,
-      // so counting them here caused the list to churn/re-sort for ~half a second
-      // every time it was opened (issue #482).
-      const isNewSlidingSyncEvent =
-        !!room &&
-        !!eventId &&
-        mEvent.getTs() >= timelineActivityStartRef.current &&
-        !room.hasUserReadEvent(mx.getSafeUserId(), eventId);
-      if (!data.liveEvent && !isNewSlidingSyncEvent) return;
-      // Increment counter to trigger re-sort when a new timeline event arrives.
-      setActivityCounter((prev) => prev + 1);
+    const getActivityTs = (room: Room): number =>
+      Math.max(room.getLastActiveTimestamp(), room.getBumpStamp() ?? Number.MIN_SAFE_INTEGER);
+
+    const handleTimeline: RoomEventHandlerMap[RoomEvent.Timeline] = (_mEvent, room) => {
+      if (!room) return;
+      const latest = getActivityTs(room);
+      const prev = lastActivityTsRef.current.get(room.roomId);
+      // Only re-sort when this room's activity advances past what is already
+      // reflected; equal-or-older (re-delivered) events leave the order intact.
+      if (prev !== undefined && latest <= prev) return;
+      lastActivityTsRef.current.set(room.roomId, latest);
+      if (prev === undefined) return; // first sighting: seed baseline only
+      setActivityCounter((c) => c + 1);
     };
 
     // Listen to timeline events only for direct message rooms
     const listenedRoomIds = Array.from(directs);
     listenedRoomIds.forEach((roomId) => {
       const room = mx.getRoom(roomId);
-      room?.on(RoomEvent.Timeline, handleTimeline);
+      if (!room) return;
+      // Seed the baseline before listening so backfilled events aren't treated
+      // as new activity. Existing baselines are preserved across re-runs.
+      if (!lastActivityTsRef.current.has(roomId)) {
+        lastActivityTsRef.current.set(roomId, getActivityTs(room));
+      }
+      room.on(RoomEvent.Timeline, handleTimeline);
     });
 
     return () => {
