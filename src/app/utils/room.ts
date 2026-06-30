@@ -552,7 +552,7 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
         : allEventsFromSelf;
       if (shouldClamp) {
         // Subtract stale main-timeline counts; thread totals and highlights remain intact.
-        total -= roomTotal;
+        total = Math.max(0, total - roomTotal);
         const roomHighlight = room.getRoomUnreadNotificationCount(NotificationCountType.Highlight);
         highlight = Math.max(0, highlight - roomHighlight);
       }
