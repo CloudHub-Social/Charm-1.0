@@ -452,6 +452,7 @@ export function RoomNavItem({
         ]
       : 'Text Room',
     unread?.total && `${unread.total} Messages`,
+    isGroupDM && groupRingColor && groupPresence && groupPresenceLabel[groupPresence],
   ]
     .flat()
     .filter(Boolean)
@@ -506,73 +507,98 @@ export function RoomNavItem({
                       // Group DM: triangle layout of mini avatars.
                       // In hideText (icon-only) mode the Avatar slot is 32px (size="300");
                       // use the larger container+mini variant so the composite scales properly.
-                      <TooltipProvider
-                        position="Right"
-                        align="Center"
-                        offset={4}
-                        delay={200}
-                        tooltip={
-                          groupRingColor && groupPresence ? (
+                      // Only wrap in TooltipProvider when the presence ring is active so we
+                      // never mount a tooltip with undefined content.
+                      groupRingColor && groupPresence ? (
+                        <TooltipProvider
+                          position="Right"
+                          align="Center"
+                          offset={4}
+                          delay={200}
+                          tooltip={
                             <Tooltip>
                               <Text size="L400">{groupPresenceLabel[groupPresence]}</Text>
                             </Tooltip>
-                          ) : undefined
-                        }
-                      >
-                        {(groupTriggerRef) => (
-                          <AvatarPresence
-                            badge={
-                              !groupRingColor &&
-                              groupPresence &&
-                              groupPresence !== Presence.Offline ? (
-                                <PresenceBadge
-                                  presence={groupPresence}
-                                  size={hideText ? '300' : '200'}
-                                />
-                              ) : null
-                            }
-                            ref={groupTriggerRef}
-                            aria-label={
-                              groupRingColor && groupPresence
-                                ? groupPresenceLabel[groupPresence]
-                                : undefined
-                            }
-                            style={hideTextStyling(hideText)}
-                          >
-                            <div
-                              className={hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow}
-                              style={
-                                groupRingColor
-                                  ? { boxShadow: `0 0 0 2px ${groupRingColor}` }
-                                  : undefined
-                              }
+                          }
+                        >
+                          {(groupTriggerRef) => (
+                            <AvatarPresence
+                              badge={null}
+                              ref={groupTriggerRef}
+                              style={hideTextStyling(hideText)}
                             >
-                              {groupMembers.map((member, index) => {
-                                const memberAvatarSrc = groupMemberAvatarSrcs[index];
-                                return (
-                                  <Avatar
-                                    key={member.userId}
-                                    className={
-                                      hideText ? css.GroupAvatarMiniHideText : css.GroupAvatarMini
-                                    }
-                                  >
-                                    <UserAvatar
-                                      userId={member.userId}
-                                      src={memberAvatarSrc}
-                                      alt={member.displayName ?? member.userId}
-                                      renderFallback={() => (
-                                        <Text as="span" size="T200">
-                                          {nameInitials(member.displayName ?? member.userId)}
-                                        </Text>
-                                      )}
-                                    />
-                                  </Avatar>
-                                );
-                              })}
-                            </div>
-                          </AvatarPresence>
-                        )}
-                      </TooltipProvider>
+                              <div
+                                className={
+                                  hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow
+                                }
+                                style={{ boxShadow: `0 0 0 2px ${groupRingColor}` }}
+                              >
+                                {groupMembers.map((member, index) => {
+                                  const memberAvatarSrc = groupMemberAvatarSrcs[index];
+                                  return (
+                                    <Avatar
+                                      key={member.userId}
+                                      className={
+                                        hideText ? css.GroupAvatarMiniHideText : css.GroupAvatarMini
+                                      }
+                                    >
+                                      <UserAvatar
+                                        userId={member.userId}
+                                        src={memberAvatarSrc}
+                                        alt={member.displayName ?? member.userId}
+                                        renderFallback={() => (
+                                          <Text as="span" size="T200">
+                                            {nameInitials(member.displayName ?? member.userId)}
+                                          </Text>
+                                        )}
+                                      />
+                                    </Avatar>
+                                  );
+                                })}
+                              </div>
+                            </AvatarPresence>
+                          )}
+                        </TooltipProvider>
+                      ) : (
+                        <AvatarPresence
+                          badge={
+                            groupPresence && groupPresence !== Presence.Offline ? (
+                              <PresenceBadge
+                                presence={groupPresence}
+                                size={hideText ? '300' : '200'}
+                              />
+                            ) : null
+                          }
+                          style={hideTextStyling(hideText)}
+                        >
+                          <div
+                            className={hideText ? css.GroupAvatarRowHideText : css.GroupAvatarRow}
+                          >
+                            {groupMembers.map((member, index) => {
+                              const memberAvatarSrc = groupMemberAvatarSrcs[index];
+                              return (
+                                <Avatar
+                                  key={member.userId}
+                                  className={
+                                    hideText ? css.GroupAvatarMiniHideText : css.GroupAvatarMini
+                                  }
+                                >
+                                  <UserAvatar
+                                    userId={member.userId}
+                                    src={memberAvatarSrc}
+                                    alt={member.displayName ?? member.userId}
+                                    renderFallback={() => (
+                                      <Text as="span" size="T200">
+                                        {nameInitials(member.displayName ?? member.userId)}
+                                      </Text>
+                                    )}
+                                  />
+                                </Avatar>
+                              );
+                            })}
+                          </div>
+                        </AvatarPresence>
+                      )
                     ) : (
                       <AvatarPresence
                         badge={

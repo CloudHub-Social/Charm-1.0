@@ -533,13 +533,16 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
       // Trust roomHaveUnread: if it confirms nothing is unread and either there are
       // no notification events from others in the live timeline, or the user has
       // already read the latest one, the SDK counter is stale — zero it out.
+      // Guard: when latestNotificationId is absent because the timeline is empty
+      // (sliding sync with timeline_limit:0), we cannot confirm the room is read —
+      // skip the clamp to avoid clearing a real mention badge.
       const readMarkerId = getRoomReadMarkerId(room, userId);
-      if (
-        !latestNotificationId ||
-        room.hasUserReadEvent(userId, latestNotificationId) ||
-        (readMarkerId &&
-          isEventAtOrBeforeReadMarker(liveEvents, latestNotificationId, readMarkerId))
-      ) {
+      const shouldClamp = latestNotificationId
+        ? room.hasUserReadEvent(userId, latestNotificationId) ||
+          (!!readMarkerId &&
+            isEventAtOrBeforeReadMarker(liveEvents, latestNotificationId, readMarkerId))
+        : liveEvents.length > 0;
+      if (shouldClamp) {
         // Subtract stale main-timeline counts; thread totals and highlights remain intact.
         total -= roomTotal;
         const roomHighlight = room.getRoomUnreadNotificationCount(NotificationCountType.Highlight);
