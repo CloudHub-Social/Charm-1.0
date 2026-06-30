@@ -536,22 +536,28 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
       // Trust roomHaveUnread: if it confirms nothing is unread and either there are
       // no notification events from others in the live timeline, or the user has
       // already read the latest one, the SDK counter is stale — zero it out.
-      // Guard: when latestNotificationId is absent, we can only safely clamp if the
-      // timeline is non-empty AND contains no confirmed events from other users.  A
-      // sliding-sync window may deliver only non-notifying tail events (edits,
-      // reactions, membership changes) from others while the real mention sits
-      // outside the loaded range — in that case we must not clamp.  Pending local
-      // echoes (isSending) are excluded: they are not server-accepted evidence and
-      // the earlier own-message fast path also avoids them.
+      // When latestNotificationId is absent (no notification events from others in the
+      // loaded window) we clamp if: (a) all confirmed events are from self — self-sent
+      // events never generate unread counts; or (b) the read marker itself is in the
+      // loaded window — the user explicitly read up to a visible event, so the server
+      // count refers to events the client has already covered.  An empty timeline or a
+      // read marker that lies outside the loaded range (real unread in old history) is
+      // left alone.  Pending local echoes are excluded (isSending).
       const readMarkerId = getRoomReadMarkerId(room, userId);
       const confirmedEvents = liveEvents.filter((e) => !e.isSending());
       const allEventsFromSelf =
         confirmedEvents.length > 0 && confirmedEvents.every((e) => e.getSender() === userId);
+      // If the read marker itself is present in the live timeline, the user has
+      // explicitly read up to (at least) that event. When there are no notification
+      // events from others in the current window — common in bridge-heavy rooms where
+      // recent events are metadata — the server count is stale and safe to clamp.
+      const readMarkerInTimeline =
+        !!readMarkerId && confirmedEvents.some((e) => e.getId() === readMarkerId);
       const shouldClamp = latestNotificationId
         ? room.hasUserReadEvent(userId, latestNotificationId) ||
           (!!readMarkerId &&
             isEventAtOrBeforeReadMarker(liveEvents, latestNotificationId, readMarkerId))
-        : allEventsFromSelf;
+        : allEventsFromSelf || readMarkerInTimeline;
       if (shouldClamp) {
         // Subtract stale main-timeline counts; thread totals and highlights remain intact.
         clampedRoomTotal = roomTotal;

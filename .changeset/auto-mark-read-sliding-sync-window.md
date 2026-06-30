@@ -2,4 +2,4 @@
 default: patch
 ---
 
-Fix rooms that stay stuck with an unread badge after switching to them. When a room's fully-read marker (`m.fully_read`) was set on an older device and points to an event outside the sliding-sync timeline window, the auto-mark-as-read logic couldn't locate the marker in any loaded timeline and silently skipped sending the read receipt. Now, when the read marker is not found in any loaded timeline (event predates the window), the room is treated as viewed at the live end and marked as read correctly.
+Fix rooms (particularly bridge-heavy DMs) where the unread badge jumps UP after marking as read. When a room's recent timeline contains only metadata events (topic changes, membership updates) with no actual notification events, the stale server count was never clamped — the bridge bot's events didn't match the "all events from self" guard. The fix also clamps when the read marker itself is present in the loaded timeline window, which covers the common case of a user marking a room as read while the recent events happen to be non-notification types.
