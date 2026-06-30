@@ -22,6 +22,7 @@ export const GroupAvatarRow = style({
   width: '24px',
   height: '24px',
   flexShrink: 0,
+  borderRadius: '4px',
 });
 
 export const GroupAvatarMini = style({
@@ -60,6 +61,7 @@ export const GroupAvatarRowHideText = style({
   width: '32px',
   height: '32px',
   flexShrink: 0,
+  borderRadius: '6px',
 });
 
 export const GroupAvatarMiniHideText = style({

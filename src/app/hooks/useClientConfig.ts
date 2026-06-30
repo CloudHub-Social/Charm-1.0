@@ -79,6 +79,7 @@ export type ClientConfig = {
 
   features?: {
     encryptedSearch?: boolean;
+    groupPresenceRing?: boolean;
   };
 
   experiments?: Record<string, ExperimentConfig>;
