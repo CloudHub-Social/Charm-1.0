@@ -16,6 +16,11 @@ export const ImageViewerHeader = style([
     borderBottomWidth: config.borderWidth.B300,
     flexShrink: 0,
     gap: config.space.S200,
+    '@media': {
+      '(max-width: 600px)': {
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+      },
+    },
   },
 ]);
 

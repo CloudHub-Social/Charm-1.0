@@ -94,7 +94,6 @@ const sectionListStyle = {
 const mobileMenuViewportPadding = 12;
 const safeAreaInlineStart = 'var(--sable-safe-area-left, env(safe-area-inset-left, 0px))';
 const safeAreaInlineEnd = 'var(--sable-safe-area-right, env(safe-area-inset-right, 0px))';
-const safeAreaBottomInset = 'var(--sable-safe-area-bottom, env(safe-area-inset-bottom, 0px))';
 
 const getAccountSwitcherMenuMaxHeight = (menuAnchor?: RectCords, isBottom?: boolean): string => {
   const viewportCap =
@@ -535,7 +534,10 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
       gap="100"
       style={{
         paddingTop: 0,
-        paddingBottom: `calc(${config.space.S100} + ${safeAreaBottomInset})`,
+        // Use env(safe-area-inset-bottom) directly: --sable-safe-area-bottom is
+        // intentionally zeroed by SystemBarShell (to avoid double-counting on
+        // Android), so env() must be read directly to clear the iOS home indicator.
+        paddingBottom: `calc(${config.space.S300} + env(safe-area-inset-bottom, 0px))`,
         paddingLeft: `calc(${safeAreaInlineStart} + ${config.space.S100})`,
         paddingRight: `calc(${safeAreaInlineEnd} + ${config.space.S100})`,
       }}

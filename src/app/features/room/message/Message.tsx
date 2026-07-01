@@ -58,6 +58,7 @@ import { MessageEditor } from './MessageEditor';
 import * as css from './styles.css';
 import { modalAtom, ModalType } from '$state/modal';
 import { OptionQuickMenu } from '$components/message/modals/Options';
+import { closeKeyboardBeforeOpeningOverlay } from '$utils/keyboard';
 
 export type ReactionHandler = (keyOrMxc: string, shortcode: string) => void;
 export const MemoizedBody = memo(({ children }: { children: ReactNode }) => children);
@@ -139,7 +140,9 @@ function useMobileLongPress(callback: () => void, delay = 500) {
       firedRef.current = false;
       timerRef.current = setTimeout(() => {
         firedRef.current = true;
-        callback();
+        Promise.resolve(callback()).catch((error: unknown) => {
+          console.error('[useMobileLongPress] callback failed', error);
+        });
       }, delay);
     },
     [callback, delay]
@@ -494,6 +497,13 @@ function MessageInternal(
     : undefined;
 
   const optionsRef = useRef<HTMLDivElement>(null);
+  const openMobileOptionsSeqRef = useRef(0);
+  useEffect(
+    () => () => {
+      ++openMobileOptionsSeqRef.current;
+    },
+    []
+  );
 
   const [showPronouns] = useSetting(settingsAtom, 'showPronouns');
   const [parsePronouns] = useSetting(settingsAtom, 'parsePronouns');
@@ -829,7 +839,12 @@ function MessageInternal(
     setIsEmoji(false);
   };
 
-  const openMobileOptions = () => {
+  const openMobileOptions = async () => {
+    const seq = ++openMobileOptionsSeqRef.current;
+    if (mobileOrTablet()) {
+      await closeKeyboardBeforeOpeningOverlay();
+    }
+    if (openMobileOptionsSeqRef.current !== seq) return;
     setModal({
       type: ModalType.MobileOptions,
       options: {
@@ -868,11 +883,11 @@ function MessageInternal(
   // const longPress = useMobileLongPress(() => {
   //   setMobileOptionsOpen(true);
   // });
-  const { firedRef: longPressFiredRef, ...longPress } = useMobileLongPress(() => {
-    if (!edit) openMobileOptions();
+  const { firedRef: longPressFiredRef, ...longPress } = useMobileLongPress(async () => {
+    if (!edit) await openMobileOptions();
   });
 
-  const handleContextMenu: MouseEventHandler<HTMLDivElement> = (evt) => {
+  const handleContextMenu: MouseEventHandler<HTMLDivElement> = async (evt) => {
     if (evt.altKey || !window.getSelection()?.isCollapsed || edit) return;
     const tag = (evt.target as HTMLElement).tagName;
     if (typeof tag === 'string' && tag.toLowerCase() === 'a') return;
@@ -886,7 +901,7 @@ function MessageInternal(
       }
       evt.preventDefault();
       evt.stopPropagation();
-      openMobileOptions();
+      await openMobileOptions();
       return;
     }
 

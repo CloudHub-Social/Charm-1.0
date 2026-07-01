@@ -32,10 +32,13 @@ import {
   SidebarStack,
 } from '$components/emoji-board/components';
 import * as emojiBoardCss from '$components/emoji-board/components/styles.css';
-import { getEmojiBoardWidth } from '$features/room/emojiBoardPosition';
 import * as roomNavCss from '$features/room-nav/styles.css';
 import { APP_FEATURES_URL, APP_SOURCE_URL, APP_SUPPORT_URL } from '$app/config/brand';
 import { getMessageSearchShortcutPath } from '$features/search/searchShortcut';
+import { getEmojiBoardWidth } from '$features/room/emojiBoardPosition';
+import { ModalWide } from '$styles/Modal.css';
+import * as messageOptionsCss from '$features/room/message/styles.css';
+import { ImageViewerHeader } from '$components/image-viewer/ImageViewer.css';
 
 const svgDataUri = (svg: string): string => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 
@@ -1041,8 +1044,6 @@ function SmokeSearchShortcuts() {
 }
 
 function SmokeGifPicker() {
-  // Mirrors RoomInput.tsx phone picker positioning: left 50% + translateX(-50%)
-  // Width follows GIF_BOARD_VIEWPORT_GUTTER=16px, capped at 480px.
   const boardWidth = getEmojiBoardWidth(
     typeof window !== 'undefined' ? window.innerWidth : 390,
     true
@@ -1089,6 +1090,169 @@ function SmokeGifPicker() {
   );
 }
 
+function SmokeImageViewerModal() {
+  return (
+    <Page>
+      <Box
+        grow="Yes"
+        direction="Column"
+        alignItems="Center"
+        justifyContent="Center"
+        style={{
+          minHeight: 0,
+          padding: config.space.S400,
+          backgroundColor: 'var(--sable-surface)',
+        }}
+      >
+        <Text size="T300">
+          Image viewer modal geometry fixture. The ModalWide div below should be full-screen on
+          viewports ≤600px wide.
+        </Text>
+        <div
+          className={ModalWide}
+          data-testid="smoke-modal-wide"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            backgroundColor: 'var(--sable-surface-container)',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <Box
+            data-testid="smoke-modal-wide-header"
+            className={ImageViewerHeader}
+            shrink="No"
+            alignItems="Center"
+            gap="200"
+            style={{
+              minHeight: '48px',
+              backgroundColor: 'var(--sable-surface-container-high)',
+            }}
+          >
+            <IconButton size="300" radii="300" aria-label="Close viewer">
+              {composerIcon(X)}
+            </IconButton>
+            <Text size="T300">Image viewer (smoke)</Text>
+          </Box>
+          <Box grow="Yes" alignItems="Center" justifyContent="Center">
+            <Text size="T300">Image area</Text>
+          </Box>
+        </div>
+      </Box>
+    </Page>
+  );
+}
+
+function SmokeAccountSwitcherSheet() {
+  const safeAreaBottomInset = 'env(safe-area-inset-bottom, 0px)';
+  return (
+    <Page>
+      <Box
+        grow="Yes"
+        direction="Column"
+        style={{ minHeight: 0, backgroundColor: 'var(--sable-surface)', position: 'relative' }}
+      >
+        <Box
+          data-testid="smoke-account-sheet"
+          direction="Column"
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '85dvh',
+            backgroundColor: 'var(--sable-surface-container)',
+            borderTopLeftRadius: '12px',
+            borderTopRightRadius: '12px',
+          }}
+        >
+          <Box
+            shrink="No"
+            alignItems="Center"
+            gap="200"
+            style={{
+              padding: `0 ${config.space.S200}`,
+              minHeight: '48px',
+              borderBottom: '1px solid var(--sable-border-subtle)',
+            }}
+          >
+            <Text size="H4">Accounts</Text>
+          </Box>
+          <Box grow="Yes" style={{ overflow: 'auto', padding: config.space.S100 }}>
+            <Text size="T300">Account rows would appear here</Text>
+          </Box>
+          <Box
+            data-testid="smoke-settings-footer"
+            direction="Column"
+            gap="100"
+            style={{
+              paddingTop: 0,
+              paddingBottom: `calc(${config.space.S300} + ${safeAreaBottomInset})`,
+              paddingLeft: config.space.S100,
+              paddingRight: config.space.S100,
+            }}
+          >
+            <Box
+              direction="Column"
+              gap="100"
+              style={{
+                padding: config.space.S100,
+                borderRadius: '8px',
+                backgroundColor: 'var(--sable-surface-container)',
+              }}
+            >
+              <MenuItem data-testid="smoke-app-settings-btn" size="300" radii="300">
+                <Text size="T300">App Settings</Text>
+              </MenuItem>
+            </Box>
+          </Box>
+        </Box>
+      </Box>
+    </Page>
+  );
+}
+
+function SmokeMobileOptionsSheet() {
+  return (
+    <Page>
+      <Box
+        grow="Yes"
+        direction="Column"
+        style={{ minHeight: 0, backgroundColor: 'var(--sable-surface)', position: 'relative' }}
+      >
+        <Text
+          size="T300"
+          style={{ padding: config.space.S400 }}
+          data-testid="smoke-mobile-options-backdrop"
+        >
+          Mobile options sheet backdrop
+        </Text>
+        <div
+          className={messageOptionsCss.MessageMobileOptionsContainer}
+          data-testid="smoke-mobile-options-container"
+          style={{ backgroundColor: 'var(--sable-surface-container)' }}
+        >
+          <div
+            className={messageOptionsCss.MessageOptionsMenu}
+            data-testid="smoke-mobile-options-menu"
+          >
+            <Box direction="Column" style={{ padding: config.space.S400, flex: 1 }}>
+              <Text size="T300" data-testid="smoke-mobile-options-item">
+                Reply
+              </Text>
+              <Text size="T300">React</Text>
+              <Text size="T300">Edit</Text>
+              <Text size="T300">Delete</Text>
+            </Box>
+          </div>
+        </div>
+      </Box>
+    </Page>
+  );
+}
+
 export function SmokeMobileShell() {
   const { mode = 'home' } = useParams();
 
@@ -1101,6 +1265,9 @@ export function SmokeMobileShell() {
   if (mode === 'room') return <SmokeRoomFooter />;
   if (mode === 'room-spacing') return <SmokeRoomSpacing />;
   if (mode === 'gif-picker') return <SmokeGifPicker />;
+  if (mode === 'image-viewer') return <SmokeImageViewerModal />;
+  if (mode === 'account-switcher') return <SmokeAccountSwitcherSheet />;
+  if (mode === 'mobile-options') return <SmokeMobileOptionsSheet />;
 
   return (
     <PageRoot nav={<SmokeHomeNav />}>
