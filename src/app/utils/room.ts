@@ -501,7 +501,10 @@ const isReadDespiteStaleCount = (room: Room, userId: string): boolean => {
     room.client
       .fetchRoomEvent(room.roomId, receipt.eventId)
       .then((raw) => receiptEventSenderCache.set(receipt.eventId, (raw?.sender as string) ?? null))
-      .catch(() => receiptEventSenderCache.set(receipt.eventId, null))
+      // On failure leave the entry unset (undefined) so a later recompute can retry —
+      // caching null here would be indistinguishable from a definitive "not the user"
+      // result and would permanently disable this clear for the session.
+      .catch(() => receiptEventSenderCache.delete(receipt.eventId))
       .finally(() => {
         receiptEventFetchInFlight.delete(receipt.eventId);
         // Nudge a recompute so an idle, wedged room clears once the sender is known.
