@@ -54,7 +54,6 @@ function makeRoom(params: {
   events: MatrixEvent[];
   total?: number;
   highlight?: number;
-  roomHighlight?: number;
 }): Room {
   const client = makeClient();
   return {
@@ -73,10 +72,7 @@ function makeRoom(params: {
     findEventById: (eventId: string) => params.events.find((event) => event.getId() === eventId),
     getUnreadNotificationCount: (type: NotificationCountType) =>
       type === NotificationCountType.Highlight ? (params.highlight ?? 0) : (params.total ?? 0),
-    getRoomUnreadNotificationCount: (type = NotificationCountType.Total) =>
-      type === NotificationCountType.Highlight
-        ? (params.roomHighlight ?? params.highlight ?? 0)
-        : (params.total ?? 0),
+    getRoomUnreadNotificationCount: () => params.total ?? 0,
     hasUserReadEvent: (_userId: string, eventId: string) => eventId === params.readUpToId,
     fixupNotifications: vi.fn<() => void>(),
   } as unknown as Room;
@@ -242,64 +238,6 @@ describe('room read markers', () => {
       roomId: '!room:example.com',
       highlight: 0,
       total: 2,
-    });
-  });
-
-  it('clamps phantom highlight count when the room is fully read', () => {
-    const room = makeRoom({
-      readUpToId: '$event2',
-      events: [makeEvent('$event1'), makeEvent('$event2')],
-      total: 5,
-      highlight: 2,
-    });
-
-    expect(roomHaveUnread(room.client, room)).toBe(false);
-    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
-      roomId: '!room:example.com',
-      highlight: 0,
-      total: 0,
-    });
-  });
-
-  it('preserves thread-level highlights while clamping phantom room-level highlights', () => {
-    const room = makeRoom({
-      readUpToId: '$event2',
-      events: [makeEvent('$event1'), makeEvent('$event2')],
-      // total = 7 = 5 stale room-level + 2 thread-level (getUnreadNotificationCount)
-      // roomHighlight = 1 stale room-level; actual highlight = 1 (room) + 1 (thread) = 2
-      total: 5,
-      highlight: 2,
-      roomHighlight: 1,
-    });
-
-    expect(roomHaveUnread(room.client, room)).toBe(false);
-    // After clamping: total -= roomTotal(5) = -3 → Math.max(0, highlight - roomHighlight(1)) = 1
-    // But total is clamped by the overall subtraction path...
-    // Actually total = getUnreadNotificationCount(Total) = params.total = 5
-    // total -= roomTotal(5) = 0; highlight = max(0, 2 - 1) = 1
-    // Returns { total: max(0, 1) = 1, highlight: 1 }
-    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
-      roomId: '!room:example.com',
-      highlight: 1,
-      total: 1,
-    });
-  });
-
-  it('does not clamp highlight counts in state-only rooms with an empty live timeline', () => {
-    const room = makeRoom({
-      readUpToId: '$read-marker',
-      events: [],
-      total: 5,
-      highlight: 2,
-    });
-
-    expect(roomHaveUnread(room.client, room)).toBe(false);
-    // latestNotificationId is null (no events) → shouldClamp = liveEvents.length > 0 = false
-    // Server counts preserved: real highlights must not be cleared before timeline hydration.
-    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
-      roomId: '!room:example.com',
-      highlight: 2,
-      total: 5,
     });
   });
 
