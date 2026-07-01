@@ -431,8 +431,9 @@ const unreadInfoFixupInProgress = new WeakSet<Room>();
 
 // Sender lookup cache for read-receipt target events that are NOT present in the
 // loaded timeline (e.g. a hidden `m.replace` edit bridged in via mautrix
-// double-puppet). `null` means "fetched, sender unknown / fetch failed".
-const receiptEventSenderCache = new Map<string, string | null>();
+// double-puppet). Only a resolved sender is cached; a miss/failure/empty-sender stub
+// leaves the entry unset so a later recompute retries.
+const receiptEventSenderCache = new Map<string, string>();
 const receiptEventFetchInFlight = new Set<string>();
 
 // Clear the module-level receipt-sender caches. Called on client teardown (logout /
@@ -509,10 +510,19 @@ const isReadDespiteStaleCount = (room: Room, userId: string): boolean => {
     room.client
       .fetchRoomEvent(room.roomId, receipt.eventId)
       .then((raw) => {
-        receiptEventSenderCache.set(receipt.eventId, (raw?.sender as string) ?? null);
+        const sender = raw?.sender || undefined;
+        if (!sender) {
+          // Empty/missing sender — e.g. the startup fetchRoomEvent patch stubs cache
+          // misses with sender '' (see installStartupFetchRoomEventPatch). Not a real
+          // result: leave the entry unset so a later recompute retries with the real
+          // fetch, and don't emit (which would re-trigger this same fetch in a loop).
+          receiptEventSenderCache.delete(receipt.eventId);
+          return;
+        }
+        receiptEventSenderCache.set(receipt.eventId, sender);
         // Nudge a recompute now that the sender is known so an idle, wedged room clears.
-        // Only emit on success: emitting after a failure (below) would re-trigger this
-        // same fetch via the unread listener and spin an endless fetch/emit loop.
+        // Only emit on success: emitting after a miss/failure would re-trigger this same
+        // fetch via the unread listener and spin an endless fetch/emit loop.
         room.emit(RoomEvent.UnreadNotifications, {
           highlight: room.getUnreadNotificationCount(NotificationCountType.Highlight),
           total: room.getUnreadNotificationCount(NotificationCountType.Total),
