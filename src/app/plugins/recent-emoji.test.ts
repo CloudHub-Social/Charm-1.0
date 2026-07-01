@@ -3,6 +3,7 @@ import type { MatrixClient, MatrixEvent } from '$types/matrix-sdk';
 import type { EmptyObject } from 'matrix-js-sdk/lib/@types/common';
 import { CustomAccountDataEvent } from '$types/matrix/accountData';
 import { emojis } from './emoji';
+import type { StableRecentEmojiEntry } from './recent-emoji';
 import { addRecentEmoji, getRecentEmojis, migrateLegacyRecentEmoji } from './recent-emoji';
 
 const EMOJI_A = emojis[0]!.unicode;
@@ -86,17 +87,68 @@ describe('recent-emoji plugin', () => {
     expect(setAccountData).not.toHaveBeenCalled();
   });
 
-  it('writes new emoji usage using the stable object schema', () => {
+  it('writes new emoji usage using the stable object schema', async () => {
     const setAccountData = vi.fn<() => Promise<EmptyObject>>().mockResolvedValue({});
     const mx = makeClient({
       stable: { recent_emoji: [{ emoji: EMOJI_A, total: 1 }] },
       setAccountData,
     });
 
-    addRecentEmoji(mx, EMOJI_A);
+    await addRecentEmoji(mx, EMOJI_A);
 
     expect(setAccountData).toHaveBeenCalledWith(CustomAccountDataEvent.RecentEmoji, {
       recent_emoji: [{ emoji: EMOJI_A, total: 2 }],
     });
+  });
+
+  it('serializes addRecentEmoji against a pending legacy migration instead of racing it', async () => {
+    let stableContent: { recent_emoji: StableRecentEmojiEntry[] } | undefined;
+    const legacyContent = { recent_emoji: [[EMOJI_B, 1]] as [string, number][] };
+
+    let releaseMigrationWrite: () => void = () => {};
+    const migrationWriteGate = new Promise<void>((resolve) => {
+      releaseMigrationWrite = resolve;
+    });
+
+    let writeCount = 0;
+    const setAccountData = vi
+      .fn<(eventType: string, content: unknown) => Promise<EmptyObject>>()
+      .mockImplementation(async (_eventType, content) => {
+        writeCount += 1;
+        if (writeCount === 1) {
+          // The migration's write is slow (e.g. a network round-trip) --
+          // long enough for a concurrent addRecentEmoji call to start.
+          await migrationWriteGate;
+        }
+        stableContent = content as { recent_emoji: StableRecentEmojiEntry[] };
+        return {};
+      });
+
+    const mx = {
+      getAccountData: (eventType: string) => {
+        if (eventType === CustomAccountDataEvent.RecentEmoji) {
+          return stableContent ? makeEvent(stableContent) : undefined;
+        }
+        if (eventType === CustomAccountDataEvent.LegacyElementRecentEmoji) {
+          return makeEvent(legacyContent);
+        }
+        return undefined;
+      },
+      setAccountData,
+    } as unknown as MatrixClient;
+
+    const migratePromise = migrateLegacyRecentEmoji(mx);
+    const addPromise = addRecentEmoji(mx, EMOJI_A);
+
+    releaseMigrationWrite();
+    await migratePromise;
+    await addPromise;
+
+    // addRecentEmoji must observe the migrated legacy entry rather than
+    // overwriting it with a stale pre-migration snapshot (or vice versa).
+    expect(stableContent?.recent_emoji).toEqual([
+      { emoji: EMOJI_A, total: 1 },
+      { emoji: EMOJI_B, total: 1 },
+    ]);
   });
 });

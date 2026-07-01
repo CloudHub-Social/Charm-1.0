@@ -1109,7 +1109,7 @@ export function EmojiBoard({
     if (emojiInfo.type === EmojiType.Emoji) {
       onEmojiSelect?.(emojiInfo.data, emojiInfo.shortcode);
       if (!evt.altKey && !evt.shiftKey && addToRecentEmoji) {
-        addRecentEmoji(mx, emojiInfo.data);
+        addRecentEmoji(mx, emojiInfo.data).catch(() => {});
       }
     }
     if (emojiInfo.type === EmojiType.CustomEmoji) {

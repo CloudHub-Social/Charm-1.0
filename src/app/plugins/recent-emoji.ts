@@ -37,6 +37,18 @@ const getLegacyRecentEmojiAsStable = (mx: MatrixClient): StableRecentEmojiEntry[
   return legacyEmoji.map(([emoji, total]) => ({ emoji, total }));
 };
 
+// Serializes migration and add-emoji writes per client so a pending legacy
+// migration can't race a concurrent addRecentEmoji call and clobber it with
+// a stale pre-migration snapshot (or vice versa).
+const pendingRecentEmojiWrites = new WeakMap<MatrixClient, Promise<void>>();
+
+function withRecentEmojiLock(mx: MatrixClient, run: () => Promise<void>): Promise<void> {
+  const previous = pendingRecentEmojiWrites.get(mx) ?? Promise.resolve();
+  const next = previous.catch(() => {}).then(run);
+  pendingRecentEmojiWrites.set(mx, next);
+  return next;
+}
+
 export const getRecentEmojis = (mx: MatrixClient, limit?: number): IEmoji[] => {
   const recentEmoji = getStableRecentEmoji(mx) ?? getLegacyRecentEmojiAsStable(mx);
   if (!recentEmoji) return [];
@@ -58,31 +70,35 @@ export const getRecentEmojis = (mx: MatrixClient, limit?: number): IEmoji[] => {
  * Intended to be called from an effect, not during render, since it may
  * write account data.
  */
-export async function migrateLegacyRecentEmoji(mx: MatrixClient): Promise<void> {
-  if (getStableRecentEmoji(mx)) return;
-  const legacyAsStable = getLegacyRecentEmojiAsStable(mx);
-  if (!legacyAsStable) return;
-  await mx.setAccountData(CustomAccountDataEvent.RecentEmoji, {
-    recent_emoji: legacyAsStable,
+export function migrateLegacyRecentEmoji(mx: MatrixClient): Promise<void> {
+  return withRecentEmojiLock(mx, async () => {
+    if (getStableRecentEmoji(mx)) return;
+    const legacyAsStable = getLegacyRecentEmojiAsStable(mx);
+    if (!legacyAsStable) return;
+    await mx.setAccountData(CustomAccountDataEvent.RecentEmoji, {
+      recent_emoji: legacyAsStable,
+    });
   });
 }
 
-export function addRecentEmoji(mx: MatrixClient, unicode: string) {
-  const recentEmoji = structuredClone(
-    getStableRecentEmoji(mx) ?? getLegacyRecentEmojiAsStable(mx) ?? []
-  );
+export function addRecentEmoji(mx: MatrixClient, unicode: string): Promise<void> {
+  return withRecentEmojiLock(mx, async () => {
+    const recentEmoji = structuredClone(
+      getStableRecentEmoji(mx) ?? getLegacyRecentEmojiAsStable(mx) ?? []
+    );
 
-  const emojiIndex = recentEmoji.findIndex((e) => e.emoji === unicode);
-  let entry: StableRecentEmojiEntry;
-  if (emojiIndex < 0) {
-    entry = { emoji: unicode, total: 1 };
-  } else {
-    const spliced = recentEmoji.splice(emojiIndex, 1);
-    entry = spliced[0] ?? { emoji: unicode, total: 1 };
-    entry.total += 1;
-  }
-  recentEmoji.unshift(entry);
-  mx.setAccountData(CustomAccountDataEvent.RecentEmoji, {
-    recent_emoji: recentEmoji.slice(0, 100),
+    const emojiIndex = recentEmoji.findIndex((e) => e.emoji === unicode);
+    let entry: StableRecentEmojiEntry;
+    if (emojiIndex < 0) {
+      entry = { emoji: unicode, total: 1 };
+    } else {
+      const spliced = recentEmoji.splice(emojiIndex, 1);
+      entry = spliced[0] ?? { emoji: unicode, total: 1 };
+      entry.total += 1;
+    }
+    recentEmoji.unshift(entry);
+    await mx.setAccountData(CustomAccountDataEvent.RecentEmoji, {
+      recent_emoji: recentEmoji.slice(0, 100),
+    });
   });
 }
