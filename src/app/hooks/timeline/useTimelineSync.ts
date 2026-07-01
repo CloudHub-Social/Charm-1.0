@@ -38,6 +38,10 @@ type TimelineLoadTarget = 'event' | 'next';
 
 export type TimelineFocusItem = {
   index: number;
+  // Offset applied on top of the event's absolute index (e.g. +1 for Jump to
+  // Unread when the first unread event isn't loaded yet). Preserved when the
+  // index is re-resolved after backward pagination prepends events.
+  indexOffset?: number;
   eventId?: string;
   scrollTo: boolean;
   highlight: boolean;
@@ -109,10 +113,13 @@ const getJumpTarget = (
   target: TimelineLoadTarget
 ) => {
   const targetIndex = target === 'next' ? absIndex + 1 : absIndex;
-  return {
-    targetIndex,
-    targetEventId: getTimelineEventAtIndex(linkedTimelines, targetIndex)?.getId() ?? eventId,
-  };
+  const targetEventAtIndex = getTimelineEventAtIndex(linkedTimelines, targetIndex);
+  const targetEventId = targetEventAtIndex?.getId() ?? eventId;
+  // When the next event isn't loaded yet, targetEventId falls back to the
+  // original eventId (at absIndex) while targetIndex is absIndex + 1. Store
+  // the offset so the index can be re-resolved correctly after pagination.
+  const indexOffset = targetEventAtIndex ? 0 : targetIndex - absIndex;
+  return { targetIndex, targetEventId, indexOffset };
 };
 
 const getPaginationTimelineEdge = (
@@ -331,7 +338,7 @@ const useEventTimelineLoader = (
           level: 'info',
         });
 
-        const { targetIndex, targetEventId } = getJumpTarget(
+        const { targetIndex, targetEventId, indexOffset } = getJumpTarget(
           linkedTimelines,
           eventId,
           absIndex,
@@ -341,12 +348,16 @@ const useEventTimelineLoader = (
         onLoad(targetEventId, linkedTimelines, targetIndex, {
           align: 'center',
           jumpMode,
+          indexOffset,
         });
 
-        // Proactively load context above and below the jumped-to event so the user
-        // can scroll immediately without waiting for pagination triggers.
+        // Proactively load context above and below the jumped-to event so the
+        // user can scroll immediately without waiting for pagination triggers.
+        // 0-ms defer fires after the current React commit (effects including
+        // tryScroll run first), eliminating the 500 ms "ghost room" window
+        // where only the linked-to event was visible in sparse contexts.
         if (onProactiveLoad) {
-          setTimeout(() => onProactiveLoad(), 500);
+          setTimeout(() => onProactiveLoad(), 0);
         }
       }),
     [mx, room, onLoad, onError, onProactiveLoad]
@@ -451,11 +462,17 @@ const useTimelinePagination = (
           const freshLTimelines = timelineRef.current.linkedTimelines;
           const firstTimeline = freshLTimelines[0];
           if (!firstTimeline) return;
-          recalibratePagination(freshLTimelines);
           (backwards ? setBackwardStatus : setForwardStatus)('idle');
 
           const countAfter = getTimelinesEventsCount(getLinkedTimelines(firstTimeline));
           const fetched = countAfter - countBefore;
+
+          // Only recalibrate when events were actually fetched — re-traversing the
+          // linked list when nothing changed can swap in a new live-timeline end
+          // that arrived concurrently, bypassing the event-context preservation guard.
+          if (fetched > 0) {
+            recalibratePagination(freshLTimelines);
+          }
 
           if (fetched > 0 && fetched < 5) {
             const checkTimeline = getPaginationTimelineEdge(freshLTimelines, backwards);
@@ -782,6 +799,7 @@ export function useTimelineSync({
 
         setFocusItem({
           index: evtAbsIndex,
+          indexOffset: nextFocusItem?.indexOffset,
           eventId: evtId,
           scrollTo: true,
           highlight: evtId !== readUptoEventIdRef.current,
@@ -828,6 +846,29 @@ export function useTimelineSync({
 
   const eventsLengthRef = useRef(eventsLength);
   eventsLengthRef.current = eventsLength;
+
+  // When backward pagination prepends events, every existing event's absolute
+  // index increases by the number of prepended events. focusItem.index is set
+  // once at load time and becomes stale after any backward paginate, causing
+  // the scroll anchor (tick loop + tryScroll retries) to target the wrong
+  // message. Re-resolve the index from the eventId on every timeline change.
+  useEffect(() => {
+    if (!focusItem?.eventId) return;
+    const { eventId: focusEventId, indexOffset = 0 } = focusItem;
+    const evtTimeline = getEventTimeline(room, focusEventId);
+    if (!evtTimeline) return;
+    const resolvedAbsIndex = getEventIdAbsoluteIndex(
+      timeline.linkedTimelines,
+      evtTimeline,
+      focusEventId
+    );
+    if (resolvedAbsIndex === undefined) return;
+    const newIndex = resolvedAbsIndex + indexOffset;
+    setFocusItem((prev) => {
+      if (prev?.eventId !== focusEventId || prev.index === newIndex) return prev;
+      return { ...prev, index: newIndex };
+    });
+  }, [room, timeline.linkedTimelines, focusItem]);
 
   useLiveEventArrive(
     room,

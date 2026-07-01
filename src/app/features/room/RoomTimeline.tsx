@@ -477,8 +477,19 @@ export function RoomTimeline({
     const prev = prevBackwardStatusRef.current;
     prevBackwardStatusRef.current = timelineSync.backwardStatus;
     if (timelineSync.backwardStatus === 'loading') {
-      wasAtBottomBeforePaginationRef.current = atBottomRef.current;
-      if (!atBottomRef.current) setShift(true);
+      // When a history-context deeplink is active the proactive-load pagination
+      // fires at 0 ms (after React commit) — before the scroll event that sets
+      // atBottomRef to false has had a chance to run. Force shift and clear the
+      // bottom-restore flag so prepended events don't jump the viewport off the
+      // focused message and so we don't mis-scroll to bottom after completion.
+      // Covers both history_context jumps and notification_live jumps that
+      // fell back to a context-API load (not connected to the live timeline).
+      const syncRef = timelineSyncRef.current;
+      const hasHistoryFocus =
+        syncRef.focusItem?.jumpMode === 'history_context' ||
+        (syncRef.focusItem?.jumpMode === 'notification_live' && !syncRef.liveTimelineLinked);
+      wasAtBottomBeforePaginationRef.current = atBottomRef.current && !hasHistoryFocus;
+      if (!atBottomRef.current || hasHistoryFocus) setShift(true);
     } else if (prev === 'loading' && timelineSync.backwardStatus === 'idle') {
       setShift(false);
       if (wasAtBottomBeforePaginationRef.current) {
@@ -849,13 +860,11 @@ export function RoomTimeline({
       return;
     }
     const evtTimeline = getEventTimeline(room, readUptoEventIdRef.current);
-    // If the stored read marker can't be located in any loaded timeline it's a
-    // stale/evicted marker — typically a leftover `m.fully_read` event with no
-    // matching read receipt. Treating that the same as "scrolled into detached
-    // history" deadlocks the room: the receipt never fires because the marker
-    // isn't on the live timeline, yet the marker can only advance once a receipt
-    // is sent. The caller already gates on being at the live end (atBottom +
-    // focus + liveTimelineLinked), so fall through and mark read.
+    // When the read marker can't be located in a loaded timeline (stale marker, or an
+    // event evicted from a limited window), fall through and mark as read. Every caller
+    // of tryAutoMarkAsRead has already established the user is focused and at the bottom
+    // of the live timeline, so this cannot mark a room the user isn't actually viewing —
+    // and skipping it would leave the room stuck unread on the server.
     if (!evtTimeline) {
       requestAnimationFrame(() => markAsRead(mx, room.roomId, hideReads));
       return;

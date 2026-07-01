@@ -147,6 +147,7 @@ describe('useTimelineSync', () => {
     expect(result.current.timeline.linkedTimelines).toEqual([contextTimeline]);
     expect(result.current.focusItem).toEqual({
       index: 0,
+      indexOffset: 0,
       eventId: '$target:event',
       scrollTo: true,
       highlight: true,
@@ -188,6 +189,7 @@ describe('useTimelineSync', () => {
     expect(result.current.timeline.linkedTimelines).toEqual([contextTimeline]);
     expect(result.current.focusItem).toEqual({
       index: 1,
+      indexOffset: 0,
       eventId: '$unread:event',
       scrollTo: true,
       highlight: true,
@@ -227,6 +229,7 @@ describe('useTimelineSync', () => {
 
     expect(result.current.focusItem).toEqual({
       index: 1,
+      indexOffset: 1,
       eventId: '$read:event',
       scrollTo: true,
       highlight: false,
@@ -714,6 +717,7 @@ describe('useTimelineSync', () => {
 
     expect(result.current.focusItem).toEqual({
       index: 0,
+      indexOffset: 0,
       eventId: '$target:event',
       scrollTo: true,
       highlight: true,
@@ -863,6 +867,7 @@ describe('useTimelineSync', () => {
     expect(result.current.timeline.linkedTimelines).toEqual([contextTimeline]);
     expect(result.current.focusItem).toEqual({
       index: 0,
+      indexOffset: 0,
       eventId: '$target:event',
       scrollTo: true,
       highlight: true,
