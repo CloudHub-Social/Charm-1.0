@@ -27,7 +27,8 @@ function makeClient(params: {
       }
       return undefined;
     },
-    setAccountData: params.setAccountData ?? vi.fn<() => Promise<EmptyObject>>().mockResolvedValue({}),
+    setAccountData:
+      params.setAccountData ?? vi.fn<() => Promise<EmptyObject>>().mockResolvedValue({}),
   } as unknown as MatrixClient;
 }
 
