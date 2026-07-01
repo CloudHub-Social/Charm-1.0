@@ -17,16 +17,18 @@ function makeClient(): MatrixClient {
     getUserId: () => USER_ID,
     getAccountData: () => undefined,
     getRoomPushRule: vi.fn<() => undefined>(),
+    fetchRoomEvent: () => Promise.resolve(undefined),
   } as unknown as MatrixClient;
 }
 
-function makeEvent(eventId: string, sender = '@bob:example.com'): MatrixEvent {
+function makeEvent(eventId: string, sender = '@bob:example.com', ts = 0): MatrixEvent {
   return {
     getId: () => eventId,
     getSender: () => sender,
     getType: () => EventType.RoomMessage,
     getContent: () => ({ msgtype: MsgType.Text, body: 'hello' }),
     getRelation: () => undefined,
+    getTs: () => ts,
     isRedacted: () => false,
     isSending: () => false,
   } as unknown as MatrixEvent;
@@ -43,6 +45,7 @@ function makeReactionEvent(
     getType: () => EventType.Reaction,
     getContent: () => ({ 'm.relates_to': { rel_type: 'm.annotation', event_id: relatedEventId } }),
     getRelation: () => ({ rel_type: 'm.annotation', event_id: relatedEventId }),
+    getTs: () => 0,
     isRedacted: () => false,
     isSending: () => false,
   } as unknown as MatrixEvent;
@@ -54,12 +57,18 @@ function makeRoom(params: {
   events: MatrixEvent[];
   total?: number;
   highlight?: number;
+  roomTotal?: number;
+  readReceipt?: { eventId: string; ts?: number };
 }): Room {
   const client = makeClient();
   return {
     roomId: '!room:example.com',
     client,
     getEventReadUpTo: () => params.readUpToId,
+    getReadReceiptForUserId: (_userId: string, _receiptsToo: boolean, receiptType: string) =>
+      receiptType === 'm.read' && params.readReceipt
+        ? { eventId: params.readReceipt.eventId, data: { ts: params.readReceipt.ts } }
+        : null,
     getAccountData: (eventType: string) =>
       eventType === EventType.FullyRead && params.fullyReadId
         ? ({
@@ -72,9 +81,11 @@ function makeRoom(params: {
     findEventById: (eventId: string) => params.events.find((event) => event.getId() === eventId),
     getUnreadNotificationCount: (type: NotificationCountType) =>
       type === NotificationCountType.Highlight ? (params.highlight ?? 0) : (params.total ?? 0),
-    getRoomUnreadNotificationCount: () => params.total ?? 0,
+    getRoomUnreadNotificationCount: (type: NotificationCountType) =>
+      type === NotificationCountType.Highlight ? 0 : (params.roomTotal ?? params.total ?? 0),
     hasUserReadEvent: (_userId: string, eventId: string) => eventId === params.readUpToId,
     fixupNotifications: vi.fn<() => void>(),
+    emit: vi.fn<() => boolean>(),
   } as unknown as Room;
 }
 
@@ -238,6 +249,66 @@ describe('room read markers', () => {
       roomId: '!room:example.com',
       highlight: 0,
       total: 2,
+    });
+  });
+
+  it('does not clear genuine unread even when a wedged receipt timestamp is newer (regression)', () => {
+    // The global "badges never appear" regression: a stale/wedged read receipt with a
+    // timestamp newer than a backdated bridge message must NOT suppress the badge while
+    // a receipt-confirmed unread notification event is loaded. The roomHaveUnread hard
+    // gate inside isReadDespiteStaleCount protects this.
+    const room = makeRoom({
+      fullyReadId: '$old-marker',
+      events: [makeEvent('$unread', '@bob:example.com', 100)],
+      total: 1,
+      readReceipt: { eventId: '$hidden-edit', ts: 999999 },
+    });
+
+    expect(roomHaveUnread(room.client, room)).toBe(true);
+    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
+      roomId: '!room:example.com',
+      highlight: 0,
+      total: 1,
+    });
+  });
+
+  it('clears a phantom count when the marker is unresolvable and the tail has no foreign notification', () => {
+    // Wedged own edit: read receipt points at a hidden event not in the timeline, the
+    // loaded tail carries only own + non-notifying events, and the receipt is newer than
+    // the newest visible event. Safe to treat as read (Layer 2 heuristic).
+    const room = makeRoom({
+      events: [
+        makeEvent('$own', USER_ID, 100),
+        makeReactionEvent('$react', '$carol-msg', '@bob:example.com'),
+      ],
+      total: 1,
+      readReceipt: { eventId: '$hidden-edit', ts: 999999 },
+    });
+
+    expect(roomHaveUnread(room.client, room)).toBe(false);
+    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
+      roomId: '!room:example.com',
+      highlight: 0,
+      total: 0,
+    });
+  });
+
+  it('does not force-highlight a DM whose only remaining unread is thread-only after the clamp', () => {
+    // total=2 (1 stale main-timeline + 1 thread reply), roomTotal=1 (stale main).
+    // After the clamp subtracts the stale main count, the DM force-highlight guard must
+    // use the post-clamp room total (0), not the raw stale count, so the thread-only
+    // unread does not turn into a green highlighted badge.
+    const room = makeRoom({
+      readUpToId: '$e1',
+      events: [makeEvent('$e1', '@bob:example.com')],
+      total: 2,
+      roomTotal: 1,
+    });
+
+    expect(getUnreadInfo(room, { applyFixup: false, mDirects: new Set(['!room:example.com']) })).toEqual({
+      roomId: '!room:example.com',
+      highlight: 0,
+      total: 1,
     });
   });
 
