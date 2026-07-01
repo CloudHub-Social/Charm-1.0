@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { MatrixClient, MatrixEvent } from '$types/matrix-sdk';
+import type { EmptyObject } from 'matrix-js-sdk/lib/@types/common';
 import { CustomAccountDataEvent } from '$types/matrix/accountData';
 import { emojis } from './emoji';
 import { addRecentEmoji, getRecentEmojis, migrateLegacyRecentEmoji } from './recent-emoji';
@@ -26,7 +27,7 @@ function makeClient(params: {
       }
       return undefined;
     },
-    setAccountData: params.setAccountData ?? vi.fn<() => Promise<unknown>>().mockResolvedValue({}),
+    setAccountData: params.setAccountData ?? vi.fn<() => Promise<EmptyObject>>().mockResolvedValue({}),
   } as unknown as MatrixClient;
 }
 
@@ -58,7 +59,7 @@ describe('recent-emoji plugin', () => {
   });
 
   it('migrates legacy tuple data to the stable { emoji, total } object schema', async () => {
-    const setAccountData = vi.fn<() => Promise<unknown>>().mockResolvedValue({});
+    const setAccountData = vi.fn<() => Promise<EmptyObject>>().mockResolvedValue({});
     const mx = makeClient({
       legacy: { recent_emoji: [[EMOJI_A, 3]] },
       setAccountData,
@@ -72,7 +73,7 @@ describe('recent-emoji plugin', () => {
   });
 
   it('does not migrate when the stable key already has data', async () => {
-    const setAccountData = vi.fn<() => Promise<unknown>>().mockResolvedValue({});
+    const setAccountData = vi.fn<() => Promise<EmptyObject>>().mockResolvedValue({});
     const mx = makeClient({
       stable: { recent_emoji: [{ emoji: EMOJI_A, total: 1 }] },
       legacy: { recent_emoji: [[EMOJI_B, 9]] },
@@ -85,7 +86,7 @@ describe('recent-emoji plugin', () => {
   });
 
   it('writes new emoji usage using the stable object schema', () => {
-    const setAccountData = vi.fn<() => Promise<unknown>>().mockResolvedValue({});
+    const setAccountData = vi.fn<() => Promise<EmptyObject>>().mockResolvedValue({});
     const mx = makeClient({
       stable: { recent_emoji: [{ emoji: EMOJI_A, total: 1 }] },
       setAccountData,
