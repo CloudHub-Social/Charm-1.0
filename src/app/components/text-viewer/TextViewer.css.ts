@@ -1,6 +1,9 @@
 import { style } from '@vanilla-extract/css';
 import { DefaultReset, color, config } from 'folds';
 
+// Covers both iOS env() and Android/Tauri values injected by SystemBarShell.
+const safeAreaTop = 'var(--sable-safe-area-top, env(safe-area-inset-top, 0px))';
+
 export const TextViewer = style([
   DefaultReset,
   {
@@ -18,7 +21,8 @@ export const TextViewerHeader = style([
     gap: config.space.S200,
     '@media': {
       '(max-width: 600px)': {
-        paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingTop: safeAreaTop,
+        minHeight: `calc(2.5rem + ${safeAreaTop})`,
       },
     },
   },
