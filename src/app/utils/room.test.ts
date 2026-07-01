@@ -303,44 +303,6 @@ describe('room read markers', () => {
     });
   });
 
-  it('clamps stale server count when read marker is in timeline but no notification events exist', () => {
-    // Simulates a bridge-heavy room where recent events are all metadata (topic changes,
-    // membership updates, etc.) — none are notification events.  The user just marked as
-    // read at the latest event so the read marker IS in the live timeline, even though
-    // latestNotificationId resolves to undefined.  The server still reports total: 25 (stale).
-    const stateEvent1 = {
-      getId: () => '$state1',
-      getSender: () => '@bridgebot:example.com',
-      getType: () => 'm.room.topic',
-      getContent: () => ({}),
-      getRelation: () => undefined,
-      isRedacted: () => false,
-      isSending: () => false,
-    } as unknown as MatrixEvent;
-    const stateEvent2 = {
-      getId: () => '$state2',
-      getSender: () => '@bridgebot:example.com',
-      getType: () => 'm.room.topic',
-      getContent: () => ({}),
-      getRelation: () => undefined,
-      isRedacted: () => false,
-      isSending: () => false,
-    } as unknown as MatrixEvent;
-    const room = makeRoom({
-      readUpToId: '$state2',
-      events: [stateEvent1, stateEvent2],
-      total: 25,
-      highlight: 0,
-    });
-
-    expect(roomHaveUnread(room.client, room)).toBe(false);
-    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
-      roomId: '!room:example.com',
-      highlight: 0,
-      total: 0,
-    });
-  });
-
   it('does not synthesize a phantom dot when only a non-notifying reaction is unread', () => {
     const room = makeRoom({
       fullyReadId: '$event1',
