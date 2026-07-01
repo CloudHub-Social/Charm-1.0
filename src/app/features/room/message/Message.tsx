@@ -58,6 +58,7 @@ import { MessageEditor } from './MessageEditor';
 import * as css from './styles.css';
 import { modalAtom, ModalType } from '$state/modal';
 import { OptionQuickMenu } from '$components/message/modals/Options';
+import { closeKeyboardBeforeOpeningOverlay } from '$utils/keyboard';
 
 export type ReactionHandler = (keyOrMxc: string, shortcode: string) => void;
 export const MemoizedBody = memo(({ children }: { children: ReactNode }) => children);
@@ -494,6 +495,7 @@ function MessageInternal(
     : undefined;
 
   const optionsRef = useRef<HTMLDivElement>(null);
+  const openMobileOptionsSeqRef = useRef(0);
 
   const [showPronouns] = useSetting(settingsAtom, 'showPronouns');
   const [parsePronouns] = useSetting(settingsAtom, 'parsePronouns');
@@ -829,7 +831,12 @@ function MessageInternal(
     setIsEmoji(false);
   };
 
-  const openMobileOptions = () => {
+  const openMobileOptions = async () => {
+    const seq = ++openMobileOptionsSeqRef.current;
+    if (mobileOrTablet()) {
+      await closeKeyboardBeforeOpeningOverlay();
+    }
+    if (openMobileOptionsSeqRef.current !== seq) return;
     setModal({
       type: ModalType.MobileOptions,
       options: {

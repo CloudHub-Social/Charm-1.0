@@ -72,6 +72,7 @@ export const MessageMobileOptionsContainer = style({
   height: '85%',
   display: 'flex',
   flexDirection: 'column',
+  paddingBottom: 'env(safe-area-inset-bottom, 0px)',
   animation: `${keyframes({
     from: { transform: 'translateY(100%)' },
     to: { transform: 'translateY(0)' },
