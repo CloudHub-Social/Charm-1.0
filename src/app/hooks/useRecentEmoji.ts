@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { MatrixClient, MatrixEvent } from '$types/matrix-sdk';
 import { ClientEvent } from '$types/matrix-sdk';
 
-import { getRecentEmojis } from '$plugins/recent-emoji';
+import { getRecentEmojis, migrateLegacyRecentEmoji } from '$plugins/recent-emoji';
 import type { IEmoji } from '$plugins/emoji';
 import { CustomAccountDataEvent } from '$types/matrix/accountData';
 
@@ -25,6 +25,10 @@ export const useRecentEmoji = (mx: MatrixClient, limit?: number): IEmoji[] => {
       mx.removeListener(ClientEvent.AccountData, handleAccountData);
     };
   }, [mx, limit]);
+
+  useEffect(() => {
+    migrateLegacyRecentEmoji(mx).catch(() => {});
+  }, [mx]);
 
   return recentEmoji;
 };
