@@ -409,8 +409,15 @@ export function RoomTimeline({
     const prev = prevBackwardStatusRef.current;
     prevBackwardStatusRef.current = timelineSync.backwardStatus;
     if (timelineSync.backwardStatus === 'loading') {
-      wasAtBottomBeforePaginationRef.current = atBottomRef.current;
-      if (!atBottomRef.current) setShift(true);
+      // When a history-context deeplink is active the proactive-load pagination
+      // fires at 0 ms (after React commit) — before the scroll event that sets
+      // atBottomRef to false has had a chance to run. Force shift and clear the
+      // bottom-restore flag so prepended events don't jump the viewport off the
+      // focused message and so we don't mis-scroll to bottom after completion.
+      const hasHistoryFocus =
+        timelineSyncRef.current.focusItem?.jumpMode === 'history_context';
+      wasAtBottomBeforePaginationRef.current = atBottomRef.current && !hasHistoryFocus;
+      if (!atBottomRef.current || hasHistoryFocus) setShift(true);
     } else if (prev === 'loading' && timelineSync.backwardStatus === 'idle') {
       setShift(false);
       if (wasAtBottomBeforePaginationRef.current) {

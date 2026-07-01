@@ -343,10 +343,13 @@ const useEventTimelineLoader = (
           jumpMode,
         });
 
-        // Proactively load context above and below the jumped-to event so the user
-        // can scroll immediately without waiting for pagination triggers.
+        // Proactively load context above and below the jumped-to event so the
+        // user can scroll immediately without waiting for pagination triggers.
+        // 0-ms defer fires after the current React commit (effects including
+        // tryScroll run first), eliminating the 500 ms "ghost room" window
+        // where only the linked-to event was visible in sparse contexts.
         if (onProactiveLoad) {
-          setTimeout(() => onProactiveLoad(), 500);
+          setTimeout(() => onProactiveLoad(), 0);
         }
       }),
     [mx, room, onLoad, onError, onProactiveLoad]
@@ -828,6 +831,28 @@ export function useTimelineSync({
 
   const eventsLengthRef = useRef(eventsLength);
   eventsLengthRef.current = eventsLength;
+
+  // When backward pagination prepends events, every existing event's absolute
+  // index increases by the number of prepended events. focusItem.index is set
+  // once at load time and becomes stale after any backward paginate, causing
+  // the scroll anchor (tick loop + tryScroll retries) to target the wrong
+  // message. Re-resolve the index from the eventId on every timeline change.
+  useEffect(() => {
+    if (!focusItem?.eventId) return;
+    const { eventId: focusEventId } = focusItem;
+    const evtTimeline = getEventTimeline(room, focusEventId);
+    if (!evtTimeline) return;
+    const newAbsIndex = getEventIdAbsoluteIndex(
+      timeline.linkedTimelines,
+      evtTimeline,
+      focusEventId
+    );
+    if (newAbsIndex === undefined) return;
+    setFocusItem((prev) => {
+      if (prev?.eventId !== focusEventId || prev.index === newAbsIndex) return prev;
+      return { ...prev, index: newAbsIndex };
+    });
+  }, [room, timeline.linkedTimelines, focusItem?.eventId]);
 
   useLiveEventArrive(
     room,
