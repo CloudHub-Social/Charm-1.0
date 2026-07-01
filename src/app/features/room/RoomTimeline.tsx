@@ -849,7 +849,16 @@ export function RoomTimeline({
       return;
     }
     const evtTimeline = getEventTimeline(room, readUptoEventIdRef.current);
-    const latestTimeline = evtTimeline && getFirstLinkedTimeline(evtTimeline, Direction.Forward);
+    // When the read marker can't be located in a loaded timeline (stale marker, or an
+    // event evicted from a limited window), fall through and mark as read. Every caller
+    // of tryAutoMarkAsRead has already established the user is focused and at the bottom
+    // of the live timeline, so this cannot mark a room the user isn't actually viewing —
+    // and skipping it would leave the room stuck unread on the server.
+    if (!evtTimeline) {
+      requestAnimationFrame(() => markAsRead(mx, room.roomId, hideReads));
+      return;
+    }
+    const latestTimeline = getFirstLinkedTimeline(evtTimeline, Direction.Forward);
     if (latestTimeline === room.getLiveTimeline()) {
       requestAnimationFrame(() => markAsRead(mx, room.roomId, hideReads));
     }

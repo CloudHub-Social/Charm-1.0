@@ -71,9 +71,13 @@ export async function markAsRead(mx: MatrixClient, roomId: string, privateReceip
   }
 
   // Keep legacy receipt path as a safety fallback for homeservers with partial support.
+  // Send unthreaded (third arg): the SDK otherwise attaches a thread_id for threaded
+  // clients, and only an unthreaded receipt clears the whole-room notification count —
+  // needed to overwrite a stale receipt wedged on a vanished/hidden event.
   await mx.sendReadReceipt(
     latestEvent,
-    privateReceipt ? ReceiptType.ReadPrivate : ReceiptType.Read
+    privateReceipt ? ReceiptType.ReadPrivate : ReceiptType.Read,
+    true
   );
 
   // On Android (Tauri), dismiss the room's OS notification immediately so
