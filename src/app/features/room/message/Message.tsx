@@ -140,7 +140,9 @@ function useMobileLongPress(callback: () => void, delay = 500) {
       firedRef.current = false;
       timerRef.current = setTimeout(() => {
         firedRef.current = true;
-        callback();
+        Promise.resolve(callback()).catch((error: unknown) => {
+          console.error('[useMobileLongPress] callback failed', error);
+        });
       }, delay);
     },
     [callback, delay]
