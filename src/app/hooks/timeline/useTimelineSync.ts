@@ -454,11 +454,17 @@ const useTimelinePagination = (
           const freshLTimelines = timelineRef.current.linkedTimelines;
           const firstTimeline = freshLTimelines[0];
           if (!firstTimeline) return;
-          recalibratePagination(freshLTimelines);
           (backwards ? setBackwardStatus : setForwardStatus)('idle');
 
           const countAfter = getTimelinesEventsCount(getLinkedTimelines(firstTimeline));
           const fetched = countAfter - countBefore;
+
+          // Only recalibrate when events were actually fetched — re-traversing the
+          // linked list when nothing changed can swap in a new live-timeline end
+          // that arrived concurrently, bypassing the event-context preservation guard.
+          if (fetched > 0) {
+            recalibratePagination(freshLTimelines);
+          }
 
           if (fetched > 0 && fetched < 5) {
             const checkTimeline = getPaginationTimelineEdge(freshLTimelines, backwards);
@@ -852,7 +858,7 @@ export function useTimelineSync({
       if (prev?.eventId !== focusEventId || prev.index === newAbsIndex) return prev;
       return { ...prev, index: newAbsIndex };
     });
-  }, [room, timeline.linkedTimelines, focusItem?.eventId]);
+  }, [room, timeline.linkedTimelines, focusItem]);
 
   useLiveEventArrive(
     room,

@@ -414,8 +414,7 @@ export function RoomTimeline({
       // atBottomRef to false has had a chance to run. Force shift and clear the
       // bottom-restore flag so prepended events don't jump the viewport off the
       // focused message and so we don't mis-scroll to bottom after completion.
-      const hasHistoryFocus =
-        timelineSyncRef.current.focusItem?.jumpMode === 'history_context';
+      const hasHistoryFocus = timelineSyncRef.current.focusItem?.jumpMode === 'history_context';
       wasAtBottomBeforePaginationRef.current = atBottomRef.current && !hasHistoryFocus;
       if (!atBottomRef.current || hasHistoryFocus) setShift(true);
     } else if (prev === 'loading' && timelineSync.backwardStatus === 'idle') {
