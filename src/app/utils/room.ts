@@ -435,6 +435,14 @@ const unreadInfoFixupInProgress = new WeakSet<Room>();
 const receiptEventSenderCache = new Map<string, string | null>();
 const receiptEventFetchInFlight = new Set<string>();
 
+// Clear the module-level receipt-sender caches. Called on client teardown (logout /
+// account switch) so entries don't accumulate across sessions. Event IDs are globally
+// unique, so a stale entry could never be misattributed — this is purely to bound growth.
+export const clearReceiptEventSenderCache = (): void => {
+  receiptEventSenderCache.clear();
+  receiptEventFetchInFlight.clear();
+};
+
 type RawReceipt = { eventId: string; ts?: number };
 
 const wrapReceipt = (
