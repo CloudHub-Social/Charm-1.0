@@ -19,6 +19,39 @@ export const ImageViewerHeader = style([
     '@media': {
       '(max-width: 600px)': {
         paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingBottom: config.space.S200,
+        flexWrap: 'wrap',
+        rowGap: config.space.S100,
+      },
+    },
+  },
+]);
+
+// Title/back-button group. Forced onto its own row on mobile so the controls
+// group below always has the full viewport width to lay out in.
+export const ImageViewerHeaderTitle = style([
+  DefaultReset,
+  {
+    '@media': {
+      '(max-width: 600px)': {
+        flexBasis: '100%',
+      },
+    },
+  },
+]);
+
+// Zoom/download controls group. On mobile it gets its own row; if the
+// controls still don't fit (e.g. extra zoom buttons appear), it scrolls
+// horizontally instead of clipping off-screen where it can't be reached.
+export const ImageViewerHeaderControls = style([
+  DefaultReset,
+  {
+    '@media': {
+      '(max-width: 600px)': {
+        flexBasis: '100%',
+        justifyContent: 'flex-end',
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
       },
     },
   },
