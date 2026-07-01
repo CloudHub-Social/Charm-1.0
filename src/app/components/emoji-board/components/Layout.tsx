@@ -9,6 +9,7 @@ export const EmojiBoardLayout = as<
     header: ReactNode;
     mobileSheetHandle?: ReactNode;
     sidebar?: ReactNode;
+    pinnedSidebarFooter?: ReactNode;
     children: ReactNode;
     footer?: ReactNode;
     isFullWidth?: boolean;
@@ -23,6 +24,7 @@ export const EmojiBoardLayout = as<
       header,
       mobileSheetHandle,
       sidebar,
+      pinnedSidebarFooter,
       children,
       footer,
       isFullWidth,
@@ -53,8 +55,12 @@ export const EmojiBoardLayout = as<
        * Line as a visual-only divider) instead of each scrolling
        * independently — two scrollbars on a short mobile sheet meant the
        * sidebar's category icons could scroll out of reach on their own.
+       * pinnedSidebarFooter (the standard emoji-group categories) sits
+       * outside that scroll, absolutely positioned over its bottom edge —
+       * position: sticky doesn't reliably stay pinned once content and
+       * sidebar share one scroll container on real mobile browsers.
        */}
-      <Box direction="Column" grow="Yes" style={{ minHeight: 0 }}>
+      <Box className={css.ScrollArea} direction="Column" grow="Yes" style={{ minHeight: 0 }}>
         <Scroll ref={scrollRef} size="400" onKeyDown={onScrollKeyDown} hideTrack>
           <Box direction="Row">
             <Box grow="Yes" direction="Column" style={{ minWidth: 0 }}>
@@ -68,6 +74,11 @@ export const EmojiBoardLayout = as<
             )}
           </Box>
         </Scroll>
+        {pinnedSidebarFooter && (
+          <Box className={css.PinnedSidebarFooter} shrink="No">
+            {pinnedSidebarFooter}
+          </Box>
+        )}
       </Box>
       {footer}
     </Box>

@@ -7,12 +7,28 @@ const rootDir = path.resolve(__dirname, '../../../..');
 const readWorkspaceFile = (relativePath: string): string =>
   fs.readFileSync(path.join(rootDir, relativePath), 'utf8');
 
-describe('emoji sidebar sticky contract', () => {
-  it('uses a reachable sticky bottom anchor for the emoji group stack', () => {
+describe('emoji sidebar pinned-footer contract', () => {
+  it('renders the emoji group categories outside the shared scroll via a pinned anchor', () => {
     const emojiBoard = readWorkspaceFile('src/app/components/emoji-board/EmojiBoard.tsx');
+    const stylesCss = readWorkspaceFile('src/app/components/emoji-board/components/styles.css.ts');
 
-    expect(emojiBoard).toContain("position: 'sticky'");
-    expect(emojiBoard).toContain('bottom: 0');
-    expect(emojiBoard).not.toContain("bottom: '-67%'");
+    // The standard emoji-group categories render via EmojiSidebarPinned,
+    // passed as pinnedSidebarFooter — outside the content+sidebar shared
+    // scroll, so they can never be scrolled out of reach.
+    expect(emojiBoard).toContain('pinnedSidebarFooter={');
+    expect(emojiBoard).toContain('EmojiSidebarPinned');
+
+    // position: sticky doesn't reliably stay pinned once content and
+    // sidebar share one scroll container (confirmed on real Chromium/
+    // Android builds, not just the dev fixture) — guard against
+    // reintroducing it for this group.
+    expect(emojiBoard).not.toContain("position: 'sticky'");
+
+    // The pinned footer must be genuinely anchored to the bottom via
+    // position: absolute, not left to normal flow (which would scroll
+    // away) or a previously-buggy percentage offset.
+    expect(stylesCss).toContain("position: 'absolute'");
+    expect(stylesCss).toContain('bottom: 0');
+    expect(stylesCss).not.toContain("bottom: '-67%'");
   });
 });

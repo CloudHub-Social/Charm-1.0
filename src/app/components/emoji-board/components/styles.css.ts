@@ -121,6 +121,17 @@ export const GifAttribution = style({
   whiteSpace: 'normal',
 });
 
+export const ScrollArea = style({
+  position: 'relative',
+});
+
+export const PinnedSidebarFooter = style({
+  position: 'absolute',
+  bottom: 0,
+  right: 0,
+  zIndex: 1,
+});
+
 /**
  * Sidebar
  */

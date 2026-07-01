@@ -495,6 +495,12 @@ type EmojiSidebarProps = {
   saveStickerEmojiBandwidth: boolean;
   onScrollToGroup: (groupId: string) => void;
 };
+// Scrolls together with the picker content (Recent + custom packs). The
+// standard emoji-group categories are rendered separately by
+// EmojiSidebarPinned, outside the shared scroll — position: sticky doesn't
+// reliably stay pinned once content and sidebar share one scroll container
+// (observed on real Chromium/Android builds, not just the dev fixture: the
+// sticky group scrolls fully out of view instead of pinning to the bottom).
 function EmojiSidebar({
   activeGroupAtom,
   packs,
@@ -506,8 +512,6 @@ function EmojiSidebar({
 
   const [activeGroupId, setActiveGroupId] = useAtom(activeGroupAtom);
   const usage = ImageUsage.Emoticon;
-  const labels = useEmojiGroupLabels();
-  const icons = useEmojiGroupIcons();
 
   const handleScrollToGroup = (groupId: string) => {
     setActiveGroupId(groupId);
@@ -551,13 +555,32 @@ function EmojiSidebar({
           })}
         </SidebarStack>
       )}
-      <SidebarStack
-        style={{
-          position: 'sticky',
-          bottom: 0,
-          zIndex: 1,
-        }}
-      >
+    </Sidebar>
+  );
+}
+
+type EmojiSidebarPinnedProps = {
+  activeGroupAtom: PrimitiveAtom<string | undefined>;
+  onScrollToGroup: (groupId: string) => void;
+};
+// The standard emoji-group categories, always visible/reachable — rendered
+// outside the shared scroll (see EmojiSidebar above for why).
+function EmojiSidebarPinned({
+  activeGroupAtom,
+  onScrollToGroup,
+}: Readonly<EmojiSidebarPinnedProps>) {
+  const [activeGroupId, setActiveGroupId] = useAtom(activeGroupAtom);
+  const labels = useEmojiGroupLabels();
+  const icons = useEmojiGroupIcons();
+
+  const handleScrollToGroup = (groupId: string) => {
+    setActiveGroupId(groupId);
+    onScrollToGroup(groupId);
+  };
+
+  return (
+    <Sidebar>
+      <SidebarStack>
         <SidebarDivider />
         {emojiGroups.map((group) => (
           <GroupIcon
@@ -1201,6 +1224,11 @@ export function EmojiBoard({
         // fast while already near the min height, dismisses the sheet —
         // the same gesture users expect from a native bottom sheet.
         if (shouldDismissMobileSheet(dragState, heights)) {
+          // The picker stays mounted (just hidden) between opens, so reset
+          // the height now — otherwise the next open would reuse the
+          // collapsed height left over from this dismiss drag instead of
+          // falling back to the default initial height.
+          setMobileSheetHeight(undefined);
           requestClose();
           return;
         }
@@ -1359,6 +1387,14 @@ export function EmojiBoard({
                 onScrollToGroup={handleScrollToGroup}
               />
             )
+          )
+        }
+        pinnedSidebarFooter={
+          emojiTab && (
+            <EmojiSidebarPinned
+              activeGroupAtom={activeGroupIdAtom}
+              onScrollToGroup={handleScrollToGroup}
+            />
           )
         }
         isFullWidth={isFullWidth}
