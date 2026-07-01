@@ -538,7 +538,9 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
           isEventAtOrBeforeReadMarker(liveEvents, latestNotificationId, readMarkerId))
       ) {
         // Subtract only the stale main-timeline count; thread totals remain intact.
-        total -= roomTotal;
+        // Floor at zero: divergent SDK counters can leave roomTotal > total, and a
+        // negative result would surface as an invalid negative DM highlight below.
+        total = Math.max(0, total - roomTotal);
       }
     }
   }
