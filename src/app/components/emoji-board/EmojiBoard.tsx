@@ -4,10 +4,9 @@ import type {
   MouseEventHandler,
   PointerEventHandler,
   ReactNode,
-  RefObject,
 } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Chip, Text, config, Scroll } from 'folds';
+import { Box, Chip, Text, config } from 'folds';
 import { AuthenticatedImg } from '$components/AuthenticatedImg';
 import { ClockCounterClockwise } from '$components/icons/phosphor';
 import FocusTrap from 'focus-trap-react';
@@ -64,6 +63,7 @@ import {
 import type { GifData } from './types';
 import { EmojiBoardTab, EmojiType } from './types';
 import { getMobileSheetHeights } from './mobileSheetHeights';
+import { shouldDismissMobileSheet } from './mobileSheetDismiss';
 import {
   addGifSentBreadcrumb,
   addGifTabOpenedBreadcrumb,
@@ -627,13 +627,11 @@ function StickerSidebar({
 }
 
 type EmojiGroupHolderProps = {
-  contentScrollRef: RefObject<HTMLDivElement>;
   previewAtom: PrimitiveAtom<PreviewData | undefined>;
   children?: ReactNode;
   onGroupItemClick: MouseEventHandler;
 };
 function EmojiGroupHolder({
-  contentScrollRef,
   previewAtom,
   onGroupItemClick,
   children,
@@ -670,16 +668,14 @@ function EmojiGroupHolder({
   };
 
   return (
-    <Scroll ref={contentScrollRef} size="400" onKeyDown={preventScrollWithArrowKey} hideTrack>
-      <Box
-        onClick={onGroupItemClick}
-        onMouseMove={handleEmojiHover}
-        onFocus={handleEmojiFocus}
-        direction="Column"
-      >
-        {children}
-      </Box>
-    </Scroll>
+    <Box
+      onClick={onGroupItemClick}
+      onMouseMove={handleEmojiHover}
+      onFocus={handleEmojiFocus}
+      direction="Column"
+    >
+      {children}
+    </Box>
   );
 }
 
@@ -823,6 +819,14 @@ export function EmojiBoard({
     currentHeight: number;
     startY: number;
     startHeight: number;
+    // Unclamped height + pointer velocity, tracked separately from the
+    // clamped currentHeight so a drag pulled well past the min height (or a
+    // fast downward flick) can dismiss the sheet instead of just snapping
+    // back to min.
+    rawHeight: number;
+    lastY: number;
+    lastTime: number;
+    velocityY: number;
   } | null>(null);
   const activeTabRef = useRef(activeTab);
 
@@ -1157,14 +1161,26 @@ export function EmojiBoard({
         currentHeight,
         startY: evt.clientY,
         startHeight: currentHeight,
+        rawHeight: currentHeight,
+        lastY: evt.clientY,
+        lastTime: evt.timeStamp,
+        velocityY: 0,
       };
 
       const handlePointerMove = (moveEvt: PointerEvent) => {
         const dragState = mobileSheetDragRef.current;
         if (!dragState) return;
 
+        const dt = moveEvt.timeStamp - dragState.lastTime;
+        if (dt > 0) {
+          dragState.velocityY = (moveEvt.clientY - dragState.lastY) / dt;
+        }
+        dragState.lastY = moveEvt.clientY;
+        dragState.lastTime = moveEvt.timeStamp;
+
         const heights = getMobileSheetHeights(window.innerHeight, activeTabRef.current);
         const nextHeight = dragState.startHeight - (moveEvt.clientY - dragState.startY);
+        dragState.rawHeight = nextHeight;
         dragState.currentHeight = Math.max(heights.min, Math.min(heights.max, nextHeight));
         setMobileSheetHeight(dragState.currentHeight);
       };
@@ -1180,6 +1196,15 @@ export function EmojiBoard({
         if (!dragState) return;
 
         const heights = getMobileSheetHeights(window.innerHeight, activeTabRef.current);
+
+        // Pulling the handle well past the min height, or flicking down
+        // fast while already near the min height, dismisses the sheet —
+        // the same gesture users expect from a native bottom sheet.
+        if (shouldDismissMobileSheet(dragState, heights)) {
+          requestClose();
+          return;
+        }
+
         const current = dragState.currentHeight;
         const midpoint = (heights.min + heights.max) / 2;
         setMobileSheetHeight(current >= midpoint ? heights.max : heights.min);
@@ -1190,7 +1215,7 @@ export function EmojiBoard({
       window.addEventListener('pointermove', handlePointerMove);
       window.addEventListener('pointerup', handlePointerUp, { once: true });
     },
-    [isMobileSheet]
+    [isMobileSheet, requestClose]
   );
 
   useEffect(
@@ -1339,111 +1364,110 @@ export function EmojiBoard({
         isFullWidth={isFullWidth}
         isGifLayout={gifTab}
         style={isMobileSheet && mobileSheetHeight ? { height: mobileSheetHeight } : undefined}
+        scrollRef={contentScrollRef}
+        onScrollKeyDown={preventScrollWithArrowKey}
+        footer={!gifTab && <Preview previewAtom={previewAtom} />}
       >
-        <Box grow="Yes">
-          <EmojiGroupHolder
-            key={activeTab}
-            contentScrollRef={contentScrollRef}
-            previewAtom={previewAtom}
-            onGroupItemClick={handleGroupItemClick}
-          >
-            {gifTab && isGifDiscovery && (
-              <Box className={componentCss.GifDiscovery} direction="Column" gap="300" shrink="No">
-                {recentGifSearches.length > 0 && (
-                  <Box className={componentCss.GifDiscoverySection} direction="Column" gap="100">
-                    <Text size="T200" priority="300">
-                      Recent searches
-                    </Text>
-                    <div className={componentCss.GifChipRow}>
-                      {recentGifSearches.map((search) => (
-                        <Chip
-                          key={search}
-                          variant="Secondary"
-                          radii="Pill"
-                          size="400"
-                          outlined
-                          before={<ClockCounterClockwise size={14} />}
-                          onClick={() => applyGifSearch(search)}
-                        >
-                          <Text size="T200">{search}</Text>
-                        </Chip>
-                      ))}
-                    </div>
-                  </Box>
-                )}
+        <EmojiGroupHolder
+          key={activeTab}
+          previewAtom={previewAtom}
+          onGroupItemClick={handleGroupItemClick}
+        >
+          {gifTab && isGifDiscovery && (
+            <Box className={componentCss.GifDiscovery} direction="Column" gap="300" shrink="No">
+              {recentGifSearches.length > 0 && (
                 <Box className={componentCss.GifDiscoverySection} direction="Column" gap="100">
                   <Text size="T200" priority="300">
-                    Popular searches
+                    Recent searches
                   </Text>
-                  <div className={componentCss.GifPromptGrid}>
-                    {gifDiscoveryItems.map(({ term, gif }) => {
-                      const previewUrl = gif?.preview_url ?? gif?.url;
-                      const initialGifUrl = previewUrl?.startsWith('mxc://')
-                        ? (mxcUrlToHttp(mx, previewUrl, useAuthentication) ?? '')
-                        : (previewUrl ?? '');
-                      const aspectRatio =
-                        gif?.width && gif.height && gif.width > 0 && gif.height > 0
-                          ? `${gif.width} / ${gif.height}`
-                          : '1.55 / 1';
-
-                      return (
-                        <GifSearchItem
-                          key={term}
-                          label={term}
-                          previewUrl={initialGifUrl}
-                          style={{ aspectRatio }}
-                          onClick={() => applyGifSearch(term)}
-                        />
-                      );
-                    })}
+                  <div className={componentCss.GifChipRow}>
+                    {recentGifSearches.map((search) => (
+                      <Chip
+                        key={search}
+                        variant="Secondary"
+                        radii="Pill"
+                        size="400"
+                        outlined
+                        before={<ClockCounterClockwise size={14} />}
+                        onClick={() => applyGifSearch(search)}
+                      >
+                        <Text size="T200">{search}</Text>
+                      </Chip>
+                    ))}
                   </div>
                 </Box>
-              </Box>
-            )}
-            {activeTab !== EmojiBoardTab.Gif && searchedItems && (
-              <EmojiGroup
-                id={SEARCH_GROUP_ID}
-                label={searchedItems.length ? 'Search Results' : 'No Results found'}
-              >
-                {searchedItems.map((element, index) => renderItem(element, index))}
-              </EmojiGroup>
-            )}
-            <div
-              ref={virtualBaseRef}
-              style={{
-                position: 'relative',
-                height: virtualizer.getTotalSize(),
-              }}
-            >
-              {vItems.map((vItem) => {
-                const group = groups[vItem.index]!;
+              )}
+              <Box className={componentCss.GifDiscoverySection} direction="Column" gap="100">
+                <Text size="T200" priority="300">
+                  Popular searches
+                </Text>
+                <div className={componentCss.GifPromptGrid}>
+                  {gifDiscoveryItems.map(({ term, gif }) => {
+                    const previewUrl = gif?.preview_url ?? gif?.url;
+                    const initialGifUrl = previewUrl?.startsWith('mxc://')
+                      ? (mxcUrlToHttp(mx, previewUrl, useAuthentication) ?? '')
+                      : (previewUrl ?? '');
+                    const aspectRatio =
+                      gif?.width && gif.height && gif.width > 0 && gif.height > 0
+                        ? `${gif.width} / ${gif.height}`
+                        : '1.55 / 1';
 
-                return (
-                  <VirtualTile
-                    virtualItem={vItem}
-                    style={{ paddingTop: config.space.S200 }}
-                    ref={virtualizer.measureElement}
-                    key={vItem.index}
-                  >
-                    <EmojiGroup key={group.id} id={group.id} label={group.name} isGifGroup={gifTab}>
-                      {group.items.map(renderItem)}
-                    </EmojiGroup>
-                  </VirtualTile>
-                );
-              })}
-            </div>
-            {activeTab === EmojiBoardTab.Sticker && groups.length === 0 && <NoStickerPacks />}
-            {gifTab && (
-              <GifStatus
-                loading={gifsLoading}
-                error={gifsError}
-                isEmpty={groups.every((group) => group.items.length === 0)}
-                showEmptyState={!isGifDiscovery}
-              />
-            )}
-          </EmojiGroupHolder>
-        </Box>
-        {!gifTab && <Preview previewAtom={previewAtom} />}
+                    return (
+                      <GifSearchItem
+                        key={term}
+                        label={term}
+                        previewUrl={initialGifUrl}
+                        style={{ aspectRatio }}
+                        onClick={() => applyGifSearch(term)}
+                      />
+                    );
+                  })}
+                </div>
+              </Box>
+            </Box>
+          )}
+          {activeTab !== EmojiBoardTab.Gif && searchedItems && (
+            <EmojiGroup
+              id={SEARCH_GROUP_ID}
+              label={searchedItems.length ? 'Search Results' : 'No Results found'}
+            >
+              {searchedItems.map((element, index) => renderItem(element, index))}
+            </EmojiGroup>
+          )}
+          <div
+            ref={virtualBaseRef}
+            style={{
+              position: 'relative',
+              height: virtualizer.getTotalSize(),
+            }}
+          >
+            {vItems.map((vItem) => {
+              const group = groups[vItem.index]!;
+
+              return (
+                <VirtualTile
+                  virtualItem={vItem}
+                  style={{ paddingTop: config.space.S200 }}
+                  ref={virtualizer.measureElement}
+                  key={vItem.index}
+                >
+                  <EmojiGroup key={group.id} id={group.id} label={group.name} isGifGroup={gifTab}>
+                    {group.items.map(renderItem)}
+                  </EmojiGroup>
+                </VirtualTile>
+              );
+            })}
+          </div>
+          {activeTab === EmojiBoardTab.Sticker && groups.length === 0 && <NoStickerPacks />}
+          {gifTab && (
+            <GifStatus
+              loading={gifsLoading}
+              error={gifsError}
+              isEmpty={groups.every((group) => group.items.length === 0)}
+              showEmptyState={!isGifDiscovery}
+            />
+          )}
+        </EmojiGroupHolder>
       </EmojiBoardLayout>
     </FocusTrap>
   );
