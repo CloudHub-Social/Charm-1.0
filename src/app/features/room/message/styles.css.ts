@@ -61,6 +61,13 @@ export const MessageNickEditor = style({
   fontSize: '14px',
   width: '100%',
   outline: 'none',
+  // Override the ancestor PreventSelect container: iOS Safari lets
+  // -webkit-user-select: none on a parent block focus/typing/selection
+  // inside nested inputs, so this must explicitly opt back in.
+  WebkitUserSelect: 'text',
+  msUserSelect: 'text',
+  userSelect: 'text',
+  MozUserSelect: 'text',
 });
 
 export const MessageMobileOptionsWrapped = style({
