@@ -38,6 +38,7 @@ import { getMessageSearchShortcutPath } from '$features/search/searchShortcut';
 import { getEmojiBoardWidth } from '$features/room/emojiBoardPosition';
 import { ModalWide } from '$styles/Modal.css';
 import * as messageOptionsCss from '$features/room/message/styles.css';
+import { ImageViewerHeader } from '$components/image-viewer/ImageViewer.css';
 
 const svgDataUri = (svg: string): string => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 
@@ -1044,7 +1045,8 @@ function SmokeSearchShortcuts() {
 
 function SmokeGifPicker() {
   const boardWidth = getEmojiBoardWidth(
-    typeof window !== 'undefined' ? window.innerWidth : 390
+    typeof window !== 'undefined' ? window.innerWidth : 390,
+    true
   );
 
   return (
@@ -1067,7 +1069,7 @@ function SmokeGifPicker() {
         >
           <div
             data-testid="smoke-gif-picker"
-            className={emojiBoardCss.Base({ isFullWidth: true })}
+            className={emojiBoardCss.Base({ isGifLayout: true })}
             style={{ width: '100%' }}
           >
             <Box
@@ -1116,13 +1118,11 @@ function SmokeImageViewerModal() {
         >
           <Box
             data-testid="smoke-modal-wide-header"
+            className={ImageViewerHeader}
             shrink="No"
             alignItems="Center"
             gap="200"
             style={{
-              paddingTop: 'env(safe-area-inset-top, 0px)',
-              paddingLeft: config.space.S200,
-              paddingRight: config.space.S200,
               minHeight: '48px',
               backgroundColor: 'var(--sable-surface-container-high)',
             }}

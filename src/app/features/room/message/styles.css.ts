@@ -39,6 +39,7 @@ export const MessageOptionsMenu = style({
   bottom: '0',
   display: 'flex',
   flexDirection: 'column',
+  paddingBottom: 'env(safe-area-inset-bottom, 0px)',
 });
 
 //I have zero clue where these numbers and vars are from but they should be changed

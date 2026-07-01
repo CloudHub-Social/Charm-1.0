@@ -875,11 +875,11 @@ function MessageInternal(
   // const longPress = useMobileLongPress(() => {
   //   setMobileOptionsOpen(true);
   // });
-  const { firedRef: longPressFiredRef, ...longPress } = useMobileLongPress(() => {
-    if (!edit) openMobileOptions();
+  const { firedRef: longPressFiredRef, ...longPress } = useMobileLongPress(async () => {
+    if (!edit) await openMobileOptions();
   });
 
-  const handleContextMenu: MouseEventHandler<HTMLDivElement> = (evt) => {
+  const handleContextMenu: MouseEventHandler<HTMLDivElement> = async (evt) => {
     if (evt.altKey || !window.getSelection()?.isCollapsed || edit) return;
     const tag = (evt.target as HTMLElement).tagName;
     if (typeof tag === 'string' && tag.toLowerCase() === 'a') return;
@@ -893,7 +893,7 @@ function MessageInternal(
       }
       evt.preventDefault();
       evt.stopPropagation();
-      openMobileOptions();
+      await openMobileOptions();
       return;
     }
 

@@ -83,13 +83,29 @@ test.describe('issue #490 — mobile UI/UX regressions', () => {
     await expect(container).toBeVisible();
     await expect(firstItem).toBeVisible();
 
-    // Verify paddingBottom is env(safe-area-inset-bottom, 0px) — in CI this
-    // resolves to 0 but the property must not be unset.
-    const paddingBottom = await container.evaluate(
-      (el) => window.getComputedStyle(el).paddingBottom
-    );
-    // Should be a CSS length, not empty/unset.
-    expect(paddingBottom).toMatch(/^\d+(\.\d+)?px$/);
+    // Verify the element's stylesheet contains an env(safe-area-inset-bottom) rule.
+    // getComputedStyle().paddingBottom always resolves to a px value (even when
+    // no padding-bottom rule exists), so we must inspect the stylesheet directly.
+    const hasEnvPaddingRule = await container.evaluate((el) => {
+      const classes = Array.from(el.classList);
+      for (const sheet of Array.from(document.styleSheets)) {
+        try {
+          for (const rule of Array.from(sheet.cssRules)) {
+            if (
+              rule instanceof CSSStyleRule &&
+              classes.some((cls) => rule.selectorText.includes(cls)) &&
+              rule.cssText.includes('env(safe-area-inset-bottom')
+            ) {
+              return true;
+            }
+          }
+        } catch {
+          // cross-origin stylesheet — skip
+        }
+      }
+      return false;
+    });
+    expect(hasEnvPaddingRule).toBe(true);
 
     await captureSnapshot(page, 'layout-harness/mobile-490/mobile-options-sheet');
   });
