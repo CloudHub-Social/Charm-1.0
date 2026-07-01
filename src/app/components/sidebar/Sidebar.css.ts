@@ -78,6 +78,12 @@ export const SidebarItem = recipe({
       position: 'relative',
       transition: 'transform 200ms cubic-bezier(0, 0.8, 0.67, 0.97)',
 
+      '@media': {
+        '(pointer: coarse)': {
+          minHeight: toRem(44),
+        },
+      },
+
       selectors: {
         '&:hover': {
           transform: `translateX(${toRem(PUSH_X)})`,
