@@ -38,6 +38,10 @@ type TimelineLoadTarget = 'event' | 'next';
 
 export type TimelineFocusItem = {
   index: number;
+  // Offset applied on top of the event's absolute index (e.g. +1 for Jump to
+  // Unread when the first unread event isn't loaded yet). Preserved when the
+  // index is re-resolved after backward pagination prepends events.
+  indexOffset?: number;
   eventId?: string;
   scrollTo: boolean;
   highlight: boolean;
@@ -109,10 +113,13 @@ const getJumpTarget = (
   target: TimelineLoadTarget
 ) => {
   const targetIndex = target === 'next' ? absIndex + 1 : absIndex;
-  return {
-    targetIndex,
-    targetEventId: getTimelineEventAtIndex(linkedTimelines, targetIndex)?.getId() ?? eventId,
-  };
+  const targetEventAtIndex = getTimelineEventAtIndex(linkedTimelines, targetIndex);
+  const targetEventId = targetEventAtIndex?.getId() ?? eventId;
+  // When the next event isn't loaded yet, targetEventId falls back to the
+  // original eventId (at absIndex) while targetIndex is absIndex + 1. Store
+  // the offset so the index can be re-resolved correctly after pagination.
+  const indexOffset = targetEventAtIndex ? 0 : targetIndex - absIndex;
+  return { targetIndex, targetEventId, indexOffset };
 };
 
 const getPaginationTimelineEdge = (
@@ -331,7 +338,7 @@ const useEventTimelineLoader = (
           level: 'info',
         });
 
-        const { targetIndex, targetEventId } = getJumpTarget(
+        const { targetIndex, targetEventId, indexOffset } = getJumpTarget(
           linkedTimelines,
           eventId,
           absIndex,
@@ -341,6 +348,7 @@ const useEventTimelineLoader = (
         onLoad(targetEventId, linkedTimelines, targetIndex, {
           align: 'center',
           jumpMode,
+          indexOffset,
         });
 
         // Proactively load context above and below the jumped-to event so the
@@ -791,6 +799,7 @@ export function useTimelineSync({
 
         setFocusItem({
           index: evtAbsIndex,
+          indexOffset: nextFocusItem?.indexOffset,
           eventId: evtId,
           scrollTo: true,
           highlight: evtId !== readUptoEventIdRef.current,
@@ -845,18 +854,19 @@ export function useTimelineSync({
   // message. Re-resolve the index from the eventId on every timeline change.
   useEffect(() => {
     if (!focusItem?.eventId) return;
-    const { eventId: focusEventId } = focusItem;
+    const { eventId: focusEventId, indexOffset = 0 } = focusItem;
     const evtTimeline = getEventTimeline(room, focusEventId);
     if (!evtTimeline) return;
-    const newAbsIndex = getEventIdAbsoluteIndex(
+    const resolvedAbsIndex = getEventIdAbsoluteIndex(
       timeline.linkedTimelines,
       evtTimeline,
       focusEventId
     );
-    if (newAbsIndex === undefined) return;
+    if (resolvedAbsIndex === undefined) return;
+    const newIndex = resolvedAbsIndex + indexOffset;
     setFocusItem((prev) => {
-      if (prev?.eventId !== focusEventId || prev.index === newAbsIndex) return prev;
-      return { ...prev, index: newAbsIndex };
+      if (prev?.eventId !== focusEventId || prev.index === newIndex) return prev;
+      return { ...prev, index: newIndex };
     });
   }, [room, timeline.linkedTimelines, focusItem]);
 
