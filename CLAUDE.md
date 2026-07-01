@@ -42,5 +42,5 @@ Fall back to `grep`/`Explore` for exact string/symbol lookups the graph wasn't b
 
 Two repo-local hooks run automatically for every Claude Code session in this repo (see `.claude/settings.json` and `.claude/hooks/`):
 
-- **`check-pr-base.sh`** (PreToolUse on `Bash`) — blocks any `gh pr create` that doesn't pass `--base integration` or `--base release/*`. If a PR create gets blocked, fix the `--base` flag rather than retrying with `--no-verify`-style workarounds.
+- **`check-pr-base.sh`** (PreToolUse on `Bash`/`PowerShell`) — blocks any `gh pr create` that doesn't pass `--base integration` or `--base release/*`. If a PR create gets blocked, fix the `--base` flag rather than retrying with `--no-verify`-style workarounds.
 - **`lint-on-edit.sh`** (PostToolUse on `Edit`/`Write`) — runs `oxlint` against a `.ts`/`.tsx` file immediately after it's edited and surfaces issues inline. Fix reported issues before moving on rather than deferring to a later manual lint pass.
