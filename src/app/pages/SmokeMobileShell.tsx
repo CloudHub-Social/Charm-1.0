@@ -1234,14 +1234,19 @@ function SmokeMobileOptionsSheet() {
           data-testid="smoke-mobile-options-container"
           style={{ backgroundColor: 'var(--sable-surface-container)' }}
         >
-          <Box direction="Column" style={{ padding: config.space.S400, flex: 1 }}>
-            <Text size="T300" data-testid="smoke-mobile-options-item">
-              Reply
-            </Text>
-            <Text size="T300">React</Text>
-            <Text size="T300">Edit</Text>
-            <Text size="T300">Delete</Text>
-          </Box>
+          <div
+            className={messageOptionsCss.MessageOptionsMenu}
+            data-testid="smoke-mobile-options-menu"
+          >
+            <Box direction="Column" style={{ padding: config.space.S400, flex: 1 }}>
+              <Text size="T300" data-testid="smoke-mobile-options-item">
+                Reply
+              </Text>
+              <Text size="T300">React</Text>
+              <Text size="T300">Edit</Text>
+              <Text size="T300">Delete</Text>
+            </Box>
+          </div>
         </div>
       </Box>
     </Page>

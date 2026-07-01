@@ -73,20 +73,24 @@ test.describe('issue #490 — mobile UI/UX regressions', () => {
     await captureSnapshot(page, 'layout-harness/mobile-490/account-switcher-footer');
   });
 
-  // Bug #3 (related): Message long-press sheet bottom padding — the container
-  // must not be flush against the bottom edge so home indicator doesn't cover items.
+  // Bug #3 (related): Message long-press sheet bottom padding — the menu element
+  // must carry env(safe-area-inset-bottom) so the home indicator doesn't cover items.
   test('Mobile options sheet container is visible and has bottom clearance', async ({ page }) => {
     await page.goto('/__smoke/mobile-shell/mobile-options');
     const container = page.getByTestId('smoke-mobile-options-container');
+    const menu = page.getByTestId('smoke-mobile-options-menu');
     const firstItem = page.getByTestId('smoke-mobile-options-item');
 
     await expect(container).toBeVisible();
+    await expect(menu).toBeVisible();
     await expect(firstItem).toBeVisible();
 
-    // Verify the element's stylesheet contains an env(safe-area-inset-bottom) rule.
+    // Verify the menu element's stylesheet contains an env(safe-area-inset-bottom) rule.
     // getComputedStyle().paddingBottom always resolves to a px value (even when
     // no padding-bottom rule exists), so we must inspect the stylesheet directly.
-    const hasEnvPaddingRule = await container.evaluate((el) => {
+    // The padding lives on MessageOptionsMenu (the absolutely-positioned child),
+    // not on the outer MessageMobileOptionsContainer.
+    const hasEnvPaddingRule = await menu.evaluate((el) => {
       const classes = Array.from(el.classList);
       for (const sheet of Array.from(document.styleSheets)) {
         try {
