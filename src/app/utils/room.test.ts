@@ -305,7 +305,9 @@ describe('room read markers', () => {
       roomTotal: 1,
     });
 
-    expect(getUnreadInfo(room, { applyFixup: false, mDirects: new Set(['!room:example.com']) })).toEqual({
+    expect(
+      getUnreadInfo(room, { applyFixup: false, mDirects: new Set(['!room:example.com']) })
+    ).toEqual({
       roomId: '!room:example.com',
       highlight: 0,
       total: 1,

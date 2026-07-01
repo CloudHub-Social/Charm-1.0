@@ -518,9 +518,7 @@ const isReadDespiteStaleCount = (room: Room, userId: string): boolean => {
   const liveEvents = room.getLiveTimeline().getEvents();
   const tailHasForeignNotification = liveEvents.some(
     (event) =>
-      !event.isSending() &&
-      event.getSender() !== userId &&
-      isNotificationEvent(event, room, userId)
+      !event.isSending() && event.getSender() !== userId && isNotificationEvent(event, room, userId)
   );
   if (tailHasForeignNotification) return false;
 
