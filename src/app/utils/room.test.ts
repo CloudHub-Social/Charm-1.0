@@ -275,10 +275,29 @@ describe('room read markers', () => {
     });
   });
 
-  it('clears a phantom count when the marker is unresolvable and the tail has no foreign notification', () => {
-    // Wedged own edit: read receipt points at a hidden event not in the timeline, the
-    // loaded tail carries only own + non-notifying events, and the receipt is newer than
+  it('clears a phantom count when the marker is unresolvable and the whole loaded window is own', () => {
+    // Wedged own edit: read receipt points at a hidden event not in the timeline, every
+    // loaded event is the user's own (here an own message + own reaction as the latest,
+    // so the own-latest notification fast-path is skipped), and the receipt is newer than
     // the newest visible event. Safe to treat as read (Layer 2 heuristic).
+    const room = makeRoom({
+      events: [makeEvent('$own', USER_ID, 100), makeReactionEvent('$react', '$own', USER_ID)],
+      total: 1,
+      readReceipt: { eventId: '$hidden-edit', ts: 999999 },
+    });
+
+    expect(roomHaveUnread(room.client, room)).toBe(false);
+    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
+      roomId: '!room:example.com',
+      highlight: 0,
+      total: 0,
+    });
+  });
+
+  it('does not clear via Layer 2 when a foreign event is loaded (unread may be out of window)', () => {
+    // Same wedged-marker shape, but a foreign (non-notification) event is in the loaded
+    // window. Under the limited classic-sync window a real unread could sit outside it, so
+    // Layer 2 must NOT clear on the receipt timestamp alone.
     const room = makeRoom({
       events: [
         makeEvent('$own', USER_ID, 100),
@@ -292,7 +311,7 @@ describe('room read markers', () => {
     expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
       roomId: '!room:example.com',
       highlight: 0,
-      total: 0,
+      total: 1,
     });
   });
 

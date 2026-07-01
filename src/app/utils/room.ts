@@ -500,32 +500,37 @@ const isReadDespiteStaleCount = (room: Room, userId: string): boolean => {
     receiptEventFetchInFlight.add(receipt.eventId);
     room.client
       .fetchRoomEvent(room.roomId, receipt.eventId)
-      .then((raw) => receiptEventSenderCache.set(receipt.eventId, (raw?.sender as string) ?? null))
-      // On failure leave the entry unset (undefined) so a later recompute can retry —
-      // caching null here would be indistinguishable from a definitive "not the user"
-      // result and would permanently disable this clear for the session.
-      .catch(() => receiptEventSenderCache.delete(receipt.eventId))
-      .finally(() => {
-        receiptEventFetchInFlight.delete(receipt.eventId);
-        // Nudge a recompute so an idle, wedged room clears once the sender is known.
+      .then((raw) => {
+        receiptEventSenderCache.set(receipt.eventId, (raw?.sender as string) ?? null);
+        // Nudge a recompute now that the sender is known so an idle, wedged room clears.
+        // Only emit on success: emitting after a failure (below) would re-trigger this
+        // same fetch via the unread listener and spin an endless fetch/emit loop.
         room.emit(RoomEvent.UnreadNotifications, {
           highlight: room.getUnreadNotificationCount(NotificationCountType.Highlight),
           total: room.getUnreadNotificationCount(NotificationCountType.Total),
         });
-      });
+      })
+      // On failure leave the entry unset (undefined) so a later, independent recompute
+      // can retry — caching null would be indistinguishable from a definitive "not the
+      // user" result and would permanently disable this clear for the session. Do NOT
+      // emit here: that would immediately re-enter this branch and loop.
+      .catch(() => receiptEventSenderCache.delete(receipt.eventId))
+      .finally(() => receiptEventFetchInFlight.delete(receipt.eventId));
   }
 
-  // Layer 2: timestamp heuristic, only valid while the marker is unresolvable AND
-  // no foreign notification event is loaded (otherwise a backdated bridge message
-  // could be falsely cleared).
+  // Layer 2: timestamp heuristic. Classic sync loads a limited window (timeline_limit 10,
+  // see initMatrix.ts), so "no foreign notification in the loaded tail" is NOT proof the
+  // room is read — a real unread bridge message can sit outside the window. Require the
+  // same positive in-window read proof the clamp uses: every confirmed loaded event is the
+  // user's own (own events never generate unread; combined with a newer receipt this means
+  // the room is genuinely read). Only then trust the receipt timestamp.
   const liveEvents = room.getLiveTimeline().getEvents();
-  const tailHasForeignNotification = liveEvents.some(
-    (event) =>
-      !event.isSending() && event.getSender() !== userId && isNotificationEvent(event, room, userId)
-  );
-  if (tailHasForeignNotification) return false;
+  const confirmedEvents = liveEvents.filter((event) => !event.isSending());
+  const allEventsFromSelf =
+    confirmedEvents.length > 0 && confirmedEvents.every((event) => event.getSender() === userId);
+  if (!allEventsFromSelf) return false;
 
-  const newestVisible = [...liveEvents].reverse().find((event) => !event.isSending());
+  const newestVisible = confirmedEvents[confirmedEvents.length - 1];
   if (newestVisible && receipt.ts != null && receipt.ts >= newestVisible.getTs()) {
     return true;
   }
