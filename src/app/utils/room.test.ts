@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { EventType, MsgType, NotificationCountType, ReceiptType } from '$types/matrix-sdk';
+import { EventType, MsgType, NotificationCountType } from '$types/matrix-sdk';
 import type { MatrixClient, MatrixEvent, Room } from '$types/matrix-sdk';
 import { CustomAccountDataEvent } from '$types/matrix/accountData';
 import {
@@ -17,15 +17,13 @@ function makeClient(): MatrixClient {
     getUserId: () => USER_ID,
     getAccountData: () => undefined,
     getRoomPushRule: vi.fn<() => undefined>(),
-    fetchRoomEvent: vi.fn<() => Promise<undefined>>(() => Promise.resolve(undefined)),
   } as unknown as MatrixClient;
 }
 
-function makeEvent(eventId: string, sender = '@bob:example.com', ts = 1000): MatrixEvent {
+function makeEvent(eventId: string, sender = '@bob:example.com'): MatrixEvent {
   return {
     getId: () => eventId,
     getSender: () => sender,
-    getTs: () => ts,
     getType: () => EventType.RoomMessage,
     getContent: () => ({ msgtype: MsgType.Text, body: 'hello' }),
     getRelation: () => undefined,
@@ -52,7 +50,6 @@ function makeReactionEvent(
 
 function makeRoom(params: {
   readUpToId?: string;
-  receiptTs?: number;
   fullyReadId?: string;
   events: MatrixEvent[];
   total?: number;
@@ -63,7 +60,6 @@ function makeRoom(params: {
   return {
     roomId: '!room:example.com',
     client,
-    emit: vi.fn<() => boolean>(),
     getEventReadUpTo: () => params.readUpToId,
     getAccountData: (eventType: string) =>
       eventType === EventType.FullyRead && params.fullyReadId
@@ -75,16 +71,6 @@ function makeRoom(params: {
       getEvents: () => params.events,
     }),
     findEventById: (eventId: string) => params.events.find((event) => event.getId() === eventId),
-    getReadReceiptForUserId: (
-      _userId: string,
-      _ignoreSynthesized?: boolean,
-      receiptType?: ReceiptType
-    ) =>
-      !params.readUpToId || receiptType === ReceiptType.ReadPrivate
-        ? null
-        : ({ eventId: params.readUpToId, data: { ts: params.receiptTs } } as unknown as ReturnType<
-            Room['getReadReceiptForUserId']
-          >),
     getUnreadNotificationCount: (type: NotificationCountType) =>
       type === NotificationCountType.Highlight ? (params.highlight ?? 0) : (params.total ?? 0),
     getRoomUnreadNotificationCount: (type = NotificationCountType.Total) =>
@@ -353,61 +339,6 @@ describe('room read markers', () => {
       highlight: 0,
       total: 0,
     });
-  });
-
-  it('clears a phantom count when the read receipt resolves to the user’s own event', () => {
-    // Receipt parks on one of the user's own events (e.g. a bridged edit) that
-    // sits in the timeline; the latest visible event is from someone else, so the
-    // "own latest hydrated event" path does not fire. Layer 1 own-event clamp.
-    const room = makeRoom({
-      readUpToId: '$mine',
-      events: [makeEvent('$event1'), makeEvent('$mine', USER_ID), makeEvent('$event3')],
-      total: 3,
-    });
-
-    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
-      roomId: '!room:example.com',
-      highlight: 0,
-      total: 0,
-    });
-  });
-
-  it('clears a phantom count when the receipt points at an unresolvable event newer than visible', () => {
-    // Mirrors the mautrix double-puppet wedge: the receipt targets a hidden event
-    // (not in the loaded timeline) whose receipt ts is newer than the newest
-    // visible message. Layer 2 timestamp heuristic, gated to the unresolvable case.
-    const room = makeRoom({
-      readUpToId: '$hiddenEdit',
-      receiptTs: 5000,
-      events: [
-        makeEvent('$event1', '@bob:example.com', 1000),
-        makeEvent('$event2', '@bob:example.com', 2000),
-      ],
-      total: 3,
-    });
-
-    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
-      roomId: '!room:example.com',
-      highlight: 0,
-      total: 0,
-    });
-  });
-
-  it('does NOT clear when an unresolvable receipt is older than visible (bridge backfill)', () => {
-    // A genuinely-unread message can carry an old origin_server_ts (Discord
-    // preserves timestamps) yet arrive after the receipt. Layer 2 must not clamp
-    // here: receipt ts is older than the newest visible event.
-    const room = makeRoom({
-      readUpToId: '$hiddenOld',
-      receiptTs: 1000,
-      events: [
-        makeEvent('$event1', '@bob:example.com', 2000),
-        makeEvent('$event2', '@bob:example.com', 3000),
-      ],
-      total: 2,
-    });
-
-    expect(getUnreadInfo(room, { applyFixup: false }).total).toBeGreaterThan(0);
   });
 
   it('does not synthesize a phantom dot when only a non-notifying reaction is unread', () => {
