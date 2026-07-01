@@ -387,11 +387,12 @@ describe('room read markers', () => {
     });
   });
 
-  it('clears a wedged own-edit receipt even when a stale m.fully_read fools roomHaveUnread', async () => {
+  it('does not timestamp-clear a foreign notification when a stale m.fully_read fools roomHaveUnread', async () => {
     // getEventReadUpTo can't resolve the wedged receipt, so getRoomReadMarkerId falls back to
     // an older m.fully_read; the loaded foreign message after it makes roomHaveUnread report
-    // unread. But the receipt target is the user's own hidden edit (ts 300) and is newer than
-    // the loaded foreign notification (ts 100), so the room is genuinely read.
+    // unread. Even though the receipt target is the user's own hidden edit whose timestamp is
+    // newer than the loaded foreign notification, a bridged foreign message can be backdated —
+    // so we must NOT clear on timestamps alone. The badge is preserved (safe failure mode).
     const room = makeRoom({
       fullyReadId: '$old-marker',
       events: [makeEvent('$foreign', '@bob:example.com', 100)],
@@ -401,29 +402,6 @@ describe('room read markers', () => {
     });
 
     expect(roomHaveUnread(room.client, room)).toBe(true);
-    // First pass triggers the sender fetch; badge is preserved until the sender is known.
-    getUnreadInfo(room, { applyFixup: false });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
-      roomId: '!room:example.com',
-      highlight: 0,
-      total: 0,
-    });
-  });
-
-  it('keeps the badge when a foreign message is newer than the wedged own-edit receipt', async () => {
-    // Same wedged-own-edit shape, but the loaded foreign message (ts 300) is newer than the
-    // receipt (ts 200): the user has NOT read it, so coverage fails and the badge stays.
-    const room = makeRoom({
-      fullyReadId: '$old-marker',
-      events: [makeEvent('$foreign', '@bob:example.com', 300)],
-      total: 1,
-      readReceipt: { eventId: '$own-hidden-edit', ts: 200 },
-      fetchSender: USER_ID,
-    });
-
     getUnreadInfo(room, { applyFixup: false });
     await Promise.resolve();
     await Promise.resolve();
