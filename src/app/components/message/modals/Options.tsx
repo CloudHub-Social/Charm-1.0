@@ -542,6 +542,7 @@ export function OptionMenu({
             </>
           )}
           <Box
+            className={css.PreventSelect}
             direction="Column"
             grow="Yes"
             shrink="No"
