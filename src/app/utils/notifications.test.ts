@@ -70,7 +70,7 @@ describe('markAsRead', () => {
     await markAsRead(mx, ROOM_ID, false);
 
     expect(setRoomReadMarkers).toHaveBeenCalledWith(ROOM_ID, '$event2', latestEvent);
-    expect(sendReadReceipt).toHaveBeenCalledWith(latestEvent, ReceiptType.Read, true);
+    expect(sendReadReceipt).toHaveBeenCalledWith(latestEvent, ReceiptType.Read);
   });
 
   it('skips already-read rooms without stale unread counts or read markers', async () => {
@@ -173,7 +173,7 @@ describe('markAsRead', () => {
     await markAsRead(mx, ROOM_ID, false);
 
     expect(setRoomReadMarkers).toHaveBeenCalledWith(ROOM_ID, '$event2', latestEvent);
-    expect(sendReadReceipt).toHaveBeenCalledWith(latestEvent, ReceiptType.Read, true);
+    expect(sendReadReceipt).toHaveBeenCalledWith(latestEvent, ReceiptType.Read);
   });
 
   it('ignores thread-only unread counts when the room is already read', async () => {
