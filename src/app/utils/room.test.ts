@@ -58,6 +58,7 @@ function makeRoom(params: {
   total?: number;
   highlight?: number;
   roomTotal?: number;
+  roomHighlight?: number;
   readReceipt?: { eventId: string; ts?: number };
 }): Room {
   const client = makeClient();
@@ -82,7 +83,9 @@ function makeRoom(params: {
     getUnreadNotificationCount: (type: NotificationCountType) =>
       type === NotificationCountType.Highlight ? (params.highlight ?? 0) : (params.total ?? 0),
     getRoomUnreadNotificationCount: (type: NotificationCountType) =>
-      type === NotificationCountType.Highlight ? 0 : (params.roomTotal ?? params.total ?? 0),
+      type === NotificationCountType.Highlight
+        ? (params.roomHighlight ?? 0)
+        : (params.roomTotal ?? params.total ?? 0),
     hasUserReadEvent: (_userId: string, eventId: string) => eventId === params.readUpToId,
     fixupNotifications: vi.fn<() => void>(),
     emit: vi.fn<() => boolean>(),
@@ -283,6 +286,28 @@ describe('room read markers', () => {
       ],
       total: 1,
       readReceipt: { eventId: '$hidden-edit', ts: 999999 },
+    });
+
+    expect(roomHaveUnread(room.client, room)).toBe(false);
+    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
+      roomId: '!room:example.com',
+      highlight: 0,
+      total: 0,
+    });
+  });
+
+  it('clears a stale room-level highlight_count when the room is read (foreign read marker)', () => {
+    // Traditional-sync phantom mention: the room is read (marker on a foreign message,
+    // nothing after it), but the server still reports highlight_count > 0. The clamp must
+    // clear the stale highlight even though highlight > 0 — the roomHaveUnread gate, not a
+    // highlight===0 guard, is what protects genuine mentions.
+    const room = makeRoom({
+      readUpToId: '$e1',
+      events: [makeEvent('$e1', '@bob:example.com')],
+      total: 1,
+      highlight: 1,
+      roomTotal: 1,
+      roomHighlight: 1,
     });
 
     expect(roomHaveUnread(room.client, room)).toBe(false);

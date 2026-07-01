@@ -620,13 +620,17 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
     notificationType !== NotificationType.MentionsAndKeywords;
 
   // If our latest main-timeline notification event is confirmed read, clamp its stale count.
-  // Only apply to the room (non-thread) portion so thread reply counts are preserved.
+  // Apply to both total and highlight: servers can report a non-zero highlight_count after
+  // the highlighted events were read, leaving a phantom mention badge even when highlight > 0.
+  // Subtract only the room-level (non-thread) portion of each so thread reply totals and
+  // thread highlights remain intact.
   // Guard: only clamp when the room has NO receipt-confirmed unread events; if roomHaveUnread
-  // is true then there genuinely are unread messages and the SDK count is not fully stale.
+  // is true then there genuinely are unread messages (real mentions included) and the SDK
+  // count is not stale — the guard, not a highlight===0 check, is what protects real mentions.
   // Track how much of the room-level total was subtracted so the DM force-highlight
   // guard below uses the post-clamp value instead of the raw (stale) SDK count.
   let clampedRoomTotal = 0;
-  if (userId && total > 0 && highlight === 0 && !roomHaveUnread(room.client, room)) {
+  if (userId && total > 0 && !roomHaveUnread(room.client, room)) {
     const roomTotal = room.getRoomUnreadNotificationCount(NotificationCountType.Total);
     if (roomTotal > 0) {
       const liveEvents = room.getLiveTimeline().getEvents();
@@ -651,11 +655,14 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
         (readMarkerId &&
           isEventAtOrBeforeReadMarker(liveEvents, latestNotificationId, readMarkerId))
       ) {
-        // Subtract only the stale main-timeline count; thread totals remain intact.
-        // Floor at zero: divergent SDK counters can leave roomTotal > total, and a
-        // negative result would surface as an invalid negative DM highlight below.
+        // Subtract the stale main-timeline counts; thread totals and thread highlights
+        // remain intact. Floor at zero: divergent SDK counters can leave the room-level
+        // portion greater than the overall count, and a negative result would surface as
+        // an invalid negative DM highlight below.
         clampedRoomTotal = roomTotal;
         total = Math.max(0, total - roomTotal);
+        const roomHighlight = room.getRoomUnreadNotificationCount(NotificationCountType.Highlight);
+        highlight = Math.max(0, highlight - roomHighlight);
       }
     }
   }
