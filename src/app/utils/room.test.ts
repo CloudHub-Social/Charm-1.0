@@ -296,6 +296,26 @@ describe('room read markers', () => {
     });
   });
 
+  it('preserves the badge when the loaded window has no foreign notification and the marker is out of window', () => {
+    // Classic sync loads a limited window (timeline_limit 10). If the real unread message
+    // is older than the loaded tail and that tail holds only non-notification / foreign
+    // metadata (here a reaction to another user), roomHaveUnread returns false and there
+    // is no foreign notification loaded — but the room is genuinely unread. The clamp must
+    // NOT fire, because neither all-events-from-self nor read-marker-in-window holds.
+    const room = makeRoom({
+      fullyReadId: '$old-unloaded-marker',
+      events: [makeReactionEvent('$react', '$carol-msg', '@bob:example.com')],
+      total: 1,
+    });
+
+    expect(roomHaveUnread(room.client, room)).toBe(false);
+    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
+      roomId: '!room:example.com',
+      highlight: 0,
+      total: 1,
+    });
+  });
+
   it('clears a stale room-level highlight_count when the room is read (foreign read marker)', () => {
     // Traditional-sync phantom mention: the room is read (marker on a foreign message,
     // nothing after it), but the server still reports highlight_count > 0. The clamp must

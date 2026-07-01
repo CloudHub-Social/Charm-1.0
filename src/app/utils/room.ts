@@ -645,16 +645,27 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
             isNotificationEvent(event, room, userId)
         );
       const latestNotificationId = latestNotification?.getId();
-      // Trust roomHaveUnread: if it confirms nothing is unread and either there are
-      // no notification events from others in the live timeline, or the user has
-      // already read the latest one, the SDK counter is stale — zero it out.
       const readMarkerId = getRoomReadMarkerId(room, userId);
-      if (
-        !latestNotificationId ||
-        room.hasUserReadEvent(userId, latestNotificationId) ||
-        (readMarkerId &&
-          isEventAtOrBeforeReadMarker(liveEvents, latestNotificationId, readMarkerId))
-      ) {
+      // Classic sync loads a limited window (default timeline_limit 10, see
+      // initMatrix.ts), so roomHaveUnread only sees the loaded tail. When that tail has
+      // NO foreign notification event we must NOT assume the room is read: the real
+      // unread message may be older than the window. Only clamp in that case if we can
+      // positively confirm read within the loaded window — every confirmed event is the
+      // user's own (own events never generate unread counts), or the read marker itself
+      // is visible in the window (the user explicitly read up to a loaded event). When a
+      // foreign notification IS loaded, clamp only if the user has read past it.
+      const confirmedEvents = liveEvents.filter((event) => !event.isSending());
+      const allEventsFromSelf =
+        confirmedEvents.length > 0 &&
+        confirmedEvents.every((event) => event.getSender() === userId);
+      const readMarkerInTimeline =
+        !!readMarkerId && confirmedEvents.some((event) => event.getId() === readMarkerId);
+      const shouldClamp = latestNotificationId
+        ? room.hasUserReadEvent(userId, latestNotificationId) ||
+          (!!readMarkerId &&
+            isEventAtOrBeforeReadMarker(liveEvents, latestNotificationId, readMarkerId))
+        : allEventsFromSelf || readMarkerInTimeline;
+      if (shouldClamp) {
         // Subtract the stale main-timeline counts; thread totals and thread highlights
         // remain intact. Floor at zero: divergent SDK counters can leave the room-level
         // portion greater than the overall count, and a negative result would surface as
