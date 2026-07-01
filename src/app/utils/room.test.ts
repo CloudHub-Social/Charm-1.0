@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EventType, MsgType, NotificationCountType } from '$types/matrix-sdk';
 import type { MatrixClient, MatrixEvent, Room } from '$types/matrix-sdk';
 import { CustomAccountDataEvent } from '$types/matrix/accountData';
 import {
+  clearReceiptEventSenderCache,
   getRoomReadMarkerId,
   getUnreadInfo,
   isNotificationEvent,
@@ -12,12 +13,15 @@ import {
 
 const USER_ID = '@alice:example.com';
 
-function makeClient(): MatrixClient {
+// The receipt-sender cache is module-level; clear it between tests so entries don't leak.
+afterEach(() => clearReceiptEventSenderCache());
+
+function makeClient(fetchSender?: string): MatrixClient {
   return {
     getUserId: () => USER_ID,
     getAccountData: () => undefined,
     getRoomPushRule: vi.fn<() => undefined>(),
-    fetchRoomEvent: () => Promise.resolve(undefined),
+    fetchRoomEvent: () => Promise.resolve(fetchSender ? { sender: fetchSender } : undefined),
   } as unknown as MatrixClient;
 }
 
@@ -60,8 +64,9 @@ function makeRoom(params: {
   roomTotal?: number;
   roomHighlight?: number;
   readReceipt?: { eventId: string; ts?: number };
+  fetchSender?: string;
 }): Room {
-  const client = makeClient();
+  const client = makeClient(params.fetchSender);
   return {
     roomId: '!room:example.com',
     client,
@@ -291,6 +296,34 @@ describe('room read markers', () => {
       roomId: '!room:example.com',
       highlight: 0,
       total: 0,
+    });
+  });
+
+  it('does not clear via Layer 2 once the receipt target is known to be a foreign sender', async () => {
+    // All-own loaded window with a wedged/unresolvable receipt whose target, once fetched,
+    // is a different user's event. That means the room's real read position is not the
+    // user's own hidden edit, so Layer 2 must not clear on the (backdated) own timestamps.
+    // total 2 / roomTotal 1 leaves a thread unread: without the foreign-sender early return
+    // Layer 2 would zero everything ({0,0}); with it, only the room-level clamp applies and
+    // the thread unread survives.
+    const room = makeRoom({
+      events: [makeEvent('$own', USER_ID, 100), makeReactionEvent('$react', '$own', USER_ID)],
+      total: 2,
+      roomTotal: 1,
+      readReceipt: { eventId: '$foreign-hidden', ts: 999999 },
+      fetchSender: '@bob:example.com',
+    });
+
+    // First call triggers the async sender fetch (target not in the loaded timeline).
+    getUnreadInfo(room, { applyFixup: false });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Sender now cached as foreign — Layer 2 no longer fires; the thread unread survives.
+    expect(getUnreadInfo(room, { applyFixup: false })).toEqual({
+      roomId: '!room:example.com',
+      highlight: 0,
+      total: 1,
     });
   });
 

@@ -505,7 +505,12 @@ const isReadDespiteStaleCount = (room: Room, userId: string): boolean => {
   // Layer 1: consult / populate the sender cache.
   const cachedSender = receiptEventSenderCache.get(receipt.eventId);
   if (cachedSender === userId) return true;
-  if (cachedSender === undefined && !receiptEventFetchInFlight.has(receipt.eventId)) {
+  // Definitively a foreign sender: the receipt target is not the user's own hidden
+  // edit, so neither Layer 1 nor the Layer 2 timestamp heuristic below applies. Bail
+  // rather than falling through — otherwise an all-own (e.g. backdated bridge) loaded
+  // window could satisfy Layer 2 and clear a genuine unread.
+  if (cachedSender !== undefined) return false;
+  if (!receiptEventFetchInFlight.has(receipt.eventId)) {
     receiptEventFetchInFlight.add(receipt.eventId);
     room.client
       .fetchRoomEvent(room.roomId, receipt.eventId)
