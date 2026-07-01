@@ -1,5 +1,5 @@
 import { style } from '@vanilla-extract/css';
-import { DefaultReset, color, config } from 'folds';
+import { DefaultReset, color, config, toRem } from 'folds';
 
 export const ImageViewer = style([
   DefaultReset,
@@ -18,7 +18,53 @@ export const ImageViewerHeader = style([
     gap: config.space.S200,
     '@media': {
       '(max-width: 600px)': {
+        // Folds' Header size="400" sets a fixed height; override it so the
+        // box actually grows to fit both wrapped rows instead of the
+        // second row overflowing into (and being unclickable under) the
+        // image content area below.
+        height: 'auto',
+        minHeight: toRem(40),
         paddingTop: 'env(safe-area-inset-top, 0px)',
+        paddingBottom: config.space.S200,
+        flexWrap: 'wrap',
+        rowGap: config.space.S100,
+      },
+    },
+  },
+]);
+
+// Title/back-button group. Forced onto its own row on mobile so the controls
+// group below always has the full viewport width to lay out in.
+export const ImageViewerHeaderTitle = style([
+  DefaultReset,
+  {
+    '@media': {
+      '(max-width: 600px)': {
+        flexBasis: '100%',
+      },
+    },
+  },
+]);
+
+// Zoom/download controls group. On mobile it gets its own row; if the
+// controls still don't fit (e.g. extra zoom buttons appear), it scrolls
+// horizontally instead of clipping off-screen where it can't be reached.
+export const ImageViewerHeaderControls = style([
+  DefaultReset,
+  {
+    '@media': {
+      '(max-width: 600px)': {
+        flexBasis: '100%',
+        // minWidth: 0 lets this flex item shrink below its content's
+        // intrinsic width — without it, overflowX would never kick in and
+        // the row would just grow past the viewport instead of scrolling.
+        minWidth: 0,
+        // Start-aligned (not flex-end) so overflow-x scroll begins at the
+        // first control instead of putting it off-screen to the left with
+        // no way to reach it.
+        justifyContent: 'flex-start',
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
       },
     },
   },
