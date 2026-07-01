@@ -26,9 +26,18 @@ describe('emoji sidebar pinned-footer contract', () => {
 
     // The pinned footer must be genuinely anchored to the bottom via
     // position: absolute, not left to normal flow (which would scroll
-    // away) or a previously-buggy percentage offset.
-    expect(stylesCss).toContain("position: 'absolute'");
-    expect(stylesCss).toContain('bottom: 0');
-    expect(stylesCss).not.toContain("bottom: '-67%'");
+    // away) or a previously-buggy percentage offset. Scope the check to
+    // PinnedSidebarFooter's own style block specifically — styles.css.ts
+    // has other unrelated position: 'absolute' / bottom: 0 declarations
+    // (e.g. GIF overlays) that would make a file-wide match meaningless.
+    const pinnedFooterBlockMatch = stylesCss.match(
+      /export const PinnedSidebarFooter = style\(\{([\s\S]*?)\}\);/
+    );
+    expect(pinnedFooterBlockMatch).not.toBeNull();
+    const pinnedFooterBlock = pinnedFooterBlockMatch![1];
+
+    expect(pinnedFooterBlock).toContain("position: 'absolute'");
+    expect(pinnedFooterBlock).toContain('bottom: 0');
+    expect(pinnedFooterBlock).not.toContain("bottom: '-67%'");
   });
 });
