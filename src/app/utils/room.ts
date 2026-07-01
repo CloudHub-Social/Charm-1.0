@@ -431,9 +431,18 @@ const unreadInfoFixupInProgress = new WeakSet<Room>();
 
 // Sender lookup cache for read-receipt target events that are NOT present in the
 // loaded timeline (e.g. a hidden `m.replace` edit bridged in via mautrix
-// double-puppet). `null` means "fetched, sender unknown / fetch failed".
-const receiptEventSenderCache = new Map<string, string | null>();
+// double-puppet). Only a resolved sender is cached; a miss/failure/empty-sender stub
+// leaves the entry unset so a later recompute retries.
+const receiptEventSenderCache = new Map<string, string>();
 const receiptEventFetchInFlight = new Set<string>();
+
+// Clear the module-level receipt-sender caches. Called on client teardown (logout /
+// account switch) so entries don't accumulate across sessions. Event IDs are globally
+// unique, so a stale entry could never be misattributed — this is purely to bound growth.
+export const clearReceiptEventSenderCache = (): void => {
+  receiptEventSenderCache.clear();
+  receiptEventFetchInFlight.clear();
+};
 
 type RawReceipt = { eventId: string; ts?: number };
 
@@ -447,6 +456,7 @@ const wrapReceipt = (
 // the raw receipt even when its target event is not in the loaded timeline — which
 // is exactly the wedged case we need to reason about.
 const getRawReadReceipt = (room: Room, userId: string): RawReceipt | undefined => {
+  if (typeof room.getReadReceiptForUserId !== 'function') return undefined;
   const pub = room.getReadReceiptForUserId(userId, false, ReceiptType.Read);
   const priv = room.getReadReceiptForUserId(userId, false, ReceiptType.ReadPrivate);
   const pw = wrapReceipt(pub);
@@ -457,27 +467,38 @@ const getRawReadReceipt = (room: Room, userId: string): RawReceipt | undefined =
 
 /**
  * Decide whether a room with a positive SDK notification count should actually be
- * treated as read. This defends against two real-world failure modes that leave a
- * phantom badge that no further read receipt can clear:
+ * treated as read. Defends against a phantom badge that no further read receipt can
+ * clear, WITHOUT ever overriding genuine unread activity.
  *
+ * Two failure modes it targets:
  *   1. matrix-js-sdk wedges a receipt onto an event that is not in the loaded
  *      timeline (commonly the user's OWN hidden `m.replace` edit bridged in via
- *      mautrix double-puppet). `getEventReadUpTo` then returns null and the normal
- *      heuristics assume the room is unread.
- *   2. Synapse reports a stale `notification_count` (event_push_summary) even when
- *      the receipt already sits on the newest event and nothing exists after it.
+ *      mautrix double-puppet). `getEventReadUpTo` then returns null.
+ *   2. Synapse reports a stale `notification_count` even when the receipt already
+ *      sits on the newest event and nothing exists after it.
  *
- * Layered, per design:
- *   - Layer 1 (precise): if the read marker resolves to one of the user's OWN
- *     events — whether already in the timeline, or fetched on demand for an
- *     unresolvable marker — the room is read. You cannot be unread relative to
- *     your own latest action.
- *   - Layer 2 (heuristic, only when the marker is unresolvable): if the receipt's
- *     timestamp is at/after the newest visible event, treat as read. Gated to the
- *     unresolvable case so bridge backfill (genuinely-unread messages carrying an
- *     old origin_server_ts) is not falsely cleared while the marker still resolves.
+ * Gating (this is what a prior version got wrong and why badges vanished globally):
+ *   - Hard gate: never fire while `roomHaveUnread` confirms receipt-visible unread
+ *     events exist — genuine unread always wins.
+ *   - Layer 1 (precise): the read marker resolves to one of the user's OWN events,
+ *     in-timeline or fetched on demand. You cannot be unread relative to your own
+ *     latest action.
+ *   - Layer 2 (heuristic): only when the marker is unresolvable with an unknown sender AND
+ *     every confirmed loaded event is the user's own. This replaces the old bare
+ *     `receipt.ts >= newestVisible.ts` test, which falsely cleared backdated bridge messages
+ *     (their origin_server_ts predates the receipt), and is safe under the limited sync
+ *     window because an out-of-window unread cannot masquerade as an all-own tail.
+ *
+ * NOTE: we intentionally do NOT bypass the hard gate to clear a wedged own-edit receipt
+ * when a stale older `m.fully_read` makes `roomHaveUnread` report unread. Doing so would
+ * have to rely on receipt/event timestamps, and a backdated bridge message delivered after
+ * the own edit carries an older `origin_server_ts` — so a timestamp bypass would false-clear
+ * a genuine unread. Leaving a phantom badge is the safe failure mode here.
  */
 const isReadDespiteStaleCount = (room: Room, userId: string): boolean => {
+  // Hard gate: receipt-confirmed unread events exist ⇒ genuinely unread, never clear.
+  if (roomHaveUnread(room.client, room)) return false;
+
   const receipt = getRawReadReceipt(room, userId);
   if (!receipt) return false;
 
@@ -491,30 +512,55 @@ const isReadDespiteStaleCount = (room: Room, userId: string): boolean => {
   // Layer 1: consult / populate the sender cache.
   const cachedSender = receiptEventSenderCache.get(receipt.eventId);
   if (cachedSender === userId) return true;
-  if (cachedSender === undefined && !receiptEventFetchInFlight.has(receipt.eventId)) {
+  // Definitively a foreign sender: the receipt target is not the user's own hidden
+  // edit, so neither Layer 1 nor the Layer 2 timestamp heuristic below applies. Bail
+  // rather than falling through — otherwise an all-own (e.g. backdated bridge) loaded
+  // window could satisfy Layer 2 and clear a genuine unread.
+  if (cachedSender !== undefined) return false;
+  if (!receiptEventFetchInFlight.has(receipt.eventId)) {
     receiptEventFetchInFlight.add(receipt.eventId);
     room.client
       .fetchRoomEvent(room.roomId, receipt.eventId)
-      .then((raw) => receiptEventSenderCache.set(receipt.eventId, (raw?.sender as string) ?? null))
-      .catch(() => receiptEventSenderCache.set(receipt.eventId, null))
-      .finally(() => {
-        receiptEventFetchInFlight.delete(receipt.eventId);
-        // Nudge a recompute so an idle, wedged room clears once the sender is known.
-        // The UnreadNotifications listener ignores the payload and recomputes from
-        // scratch, so forwarding the current room-level counts is sufficient.
+      .then((raw) => {
+        const sender = raw?.sender || undefined;
+        if (!sender) {
+          // Empty/missing sender — e.g. the startup fetchRoomEvent patch stubs cache
+          // misses with sender '' (see installStartupFetchRoomEventPatch). Not a real
+          // result: leave the entry unset so a later recompute retries with the real
+          // fetch, and don't emit (which would re-trigger this same fetch in a loop).
+          receiptEventSenderCache.delete(receipt.eventId);
+          return;
+        }
+        receiptEventSenderCache.set(receipt.eventId, sender);
+        // Nudge a recompute now that the sender is known so an idle, wedged room clears.
+        // Only emit on success: emitting after a miss/failure would re-trigger this same
+        // fetch via the unread listener and spin an endless fetch/emit loop.
         room.emit(RoomEvent.UnreadNotifications, {
           highlight: room.getUnreadNotificationCount(NotificationCountType.Highlight),
           total: room.getUnreadNotificationCount(NotificationCountType.Total),
         });
-      });
+      })
+      // On failure leave the entry unset (undefined) so a later, independent recompute
+      // can retry — caching null would be indistinguishable from a definitive "not the
+      // user" result and would permanently disable this clear for the session. Do NOT
+      // emit here: that would immediately re-enter this branch and loop.
+      .catch(() => receiptEventSenderCache.delete(receipt.eventId))
+      .finally(() => receiptEventFetchInFlight.delete(receipt.eventId));
   }
 
-  // Layer 2: timestamp heuristic, only valid while the marker is unresolvable.
-  const newestVisible = room
-    .getLiveTimeline()
-    .getEvents()
-    .toReversed()
-    .find((event) => !event.isSending());
+  // Layer 2: timestamp heuristic. Classic sync loads a limited window (timeline_limit 10,
+  // see initMatrix.ts), so "no foreign notification in the loaded tail" is NOT proof the
+  // room is read — a real unread bridge message can sit outside the window. Require the
+  // same positive in-window read proof the clamp uses: every confirmed loaded event is the
+  // user's own (own events never generate unread; combined with a newer receipt this means
+  // the room is genuinely read). Only then trust the receipt timestamp.
+  const liveEvents = room.getLiveTimeline().getEvents();
+  const confirmedEvents = liveEvents.filter((event) => !event.isSending());
+  const allEventsFromSelf =
+    confirmedEvents.length > 0 && confirmedEvents.every((event) => event.getSender() === userId);
+  if (!allEventsFromSelf) return false;
+
+  const newestVisible = confirmedEvents[confirmedEvents.length - 1];
   if (newestVisible && receipt.ts != null && receipt.ts >= newestVisible.getTs()) {
     return true;
   }
@@ -586,7 +632,8 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
   // Clear phantom badges where the SDK/server count is stale relative to a read
   // marker that points at the user's own (possibly hidden) latest activity — e.g.
   // a receipt wedged on a bridged `m.replace` edit, or a stuck Synapse
-  // notification_count. See isReadDespiteStaleCount for the layered rationale.
+  // notification_count. Gated by roomHaveUnread inside isReadDespiteStaleCount so
+  // it can never suppress a genuinely-unread room. Clears a stale highlight too.
   if (userId && total > 0 && isReadDespiteStaleCount(room, userId)) {
     return { roomId: room.roomId, highlight: 0, total: 0 };
   }
@@ -611,14 +658,15 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
     notificationType !== NotificationType.MentionsAndKeywords;
 
   // If our latest main-timeline notification event is confirmed read, clamp its stale count.
-  // Apply to both total and highlight: servers (especially in sliding sync) can report a
-  // non-zero highlight_count after the client has read the highlighted events, causing a
-  // phantom badge even when `highlight > 0`.  Subtract the room-level portion of each count
-  // so thread reply totals and thread highlights remain intact.
+  // Apply to both total and highlight: servers can report a non-zero highlight_count after
+  // the highlighted events were read, leaving a phantom mention badge even when highlight > 0.
+  // Subtract only the room-level (non-thread) portion of each so thread reply totals and
+  // thread highlights remain intact.
   // Guard: only clamp when the room has NO receipt-confirmed unread events; if roomHaveUnread
-  // is true then there genuinely are unread messages and the SDK count is not fully stale.
+  // is true then there genuinely are unread messages (real mentions included) and the SDK
+  // count is not stale — the guard, not a highlight===0 check, is what protects real mentions.
   // Track how much of the room-level total was subtracted so the DM force-highlight
-  // guard below can use the post-clamp value instead of the raw (stale) SDK count.
+  // guard below uses the post-clamp value instead of the raw (stale) SDK count.
   let clampedRoomTotal = 0;
   if (userId && total > 0 && !roomHaveUnread(room.client, room)) {
     const roomTotal = room.getRoomUnreadNotificationCount(NotificationCountType.Total);
@@ -635,33 +683,31 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
             isNotificationEvent(event, room, userId)
         );
       const latestNotificationId = latestNotification?.getId();
-      // Trust roomHaveUnread: if it confirms nothing is unread and either there are
-      // no notification events from others in the live timeline, or the user has
-      // already read the latest one, the SDK counter is stale — zero it out.
-      // When latestNotificationId is absent (no notification events from others in the
-      // loaded window) we clamp if: (a) all confirmed events are from self — self-sent
-      // events never generate unread counts; or (b) the read marker itself is in the
-      // loaded window — the user explicitly read up to a visible event, so the server
-      // count refers to events the client has already covered.  An empty timeline or a
-      // read marker that lies outside the loaded range (real unread in old history) is
-      // left alone.  Pending local echoes are excluded (isSending).
       const readMarkerId = getRoomReadMarkerId(room, userId);
-      const confirmedEvents = liveEvents.filter((e) => !e.isSending());
+      // Classic sync loads a limited window (default timeline_limit 10, see
+      // initMatrix.ts), so roomHaveUnread only sees the loaded tail. When that tail has
+      // NO foreign notification event we must NOT assume the room is read: the real
+      // unread message may be older than the window. Only clamp in that case if we can
+      // positively confirm read within the loaded window — every confirmed event is the
+      // user's own (own events never generate unread counts), or the read marker itself
+      // is visible in the window (the user explicitly read up to a loaded event). When a
+      // foreign notification IS loaded, clamp only if the user has read past it.
+      const confirmedEvents = liveEvents.filter((event) => !event.isSending());
       const allEventsFromSelf =
-        confirmedEvents.length > 0 && confirmedEvents.every((e) => e.getSender() === userId);
-      // If the read marker itself is present in the live timeline, the user has
-      // explicitly read up to (at least) that event. When there are no notification
-      // events from others in the current window — common in bridge-heavy rooms where
-      // recent events are metadata — the server count is stale and safe to clamp.
+        confirmedEvents.length > 0 &&
+        confirmedEvents.every((event) => event.getSender() === userId);
       const readMarkerInTimeline =
-        !!readMarkerId && confirmedEvents.some((e) => e.getId() === readMarkerId);
+        !!readMarkerId && confirmedEvents.some((event) => event.getId() === readMarkerId);
       const shouldClamp = latestNotificationId
         ? room.hasUserReadEvent(userId, latestNotificationId) ||
           (!!readMarkerId &&
             isEventAtOrBeforeReadMarker(liveEvents, latestNotificationId, readMarkerId))
         : allEventsFromSelf || readMarkerInTimeline;
       if (shouldClamp) {
-        // Subtract stale main-timeline counts; thread totals and highlights remain intact.
+        // Subtract the stale main-timeline counts; thread totals and thread highlights
+        // remain intact. Floor at zero: divergent SDK counters can leave the room-level
+        // portion greater than the overall count, and a negative result would surface as
+        // an invalid negative DM highlight below.
         clampedRoomTotal = roomTotal;
         total = Math.max(0, total - roomTotal);
         const roomHighlight = room.getRoomUnreadNotificationCount(NotificationCountType.Highlight);
@@ -711,6 +757,9 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
   // member_count condition failures, or sliding sync with limited required_state).
   // Guard on room-level (non-thread) total: thread-only unreads in DMs should not
   // be force-highlighted — the thread's own push rules handle highlight there.
+  // Use the post-clamp value: after the stale main-timeline count is subtracted a
+  // DM with only thread unreads must not re-read the raw (stale) room count here
+  // and get force-highlighted into a green badge.
   const roomLevelTotal = Math.max(
     0,
     room.getRoomUnreadNotificationCount(NotificationCountType.Total) - clampedRoomTotal

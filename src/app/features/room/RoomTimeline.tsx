@@ -860,13 +860,11 @@ export function RoomTimeline({
       return;
     }
     const evtTimeline = getEventTimeline(room, readUptoEventIdRef.current);
-    // If the stored read marker can't be located in any loaded timeline it's a
-    // stale/evicted marker — typically a leftover `m.fully_read` event with no
-    // matching read receipt. Treating that the same as "scrolled into detached
-    // history" deadlocks the room: the receipt never fires because the marker
-    // isn't on the live timeline, yet the marker can only advance once a receipt
-    // is sent. The caller already gates on being at the live end (atBottom +
-    // focus + liveTimelineLinked), so fall through and mark read.
+    // When the read marker can't be located in a loaded timeline (stale marker, or an
+    // event evicted from a limited window), fall through and mark as read. Every caller
+    // of tryAutoMarkAsRead has already established the user is focused and at the bottom
+    // of the live timeline, so this cannot mark a room the user isn't actually viewing —
+    // and skipping it would leave the room stuck unread on the server.
     if (!evtTimeline) {
       requestAnimationFrame(() => markAsRead(mx, room.roomId, hideReads));
       return;
