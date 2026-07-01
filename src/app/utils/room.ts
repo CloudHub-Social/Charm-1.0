@@ -465,6 +465,59 @@ const getRawReadReceipt = (room: Room, userId: string): RawReceipt | undefined =
   return pv ?? pw;
 };
 
+// Kick off a background fetch of an unresolvable receipt target's sender so a later
+// recompute can reason precisely about whether it is the user's own (possibly hidden)
+// event. No-op if the sender is already cached or a fetch is in flight.
+const ensureReceiptSenderFetched = (room: Room, eventId: string): void => {
+  if (receiptEventSenderCache.has(eventId) || receiptEventFetchInFlight.has(eventId)) return;
+  receiptEventFetchInFlight.add(eventId);
+  room.client
+    .fetchRoomEvent(room.roomId, eventId)
+    .then((raw) => {
+      const sender = raw?.sender || undefined;
+      if (!sender) {
+        // Empty/missing sender — e.g. the startup fetchRoomEvent patch stubs cache misses
+        // with sender '' (see installStartupFetchRoomEventPatch). Not a real result: leave
+        // the entry unset so a later recompute retries, and don't emit (which would
+        // re-trigger this same fetch in a loop).
+        receiptEventSenderCache.delete(eventId);
+        return;
+      }
+      receiptEventSenderCache.set(eventId, sender);
+      // Nudge a recompute now that the sender is known so an idle, wedged room clears.
+      // Only emit on success: emitting after a miss/failure would re-trigger this same
+      // fetch via the unread listener and spin an endless fetch/emit loop.
+      room.emit(RoomEvent.UnreadNotifications, {
+        highlight: room.getUnreadNotificationCount(NotificationCountType.Highlight),
+        total: room.getUnreadNotificationCount(NotificationCountType.Total),
+      });
+    })
+    // On failure leave the entry unset (undefined) so a later, independent recompute can
+    // retry — caching a placeholder would permanently disable this clear for the session.
+    .catch(() => receiptEventSenderCache.delete(eventId))
+    .finally(() => receiptEventFetchInFlight.delete(eventId));
+};
+
+// True when the read receipt sits at or after every foreign notification currently loaded —
+// i.e. the user's read position covers everything visible from other users. When no foreign
+// notification is loaded there is nothing visible to be unread about. Used only for an
+// unresolvable marker whose target is known to be the user's own event, where timeline
+// order is unavailable and the receipt timestamp is the best signal we have.
+const receiptCoversLoadedForeignNotifications = (
+  room: Room,
+  userId: string,
+  receipt: RawReceipt
+): boolean => {
+  let newestForeignTs = -Infinity;
+  for (const event of room.getLiveTimeline().getEvents()) {
+    if (event.isSending() || event.getSender() === userId) continue;
+    if (!isNotificationEvent(event, room, userId)) continue;
+    newestForeignTs = Math.max(newestForeignTs, event.getTs());
+  }
+  if (newestForeignTs === -Infinity) return true;
+  return receipt.ts != null && receipt.ts >= newestForeignTs;
+};
+
 /**
  * Decide whether a room with a positive SDK notification count should actually be
  * treated as read. Defends against a phantom badge that no further read receipt can
@@ -478,77 +531,76 @@ const getRawReadReceipt = (room: Room, userId: string): RawReceipt | undefined =
  *      sits on the newest event and nothing exists after it.
  *
  * Gating (this is what a prior version got wrong and why badges vanished globally):
- *   - Hard gate: never fire while `roomHaveUnread` confirms receipt-visible unread
- *     events exist — genuine unread always wins.
- *   - Layer 1 (precise): the read marker resolves to one of the user's OWN events,
- *     in-timeline or fetched on demand. You cannot be unread relative to your own
- *     latest action.
- *   - Layer 2 (heuristic): only when the marker is unresolvable AND the loaded
- *     timeline tail carries no notification event from another user. This replaces
- *     the old bare `receipt.ts >= newestVisible.ts` test, which falsely cleared
- *     backdated bridge messages (their origin_server_ts predates the receipt).
+ *   - Pre-gate Layer 1 (precise, unresolvable marker): if the receipt target is cached as
+ *     the user's OWN event and sits at/after every loaded foreign notification, clear even
+ *     when a stale older `m.fully_read` fools `roomHaveUnread`. A foreign message newer than
+ *     the own action fails coverage and stays unread.
+ *   - Hard gate: below the pre-gate check, never fire while `roomHaveUnread` confirms
+ *     receipt-visible unread events exist — genuine unread always wins.
+ *   - Layer 1 (resolvable marker): timeline order is authoritative; own latest action ⇒ read.
+ *   - Layer 2 (heuristic): only when the marker is unresolvable with an unknown sender AND
+ *     every confirmed loaded event is the user's own. This replaces the old bare
+ *     `receipt.ts >= newestVisible.ts` test, which falsely cleared backdated bridge messages
+ *     (their origin_server_ts predates the receipt), and is safe under the limited sync
+ *     window because an out-of-window unread cannot masquerade as an all-own tail.
  */
 const isReadDespiteStaleCount = (room: Room, userId: string): boolean => {
-  // Hard gate: receipt-confirmed unread events exist ⇒ genuinely unread, never clear.
+  const receipt = getRawReadReceipt(room, userId);
+
+  // Precise Layer 1 for an UNRESOLVABLE marker, evaluated BEFORE the roomHaveUnread hard
+  // gate. When getEventReadUpTo can't resolve a wedged receipt, getRoomReadMarkerId falls
+  // back to an older m.fully_read; a foreign notification after that stale marker then makes
+  // roomHaveUnread report unread. But if the receipt's target is definitively the user's OWN
+  // event (cached from a prior fetch) and sits at/after every loaded foreign notification,
+  // the user has read past everything visible — so clear despite the stale marker. A foreign
+  // message newer than the own action fails coverage and correctly stays unread.
+  if (receipt) {
+    const markerEvent = room.findEventById(receipt.eventId);
+    if (!markerEvent) {
+      const cachedSender = receiptEventSenderCache.get(receipt.eventId);
+      if (cachedSender === undefined) {
+        // Unknown sender: fetch it so a later recompute can decide. Done here (before the
+        // gate) so the fetch still fires even when the gate is about to return false.
+        ensureReceiptSenderFetched(room, receipt.eventId);
+      } else if (
+        cachedSender === userId &&
+        receiptCoversLoadedForeignNotifications(room, userId, receipt)
+      ) {
+        return true;
+      }
+    }
+  }
+
+  // Hard gate: receipt-confirmed unread events exist ⇒ genuinely unread; nothing below may
+  // override them.
   if (roomHaveUnread(room.client, room)) return false;
 
-  const receipt = getRawReadReceipt(room, userId);
   if (!receipt) return false;
 
   const markerEvent = room.findEventById(receipt.eventId);
   if (markerEvent) {
-    // Resolvable marker: Layer 1 only. Own latest action ⇒ read.
+    // Resolvable marker: timeline order is authoritative (roomHaveUnread already used it).
+    // Own latest action ⇒ read.
     return markerEvent.getSender() === userId;
   }
 
-  // Unresolvable marker (hidden bridge edit, evicted event, …).
-  // Layer 1: consult / populate the sender cache.
+  // Unresolvable marker with a known sender.
   const cachedSender = receiptEventSenderCache.get(receipt.eventId);
   if (cachedSender === userId) return true;
-  // Definitively a foreign sender: the receipt target is not the user's own hidden
-  // edit, so neither Layer 1 nor the Layer 2 timestamp heuristic below applies. Bail
-  // rather than falling through — otherwise an all-own (e.g. backdated bridge) loaded
-  // window could satisfy Layer 2 and clear a genuine unread.
+  // Definitively a foreign sender: the own-hidden-edit rationale does not apply, and the
+  // Layer 2 heuristic below (an all-own window could satisfy it) must not clear a genuine
+  // unread whose receipt is on a foreign event.
   if (cachedSender !== undefined) return false;
-  if (!receiptEventFetchInFlight.has(receipt.eventId)) {
-    receiptEventFetchInFlight.add(receipt.eventId);
-    room.client
-      .fetchRoomEvent(room.roomId, receipt.eventId)
-      .then((raw) => {
-        const sender = raw?.sender || undefined;
-        if (!sender) {
-          // Empty/missing sender — e.g. the startup fetchRoomEvent patch stubs cache
-          // misses with sender '' (see installStartupFetchRoomEventPatch). Not a real
-          // result: leave the entry unset so a later recompute retries with the real
-          // fetch, and don't emit (which would re-trigger this same fetch in a loop).
-          receiptEventSenderCache.delete(receipt.eventId);
-          return;
-        }
-        receiptEventSenderCache.set(receipt.eventId, sender);
-        // Nudge a recompute now that the sender is known so an idle, wedged room clears.
-        // Only emit on success: emitting after a miss/failure would re-trigger this same
-        // fetch via the unread listener and spin an endless fetch/emit loop.
-        room.emit(RoomEvent.UnreadNotifications, {
-          highlight: room.getUnreadNotificationCount(NotificationCountType.Highlight),
-          total: room.getUnreadNotificationCount(NotificationCountType.Total),
-        });
-      })
-      // On failure leave the entry unset (undefined) so a later, independent recompute
-      // can retry — caching null would be indistinguishable from a definitive "not the
-      // user" result and would permanently disable this clear for the session. Do NOT
-      // emit here: that would immediately re-enter this branch and loop.
-      .catch(() => receiptEventSenderCache.delete(receipt.eventId))
-      .finally(() => receiptEventFetchInFlight.delete(receipt.eventId));
-  }
 
   // Layer 2: timestamp heuristic. Classic sync loads a limited window (timeline_limit 10,
   // see initMatrix.ts), so "no foreign notification in the loaded tail" is NOT proof the
-  // room is read — a real unread bridge message can sit outside the window. Require the
-  // same positive in-window read proof the clamp uses: every confirmed loaded event is the
-  // user's own (own events never generate unread; combined with a newer receipt this means
-  // the room is genuinely read). Only then trust the receipt timestamp.
-  const liveEvents = room.getLiveTimeline().getEvents();
-  const confirmedEvents = liveEvents.filter((event) => !event.isSending());
+  // room is read — a real unread bridge message can sit outside the window. Require positive
+  // in-window read proof: every confirmed loaded event is the user's own (own events never
+  // generate unread; combined with a newer receipt this means the room is genuinely read).
+  const confirmedEvents = room
+    .getLiveTimeline()
+    .getEvents()
+    .filter((event) => !event.isSending());
   const allEventsFromSelf =
     confirmedEvents.length > 0 && confirmedEvents.every((event) => event.getSender() === userId);
   if (!allEventsFromSelf) return false;
