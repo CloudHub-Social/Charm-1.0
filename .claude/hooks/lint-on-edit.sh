@@ -1,6 +1,7 @@
 #!/bin/bash
 # Runs oxlint against a single edited file right after Edit/Write, so lint
 # errors surface immediately instead of at the next manual lint/CI run.
+command -v jq >/dev/null 2>&1 || exit 0
 input=$(cat)
 file=$(echo "$input" | jq -r '.tool_input.file_path // empty')
 
@@ -15,6 +16,9 @@ oxlint="$root/node_modules/.bin/oxlint"
 [ -f "$file" ] || exit 0
 
 out=$("$oxlint" "$file" 2>&1)
+case "$out" in
+  *"No files found to lint"*) exit 0 ;;
+esac
 if [ -n "$out" ]; then
   echo "oxlint found issues in $file:" >&2
   echo "$out" >&2

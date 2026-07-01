@@ -36,7 +36,7 @@ This repo has a prebuilt graphify knowledge graph at `graphify-out/graph.json` (
 - `graphify explain "<Symbol>"` — plain-language explanation of a node and its neighbors.
 - `graphify path "<A>" "<B>"` — shortest path between two concepts/symbols.
 
-Fall back to `grep`/`Explore` for exact string/symbol lookups the graph wasn't built to answer, or if `graphify-out/graph.json` is missing. If the graph feels stale relative to very recent changes, refresh it incrementally with `graphify . --update` (only when a task actually depends on freshness — it's not needed every session).
+Fall back to `grep`/`Explore` for exact string/symbol lookups the graph wasn't built to answer, or if `graphify-out/graph.json` is missing. If the graph feels stale relative to very recent changes, refresh it incrementally with `graphify update .` (only when a task actually depends on freshness — it's not needed every session). See `AGENTS.md` for the fuller graphify workflow already documented in this repo.
 
 ## Automated hooks
 
