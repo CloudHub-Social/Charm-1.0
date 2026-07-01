@@ -31,7 +31,7 @@ describe('emoji sidebar pinned-footer contract', () => {
     // has other unrelated position: 'absolute' / bottom: 0 declarations
     // (e.g. GIF overlays) that would make a file-wide match meaningless.
     const pinnedFooterBlockMatch = stylesCss.match(
-      /export const PinnedSidebarFooter = style\(\{([\s\S]*?)\}\);/
+      /export const PinnedSidebarFooter\s*=\s*style\(\s*\{([\s\S]*?)\}\s*\)\s*;/
     );
     expect(pinnedFooterBlockMatch).not.toBeNull();
     const pinnedFooterBlock = pinnedFooterBlockMatch![1];

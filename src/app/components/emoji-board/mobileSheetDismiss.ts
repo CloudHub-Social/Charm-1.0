@@ -5,6 +5,8 @@ export const DISMISS_PULL_PX = 80;
 // A downward flick (px/ms) near the min height also dismisses the sheet,
 // even if the drag distance itself was short.
 export const DISMISS_VELOCITY = 0.5;
+// How close to the min height counts as "near the min" for the flick check.
+export const NEAR_MIN_THRESHOLD_PX = 40;
 
 export type MobileSheetDragState = {
   rawHeight: number;
@@ -21,6 +23,6 @@ export function shouldDismissMobileSheet(
 ): boolean {
   const pulledPastMin = drag.rawHeight < heights.min - DISMISS_PULL_PX;
   const flickedDownNearMin =
-    drag.velocityY > DISMISS_VELOCITY && drag.currentHeight <= heights.min + 40;
+    drag.velocityY > DISMISS_VELOCITY && drag.currentHeight <= heights.min + NEAR_MIN_THRESHOLD_PX;
   return pulledPastMin || flickedDownNearMin;
 }

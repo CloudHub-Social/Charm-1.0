@@ -927,7 +927,7 @@ export function EmojiBoard({
   );
   const gifSearchDebounceRef = useRef<number>();
   const mobileSheetPointerMoveRef = useRef<((evt: PointerEvent) => void) | null>(null);
-  const mobileSheetPointerUpRef = useRef<(() => void) | null>(null);
+  const mobileSheetPointerUpRef = useRef<((evt: PointerEvent) => void) | null>(null);
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
@@ -1195,9 +1195,9 @@ export function EmojiBoard({
         if (!dragState) return;
 
         const dt = moveEvt.timeStamp - dragState.lastTime;
-        if (dt > 0) {
-          dragState.velocityY = (moveEvt.clientY - dragState.lastY) / dt;
-        }
+        // A non-positive dt (duplicate/out-of-order timestamps) shouldn't
+        // leave a stale nonzero velocity from an earlier move in place.
+        dragState.velocityY = dt > 0 ? (moveEvt.clientY - dragState.lastY) / dt : 0;
         dragState.lastY = moveEvt.clientY;
         dragState.lastTime = moveEvt.timeStamp;
 
@@ -1208,7 +1208,7 @@ export function EmojiBoard({
         setMobileSheetHeight(dragState.currentHeight);
       };
 
-      const handlePointerUp = () => {
+      const handlePointerUp = (upEvt: PointerEvent) => {
         const dragState = mobileSheetDragRef.current;
         mobileSheetDragRef.current = null;
         window.removeEventListener('pointermove', handlePointerMove);
@@ -1217,6 +1217,14 @@ export function EmojiBoard({
         mobileSheetPointerUpRef.current = null;
 
         if (!dragState) return;
+
+        // If the pointer has been held still since the last recorded move
+        // (e.g. a fast flick, then a pause before lifting the finger), the
+        // cached velocity is stale — don't let it register as a flick here.
+        const STALE_VELOCITY_MS = 100;
+        if (upEvt.timeStamp - dragState.lastTime > STALE_VELOCITY_MS) {
+          dragState.velocityY = 0;
+        }
 
         const heights = getMobileSheetHeights(window.innerHeight, activeTabRef.current);
 
