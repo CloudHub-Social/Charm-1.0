@@ -1098,7 +1098,11 @@ function SmokeImageViewerModal() {
         direction="Column"
         alignItems="Center"
         justifyContent="Center"
-        style={{ minHeight: 0, padding: config.space.S400, backgroundColor: 'var(--sable-surface)' }}
+        style={{
+          minHeight: 0,
+          padding: config.space.S400,
+          backgroundColor: 'var(--sable-surface)',
+        }}
       >
         <Text size="T300">
           Image viewer modal geometry fixture. The ModalWide div below should be full-screen on
