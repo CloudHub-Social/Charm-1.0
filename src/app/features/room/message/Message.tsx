@@ -496,6 +496,12 @@ function MessageInternal(
 
   const optionsRef = useRef<HTMLDivElement>(null);
   const openMobileOptionsSeqRef = useRef(0);
+  useEffect(
+    () => () => {
+      ++openMobileOptionsSeqRef.current;
+    },
+    []
+  );
 
   const [showPronouns] = useSetting(settingsAtom, 'showPronouns');
   const [parsePronouns] = useSetting(settingsAtom, 'parsePronouns');
