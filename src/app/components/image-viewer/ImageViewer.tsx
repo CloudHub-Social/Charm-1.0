@@ -180,7 +180,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
           ref={ref}
         >
           <Header className={css.ImageViewerHeader} size="400">
-            <Box grow="Yes" alignItems="Center" gap="200">
+            <Box className={css.ImageViewerHeaderTitle} grow="Yes" alignItems="Center" gap="200">
               <IconButton size="300" radii="300" onClick={requestClose}>
                 {sizedIcon(ArrowLeft, '200')}
               </IconButton>
@@ -188,7 +188,12 @@ export const ImageViewer = as<'div', ImageViewerProps>(
                 {alt}
               </Text>
             </Box>
-            <Box shrink="No" alignItems="Center" gap="200">
+            <Box
+              className={css.ImageViewerHeaderControls}
+              shrink="No"
+              alignItems="Center"
+              gap="200"
+            >
               <IconButton
                 variant="Surface"
                 size="300"
