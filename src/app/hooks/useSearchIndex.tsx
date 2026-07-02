@@ -100,6 +100,14 @@ const MAX_CONCURRENT_BACKFILLS = HAS_IDLE_CALLBACK ? Infinity : 2;
  */
 const BACKFILL_STARTUP_DELAY_MS = 15_000;
 
+/**
+ * Maximum number of times the worker lifecycle effect will automatically
+ * respawn the search worker after an unexpected runtime termination (e.g.
+ * iOS kills the Web Worker under image-decode memory pressure). MIME / stale-
+ * cache errors are excluded — those require a hard reload, not a restart.
+ */
+const MAX_WORKER_AUTO_RESTARTS = 3;
+
 const canRunMobileBackfill = (): boolean =>
   HAS_IDLE_CALLBACK || (document.visibilityState === 'visible' && document.hasFocus());
 
@@ -305,6 +313,9 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [isBackfilling, setIsBackfilling] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  // Incremented to re-trigger the worker lifecycle effect after an unexpected
+  // termination. Capped at MAX_WORKER_AUTO_RESTARTS to avoid infinite loops.
+  const [workerRestartCount, setWorkerRestartCount] = useState(0);
   const failWorkerRef = useRef<((errorMsg: string, options?: FailWorkerOptions) => void) | null>(
     null
   );
@@ -800,6 +811,14 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
     if (!userId) return () => {};
 
     setInitError(null);
+    if (workerRestartCount > 0) {
+      Sentry.addBreadcrumb({
+        category: 'search.index',
+        message: `Search worker auto-restart (attempt ${workerRestartCount}/${MAX_WORKER_AUTO_RESTARTS})`,
+        level: 'warning',
+        data: { restartCount: workerRestartCount },
+      });
+    }
     Sentry.addBreadcrumb({
       category: 'search.index',
       message: 'Initializing search worker',
@@ -930,6 +949,7 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
           likely_stale_cache: isMimeError,
           rocketLoaderActive,
           errorMessageEmpty: !message,
+          workerRestartCount,
         },
         contexts: {
           hint: {
@@ -944,6 +964,20 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
           },
         },
       });
+
+      // Auto-restart on unexpected OS-level termination (e.g. iOS kills the
+      // Web Worker under image-decode memory pressure). Skip for MIME / stale-
+      // cache errors — those need a hard reload, not a respawn.
+      if (!isMimeError && workerRestartCount < MAX_WORKER_AUTO_RESTARTS) {
+        Sentry.addBreadcrumb({
+          category: 'search.index',
+          message: `Scheduling search worker auto-restart (attempt ${workerRestartCount + 1}/${MAX_WORKER_AUTO_RESTARTS})`,
+          level: 'warning',
+          data: { restartCount: workerRestartCount },
+        });
+        // Brief 2 s delay so iOS memory pressure can subside before respawning.
+        setTimeout(() => setWorkerRestartCount((c) => c + 1), 2_000);
+      }
     };
     worker.addEventListener('error', handleWorkerError);
 
@@ -1066,6 +1100,7 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
     indexEvent,
     resumeBackfill,
     postToWorker,
+    workerRestartCount,
   ]);
 
   // ── Public API ─────────────────────────────────────────────────────────────
