@@ -1,28 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { EventDirection, MatrixCapabilities, WidgetEventCapability } from 'matrix-widget-api';
+import type { MatrixClient } from '$types/matrix-sdk';
 import { getCallCapabilities } from './utils';
 
 describe('getCallCapabilities', () => {
   const roomId = '!room:example.org';
   const userId = '@alice:example.org';
   const deviceId = 'ALICEDEVICE';
+  const mx = { getTurnServers: () => [] } as unknown as MatrixClient;
 
   it('includes delayed-event capabilities', () => {
-    const capabilities = getCallCapabilities(roomId, userId, deviceId);
+    const capabilities = getCallCapabilities(mx, roomId, userId, deviceId);
 
     expect(capabilities.has(MatrixCapabilities.MSC4157SendDelayedEvent)).toBe(true);
     expect(capabilities.has(MatrixCapabilities.MSC4157UpdateDelayedEvent)).toBe(true);
   });
 
   it('includes upload and download media capabilities', () => {
-    const capabilities = getCallCapabilities(roomId, userId, deviceId);
+    const capabilities = getCallCapabilities(mx, roomId, userId, deviceId);
 
     expect(capabilities.has(MatrixCapabilities.MSC4039UploadFile)).toBe(true);
     expect(capabilities.has(MatrixCapabilities.MSC4039DownloadFile)).toBe(true);
   });
 
   it('includes call member state send/receive capabilities', () => {
-    const capabilities = getCallCapabilities(roomId, userId, deviceId);
+    const capabilities = getCallCapabilities(mx, roomId, userId, deviceId);
 
     expect(
       capabilities.has(
@@ -44,7 +46,7 @@ describe('getCallCapabilities', () => {
   });
 
   it('includes rtc notification and decline send/receive capabilities', () => {
-    const capabilities = getCallCapabilities(roomId, userId, deviceId);
+    const capabilities = getCallCapabilities(mx, roomId, userId, deviceId);
 
     expect(
       capabilities.has(

@@ -30,7 +30,7 @@ import { useUserProfile } from '../../../hooks/useUserProfile';
 import { Modal500 } from '../../../components/Modal500';
 import { stopPropagation } from '../../../utils/keyboard';
 import { useUserPresence, Presence } from '../../../hooks/useUserPresence';
-import { UserHero, GlobalUserHeroName } from '../../../components/user-profile/UserHero';
+import { UserHero, UserHeroName as GlobalUserHeroName } from '../../../components/user-profile/UserHero';
 import { AvatarPresence, PresenceBadge, PresenceToColor } from '../../../components/presence';
 import { createLogger } from '$utils/debug';
 import type { Session } from '$state/sessions';
@@ -604,8 +604,6 @@ export function UserMenuTab({ isBottom }: { isBottom?: boolean }) {
                     avatarUrl={heroAvatarUrl}
                     bannerUrl={heroBannerUrl}
                     presence={presence}
-                    showColor={false}
-                    allowEditing={true}
                   />
                   <Box style={{ padding: `0 ${config.space.S200} ${config.space.S200}` }}>
                     <GlobalUserHeroName displayName={displayName} userId={userId} />

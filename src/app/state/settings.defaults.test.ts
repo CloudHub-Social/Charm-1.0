@@ -99,6 +99,7 @@ describe('mergePersistedSettings', () => {
     const merged = mergePersistedSettings(localStorage.getItem('settings'), {});
 
     expect(merged.themeId).toBeUndefined();
+  });
 
   it('migrates persisted ringtone preferences to valid values', () => {
     localStorage.setItem(

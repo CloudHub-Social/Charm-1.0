@@ -42,7 +42,6 @@ export type SearchPathSearchParams = {
   grouped?: string;
 };
 export const SEARCH_PATH_SEGMENT = 'search/';
-export const BOOKMARKS_PATH_SEGMENT = 'bookmarks/';
 
 export type RoomSearchParams = {
   /* comma separated string of servers */

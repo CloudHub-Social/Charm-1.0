@@ -60,7 +60,7 @@ import { createDebugLogger } from '$utils/debugLogger';
 import { shouldShowNotificationInFocusMode } from '$utils/focusMode';
 import { useSlidingSyncActiveRoom } from '$hooks/useSlidingSyncActiveRoom';
 import { NotificationBanner } from '$components/notification-banner';
-import { useCallSignaling } from '$hooks/useCallSignaling';
+import { useIncomingCallSignaling } from '$hooks/useCallSignaling';
 import { getRenderableMediaUrlStats } from '$hooks/useRenderableMediaUrl';
 import { isStartupShellReady, subscribeStartupShellReady } from '$utils/perfTelemetry';
 import { isTauri } from '@tauri-apps/api/core';
@@ -1658,7 +1658,7 @@ function useDeferredStartupWork(delayMs = 250): boolean {
 }
 
 export function ClientNonUIFeatures({ children }: ClientNonUIFeaturesProps) {
-  useCallSignaling();
+  useIncomingCallSignaling();
   const deferredStartupWorkEnabled = useDeferredStartupWork();
   return (
     <SearchIndexProvider>

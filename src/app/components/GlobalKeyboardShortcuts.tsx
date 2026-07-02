@@ -196,6 +196,7 @@ export function GlobalKeyboardShortcuts() {
       setEditNavRequest({ dir: isDown ? 'next' : 'prev', nonce: editNavNonceRef.current });
     },
     [currentRoom, setEditNavRequest]
+  );
   const handleBookmarkKeyDown = useCallback(
     (evt: KeyboardEvent) => {
       if (!isKeyHotkey('mod+b', evt)) return;

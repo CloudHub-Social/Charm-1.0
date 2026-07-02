@@ -252,7 +252,7 @@ export const getGifMsgContent = async (
   spoiler?: boolean
 ): Promise<IContent> => {
   const proxyUrl = mxcUrlToHttp(mx, mxcUrl, true);
-  const [imgError, imgEl] = await to(loadImageElement(proxyUrl ?? gif.url, 'anonymous'));
+  const [imgError, imgEl] = await to(loadImageElement(proxyUrl ?? gif.url));
   if (imgError) {
     log.warn(
       'Failed to load image element anonymously for blurhash, falling back to basic metadata:',

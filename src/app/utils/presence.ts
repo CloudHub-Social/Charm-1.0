@@ -6,6 +6,7 @@ const PRESENCE_TO_SET_PRESENCE: Record<Presence, SetPresence> = {
   [Presence.Online]: SetPresence.Online,
   [Presence.Unavailable]: SetPresence.Unavailable,
   [Presence.Offline]: SetPresence.Offline,
+  [Presence.Dnd]: SetPresence.Unavailable,
 };
 
 export const presenceToSetPresence = (presence: Presence): SetPresence =>
@@ -19,7 +20,7 @@ export const setUserPresence = async (
   Promise.all([
     mx.setSyncPresence(presenceToSetPresence(presence)),
     mx.setPresence({
-      presence,
+      presence: presenceToSetPresence(presence),
       status_msg: statusMsg,
     }),
   ]);

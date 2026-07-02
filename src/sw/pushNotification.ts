@@ -24,7 +24,7 @@ interface MatrixPushData {
     sender_ts?: number;
     lifetime?: number;
     'm.call.intent'?: string;
-    'm.relates_to'?: { event_id?: string };
+    'm.relates_to'?: { event_id?: string; key?: string };
   };
   sender_display_name?: string;
   sender_id?: string;
