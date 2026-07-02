@@ -287,7 +287,25 @@ async function fetchMediaResponse(
     ...(Object.keys(headers).length > 0 ? { headers } : {}),
   };
 
-  return fetch(url, init);
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    // Network-level failures (CORS, DNS, connection refused) throw TypeError.
+    // Wrap as a synthetic Response so callers can handle it uniformly via
+    // response.ok / response.status instead of needing try/catch everywhere.
+    const message = error instanceof Error ? error.message : 'Network error';
+    return new Response(
+      JSON.stringify({
+        errcode: 'M_UNKNOWN',
+        error: `Network error: ${message}`,
+      }),
+      {
+        status: 502,
+        statusText: 'Bad Gateway',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  }
 }
 
 async function storeMediaMetadataIfMissing(

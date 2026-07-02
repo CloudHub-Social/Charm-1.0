@@ -1711,6 +1711,22 @@ async function getLiveWindowSessions(url: string, clientId: string): Promise<Ses
   return collected;
 }
 
+function networkErrorResponse(url: string, error: unknown): Response {
+  const message = error instanceof Error ? error.message : 'Network error';
+  console.warn('[SW fetch] Network error fetching media', { url, error: message });
+  return new Response(
+    JSON.stringify({
+      errcode: 'M_UNKNOWN',
+      error: `Network error: ${message}`,
+    }),
+    {
+      status: 502,
+      statusText: 'Bad Gateway',
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+}
+
 async function fetchMediaWithRetry(
   url: string,
   token: string,
@@ -1718,7 +1734,12 @@ async function fetchMediaWithRetry(
   clientId: string,
   preferredRetrySessions: Array<SessionInfo | Promise<SessionInfo | undefined> | undefined> = []
 ): Promise<Response> {
-  let response = await fetch(url, { ...fetchConfig(token), redirect });
+  let response: Response;
+  try {
+    response = await fetch(url, { ...fetchConfig(token), redirect });
+  } catch (error) {
+    return networkErrorResponse(url, error);
+  }
   if (!isAuthFailureStatus(response.status)) return response;
 
   const attemptedTokens = new Set<string>([token]);
@@ -1747,10 +1768,19 @@ async function fetchMediaWithRetry(
     const candidate = retrySessions[i];
     if (candidate && !attemptedTokens.has(candidate.accessToken)) {
       attemptedTokens.add(candidate.accessToken);
-      response = await fetch(url, {
-        ...fetchConfig(candidate.accessToken),
-        redirect,
-      });
+      try {
+        response = await fetch(url, {
+          ...fetchConfig(candidate.accessToken),
+          redirect,
+        });
+      } catch (error) {
+        // Network error on this session — try next candidate
+        console.debug('[SW fetch] Retry session network error, trying next', {
+          url,
+          error: error instanceof Error ? error.message : 'Unknown',
+        });
+        continue;
+      }
       if (!isAuthFailureStatus(response.status)) {
         return response;
       }
@@ -1891,10 +1921,13 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   const { clientId } = event;
   const redirect: RequestRedirect = 'follow';
 
+  const safeMediaFetch = (promise: Promise<Response>): Promise<Response> =>
+    promise.catch((error) => networkErrorResponse(url, error));
+
   // Fast path: active session for this window
   const session = clientId ? sessions.get(clientId) : undefined;
   if (session && validMediaRequest(url, session.baseUrl)) {
-    event.respondWith(fetchMediaWithRetry(url, session.accessToken, redirect, clientId));
+    event.respondWith(safeMediaFetch(fetchMediaWithRetry(url, session.accessToken, redirect, clientId)));
     return;
   }
 
@@ -1904,7 +1937,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   // with any authenticated account on that homeserver.
   const byBaseUrl = [...sessions.values()].find((s) => validMediaRequest(url, s.baseUrl));
   if (byBaseUrl) {
-    event.respondWith(fetchMediaWithRetry(url, byBaseUrl.accessToken, redirect, clientId));
+    event.respondWith(safeMediaFetch(fetchMediaWithRetry(url, byBaseUrl.accessToken, redirect, clientId)));
     return;
   }
 
@@ -1912,20 +1945,22 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   // window (e.g. a prerender). Fall back to the persisted session directly.
   if (!clientId) {
     event.respondWith(
-      loadPersistedSession().then((persisted) => {
-        if (persisted && validMediaRequest(url, persisted.baseUrl)) {
-          return fetchMediaWithRetry(url, persisted.accessToken, redirect, '');
-        }
-        const matching = getMatchingSessions(url);
-        const [matchingSession] = matching;
-        if (matching.length === 1 && matchingSession) {
-          return fetchMediaWithRetry(url, matchingSession.accessToken, redirect, '');
-        }
-        if (preloadedSession && validMediaRequest(url, preloadedSession.baseUrl)) {
-          return fetchMediaWithRetry(url, preloadedSession.accessToken, redirect, '');
-        }
-        return fetch(event.request);
-      })
+      safeMediaFetch(
+        loadPersistedSession().then((persisted) => {
+          if (persisted && validMediaRequest(url, persisted.baseUrl)) {
+            return fetchMediaWithRetry(url, persisted.accessToken, redirect, '');
+          }
+          const matching = getMatchingSessions(url);
+          const [matchingSession] = matching;
+          if (matching.length === 1 && matchingSession) {
+            return fetchMediaWithRetry(url, matchingSession.accessToken, redirect, '');
+          }
+          if (preloadedSession && validMediaRequest(url, preloadedSession.baseUrl)) {
+            return fetchMediaWithRetry(url, preloadedSession.accessToken, redirect, '');
+          }
+          return fetch(event.request);
+        })
+      )
     );
     return;
   }
@@ -1933,11 +1968,11 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   const syncByBaseUrl = getMatchingSessions(url);
   const [syncSession] = syncByBaseUrl;
   if (syncByBaseUrl.length === 1 && syncSession) {
-    event.respondWith(fetchMediaWithRetry(url, syncSession.accessToken, redirect, clientId));
+    event.respondWith(safeMediaFetch(fetchMediaWithRetry(url, syncSession.accessToken, redirect, clientId)));
     return;
   }
   if (preloadedSession && validMediaRequest(url, preloadedSession.baseUrl)) {
-    event.respondWith(fetchMediaWithRetry(url, preloadedSession.accessToken, redirect, clientId));
+    event.respondWith(safeMediaFetch(fetchMediaWithRetry(url, preloadedSession.accessToken, redirect, clientId)));
     return;
   }
 
