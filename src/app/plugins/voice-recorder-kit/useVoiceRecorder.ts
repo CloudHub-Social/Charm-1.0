@@ -20,6 +20,30 @@ function getSharedAudioContext(): AudioContext {
   return sharedAudioContext;
 }
 
+/**
+ * A recording-specific AudioContext that was pre-created synchronously inside a
+ * user-gesture handler (e.g. onPointerDown on the mic button). iOS Safari only
+ * allows an AudioContext to be resumed when it is created — or when resume() is
+ * called — within the synchronous callstack of a user gesture. Because
+ * internalStartRecording is async (it awaits getUserMedia), any AudioContext
+ * created inside it arrives in the "suspended" state on iOS and can never be
+ * resumed, producing a silent or missing recording on the 2nd+ attempt.
+ *
+ * Call primeAudioContext() inside an onPointerDown/onClick handler to
+ * pre-create and resume the context before the async recording path begins.
+ * setupAudioGraph() will consume it instead of creating a new one.
+ */
+let primedAudioContext: AudioContext | null = null;
+
+export function primeAudioContext(): void {
+  if (primedAudioContext && primedAudioContext.state !== 'closed') {
+    primedAudioContext.resume().catch(() => {});
+    return;
+  }
+  primedAudioContext = new AudioContext();
+  primedAudioContext.resume().catch(() => {});
+}
+
 // downsample an array of samples to a target count by averaging blocks of samples together
 function downsampleWaveform(samples: number[], targetCount: number): number[] {
   if (samples.length === 0) return Array.from({ length: targetCount }, () => 0.15);
@@ -255,7 +279,16 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
 
   const setupAudioGraph = useCallback(
     (stream: MediaStream): MediaStream => {
-      const audioContext = new AudioContext();
+      // Use a pre-created context if one was primed synchronously inside the
+      // user gesture handler (see primeAudioContext). This is necessary on iOS
+      // Safari where AudioContext.resume() is only permitted within the
+      // synchronous callstack of a user gesture; creating a new context here
+      // (post-await) results in a permanently suspended context.
+      const audioContext =
+        primedAudioContext && primedAudioContext.state !== 'closed'
+          ? primedAudioContext
+          : new AudioContext();
+      primedAudioContext = null; // consume — don't let a stale primed context bleed into the next recording
       audioContextRef.current = audioContext;
       const source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
