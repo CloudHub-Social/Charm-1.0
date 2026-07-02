@@ -11,7 +11,7 @@ describe('mobile PWA dogfood contract', () => {
   it('pre-lifts the mobile composer before touch and pointer focus paths', () => {
     const roomInput = readWorkspaceFile('src/app/features/room/RoomInput.tsx');
 
-    expect(roomInput).toContain('const handleMobilePreLift = useCallback(() => {');
+    expect(roomInput).toContain('const handleMobilePreLift = useCallback((evt: React.SyntheticEvent) => {');
     expect(roomInput).toContain('onPointerDownCapture={handleMobilePreLift}');
     expect(roomInput).toContain('onTouchStartCapture={handleMobilePreLift}');
     expect(roomInput).toContain('onMouseDown={handleMobilePreLift}');
