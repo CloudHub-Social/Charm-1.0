@@ -2,11 +2,18 @@ export type ServiceWorkerNotificationClickData = {
   user_id?: string;
   room_id?: string;
   event_id?: string;
+  sender_id?: string;
   navigate?: string;
   content?: {
     membership?: string;
   };
   isCall?: boolean;
+  callNotificationType?: string;
+  callIntentKind?: string;
+  callIntentRaw?: string;
+  callRefEventId?: string;
+  callSenderTs?: number;
+  callExpiresAt?: number;
 };
 
 export type NotificationClickClientSnapshot = {
@@ -38,7 +45,25 @@ export function buildNotificationClickTargetUrl(
         : `to/${encodeURIComponent(pushUserId)}/${encodeURIComponent(pushRoomId)}`,
       scope
     );
-    if (data.isCall === true) roomUrl.searchParams.set('joinCall', 'true');
+    if (data.isCall === true) {
+      roomUrl.searchParams.set('joinCall', 'true');
+      // Carry the call's own metadata through the cold-launch URL — ToRoomEvent /
+      // resolveIncomingCallFromSearchParams reads these to reconstruct the incoming
+      // call. Without them a cold launch would fall back to a fresh full lifetime and
+      // lose which call this notification was actually for (video/audio, who rang,
+      // which event to correlate a decline against).
+      if (data.callNotificationType) roomUrl.searchParams.set('callType', data.callNotificationType);
+      if (data.callIntentKind) roomUrl.searchParams.set('callIntentKind', data.callIntentKind);
+      if (data.callIntentRaw) roomUrl.searchParams.set('callIntentRaw', data.callIntentRaw);
+      if (data.callRefEventId) roomUrl.searchParams.set('callRefEventId', data.callRefEventId);
+      if (data.sender_id) roomUrl.searchParams.set('callSenderId', data.sender_id);
+      if (typeof data.callSenderTs === 'number') {
+        roomUrl.searchParams.set('callSenderTs', String(data.callSenderTs));
+      }
+      if (typeof data.callExpiresAt === 'number') {
+        roomUrl.searchParams.set('callExpiresAt', String(data.callExpiresAt));
+      }
+    }
     roomUrl.searchParams.set('jumpMode', 'notification_live');
     return roomUrl.href;
   }
