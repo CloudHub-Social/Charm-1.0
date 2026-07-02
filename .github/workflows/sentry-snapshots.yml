@@ -88,6 +88,12 @@ jobs:
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
 
+      # `test:e2e:snapshots` (package.json) hardcodes the list of spec files this
+      # step runs. Any new `e2e/smoke/*.spec.ts` file that calls `captureSnapshot()`
+      # must be added to that list, or its captures never reach this job (and never
+      # reach Sentry) even though the test itself passes fine on its own. Found via
+      # a real gap: 5 spec files with real captureSnapshot() calls were silently
+      # excluded from this list before this comment was added.
       - name: Capture deterministic observability and layout harness snapshots
         run: pnpm run test:e2e:snapshots
 
