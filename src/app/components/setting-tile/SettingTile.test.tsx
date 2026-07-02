@@ -133,9 +133,7 @@ describe('SettingTile', () => {
   it('does not override an after element that already declares its own accessible name', () => {
     renderTile(ScreenSize.Desktop, 'reduced-motion', {
       title: 'Reduced Motion',
-      after: (
-        <button type="button" role="switch" aria-checked={false} aria-label="Custom label" />
-      ),
+      after: <button type="button" role="switch" aria-checked={false} aria-label="Custom label" />,
     });
 
     const switchEl = screen.getByRole('switch');
