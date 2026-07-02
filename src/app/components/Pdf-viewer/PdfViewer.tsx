@@ -88,6 +88,73 @@ export const PdfViewer = as<'div', PdfViewerProps>(
       pdfJSState.status === AsyncStatus.Error || docState.status === AsyncStatus.Error;
     const [pageNo, setPageNo] = useState(1);
     const [jumpAnchor, setJumpAnchor] = useState<RectCords>();
+    // Tracks the target of the most recent `mousedown` while the jump-to-page
+    // popout's FocusTrap is active, so its `onDeactivate` (which focus-trap-react
+    // calls with no arguments - see focus-trap@7.8.0's `deactivate()`) can still
+    // tell whether the click that closed it landed outside the *viewer* too.
+    const lastPointerDownTargetRef = useRef<EventTarget | null>(null);
+
+    useEffect(() => {
+      // Registered unconditionally (for the component's whole lifetime,
+      // not just while the popout is open) and in the capture phase so it
+      // is guaranteed to be attached to `document` *before* the popout's
+      // own FocusTrap ever activates - and therefore before focus-trap's own
+      // `checkPointerDown` capture listener (added when that trap's
+      // `componentDidMount` runs). Capture-phase listeners on the same
+      // target fire in registration order, so gating this on `jumpAnchor`
+      // (i.e. registering it in the same commit that mounts the popout's
+      // trap) raced with focus-trap's own listener and lost half the time.
+      const recordPointerDownTarget = (evt: MouseEvent | TouchEvent) => {
+        lastPointerDownTargetRef.current = evt.target;
+      };
+      document.addEventListener('mousedown', recordPointerDownTarget, true);
+      document.addEventListener('touchstart', recordPointerDownTarget, true);
+      return () => {
+        document.removeEventListener('mousedown', recordPointerDownTarget, true);
+        document.removeEventListener('touchstart', recordPointerDownTarget, true);
+      };
+    }, []);
+
+    const handleJumpMenuDeactivate = useCallback(() => {
+      setJumpAnchor(undefined);
+      // The jump-to-page popout is rendered through a React Portal (folds'
+      // `PopOut` mounts its content on `document.body` by default), so it is
+      // not a DOM descendant of `rootRef` even though it's nested under
+      // `PdfViewer` in the React tree - a plain ref/DOM `.contains()` check on
+      // the popout's own root would never catch a click made outside it, we
+      // need the last recorded mousedown target compared against the viewer's
+      // own root instead. That same portal gap means a click on the popout's
+      // *own* controls (e.g. the "Jump To Page" submit button, which also
+      // deactivates this trap) is not a DOM descendant of `rootRef` either -
+      // it must be excluded via `jumpMenuRef` explicitly, or every ordinary
+      // popout interaction that closes the popout would be misread as
+      // "outside the viewer" and wrongly close the whole thing.
+      //
+      // If the click landed outside both the popout and the viewer's root,
+      // this is the "close everything in one click" case from the Sentry
+      // finding: the innermost trap's own outside-click handling consumes
+      // the mousedown event to deactivate itself and unpause the middle
+      // (viewer) trap, but that unpause happens synchronously *after* the
+      // mousedown has already finished dispatching, so the viewer trap's own
+      // (now freshly re-added) listeners never see it and the viewer stays
+      // open. Forward the request here instead, using the same event the
+      // popout itself reacted to.
+      //
+      // If the click landed inside the popout or inside the viewer (e.g.
+      // dismissing the popout by clicking elsewhere on the PDF page), only
+      // close the popout - do not touch the outer trap.
+      const target = lastPointerDownTargetRef.current;
+      const root = rootRef.current;
+      const menu = jumpMenuRef.current;
+      if (
+        target instanceof Node &&
+        root &&
+        !root.contains(target) &&
+        !(menu && menu.contains(target))
+      ) {
+        requestClose();
+      }
+    }, [requestClose]);
 
     useEffect(() => {
       loadPdfJS();
@@ -136,6 +203,14 @@ export const PdfViewer = as<'div', PdfViewerProps>(
     };
 
     const handleOpenJump: MouseEventHandler<HTMLButtonElement> = (evt) => {
+      // Reset for this popout session: without this, closing the popout via
+      // Escape or the submit button (neither of which involves a new
+      // mousedown) would fall back to whatever mousedown was last recorded
+      // - which could predate this popout opening entirely (e.g. a keyboard
+      // user tabs to and activates this button, then a stale mousedown from
+      // earlier in the session, possibly outside the viewer, would otherwise
+      // be misread as "close everything").
+      lastPointerDownTargetRef.current = null;
       setJumpAnchor(evt.currentTarget.getBoundingClientRect());
     };
 
@@ -290,7 +365,13 @@ export const PdfViewer = as<'div', PdfViewerProps>(
                         // `$utils/dom`) which is null-safe at runtime
                         // instead of casting the ref.
                         fallbackFocus: focusTrapFallbackFocus(jumpMenuRef),
-                        onDeactivate: () => setJumpAnchor(undefined),
+                        // See `handleJumpMenuDeactivate` above: closes just the
+                        // popout for clicks still inside the viewer, and also
+                        // requests the viewer itself close for clicks fully
+                        // outside both (the nested-trap click-swallowing bug
+                        // from PR #512's Sentry finding, one level in from the
+                        // outer/middle trap fix applied above).
+                        onDeactivate: handleJumpMenuDeactivate,
                         clickOutsideDeactivates: true,
                         escapeDeactivates: stopPropagation,
                       }}
