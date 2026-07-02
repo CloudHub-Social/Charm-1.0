@@ -38,8 +38,17 @@ export function Modal500({
   const modal = (
     <FocusTrap
       focusTrapOptions={{
-        initialFocus: false,
-        fallbackFocus: () => modalRef.current ?? document.body,
+        // NOT `initialFocus: false`: that option makes focus-trap-react
+        // skip moving focus into the trap entirely instead of falling back
+        // to the first tabbable node (the same failure mode fixed
+        // elsewhere in this PR - see ThemeCatalogOnboarding.tsx). Many
+        // Modal500 call sites (create-room, create-space, bug-report,
+        // settings panels, etc.) may not have a focusable descendant ready
+        // on the first render, so relying on `initialFocus: false` risked
+        // leaving focus on whatever triggered the modal instead of inside
+        // it. The Modal root has `tabIndex={-1}` below, so fallbackFocus
+        // always resolves to it rather than `document.body`.
+        fallbackFocus: () => modalRef.current as HTMLElement,
         clickOutsideDeactivates: true,
         onDeactivate: requestClose,
         escapeDeactivates: stopPropagation,
