@@ -572,6 +572,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
                     ReactEditor.focus(editor);
                   }
                 }}
+                style={{ boxShadow: 'none' }}
               />
             </Scroll>
             {(showAfterInline || showResponsiveAfterInline) && (

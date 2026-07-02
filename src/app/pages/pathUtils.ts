@@ -33,6 +33,7 @@ import {
   SPACE_SEARCH_PATH,
   TO_ROOM_EVENT_PATH,
   CREATE_PATH,
+  INBOX_BOOKMARKS_PATH,
 } from './paths';
 
 export const joinPathComponent = (path: Path): string => path.pathname + path.search + path.hash;

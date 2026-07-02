@@ -26,7 +26,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Room, MatrixEvent } from '$types/matrix-sdk';
 import {
   Direction,
-  EventTimeline,
+  type EventTimeline,
   NotificationCountType,
   ThreadEvent,
   RoomEvent,
@@ -115,6 +115,8 @@ import { callChatAtom } from '$state/callEmbed';
 import { RoomSettingsPage } from '$state/roomSettings';
 import { roomIdToThreadBrowserAtomFamily } from '$state/room/roomToThreadBrowser';
 import { roomIdToOpenThreadAtomFamily } from '$state/room/roomToOpenThread';
+import { useCallPreferences } from '$state/hooks/callPreferences';
+import { useCallStartCapabilities } from '$hooks/useCallStartCapabilities';
 import { JumpToTime } from './jump-to-time';
 import { RoomPinMenu } from './room-pin-menu';
 import * as css from './RoomViewHeader.css';
@@ -406,6 +408,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
   const [pinMenuAnchor, setPinMenuAnchor] = useState<RectCords>();
   const direct = useIsDirectRoom();
   const [customDMCards] = useSetting(settingsAtom, 'customDMCards');
+  const { microphone, video, sound } = useCallPreferences();
 
   const [chat, setChat] = useAtom(callChatAtom);
   const [threadBrowserOpen, setThreadBrowserOpen] = useAtom(
@@ -413,10 +416,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
   );
   const [openThreadId, setOpenThread] = useAtom(roomIdToOpenThreadAtomFamily(room.roomId));
 
-  const canUseCalls = room
-    .getLiveTimeline()
-    .getState(EventTimeline.FORWARDS)
-    ?.maySendStateEvent('org.matrix.msc3401.call.member', mx.getUserId()!);
+  const callStartCapabilities = useCallStartCapabilities(room);
   const [alwaysShowCallButton] = useSetting(settingsAtom, 'alwaysShowCallButton');
   const shouldShowCallButton = alwaysShowCallButton || room.getJoinedMemberCount() <= 10;
 
@@ -792,7 +792,25 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                   </IconButton>
                 )}
               </TooltipProvider>
-              {canUseCalls && shouldShowCallButton && <RoomCallButton room={room} />}
+              {!room.isCallRoom() &&
+                callStartCapabilities.canRenderCallButton &&
+                shouldShowCallButton && (
+                  <>
+                    <RoomCallButton
+                      room={room}
+                      direct={direct}
+                      kind="voice"
+                      defaultPreferences={{ microphone, video, sound }}
+                    />
+                    <RoomCallButton
+                      room={room}
+                      direct={direct}
+                      kind="video"
+                      defaultPreferences={{ microphone, video, sound }}
+                      allowVideoStart
+                    />
+                  </>
+                )}
               <PopOut
                 anchor={pinMenuAnchor}
                 position="Bottom"

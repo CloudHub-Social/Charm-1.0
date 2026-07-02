@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { useSetAtom } from 'jotai';
+import { useAtomValue, useSetAtom } from 'jotai';
 import * as Sentry from '@sentry/react';
 import {
   activeSessionIdAtom,
@@ -11,6 +11,12 @@ import {
   buildNotificationBreadcrumb,
   buildNotificationMetricAttributes,
 } from '$utils/notificationTelemetry';
+import { mDirectAtom } from '$state/mDirectList';
+import { incomingCallAtom, mutedCallRoomIdAtom } from '$state/callEmbed';
+import { resolveIncomingCallFromSearchParams } from '$features/call/callNotificationBridge';
+import { isIncomingCallSuppressed } from '$features/call/callIncomingIngress';
+import { settingsAtom } from '$state/settings';
+import { useSetting } from '$state/hooks/settings';
 
 // ToRoomEvent handles /to/:user_id/:room_id/:event_id? — the canonical deep-link
 // URL used by the service worker's notificationclick handler.
@@ -27,12 +33,19 @@ import {
 export function ToRoomEvent() {
   const { user_id: userId, room_id: roomId, event_id: eventId } = useParams();
   const [searchParams] = useSearchParams();
+  const mDirects = useAtomValue(mDirectAtom);
+  const mutedRoomId = useAtomValue(mutedCallRoomIdAtom);
+  const [incomingVoiceRoomCallSoundEnabled] = useSetting(
+    settingsAtom,
+    'incomingVoiceRoomCallSoundEnabled'
+  );
   const setActiveSessionId = useSetAtom(activeSessionIdAtom);
   const setPending = useSetAtom(pendingNotificationAtom);
   const joinCall = searchParams.get('joinCall') === 'true';
   const swClickId = searchParams.get('swClickId') ?? undefined;
   const jumpMode =
     searchParams.get('jumpMode') === 'notification_live' ? 'notification_live' : 'history_context';
+  const setIncomingCall = useSetAtom(incomingCallAtom);
 
   useEffect(() => {
     if (!roomId) return;
@@ -70,7 +83,37 @@ export function ToRoomEvent() {
         source: 'to_room_event',
       })
     );
-  }, [userId, roomId, eventId, jumpMode, joinCall, swClickId, setActiveSessionId, setPending]);
+
+    const incomingCall = resolveIncomingCallFromSearchParams(
+      searchParams,
+      roomId,
+      eventId,
+      mDirects.has(roomId)
+    );
+    if (
+      incomingCall &&
+      !isIncomingCallSuppressed(incomingCall, mutedRoomId, incomingVoiceRoomCallSoundEnabled)
+    ) {
+      setIncomingCall(incomingCall);
+    }
+
+    // Replace /to/… in history so the back button doesn't return to this route.
+    window.history.replaceState({}, '', '/');
+  }, [
+    eventId,
+    jumpMode,
+    joinCall,
+    swClickId,
+    mDirects,
+    mutedRoomId,
+    roomId,
+    searchParams,
+    setActiveSessionId,
+    setIncomingCall,
+    setPending,
+    userId,
+    incomingVoiceRoomCallSoundEnabled,
+  ]);
 
   return null;
 }

@@ -16,7 +16,16 @@ import { roomToParentsAtom } from '$state/room/roomToParents';
 import { mDirectAtom } from '$state/mDirectList';
 import { roomToUnreadAtom } from '$state/room/roomToUnread';
 import { useKeyDown } from '$hooks/useKeyDown';
-import { getDirectRoomPath, getHomeRoomPath, getSpaceRoomPath } from '$pages/pathUtils';
+import {
+  getDirectRoomPath,
+  getHomeRoomPath,
+  getHomeSearchPath,
+  getInboxBookmarksPath,
+  getSpaceRoomPath,
+  getSpaceSearchPath,
+  withSearchParam,
+} from '$pages/pathUtils';
+import type { SearchPathSearchParams } from '$pages/paths';
 import { HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH } from '$pages/paths';
 import { getCanonicalAliasOrRoomId, getCanonicalAliasRoomId } from '$utils/matrix';
 import { announce } from '$utils/announce';
@@ -187,6 +196,15 @@ export function GlobalKeyboardShortcuts() {
       setEditNavRequest({ dir: isDown ? 'next' : 'prev', nonce: editNavNonceRef.current });
     },
     [currentRoom, setEditNavRequest]
+  const handleBookmarkKeyDown = useCallback(
+    (evt: KeyboardEvent) => {
+      if (!isKeyHotkey('mod+b', evt)) return;
+      evt.preventDefault();
+
+      navigate(getInboxBookmarksPath());
+      announce(`Navigated to bookmarks`);
+    },
+    [navigate]
   );
 
   /** Ctrl+F: Search for messages */
@@ -219,6 +237,7 @@ export function GlobalKeyboardShortcuts() {
   useKeyDown(window, handleUnreadNavKeyDown);
   useKeyDown(window, handleReplyKeyDown);
   useKeyDown(window, handleEditKeyDown);
+  useKeyDown(window, handleBookmarkKeyDown);
   useKeyDown(window, handleSearchMessageInRoom);
 
   return null;

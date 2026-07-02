@@ -122,7 +122,7 @@
     "@playwright/test": "^1.61.0",
     "@rollup/plugin-inject": "^5.0.5",
     "@rollup/plugin-wasm": "^6.2.2",
-    "@sableclient/sable-call-embedded": "1.1.4",
+    "@sableclient/sable-call-embedded": "1.1.6",
     "@sentry/vite-plugin": "^5.3.0",
     "@tauri-apps/cli": "2.11.0",
     "@testing-library/jest-dom": "^6.9.1",
