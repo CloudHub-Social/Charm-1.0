@@ -236,6 +236,7 @@ export interface Settings {
   joinCallOnSingleClick: boolean;
   faviconForMentionsOnly: boolean;
   highlightMentions: boolean;
+  showAccessibilityHighlights: boolean;
   pkCompat: boolean;
   pmpProxying: boolean;
   mentionInReplies: boolean;
@@ -415,6 +416,7 @@ export const defaultSettings: Settings = {
   joinCallOnSingleClick: true,
   faviconForMentionsOnly: false,
   highlightMentions: true,
+  showAccessibilityHighlights: true,
   pkCompat: false,
   pmpProxying: false,
   mentionInReplies: true,

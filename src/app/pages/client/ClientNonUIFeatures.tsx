@@ -816,6 +816,16 @@ function MessageNotifications() {
   );
 }
 
+function A11yHighlightsFeature() {
+  const [showHighlights] = useSetting(settingsAtom, 'showAccessibilityHighlights');
+
+  useEffect(() => {
+    document.body.classList.toggle('sable-a11y-highlights', showHighlights);
+  }, [showHighlights]);
+
+  return null;
+}
+
 function PrivacyBlurFeature() {
   const [blurMedia] = useSetting(settingsAtom, 'privacyBlur');
   const [blurAvatars] = useSetting(settingsAtom, 'privacyBlurAvatars');
@@ -1664,6 +1674,7 @@ export function ClientNonUIFeatures({ children }: ClientNonUIFeaturesProps) {
     <SearchIndexProvider>
       <SystemEmojiFeature />
       <PageZoomFeature />
+      <A11yHighlightsFeature />
       <PrivacyBlurFeature />
       <WebPushStartupReconciler />
       <FaviconUpdater />
