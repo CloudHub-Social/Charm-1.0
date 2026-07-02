@@ -122,6 +122,37 @@ describe('PdfViewer nested focus-trap click-outside', () => {
     expect(requestClose).not.toHaveBeenCalled();
   });
 
+  it(
+    'closes the popout via Escape even when its own Page Number input has focus, ' +
+      'without closing the outer viewer (comment 3515215016)',
+    async () => {
+      const user = userEvent.setup();
+      const { requestClose } = renderViewer();
+
+      await openJumpMenu(user);
+
+      // Explicitly focus the popout's own input. The shared `stopPropagation`
+      // keyboard helper (used elsewhere as `escapeDeactivates`) declines to
+      // act when the active element is editable, which - if reused here -
+      // would leave Escape unable to close this popout while its input has
+      // focus. This popout must use its own always-deactivate handler
+      // instead, so Escape still works from inside the input.
+      const input = screen.getByLabelText('Page Number');
+      await user.click(input);
+      expect(document.activeElement).toBe(input);
+
+      await user.keyboard('{Escape}');
+
+      await waitFor(() => {
+        expect(screen.queryByLabelText('Page Number')).not.toBeInTheDocument();
+      });
+      // Only the popout should close - the outer viewer trap's requestClose
+      // must NOT be invoked as a side effect of this Escape press.
+      expect(requestClose).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    }
+  );
+
   it('does not request close when the popout is dismissed via form submit', async () => {
     const user = userEvent.setup();
     const { requestClose } = renderViewer();

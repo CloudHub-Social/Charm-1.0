@@ -156,6 +156,35 @@ export const PdfViewer = as<'div', PdfViewerProps>(
       }
     }, [requestClose]);
 
+    // The shared `stopPropagation` helper (from `$utils/keyboard`) is used as
+    // the *outer* viewer trap's `escapeDeactivates` deliberately: it declines
+    // to close when an editable element (input/textarea/contenteditable) is
+    // focused, which is the right call for most editors it guards elsewhere.
+    // But applying that same helper to *this* popout means Escape stops
+    // closing the "jump to page" popout the moment its own Page Number
+    // `<Input>` has focus (which happens by default - this trap does not use
+    // `initialFocus: false`, see below) - keyboard users would have to tab
+    // away, submit, or click outside instead. This popout's own input being
+    // focused is exactly the case Escape should still handle, so always
+    // deactivate here regardless of the active element.
+    //
+    // `stopPropagation()` is called explicitly (rather than relying on
+    // focus-trap's `escapeDeactivates` return value, which only controls
+    // *this* trap's own deactivation and never touches DOM event
+    // propagation) so a bubbling React `onKeyDown` on an ancestor - now or
+    // in the future - can't also react to the same Escape press. This does
+    // NOT reopen the "close everything" bug from commit 94bf48e51: the
+    // outer viewer trap is paused (and its own Escape listener removed;
+    // see focus-trap's `_setPausedState`) for as long as this inner trap is
+    // active, so the outer trap never sees this keydown regardless of
+    // propagation - only `onDeactivate`/`handleJumpMenuDeactivate` above
+    // decides whether the outer trap should also close, and Escape isn't
+    // routed through that click-target comparison at all.
+    const escapeClosesJumpMenu = useCallback((evt: KeyboardEvent) => {
+      evt.stopPropagation();
+      return true;
+    }, []);
+
     useEffect(() => {
       loadPdfJS();
     }, [loadPdfJS]);
@@ -373,7 +402,7 @@ export const PdfViewer = as<'div', PdfViewerProps>(
                         // outer/middle trap fix applied above).
                         onDeactivate: handleJumpMenuDeactivate,
                         clickOutsideDeactivates: true,
-                        escapeDeactivates: stopPropagation,
+                        escapeDeactivates: escapeClosesJumpMenu,
                       }}
                     >
                       <Menu ref={jumpMenuRef} tabIndex={-1} variant="Surface">
