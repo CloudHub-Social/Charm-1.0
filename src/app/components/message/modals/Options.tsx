@@ -688,6 +688,7 @@ export function OptionMenu({
                         if (e.key === 'Escape') closeMenu();
                       }}
                       className={css.MessageNickEditor}
+                      data-focus-ring-self
                     />
                     <Box gap="200">
                       <MenuItem

@@ -667,6 +667,7 @@ export function OptionsChip({
                       defaultValue={currentNick ?? ''}
                       placeholder="Enter a nickname…"
                       onKeyDown={handleNickKeyDown}
+                      data-focus-ring-self
                       style={{
                         background: 'var(--mx-c-surface)',
                         color: 'var(--mx-c-on-surface)',

@@ -302,6 +302,7 @@ export function ThemeImportModal({ open, onClose }: ThemeImportModalProps) {
                   placeholder="Paste .preview.sable.css, .sable.css, or tweak CSS, or pick a file below…"
                   rows={6}
                   disabled={Boolean(uploadedFileCss)}
+                  data-focus-ring-self
                   style={{
                     width: '100%',
                     boxSizing: 'border-box',

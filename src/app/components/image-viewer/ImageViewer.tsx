@@ -286,6 +286,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
                         ref={zoomInputRef}
                         type="text"
                         aria-label="Set Zoom Level"
+                        data-focus-ring-self
                         value={zoomInput}
                         onChange={(e) => {
                           setZoomInput(e.target.value);
