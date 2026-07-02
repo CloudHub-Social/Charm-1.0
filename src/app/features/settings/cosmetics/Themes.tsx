@@ -301,6 +301,7 @@ function ThemeVisualPreferences() {
               step="1"
               value={saturation}
               onChange={(e) => setSaturation(Number.parseInt(e.target.value, 10))}
+              data-focus-ring-self
               style={{
                 width: toRem(160),
                 cursor: 'pointer',

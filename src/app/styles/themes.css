@@ -26,6 +26,8 @@
   --sable-primary-main-hover: #644ec1;
   --sable-primary-main-active: #5b47b3;
   --sable-primary-main-line: #5240a5;
+  /* Border for focusable/interactive elements in their idle state (see NameColorEditor). */
+  --sable-border-focus: var(--sable-primary-main-line);
   --sable-primary-on-main: #ffffff;
   --sable-primary-container: #ded9e6;
   --sable-primary-container-hover: #d3cde0;
@@ -115,6 +117,8 @@
   --sable-primary-main-hover: #a9a1e6;
   --sable-primary-main-active: #958be0;
   --sable-primary-main-line: #8175da;
+  /* Border for focusable/interactive elements in their idle state (see NameColorEditor). */
+  --sable-border-focus: var(--sable-primary-main-line);
   --sable-primary-on-main: #1b1a21;
   --sable-primary-container: #2d235c;
   --sable-primary-container-hover: #382d70;

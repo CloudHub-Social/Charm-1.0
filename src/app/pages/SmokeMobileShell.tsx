@@ -24,6 +24,7 @@ import {
 import { ModernLayout } from '$components/message/layout/Modern';
 import {
   EmojiBoardLayout,
+  EmojiBoardTabs,
   EmojiGroup,
   EmojiItem,
   GroupIcon,
@@ -31,6 +32,7 @@ import {
   SidebarDivider,
   SidebarStack,
 } from '$components/emoji-board/components';
+import { EmojiBoardTab } from '$components/emoji-board/types';
 import * as emojiBoardCss from '$components/emoji-board/components/styles.css';
 import * as roomNavCss from '$features/room-nav/styles.css';
 import { APP_FEATURES_URL, APP_SOURCE_URL, APP_SUPPORT_URL } from '$app/config/brand';
@@ -145,6 +147,23 @@ function SmokeComposerEmojiAlignment() {
     >
       <Text size="T300">Composer emoji baseline</Text>
       <CustomEditor editableName="SmokeComposer" editor={editor} readOnly />
+    </Box>
+  );
+}
+
+function SmokeEmojiTabs() {
+  const [tab, setTab] = useState<EmojiBoardTab>(EmojiBoardTab.Emoji);
+
+  return (
+    <Box
+      data-testid="smoke-emoji-tabs"
+      direction="Column"
+      shrink="No"
+      gap="200"
+      style={{ width: '100%' }}
+    >
+      <Text size="T300">Emoji picker tabs</Text>
+      <EmojiBoardTabs tab={tab} onTabChange={setTab} boardId="smoke-emoji-board" />
     </Box>
   );
 }
@@ -535,6 +554,7 @@ function SmokeEmojiPolish() {
           }}
         >
           <Text size="H4">Emoji picker chrome</Text>
+          <SmokeEmojiTabs />
           <Box data-testid="smoke-picker-scale-reference" gap="100" alignItems="Center">
             <button
               type="button"

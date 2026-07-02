@@ -242,4 +242,55 @@ test.describe('emoji polish fixture smoke', () => {
 
     await captureSnapshot(page, 'layout-harness/emoji-polish/jumbo-line-height');
   });
+
+  test('emoji picker tabs expose roving tabindex and move focus/selection on ArrowRight', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto('/__smoke/mobile-shell/emoji-polish');
+
+    const emojiTab = page.getByRole('tab', { name: 'Emoji' });
+    const stickersTab = page.getByRole('tab', { name: 'Stickers' });
+    const gifsTab = page.getByRole('tab', { name: 'GIFs' });
+
+    await expect(emojiTab).toBeVisible();
+    await expect(stickersTab).toBeVisible();
+    await expect(gifsTab).toBeVisible();
+
+    // Exactly one tab should be selected initially (Emoji, the default tab).
+    await expect(emojiTab).toHaveAttribute('aria-selected', 'true');
+    await expect(stickersTab).toHaveAttribute('aria-selected', 'false');
+    await expect(gifsTab).toHaveAttribute('aria-selected', 'false');
+
+    // Roving tabindex: only the selected tab sits in the page tab order.
+    await expect(emojiTab).toHaveAttribute('tabindex', '0');
+    await expect(stickersTab).toHaveAttribute('tabindex', '-1');
+    await expect(gifsTab).toHaveAttribute('tabindex', '-1');
+
+    // Focus the selected tab (as a user tabbing into the tablist would land here)
+    // then move right with the arrow key.
+    await emojiTab.focus();
+    await expect(emojiTab).toBeFocused();
+    await page.keyboard.press('ArrowRight');
+
+    // Focus AND aria-selected must both move to the next tab in a real mounted app.
+    await expect(stickersTab).toBeFocused();
+    await expect(stickersTab).toHaveAttribute('aria-selected', 'true');
+    await expect(emojiTab).toHaveAttribute('aria-selected', 'false');
+
+    // Roving tabindex follows selection/focus.
+    await expect(stickersTab).toHaveAttribute('tabindex', '0');
+    await expect(emojiTab).toHaveAttribute('tabindex', '-1');
+    await expect(gifsTab).toHaveAttribute('tabindex', '-1');
+
+    // Clicking a tab also switches focus + selection.
+    await gifsTab.click();
+    await expect(gifsTab).toBeFocused();
+    await expect(gifsTab).toHaveAttribute('aria-selected', 'true');
+    await expect(gifsTab).toHaveAttribute('tabindex', '0');
+    await expect(stickersTab).toHaveAttribute('aria-selected', 'false');
+    await expect(stickersTab).toHaveAttribute('tabindex', '-1');
+
+    await captureSnapshot(page, 'layout-harness/emoji-polish/tabs-roving-focus');
+  });
 });
