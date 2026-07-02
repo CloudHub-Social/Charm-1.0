@@ -170,7 +170,10 @@ export function DeveloperTools({ requestBack, requestClose }: DeveloperToolsProp
 
   const submitAccountData: AccountDataSubmitCallback = useCallback(
     async (type, content) => {
-      // TODO: remove cast once account data typing is unified.
+      // as never: matrix-js-sdk's setAccountData/getAccountData have typed overloads
+      // only for known event types. Arbitrary event types require this cast until
+      // matrix-js-sdk exposes a generic overload or we define our own wrapper.
+      // See issue #502 for the tracked improvement.
       await mx.setAccountData(type as never, content as never);
     },
     [mx]
@@ -196,7 +199,10 @@ export function DeveloperTools({ requestBack, requestClose }: DeveloperToolsProp
         type={accountDataType ?? undefined}
         content={
           accountDataType
-            ? // TODO: remove cast once account data typing is unified.
+            ? // as never: matrix-js-sdk's setAccountData/getAccountData have typed overloads
+              // only for known event types. Arbitrary event types require this cast until
+              // matrix-js-sdk exposes a generic overload or we define our own wrapper.
+              // See issue #502 for the tracked improvement.
               mx.getAccountData(accountDataType as never)?.getContent()
             : undefined
         }

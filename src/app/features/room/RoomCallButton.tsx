@@ -26,7 +26,10 @@ export function RoomCallButton({ room }: RoomCallButtonProps) {
     startCall(room, { microphone, video, sound });
     try {
       const now = Date.now();
-      // TODO not use as any one day someday i swear
+      // `as keyof TimelineEvents`: mx.sendEvent's overloads only accept event
+      // types already in the SDK's TimelineEvents map. This MSC4075 event type
+      // isn't there yet, so we cast the string literal to satisfy the overload.
+      // See issue #502 for the tracked improvement.
       await mx.sendEvent(
         room.roomId,
         'org.matrix.msc4075.rtc.notification' as keyof TimelineEvents,
