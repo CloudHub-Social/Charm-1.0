@@ -11,6 +11,7 @@ class CallRingtoneManager {
   private previewAudio: HTMLAudioElement;
   private revokeToneUrls: (() => void) | undefined;
   private currentPreviewUrl: string | null = null;
+  private syncGeneration = 0;
 
   constructor() {
     this.incomingAudio = new Audio();
@@ -28,7 +29,17 @@ class CallRingtoneManager {
     callRingbackTone: CallRingtoneId,
     callRingtoneVolume: number
   ) {
+    // Rapid settings changes (e.g. clicking through the ringtone dropdown) fire this
+    // repeatedly without awaiting the previous call. resolveCallToneSources can read
+    // custom tones from IndexedDB, so calls can resolve out of order — without this
+    // guard, an older call finishing last would apply stale URLs and could revoke the
+    // newer call's already-applied blob URLs out from under the <audio> elements.
+    const generation = ++this.syncGeneration;
     const resolved = await resolveCallToneSources({ callRingtoneId, callRingbackTone });
+    if (generation !== this.syncGeneration) {
+      resolved.revoke();
+      return;
+    }
 
     this.revokeToneUrls?.();
     this.revokeToneUrls = resolved.revoke;

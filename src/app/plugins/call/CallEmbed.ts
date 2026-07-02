@@ -714,16 +714,6 @@ export class CallEmbed {
     });
   }
 
-  private feedStateUpdateForTimelineEvent(ev: MatrixEvent): void {
-    if (this.call === null) return;
-    if (!ev.isState()) return;
-    const raw = ev.getEffectiveEvent() as IRoomEvent | undefined;
-    if (raw === undefined) return;
-    this.call.feedStateUpdate(raw).catch((e) => {
-      console.error('Error sending state update to widget: ', e);
-    });
-  }
-
   private async onToDeviceEvent(ev: MatrixEvent): Promise<void> {
     await this.mx.decryptEventIfNeeded(ev);
     if (ev.isDecryptionFailure()) return;
@@ -828,10 +818,10 @@ export class CallEmbed {
         this.call.feedEvent(raw as IRoomEvent).catch((e) => {
           console.error('[CallEmbed] Error sending event to widget:', e);
         });
-        this.feedStateUpdateForTimelineEvent(ev);
+        // State updates are handled separately by onStateUpdate (bound to
+        // RoomStateEvent.Events, which the SDK fires for every state event
+        // unconditionally); feeding one here too would send it to the widget twice.
       }
-    } else if (ev.isState()) {
-      this.feedStateUpdateForTimelineEvent(ev);
     }
   }
 
