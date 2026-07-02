@@ -665,7 +665,9 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                   size="500"
                   onClick={onBack}
                   style={{ position: 'relative' }}
-                  aria-label="Back"
+                  aria-label={
+                    highlightedUnreadCount > 0 ? `Back, ${highlightedUnreadCount} unread` : 'Back'
+                  }
                 >
                   {highlightedUnreadCount > 0 && (
                     <span className={css.BackButtonBadge}>
