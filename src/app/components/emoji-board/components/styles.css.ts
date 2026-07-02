@@ -121,6 +121,27 @@ export const GifAttribution = style({
   whiteSpace: 'normal',
 });
 
+export const ScrollArea = style({
+  position: 'relative',
+  // Clips the absolutely-positioned PinnedSidebarFooter to this box's
+  // bounds. Without this, on a short/collapsed mobile sheet the footer's
+  // natural content height can exceed the available space and bleed
+  // upward into the header/search area above.
+  overflow: 'hidden',
+});
+
+export const PinnedSidebarFooter = style({
+  position: 'absolute',
+  bottom: 0,
+  right: 0,
+  zIndex: 1,
+  // Fallback for when the footer's own content still doesn't fit even
+  // after being clipped to ScrollArea's bounds: scroll internally instead
+  // of silently hiding the categories that got clipped off the top.
+  maxHeight: '100%',
+  overflowY: 'auto',
+});
+
 /**
  * Sidebar
  */
