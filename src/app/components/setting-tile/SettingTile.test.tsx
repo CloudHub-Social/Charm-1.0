@@ -12,6 +12,15 @@ import {
 
 const writeText = vi.fn<() => Promise<void>>();
 
+function buildFragmentWrappedSwitch() {
+  return (
+    <>
+      {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+      <button type="button" role="switch" aria-checked={false} />
+    </>
+  );
+}
+
 function CustomSelect({ disabled }: { disabled?: boolean }) {
   return <button type="button">{disabled ? 'Disabled' : 'Enabled'}</button>;
 }
@@ -273,5 +282,42 @@ describe('SettingTile', () => {
     });
 
     expect(screen.getByRole('switch')).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not remount a fragment-wrapped switch across re-renders with a fresh after element', () => {
+    // Regression test for a Sentry review comment claiming Children.toArray
+    // generates unstable keys on every render, causing the wrapped control to
+    // unmount/remount (losing focus/state). Children.toArray's generated keys
+    // are a deterministic function of tree position, not of object identity,
+    // so a fresh `after` JSX literal with the same shape each render should
+    // still reconcile to the same DOM node.
+    const { rerender } = renderTile(ScreenSize.Desktop, 'remount-check', {
+      title: 'Remount Check',
+      after: buildFragmentWrappedSwitch(),
+    });
+
+    const switchEl = screen.getByRole('switch');
+    switchEl.focus();
+    expect(switchEl).toHaveFocus();
+
+    rerender(
+      <ClientConfigProvider value={{}}>
+        <ScreenSizeProvider value={ScreenSize.Desktop}>
+          <SettingsLinkProvider
+            value={{ section: 'appearance', baseUrl: 'https://settings.example' }}
+          >
+            <SettingTile
+              focusId="remount-check"
+              title="Remount Check"
+              after={buildFragmentWrappedSwitch()}
+            />
+          </SettingsLinkProvider>
+        </ScreenSizeProvider>
+      </ClientConfigProvider>
+    );
+
+    const switchElAfterRerender = screen.getByRole('switch');
+    expect(switchElAfterRerender).toBe(switchEl);
+    expect(switchElAfterRerender).toHaveFocus();
   });
 });
