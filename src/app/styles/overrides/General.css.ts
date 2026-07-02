@@ -51,24 +51,29 @@ globalStyle('#root', {
 // `src/app/features/lobby/RoomItem.tsx`); tracked as a follow-up rather
 // than done here to avoid scope-creeping this global CSS fix into
 // per-component changes.
+//
+// All three blocks are scoped under `body.sable-a11y-highlights` so the
+// focus rings only appear when the user has enabled the Focus Highlights
+// setting (Settings > General > Accessibility). The body class is toggled
+// by A11yHighlightsFeature in ClientNonUIFeatures.tsx.
 globalStyle(
   `
-    a:focus-visible,
-    button:focus-visible,
-    select:focus-visible,
-    [role="button"]:focus-visible,
-    [role="tab"]:focus-visible,
-    [role="menuitem"]:focus-visible,
-    [role="option"]:focus-visible,
-    [role="checkbox"]:focus-visible,
-    [role="radio"]:focus-visible,
-    [role="switch"]:focus-visible,
-    [role="textbox"]:focus-visible,
-    [tabindex="0"]:focus-visible,
-    [class*="Button"]:focus-visible,
-    [class*="Chip"]:focus-visible,
-    [class*="MenuItem"]:focus-visible,
-    [class*="IconButton"]:focus-visible
+    body.sable-a11y-highlights a:focus-visible,
+    body.sable-a11y-highlights button:focus-visible,
+    body.sable-a11y-highlights select:focus-visible,
+    body.sable-a11y-highlights [role="button"]:focus-visible,
+    body.sable-a11y-highlights [role="tab"]:focus-visible,
+    body.sable-a11y-highlights [role="menuitem"]:focus-visible,
+    body.sable-a11y-highlights [role="option"]:focus-visible,
+    body.sable-a11y-highlights [role="checkbox"]:focus-visible,
+    body.sable-a11y-highlights [role="radio"]:focus-visible,
+    body.sable-a11y-highlights [role="switch"]:focus-visible,
+    body.sable-a11y-highlights [role="textbox"]:focus-visible,
+    body.sable-a11y-highlights [tabindex="0"]:focus-visible,
+    body.sable-a11y-highlights [class*="Button"]:focus-visible,
+    body.sable-a11y-highlights [class*="Chip"]:focus-visible,
+    body.sable-a11y-highlights [class*="MenuItem"]:focus-visible,
+    body.sable-a11y-highlights [class*="IconButton"]:focus-visible
 `,
   {
     outline: '2px solid var(--sable-primary-main) !important',
@@ -109,10 +114,10 @@ globalStyle(
 // unaffected either way and always gets its own ring from this rule.
 globalStyle(
   `
-    input:focus-visible:not(div > input),
-    textarea:focus-visible:not(div > textarea),
-    div > input:focus-visible[data-focus-ring-self],
-    div > textarea:focus-visible[data-focus-ring-self]
+    body.sable-a11y-highlights input:focus-visible:not(div > input),
+    body.sable-a11y-highlights textarea:focus-visible:not(div > textarea),
+    body.sable-a11y-highlights div > input:focus-visible[data-focus-ring-self],
+    body.sable-a11y-highlights div > textarea:focus-visible[data-focus-ring-self]
 `,
   {
     outline: '2px solid var(--sable-primary-main) !important',
@@ -135,8 +140,8 @@ globalStyle(
 // double-ring bug for a different pairing of elements.
 globalStyle(
   `
-    div:has(> input:focus-visible:not([data-focus-ring-self])),
-    div:has(> textarea:focus-visible:not([data-focus-ring-self]))
+    body.sable-a11y-highlights div:has(> input:focus-visible:not([data-focus-ring-self])),
+    body.sable-a11y-highlights div:has(> textarea:focus-visible:not([data-focus-ring-self]))
 `,
   {
     outline: '2px solid var(--sable-primary-main) !important',
