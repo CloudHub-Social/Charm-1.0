@@ -1,11 +1,11 @@
-import { IconButton, TooltipProvider, Tooltip, Text } from 'folds';
-import { composerIcon, Phone } from '$components/icons/phosphor';
-import { useAtomValue } from 'jotai';
-import type { Room, TimelineEvents } from '$types/matrix-sdk';
-import { useCallStart, useCallJoined } from '$hooks/useCallEmbed';
-import { callEmbedAtom } from '$state/callEmbed';
-import { useMatrixClient } from '$hooks/useMatrixClient';
-import { useCallPreferences } from '$state/hooks/callPreferences';
+import { IconButton, TooltipProvider, Tooltip, Text } from "folds";
+import { composerIcon, Phone } from "$components/icons/phosphor";
+import { useAtomValue } from "jotai";
+import type { Room, TimelineEvents } from "$types/matrix-sdk";
+import { useCallStart, useCallJoined } from "$hooks/useCallEmbed";
+import { callEmbedAtom } from "$state/callEmbed";
+import { useMatrixClient } from "$hooks/useMatrixClient";
+import { useCallPreferences } from "$state/hooks/callPreferences";
 
 interface RoomCallButtonProps {
   room: Room;
@@ -32,22 +32,22 @@ export function RoomCallButton({ room }: RoomCallButtonProps) {
       // See issue #502 for the tracked improvement.
       await mx.sendEvent(
         room.roomId,
-        'org.matrix.msc4075.rtc.notification' as keyof TimelineEvents,
+        "org.matrix.msc4075.rtc.notification" as keyof TimelineEvents,
         {
-          notification_type: 'ring',
+          notification_type: "ring",
           sender_ts: now,
           lifetime: 30000,
-          'm.mentions': {
+          "m.mentions": {
             room: true,
           },
-          application: 'm.call',
+          application: "m.call",
           call_id: room.roomId,
-          'm.text': [
+          "m.text": [
             {
-              body: `Call started by ${mx.getUser(mx.getSafeUserId())?.displayName || 'User'} 🎶`,
+              body: `Call started by ${mx.getUser(mx.getSafeUserId())?.displayName || "User"} 🎶`,
             },
           ],
-        } as unknown as TimelineEvents[keyof TimelineEvents]
+        } as unknown as TimelineEvents[keyof TimelineEvents],
       );
     } catch {
       /* skill issue block */
