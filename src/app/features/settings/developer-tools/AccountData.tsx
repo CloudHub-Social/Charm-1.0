@@ -23,9 +23,9 @@ type AccountDataProps = {
 export function AccountData({ expand, onExpandToggle, onSelect }: AccountDataProps) {
   const mx = useMatrixClient();
   const [accountDataTypes, setAccountDataKeys] = useState<string[]>(() =>
-    // as never: matrix-js-sdk's setAccountData/getAccountData have typed overloads
-    // only for known event types. Arbitrary event types require this cast until
-    // matrix-js-sdk exposes a generic overload or we define our own wrapper.
+    // mx.store.accountData is a stringly-typed Map<string, MatrixEvent> — its
+    // .keys() iterator yields untyped strings. There is no SDK-level generic for
+    // enumerating all account-data event types, so we collect them as string[].
     // See issue #502 for the tracked improvement.
     Array.from(mx.store.accountData.keys())
   );
@@ -33,9 +33,9 @@ export function AccountData({ expand, onExpandToggle, onSelect }: AccountDataPro
   useAccountDataCallback(
     mx,
     useCallback(() => {
-      // as never: matrix-js-sdk's setAccountData/getAccountData have typed overloads
-      // only for known event types. Arbitrary event types require this cast until
-      // matrix-js-sdk exposes a generic overload or we define our own wrapper.
+      // mx.store.accountData is a stringly-typed Map<string, MatrixEvent> — its
+      // .keys() iterator yields untyped strings. There is no SDK-level generic for
+      // enumerating all account-data event types, so we collect them as string[].
       // See issue #502 for the tracked improvement.
       setAccountDataKeys(Array.from(mx.store.accountData.keys()));
     }, [mx])
