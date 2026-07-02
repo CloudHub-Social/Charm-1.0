@@ -1344,7 +1344,6 @@ export function EmojiBoard({
                 onTabChange={onTabChange}
                 showGifTab={gifsEnabled}
                 boardId={boardId}
-                panelId={tabPanelId}
               />
             )}
             {gifTab ? (
@@ -1439,7 +1438,7 @@ export function EmojiBoard({
           key={activeTab}
           previewAtom={previewAtom}
           onGroupItemClick={handleGroupItemClick}
-          id={onTabChange ? tabPanelId : undefined}
+          id={onTabChange ? `${tabPanelId}-${activeTab}` : undefined}
           activeTabLabelId={onTabChange ? `${boardId}-EmojiBoardTab-${activeTab}` : undefined}
         >
           {gifTab && isGifDiscovery && (
