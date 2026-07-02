@@ -181,7 +181,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
         >
           <Header className={css.ImageViewerHeader} size="400">
             <Box className={css.ImageViewerHeaderTitle} grow="Yes" alignItems="Center" gap="200">
-              <IconButton size="300" radii="300" onClick={requestClose}>
+              <IconButton size="500" radii="300" onClick={requestClose} aria-label="Close">
                 {sizedIcon(ArrowLeft, '200')}
               </IconButton>
               <Text size="T300" truncate>
@@ -196,7 +196,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
             >
               <IconButton
                 variant="Surface"
-                size="300"
+                size="500"
                 radii="Pill"
                 onClick={() => setIsPixelated(!isPixelated)}
                 aria-label="Toggle Pixelation"
@@ -215,7 +215,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
                   // (Otherwise, the Reset Zoom button does the same thing)
                   display: fitRatio !== 1 && transforms.zoom !== 1 ? 'flex' : 'none',
                 }}
-                size="300"
+                size="500"
                 radii="Pill"
                 onClick={() => {
                   setZoom(1);
@@ -234,7 +234,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
                       ? 'flex'
                       : 'none',
                 }}
-                size="300"
+                size="500"
                 radii="Pill"
                 onClick={() => {
                   resetTransforms();
@@ -249,13 +249,13 @@ export const ImageViewer = as<'div', ImageViewerProps>(
               <IconButton
                 variant={transforms.zoom < 1 ? 'Success' : 'SurfaceVariant'}
                 outlined={transforms.zoom < 1}
-                size="300"
+                size="500"
                 radii="Pill"
                 onClick={zoomOut}
                 aria-label="Zoom Out"
                 title="Zoom Out"
               >
-                {sizedIcon(Minus, '50')}
+                {sizedIcon(Minus, '200')}
               </IconButton>
               <Chip
                 variant="SurfaceVariant"
@@ -318,13 +318,13 @@ export const ImageViewer = as<'div', ImageViewerProps>(
               <IconButton
                 variant={transforms.zoom > 1 ? 'Success' : 'SurfaceVariant'}
                 outlined={transforms.zoom > 1}
-                size="300"
+                size="500"
                 radii="Pill"
                 onClick={zoomIn}
                 aria-label="Zoom In"
                 title="Zoom In"
               >
-                {sizedIcon(Plus, '50')}
+                {sizedIcon(Plus, '200')}
               </IconButton>
               <Chip
                 variant="Primary"
