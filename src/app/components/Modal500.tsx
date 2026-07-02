@@ -38,6 +38,8 @@ export function Modal500({
         tabIndex={-1}
         size="500"
         variant="Background"
+        role="dialog"
+        aria-modal="true"
         style={
           useFullScreen
             ? {

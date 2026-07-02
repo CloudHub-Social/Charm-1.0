@@ -22,8 +22,11 @@ type ThemeCatalogOnboardingProps = {
   onDecline: () => void;
 };
 
+const THEME_CATALOG_ONBOARDING_TITLE_ID = 'theme-catalog-onboarding-title';
+
 export function ThemeCatalogOnboarding({ open, onEnable, onDecline }: ThemeCatalogOnboardingProps) {
   const suppressDeactivateDecline = useRef(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   const handleEnableClick = useCallback(() => {
     suppressDeactivateDecline.current = true;
@@ -48,13 +51,27 @@ export function ThemeCatalogOnboarding({ open, onEnable, onDecline }: ThemeCatal
       <OverlayCenter>
         <FocusTrap
           focusTrapOptions={{
-            initialFocus: false,
+            // Deliberately NOT `initialFocus: false` here: that option makes
+            // focus-trap-react skip moving focus into the trap entirely (it
+            // returns early instead of falling back to the first tabbable
+            // node), which left focus on <body> and let the fully-obscured
+            // Settings controls behind the backdrop stay in the tab order.
+            // Falling back to the dialog root keeps us safe if the dialog
+            // body ever renders without a focusable descendant.
+            fallbackFocus: () => dialogRef.current ?? document.body,
             onDeactivate: handleTrapDeactivate,
             clickOutsideDeactivates: false,
             escapeDeactivates: stopPropagation,
           }}
         >
-          <Dialog variant="Surface">
+          <Dialog
+            ref={dialogRef}
+            tabIndex={-1}
+            variant="Surface"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={THEME_CATALOG_ONBOARDING_TITLE_ID}
+          >
             <Header
               style={{
                 padding: `0 ${config.space.S200} 0 ${config.space.S400}`,
@@ -64,7 +81,9 @@ export function ThemeCatalogOnboarding({ open, onEnable, onDecline }: ThemeCatal
               size="500"
             >
               <Box grow="Yes">
-                <Text size="H4">Remote themes</Text>
+                <Text id={THEME_CATALOG_ONBOARDING_TITLE_ID} size="H4">
+                  Remote themes
+                </Text>
               </Box>
               <IconButton
                 size="300"

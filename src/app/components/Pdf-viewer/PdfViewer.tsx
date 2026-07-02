@@ -1,4 +1,4 @@
-import type { FormEventHandler, MouseEventHandler } from 'react';
+import type { FormEventHandler, MouseEventHandler, MutableRefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import classNames from 'classnames';
 import type { RectCords } from 'folds';
@@ -41,10 +41,21 @@ export type PdfViewerProps = {
   requestClose: () => void;
 };
 
+const PDF_VIEWER_TITLE_ID = 'pdf-viewer-title';
+
 export const PdfViewer = as<'div', PdfViewerProps>(
-  ({ className, name, src, requestClose, ...props }, ref) => {
+  ({ className, name, src, requestClose, ...props }, forwardedRef) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const setRootRef = (node: HTMLDivElement | null) => {
+      rootRef.current = node;
+      if (typeof forwardedRef === 'function') {
+        forwardedRef(node);
+      } else if (forwardedRef) {
+        (forwardedRef as MutableRefObject<HTMLDivElement | null>).current = node;
+      }
+    };
 
     const {
       transforms: { zoom },
@@ -117,169 +128,186 @@ export const PdfViewer = as<'div', PdfViewerProps>(
     };
 
     return (
-      <Box
-        className={classNames(css.PdfViewer, className)}
-        direction="Column"
-        data-gestures="ignore"
-        onPointerDown={(e) => e.stopPropagation()}
-        {...props}
-        ref={ref}
+      <FocusTrap
+        focusTrapOptions={{
+          fallbackFocus: () => rootRef.current ?? document.body,
+          onDeactivate: requestClose,
+          clickOutsideDeactivates: false,
+          escapeDeactivates: stopPropagation,
+        }}
       >
-        <Header className={css.PdfViewerHeader} size="400">
-          <Box grow="Yes" alignItems="Center" gap="200">
-            <IconButton size="300" radii="300" onClick={requestClose}>
-              {sizedIcon(ArrowLeft, '50')}
-            </IconButton>
-            <Text size="T300" truncate>
-              {name}
-            </Text>
-          </Box>
-          <Box shrink="No" alignItems="Center" gap="200">
-            <IconButton
-              variant={zoom < 1 ? 'Success' : 'SurfaceVariant'}
-              outlined={zoom < 1}
-              size="300"
-              radii="Pill"
-              onClick={zoomOut}
-              aria-label="Zoom Out"
-            >
-              {sizedIcon(Minus, '50')}
-            </IconButton>
-            <Chip variant="SurfaceVariant" radii="Pill" onClick={() => setZoom(zoom === 1 ? 2 : 1)}>
-              <Text size="B300">{Math.round(zoom * 100)}%</Text>
-            </Chip>
-            <IconButton
-              variant={zoom > 1 ? 'Success' : 'SurfaceVariant'}
-              outlined={zoom > 1}
-              size="300"
-              radii="Pill"
-              onClick={zoomIn}
-              aria-label="Zoom In"
-            >
-              {sizedIcon(Plus, '50')}
-            </IconButton>
-            <Chip
-              variant="Primary"
-              onClick={handleDownload}
-              radii="300"
-              before={sizedIcon(Download, '50')}
-            >
-              <Text size="B300">Download</Text>
-            </Chip>
-          </Box>
-        </Header>
-        <Box direction="Column" grow="Yes" alignItems="Center" justifyContent="Center" gap="200">
-          {isLoading && <Spinner variant="Secondary" size="600" />}
-          {isError && (
-            <>
-              <Text>Failed to load PDF</Text>
-              <Button
-                variant="Critical"
-                fill="Soft"
+        <Box
+          className={classNames(css.PdfViewer, className)}
+          direction="Column"
+          data-gestures="ignore"
+          onPointerDown={(e) => e.stopPropagation()}
+          {...props}
+          ref={setRootRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={PDF_VIEWER_TITLE_ID}
+        >
+          <Header className={css.PdfViewerHeader} size="400">
+            <Box grow="Yes" alignItems="Center" gap="200">
+              <IconButton size="300" radii="300" onClick={requestClose} aria-label="Close">
+                {sizedIcon(ArrowLeft, '50')}
+              </IconButton>
+              <Text id={PDF_VIEWER_TITLE_ID} size="T300" truncate>
+                {name}
+              </Text>
+            </Box>
+            <Box shrink="No" alignItems="Center" gap="200">
+              <IconButton
+                variant={zoom < 1 ? 'Success' : 'SurfaceVariant'}
+                outlined={zoom < 1}
                 size="300"
-                radii="300"
-                before={sizedIcon(Warning, '50')}
-                onClick={loadPdfJS}
+                radii="Pill"
+                onClick={zoomOut}
+                aria-label="Zoom Out"
               >
-                <Text size="B300">Retry</Text>
-              </Button>
-            </>
-          )}
+                {sizedIcon(Minus, '50')}
+              </IconButton>
+              <Chip
+                variant="SurfaceVariant"
+                radii="Pill"
+                onClick={() => setZoom(zoom === 1 ? 2 : 1)}
+              >
+                <Text size="B300">{Math.round(zoom * 100)}%</Text>
+              </Chip>
+              <IconButton
+                variant={zoom > 1 ? 'Success' : 'SurfaceVariant'}
+                outlined={zoom > 1}
+                size="300"
+                radii="Pill"
+                onClick={zoomIn}
+                aria-label="Zoom In"
+              >
+                {sizedIcon(Plus, '50')}
+              </IconButton>
+              <Chip
+                variant="Primary"
+                onClick={handleDownload}
+                radii="300"
+                before={sizedIcon(Download, '50')}
+              >
+                <Text size="B300">Download</Text>
+              </Chip>
+            </Box>
+          </Header>
+          <Box direction="Column" grow="Yes" alignItems="Center" justifyContent="Center" gap="200">
+            {isLoading && <Spinner variant="Secondary" size="600" />}
+            {isError && (
+              <>
+                <Text>Failed to load PDF</Text>
+                <Button
+                  variant="Critical"
+                  fill="Soft"
+                  size="300"
+                  radii="300"
+                  before={sizedIcon(Warning, '50')}
+                  onClick={loadPdfJS}
+                >
+                  <Text size="B300">Retry</Text>
+                </Button>
+              </>
+            )}
+            {docState.status === AsyncStatus.Success && (
+              <Scroll
+                ref={scrollRef}
+                size="300"
+                direction="Both"
+                variant="Surface"
+                visibility="Hover"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  touchAction: 'pan-x pan-y',
+                }}
+              >
+                <Box style={{ minWidth: '100%', minHeight: '100%' }} onPointerDown={onPointerDown}>
+                  <div className={css.PdfViewerContent} ref={containerRef} />
+                </Box>
+              </Scroll>
+            )}
+          </Box>
           {docState.status === AsyncStatus.Success && (
-            <Scroll
-              ref={scrollRef}
-              size="300"
-              direction="Both"
-              variant="Surface"
-              visibility="Hover"
-              style={{
-                width: '100%',
-                height: '100%',
-                touchAction: 'pan-x pan-y',
-              }}
-            >
-              <Box style={{ minWidth: '100%', minHeight: '100%' }} onPointerDown={onPointerDown}>
-                <div className={css.PdfViewerContent} ref={containerRef} />
+            <Header as="footer" className={css.PdfViewerFooter} size="400">
+              <Chip
+                variant="Secondary"
+                radii="300"
+                before={sizedIcon(CaretLeft, '50')}
+                onClick={handlePrevPage}
+                aria-disabled={pageNo <= 1}
+              >
+                <Text size="B300">Previous</Text>
+              </Chip>
+              <Box grow="Yes" justifyContent="Center" alignItems="Center" gap="200">
+                <PopOut
+                  anchor={jumpAnchor}
+                  align="Center"
+                  position="Top"
+                  content={
+                    <FocusTrap
+                      focusTrapOptions={{
+                        initialFocus: false,
+                        onDeactivate: () => setJumpAnchor(undefined),
+                        clickOutsideDeactivates: true,
+                        escapeDeactivates: stopPropagation,
+                      }}
+                    >
+                      <Menu variant="Surface">
+                        <Box
+                          as="form"
+                          onSubmit={handleJumpSubmit}
+                          style={{ padding: config.space.S200 }}
+                          direction="Column"
+                          gap="200"
+                        >
+                          <Input
+                            name="jumpInput"
+                            size="300"
+                            variant="Background"
+                            defaultValue={pageNo}
+                            min={1}
+                            max={docState.data.numPages}
+                            step={1}
+                            outlined
+                            type="number"
+                            radii="300"
+                            aria-label="Page Number"
+                          />
+                          <Button type="submit" size="300" variant="Primary" radii="300">
+                            <Text size="B300">Jump To Page</Text>
+                          </Button>
+                        </Box>
+                      </Menu>
+                    </FocusTrap>
+                  }
+                >
+                  <Chip
+                    onClick={handleOpenJump}
+                    variant="SurfaceVariant"
+                    radii="300"
+                    aria-pressed={jumpAnchor !== undefined}
+                  >
+                    <Text size="B300">{`${pageNo}/${docState.data.numPages}`}</Text>
+                  </Chip>
+                </PopOut>
               </Box>
-            </Scroll>
+              <Chip
+                variant="Primary"
+                radii="300"
+                after={sizedIcon(CaretRight, '50')}
+                onClick={handleNextPage}
+                aria-disabled={pageNo >= docState.data.numPages}
+              >
+                <Text size="B300">Next</Text>
+              </Chip>
+            </Header>
           )}
         </Box>
-        {docState.status === AsyncStatus.Success && (
-          <Header as="footer" className={css.PdfViewerFooter} size="400">
-            <Chip
-              variant="Secondary"
-              radii="300"
-              before={sizedIcon(CaretLeft, '50')}
-              onClick={handlePrevPage}
-              aria-disabled={pageNo <= 1}
-            >
-              <Text size="B300">Previous</Text>
-            </Chip>
-            <Box grow="Yes" justifyContent="Center" alignItems="Center" gap="200">
-              <PopOut
-                anchor={jumpAnchor}
-                align="Center"
-                position="Top"
-                content={
-                  <FocusTrap
-                    focusTrapOptions={{
-                      initialFocus: false,
-                      onDeactivate: () => setJumpAnchor(undefined),
-                      clickOutsideDeactivates: true,
-                      escapeDeactivates: stopPropagation,
-                    }}
-                  >
-                    <Menu variant="Surface">
-                      <Box
-                        as="form"
-                        onSubmit={handleJumpSubmit}
-                        style={{ padding: config.space.S200 }}
-                        direction="Column"
-                        gap="200"
-                      >
-                        <Input
-                          name="jumpInput"
-                          size="300"
-                          variant="Background"
-                          defaultValue={pageNo}
-                          min={1}
-                          max={docState.data.numPages}
-                          step={1}
-                          outlined
-                          type="number"
-                          radii="300"
-                          aria-label="Page Number"
-                        />
-                        <Button type="submit" size="300" variant="Primary" radii="300">
-                          <Text size="B300">Jump To Page</Text>
-                        </Button>
-                      </Box>
-                    </Menu>
-                  </FocusTrap>
-                }
-              >
-                <Chip
-                  onClick={handleOpenJump}
-                  variant="SurfaceVariant"
-                  radii="300"
-                  aria-pressed={jumpAnchor !== undefined}
-                >
-                  <Text size="B300">{`${pageNo}/${docState.data.numPages}`}</Text>
-                </Chip>
-              </PopOut>
-            </Box>
-            <Chip
-              variant="Primary"
-              radii="300"
-              after={sizedIcon(CaretRight, '50')}
-              onClick={handleNextPage}
-              aria-disabled={pageNo >= docState.data.numPages}
-            >
-              <Text size="B300">Next</Text>
-            </Chip>
-          </Header>
-        )}
-      </Box>
+      </FocusTrap>
     );
   }
 );

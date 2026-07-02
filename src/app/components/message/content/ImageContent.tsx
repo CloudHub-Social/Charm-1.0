@@ -556,6 +556,9 @@ export const ImageContent = as<'div', ImageContentProps>(
                 <Modal
                   className={ModalWide}
                   size="500"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={safeBody}
                   onContextMenu={(evt: React.MouseEvent) => evt.stopPropagation()}
                 >
                   {renderViewer({
