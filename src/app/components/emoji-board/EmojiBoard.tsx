@@ -1191,7 +1191,7 @@ export function EmojiBoard({
     virtualizer.scrollToIndex(groupIndex, { align: 'start' });
   };
 
-  const handleMobileSheetPointerDown: PointerEventHandler<HTMLButtonElement> = useCallback(
+  const handleMobileSheetPointerDown: PointerEventHandler<HTMLElement> = useCallback(
     (evt) => {
       if (!isMobileSheet) return;
 
