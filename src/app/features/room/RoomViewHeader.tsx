@@ -782,8 +782,13 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                     style={{ position: 'relative' }}
                     onClick={handleOpenPinMenu}
                     ref={triggerRef}
-                    aria-pressed={!!pinMenuAnchor}
-                    aria-label="Pinned Messages"
+                    aria-haspopup="menu"
+                    aria-expanded={!!pinMenuAnchor}
+                    aria-label={
+                      unreadPinsCount > 0
+                        ? `Pinned Messages, ${unreadPinsCount} unread`
+                        : 'Pinned Messages'
+                    }
                   >
                     {unreadPinsCount > 0 && (
                       <Badge
@@ -856,7 +861,9 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                     }}
                     aria-pressed={threadBrowserOpen || !!openThreadId}
                     style={{ position: 'relative' }}
-                    aria-label="Threads"
+                    aria-label={
+                      unreadThreadsCount > 0 ? `Threads, ${unreadThreadsCount} unread` : 'Threads'
+                    }
                   >
                     {unreadThreadsCount > 0 && (
                       <Badge
@@ -899,7 +906,13 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                   ref={triggerRef}
                   onClick={() => setWidgetDrawer((d) => !d)}
                   style={{ position: 'relative' }}
-                  aria-label={widgetDrawer ? 'Hide Widgets' : 'Show Widgets'}
+                  aria-label={
+                    widgets.length > 0
+                      ? `${widgetDrawer ? 'Hide Widgets' : 'Show Widgets'}, ${widgets.length}`
+                      : widgetDrawer
+                        ? 'Hide Widgets'
+                        : 'Show Widgets'
+                  }
                 >
                   {widgets.length > 0 && (
                     <Badge
@@ -993,7 +1006,8 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                 size="500"
                 onClick={handleOpenMenu}
                 ref={triggerRef}
-                aria-pressed={!!menuAnchor}
+                aria-haspopup="menu"
+                aria-expanded={!!menuAnchor}
                 aria-label="More Options"
               >
                 {composerIcon(DotsThreeOutlineVerticalIcon, {

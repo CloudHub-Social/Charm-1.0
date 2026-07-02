@@ -56,11 +56,16 @@ describe('ImageViewer', () => {
   // role+name specifically, the same way assistive tech locates it — a bare
   // aria-label attribute check would pass even if the accessible name were
   // wrong or duplicated elsewhere.
-  it('exposes the back/close button with an accessible role and name', () => {
+  //
+  // Labeled "Close" (not "Back"): this button calls requestClose, which
+  // dismisses the modal overlay (setViewer(false) / setViewAvatar(undefined)
+  // / setBannerViewerOpen(false) at its call sites) rather than performing
+  // navigation, so "Close" is the semantically correct action name.
+  it('exposes the close button with an accessible role and name', () => {
     render(
       <ImageViewer alt="kitten.png" src="https://example.org/kitten.png" requestClose={vi.fn()} />
     );
 
-    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });
 });

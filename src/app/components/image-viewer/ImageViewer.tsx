@@ -181,7 +181,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
         >
           <Header className={css.ImageViewerHeader} size="400">
             <Box className={css.ImageViewerHeaderTitle} grow="Yes" alignItems="Center" gap="200">
-              <IconButton size="500" radii="300" onClick={requestClose} aria-label="Back">
+              <IconButton size="500" radii="300" onClick={requestClose} aria-label="Close">
                 {sizedIcon(ArrowLeft, '200')}
               </IconButton>
               <Text size="T300" truncate>
@@ -255,7 +255,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
                 aria-label="Zoom Out"
                 title="Zoom Out"
               >
-                {sizedIcon(Minus, '50')}
+                {sizedIcon(Minus, '200')}
               </IconButton>
               <Chip
                 variant="SurfaceVariant"
@@ -323,7 +323,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
                 aria-label="Zoom In"
                 title="Zoom In"
               >
-                {sizedIcon(Plus, '50')}
+                {sizedIcon(Plus, '200')}
               </IconButton>
               <Chip
                 variant="Primary"
