@@ -96,7 +96,15 @@ function CallPrescreen() {
       ? 'Call setup failed because required call capabilities were rejected.'
       : 'Call setup failed while preparing the embedded call app.';
 
-  const canJoin = callStartCapabilities.canStart;
+  // Starting a brand-new call needs our own homeserver's LiveKit focus to create the
+  // session, but joining one that's already active can use the focus the existing
+  // participants are already connected through — matching the promise made by
+  // LivekitServerMissingMessage below ("You can still join calls started by others").
+  const canJoin = hasParticipant
+    ? callStartCapabilities.webRTCSupported &&
+      callStartCapabilities.hasCallMemberPermission &&
+      !callStartCapabilities.inAnotherCall
+    : callStartCapabilities.canStart;
 
   return (
     <Scroll variant="Surface" hideTrack>
