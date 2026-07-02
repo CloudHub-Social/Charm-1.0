@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { installSmokeApp, seedStoredSession } from './smokeApp';
+import { installSmokeApp, seedStoredSession, stubToolbar } from './smokeApp';
 
 const snapshotOutputDir = process.env.PLAYWRIGHT_SNAPSHOT_OUTPUT_DIR;
 
@@ -19,6 +19,10 @@ test.describe('room spacing fixture smoke', () => {
     await installSmokeApp(page, { authenticatedSession: true, hashRouter: false });
     await seedStoredSession(page);
     await page.setViewportSize({ width: 1440, height: 1000 });
+    // See emoji-polish.spec.ts for why: Sentry's real dev toolbar (enabled
+    // in the Sentry Snapshots CI job) would otherwise bleed into these
+    // uploaded layout-harness screenshots.
+    await stubToolbar(page);
   });
 
   test('keeps the last event clear of the typing/composer stack and preserves a drawer gutter', async ({
