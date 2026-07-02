@@ -143,14 +143,17 @@ export function CallSoundSettings() {
           callRingtoneVolume,
         });
 
+        // playPreview resolves once playback starts, not once it ends — only clear
+        // `previewing` (and re-enable the button) once the tone has actually stopped,
+        // so a second click can't start an overlapping preview.
         window.setTimeout(() => {
           ringtoneManager.stopPreview();
+          setPreviewing(false);
         }, 2500);
       } catch (err) {
+        setPreviewing(false);
         if (err instanceof Error && err.name === 'AbortError') return;
         setCustomError('Unable to preview this ringtone in your browser.');
-      } finally {
-        setPreviewing(false);
       }
     },
     [callRingtoneId, callRingbackTone, callRingtoneVolume]
