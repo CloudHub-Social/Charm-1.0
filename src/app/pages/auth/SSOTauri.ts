@@ -13,8 +13,12 @@ const getAppBaseUrl = (): string => {
   }
 
   if (import.meta.env.DEV) {
-    // TODO: disabled for now since it causes issues with the SSO flow. We should find a better solution for this in the future.
-    // return window.location.origin;
+    // DISABLED: returning window.location.origin (e.g. http://localhost:5173) causes
+    // the Matrix homeserver to reject the SSO redirect because localhost origins are not
+    // in the server's allowed redirect URI allowlist — only the charm:// custom scheme
+    // is registered. To re-enable this path, either configure the dev homeserver to
+    // whitelist the local origin, or intercept the OAuth callback in a Tauri plugin
+    // before it reaches the HS validation step. Tracked by: #501.
     return TAURI_SSO_CALLBACK_BASE;
   }
 
