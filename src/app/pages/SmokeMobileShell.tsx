@@ -709,7 +709,7 @@ function SmokeEmojiPolish() {
 
 function SmokeSettingsModal() {
   return (
-    <Modal500 requestClose={() => undefined} fullScreenOnMobile>
+    <Modal500 requestClose={() => undefined} fullScreenOnMobile ariaLabel="Room Settings">
       <Box direction="Column" style={{ height: '100%', minHeight: 0 }}>
         <Header size="600" variant="Background">
           <Box grow="Yes" alignItems="Center" justifyContent="SpaceBetween">
@@ -742,7 +742,7 @@ function SmokeSettingsModal() {
 
 function SmokeProfileModal() {
   return (
-    <Modal500 requestClose={() => undefined} fullScreenOnMobile>
+    <Modal500 requestClose={() => undefined} fullScreenOnMobile ariaLabel="Member Profile">
       <Box direction="Column" style={{ height: '100%', minHeight: 0 }}>
         <Box
           shrink="No"
