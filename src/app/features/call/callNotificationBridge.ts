@@ -4,6 +4,9 @@ import {
   normalizeCallIntent,
   toCallNotificationTypeOrDefault,
 } from './callIntent';
+import { createDebugLogger } from '$utils/debugLogger';
+
+const debugLog = createDebugLogger('CallSignaling');
 
 type CallCandidate = {
   roomId: string;
@@ -93,7 +96,16 @@ export const resolveIncomingCallFromSearchParams = (
     searchParams.get('joinCall') === 'true' ||
     searchParams.get('joinCall') === '1';
   if (!isCallDeepLink) return undefined;
-  if (!notificationEventId) return undefined;
+  if (!notificationEventId) {
+    // notificationEventId is the event_id path segment of /to/:user_id/:room_id/:event_id?
+    // — optional by route design (ordinary room links can omit it), but a genuine call
+    // notification's own event should always have one (buildNotificationClickTargetUrl
+    // includes it whenever the push payload's event_id is present, which the Matrix push
+    // gateway spec treats as required). Log rather than silently dropping the call, since
+    // there's no safe eventId to fall back to — sendRtcDecline needs the real one.
+    debugLog.warn('call', 'Dropping incoming call: missing notificationEventId', { roomId });
+    return undefined;
+  }
 
   const senderTsParam = searchParams.get('callSenderTs');
   const expiresAtParam = searchParams.get('callExpiresAt');
