@@ -6,14 +6,12 @@ export type IncomingCallBlocker = {
 
 export type IncomingCallBlockerInput = {
   canUseWebRTC: boolean;
-  livekitSupported: boolean;
   hasCallMemberPermission: boolean;
   inAnotherCall: boolean;
 };
 
 export const getIncomingCallBlockers = ({
   canUseWebRTC,
-  livekitSupported,
   hasCallMemberPermission,
   inAnotherCall,
 }: IncomingCallBlockerInput): IncomingCallBlocker[] => {
@@ -26,13 +24,10 @@ export const getIncomingCallBlockers = ({
       shortReason: 'WebRTC is unavailable in this browser.',
     });
   }
-  if (!livekitSupported) {
-    issues.push({
-      id: 'livekit',
-      message: 'Your homeserver does not expose a LiveKit call focus.',
-      shortReason: 'Homeserver call focus is unavailable.',
-    });
-  }
+  // Note: no local-LiveKit blocker here. An incoming call notification always
+  // represents a call someone else already started — answering joins their existing
+  // session (which already has a working focus) rather than creating a new one, so
+  // this client doesn't need its own homeserver's LiveKit config to accept it.
   if (!hasCallMemberPermission) {
     issues.push({
       id: 'permission',

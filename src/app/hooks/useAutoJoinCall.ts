@@ -22,11 +22,20 @@ export function useAutoJoinCall() {
 
       if (room) {
         const startCall = mDirects.has(room.roomId) ? startDirectCall : startRoomCall;
-        startCall(room, {
-          microphone: callPreferences.microphone,
-          video: autoJoinIntent.video,
-          sound: callPreferences.sound,
-        });
+        // autoJoinCallIntentAtom is only ever set from IncomingCallModal's handleAnswer,
+        // i.e. this always means "join the call the user just answered" — force that
+        // regardless of whether the caller's call.member state has synced locally yet,
+        // rather than letting createCallEmbed infer start-vs-join from room state that
+        // can still be empty in this window (which would send a fresh ring instead).
+        startCall(
+          room,
+          {
+            microphone: callPreferences.microphone,
+            video: autoJoinIntent.video,
+            sound: callPreferences.sound,
+          },
+          true
+        );
         setAutoJoinIntent(null);
       }
     }

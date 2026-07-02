@@ -16,7 +16,7 @@ import {
   parseIncomingRtcNotification,
   RTC_DECLINE_EVENT_TYPE,
   REFERENCE_REL_TYPE,
-  RTC_NOTIFICATION_EVENT_TYPE,
+  isRtcNotificationEventType,
 } from '$features/call/rtcNotificationParser';
 import { decryptRtcTimelineEvent } from '$features/call/callSignalingDecrypt';
 import {
@@ -430,7 +430,7 @@ export function useIncomingCallSignaling() {
 
       const type = event.getType();
       if (
-        type !== RTC_NOTIFICATION_EVENT_TYPE &&
+        !isRtcNotificationEventType(type) &&
         type !== RTC_DECLINE_EVENT_TYPE &&
         !event.isEncrypted()
       ) {
@@ -441,7 +441,21 @@ export function useIncomingCallSignaling() {
       if (!senderId || !eventId) return;
 
       if (senderId === myUserId) {
-        if (type === RTC_NOTIFICATION_EVENT_TYPE && handlers().callEmbed?.roomId === room.roomId) {
+        // For an E2EE outgoing call, the local echo of our own RTC notification arrives
+        // as m.room.encrypted — type here is the pre-decryption type, so it never equals
+        // the notification type and activeOutgoingNotificationIdRef never gets set.
+        // handleOutgoingDecline only filters stale declines when that ref is populated,
+        // so without this a delayed decline for a previous notification in the same room
+        // could hang up a new encrypted outgoing call. Decrypt to check the real type.
+        let selfEventType = type;
+        if (event.isEncrypted() && !event.isDecryptionFailure()) {
+          const decrypted = await decryptRtcTimelineEvent(event, mx);
+          if (decrypted?.type) selfEventType = decrypted.type;
+        }
+        if (
+          isRtcNotificationEventType(selfEventType) &&
+          handlers().callEmbed?.roomId === room.roomId
+        ) {
           activeOutgoingNotificationIdRef.current = eventId;
         }
         return;

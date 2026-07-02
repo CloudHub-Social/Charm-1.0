@@ -5,6 +5,7 @@ import {
   parseIncomingRtcNotification,
   REFERENCE_REL_TYPE,
   RTC_NOTIFICATION_EVENT_TYPE,
+  LEGACY_RTC_NOTIFICATION_EVENT_TYPE,
   type RtcNotificationEventLike,
 } from './rtcNotificationParser';
 
@@ -51,6 +52,22 @@ describe('parseIncomingRtcNotification', () => {
       notificationType: 'ring',
       intentKind: 'audio',
       intentRaw: 'start_call_dm_voice',
+    });
+  });
+
+  it('parses a legacy call.notify event type the same as rtc.notification', async () => {
+    const parsed = await parseIncomingRtcNotification(
+      createEvent({ type: LEGACY_RTC_NOTIFICATION_EVENT_TYPE }),
+      {
+        myUserId: '@self:example.org',
+        now: NOW,
+      }
+    );
+
+    expect(parsed).toMatchObject({
+      roomId: '!room:example.org',
+      notificationEventId: '$notif',
+      senderId: '@caller:example.org',
     });
   });
 

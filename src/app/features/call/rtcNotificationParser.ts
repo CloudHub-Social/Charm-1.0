@@ -7,8 +7,17 @@ import {
 } from './callIntent';
 
 export const RTC_NOTIFICATION_EVENT_TYPE = 'org.matrix.msc4075.rtc.notification';
+// Legacy alias: push dispatch, widget capability grants, and push routing all already
+// treat this as equivalent to RTC_NOTIFICATION_EVENT_TYPE (see sw/pushNotification.ts,
+// sw/pushRouting.ts, plugins/call/utils.ts) — a homeserver/widget emitting only the
+// legacy type would otherwise show push notifications but never surface the in-app
+// incoming-call UI while the app is foregrounded and receiving the event live.
+export const LEGACY_RTC_NOTIFICATION_EVENT_TYPE = 'org.matrix.msc4075.call.notify';
 export const RTC_DECLINE_EVENT_TYPE = 'org.matrix.msc4310.rtc.decline';
 export const REFERENCE_REL_TYPE = 'm.reference';
+
+export const isRtcNotificationEventType = (type: string): boolean =>
+  type === RTC_NOTIFICATION_EVENT_TYPE || type === LEGACY_RTC_NOTIFICATION_EVENT_TYPE;
 
 export type NotificationType = CallNotificationType;
 export type NotificationIntentKind = CallIntentKind;
@@ -86,7 +95,7 @@ export const parseIncomingRtcNotification = async (
   options: ParseIncomingRtcNotificationOptions
 ): Promise<ParsedIncomingRtcNotification | undefined> => {
   if (!event.isLiveEvent) return undefined;
-  if (event.type !== RTC_NOTIFICATION_EVENT_TYPE) return undefined;
+  if (!isRtcNotificationEventType(event.type)) return undefined;
   if (event.sender === options.myUserId) return undefined;
   if (event.relation?.rel_type !== REFERENCE_REL_TYPE || !event.relation.event_id) return undefined;
 

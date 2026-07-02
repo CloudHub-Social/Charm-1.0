@@ -46,10 +46,18 @@ export const createCallEmbed = (
   themeKind: ElementCallThemeKind,
   container: HTMLElement,
   pref?: CallPreferences,
-  elementCallUrl?: string
+  elementCallUrl?: string,
+  forceJoin?: boolean
 ): CallEmbed => {
   const rtcSession = mx.matrixRTC.getRoomSession(room);
+  // forceJoin bypasses the membership check: it's set when the caller already knows
+  // this is answering an existing call (e.g. tap-to-answer a notification), where local
+  // room-state sync for the caller's call.member event can still lag behind the RTC
+  // notification that triggered the answer. Without it, sessionMembershipsForRoom can
+  // read empty in that window, so getIntent below would pick a Start* intent instead of
+  // Join*, launching a fresh ring instead of joining the call the user just answered.
   const ongoing =
+    forceJoin ||
     MatrixRTCSession.sessionMembershipsForRoom(room, rtcSession.sessionDescription).length > 0;
 
   const intent = CallEmbed.getIntent(dm, ongoing, pref?.video);
@@ -70,7 +78,7 @@ export const useCallStart = (dm = false) => {
   const callEmbedRef = useCallEmbedRef();
 
   const startCall = useCallback(
-    (room: Room, pref?: CallPreferences) => {
+    (room: Room, pref?: CallPreferences, forceJoin?: boolean) => {
       const container = callEmbedRef.current;
       if (!container) {
         debugLog.error('call', 'Failed to start call — no embed container', {
@@ -94,7 +102,8 @@ export const useCallStart = (dm = false) => {
           theme.kind,
           container,
           pref,
-          clientConfig.elementCallUrl
+          clientConfig.elementCallUrl,
+          forceJoin
         );
         setCallEmbed(callEmbed);
       } catch (err) {

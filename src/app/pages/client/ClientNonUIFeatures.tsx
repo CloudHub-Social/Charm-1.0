@@ -194,6 +194,7 @@ function queueRoomNotificationTarget(
     swClickId?: string;
     jumpMode?: 'notification_live' | 'history_context';
     source?: 'foreground_notification' | 'service_worker_click';
+    callSearchParams?: string;
   }
 ): void {
   if (!userId) return;
@@ -205,6 +206,7 @@ function queueRoomNotificationTarget(
       targetSessionId: userId,
       swClickId: options?.swClickId,
       source: options?.source,
+      callSearchParams: options?.callSearchParams,
     })
   );
 }
@@ -1007,6 +1009,7 @@ export function HandleNotificationClick() {
         navigate: navigateUrl,
         isInvite,
         isReminder,
+        callSearchParams,
       } = data as {
         userId?: string;
         roomId?: string;
@@ -1016,6 +1019,7 @@ export function HandleNotificationClick() {
         navigate?: string;
         isInvite?: boolean;
         isReminder?: boolean;
+        callSearchParams?: string;
       };
 
       const acknowledgeHandledClick = () => {
@@ -1102,6 +1106,7 @@ export function HandleNotificationClick() {
           swClickId: typeof clickId === 'string' ? clickId : undefined,
           jumpMode: 'notification_live',
           source: 'service_worker_click',
+          callSearchParams,
         });
         return;
       }
