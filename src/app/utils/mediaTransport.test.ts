@@ -546,6 +546,19 @@ describe('fetchMediaBlob', () => {
     expect(error).toMatchObject({ status: 500, url });
   });
 
+  it('converts network-level fetch failures into a 502 MediaFetchError', async () => {
+    const { fetchMediaBlob, isGracefullyDegradableMediaFetchError, MediaFetchError } =
+      await import('./mediaTransport');
+    const url = 'https://example.org/media.png';
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    const result = fetchMediaBlob(url);
+    await expect(result).rejects.toBeInstanceOf(MediaFetchError);
+    const error = await result.catch((caughtError: unknown) => caughtError);
+    expect(isGracefullyDegradableMediaFetchError(error)).toBe(false);
+    expect(error).toMatchObject({ status: 502, url });
+  });
+
   it('skips cache reads and writes for bypass requests', async () => {
     const { fetchMediaBlob } = await import('./mediaTransport');
     const url = 'https://example.org/media.png';

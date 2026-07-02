@@ -1763,6 +1763,8 @@ async function fetchMediaWithRetry(
   );
   (await getLiveWindowSessions(url, clientId)).forEach((session) => addRetrySession(session));
 
+  let lastRetryNetworkError: unknown;
+
   /* eslint-disable no-await-in-loop */
   for (let i = 0; i < retrySessions.length; i += 1) {
     const candidate = retrySessions[i];
@@ -1779,14 +1781,27 @@ async function fetchMediaWithRetry(
           url,
           error: error instanceof Error ? error.message : 'Unknown',
         });
+        lastRetryNetworkError = error;
         continue;
       }
+      // Got a real HTTP response from a candidate, so it's no longer safe to
+      // report the run as network-failed even if this candidate is also an
+      // auth failure.
+      lastRetryNetworkError = undefined;
       if (!isAuthFailureStatus(response.status)) {
         return response;
       }
     }
   }
   /* eslint-enable no-await-in-loop */
+
+  // If the retry loop ended without a fresh HTTP response (every attempted
+  // candidate threw a network error), don't return the stale auth-failure
+  // response from the initial fetch — it would mislead callers into treating
+  // a network problem as an authentication problem.
+  if (lastRetryNetworkError !== undefined) {
+    return networkErrorResponse(url, lastRetryNetworkError);
+  }
 
   return response;
 }
@@ -1927,7 +1942,9 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   // Fast path: active session for this window
   const session = clientId ? sessions.get(clientId) : undefined;
   if (session && validMediaRequest(url, session.baseUrl)) {
-    event.respondWith(safeMediaFetch(fetchMediaWithRetry(url, session.accessToken, redirect, clientId)));
+    event.respondWith(
+      safeMediaFetch(fetchMediaWithRetry(url, session.accessToken, redirect, clientId))
+    );
     return;
   }
 
@@ -1937,7 +1954,9 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   // with any authenticated account on that homeserver.
   const byBaseUrl = [...sessions.values()].find((s) => validMediaRequest(url, s.baseUrl));
   if (byBaseUrl) {
-    event.respondWith(safeMediaFetch(fetchMediaWithRetry(url, byBaseUrl.accessToken, redirect, clientId)));
+    event.respondWith(
+      safeMediaFetch(fetchMediaWithRetry(url, byBaseUrl.accessToken, redirect, clientId))
+    );
     return;
   }
 
@@ -1968,11 +1987,15 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   const syncByBaseUrl = getMatchingSessions(url);
   const [syncSession] = syncByBaseUrl;
   if (syncByBaseUrl.length === 1 && syncSession) {
-    event.respondWith(safeMediaFetch(fetchMediaWithRetry(url, syncSession.accessToken, redirect, clientId)));
+    event.respondWith(
+      safeMediaFetch(fetchMediaWithRetry(url, syncSession.accessToken, redirect, clientId))
+    );
     return;
   }
   if (preloadedSession && validMediaRequest(url, preloadedSession.baseUrl)) {
-    event.respondWith(safeMediaFetch(fetchMediaWithRetry(url, preloadedSession.accessToken, redirect, clientId)));
+    event.respondWith(
+      safeMediaFetch(fetchMediaWithRetry(url, preloadedSession.accessToken, redirect, clientId))
+    );
     return;
   }
 
