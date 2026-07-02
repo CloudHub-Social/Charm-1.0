@@ -48,7 +48,7 @@ function UserRoomProfileContextMenu({ state }: { state: UserRoomProfileState }) 
                 <Text size="H4" truncate>
                   Member Profile
                 </Text>
-                <IconButton onClick={close} variant="Background">
+                <IconButton aria-label="Close" onClick={close} variant="Background">
                   {composerIcon(X)}
                 </IconButton>
               </Box>

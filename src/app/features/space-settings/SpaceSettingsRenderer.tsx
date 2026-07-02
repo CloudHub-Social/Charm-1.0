@@ -19,7 +19,13 @@ function RenderSettings({ state }: RenderSettingsProps) {
 
   if (!room) return null;
 
-  const settingsSubjectName = (space ?? room).name || 'Space';
+  // `room` is the space actually being edited below (see `RoomProvider`);
+  // `space`, when present, is only the *parent* space context passed for
+  // breadcrumb/provider purposes (see `useOpenSpaceSettings` callers, e.g.
+  // `HierarchyItemMenu`'s `openSpaceSettings(item.roomId, item.parentId)`).
+  // Labeling with `space ?? room` would announce the parent's name for
+  // nested spaces even though the dialog edits the child (`room`).
+  const settingsSubjectName = room.name || 'Space';
 
   return (
     <Modal500

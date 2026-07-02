@@ -1,5 +1,5 @@
 import type { FormEventHandler, MouseEventHandler, MutableRefObject } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import classNames from 'classnames';
 import type { RectCords } from 'folds';
 import {
@@ -42,22 +42,32 @@ export type PdfViewerProps = {
   requestClose: () => void;
 };
 
-const PDF_VIEWER_TITLE_ID = 'pdf-viewer-title';
-
 export const PdfViewer = as<'div', PdfViewerProps>(
   ({ className, name, src, requestClose, ...props }, forwardedRef) => {
+    const titleId = useId();
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const rootRef = useRef<HTMLDivElement | null>(null);
     const jumpMenuRef = useRef<HTMLDivElement>(null);
-    const setRootRef = (node: HTMLDivElement | null) => {
-      rootRef.current = node;
-      if (typeof forwardedRef === 'function') {
-        forwardedRef(node);
-      } else if (forwardedRef) {
-        (forwardedRef as MutableRefObject<HTMLDivElement | null>).current = node;
-      }
-    };
+    // Memoized: an inline callback ref here would be recreated on every
+    // render, which makes React detach the old ref (calling it with `null`)
+    // before attaching the new one on every re-render - not just on mount.
+    // That creates a real, transient window where `rootRef.current` is
+    // `null` on every re-render. `focusTrapFallbackFocus` below is only
+    // safe to call while a ref is actually populated, so this must stay
+    // referentially stable across renders (only changing if the forwarded
+    // ref itself changes) rather than being redefined inline.
+    const setRootRef = useCallback(
+      (node: HTMLDivElement | null) => {
+        rootRef.current = node;
+        if (typeof forwardedRef === 'function') {
+          forwardedRef(node);
+        } else if (forwardedRef) {
+          (forwardedRef as MutableRefObject<HTMLDivElement | null>).current = node;
+        }
+      },
+      [forwardedRef]
+    );
 
     const {
       transforms: { zoom },
@@ -163,14 +173,14 @@ export const PdfViewer = as<'div', PdfViewerProps>(
           tabIndex={-1}
           role="dialog"
           aria-modal="true"
-          aria-labelledby={PDF_VIEWER_TITLE_ID}
+          aria-labelledby={titleId}
         >
           <Header className={css.PdfViewerHeader} size="400">
             <Box grow="Yes" alignItems="Center" gap="200">
               <IconButton size="300" radii="300" onClick={requestClose} aria-label="Close">
                 {sizedIcon(ArrowLeft, '50')}
               </IconButton>
-              <Text id={PDF_VIEWER_TITLE_ID} size="T300" truncate>
+              <Text id={titleId} size="T300" truncate>
                 {name}
               </Text>
             </Box>

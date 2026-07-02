@@ -603,7 +603,12 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
                 <Box grow="Yes">
                   <Text size="H4">Accounts</Text>
                 </Box>
-                <IconButton size="300" radii="300" onClick={() => setMenuAnchor(undefined)}>
+                <IconButton
+                  aria-label="Close"
+                  size="300"
+                  radii="300"
+                  onClick={() => setMenuAnchor(undefined)}
+                >
                   {composerIcon(X)}
                 </IconButton>
               </Header>

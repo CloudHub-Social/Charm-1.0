@@ -291,7 +291,7 @@ function BugReportModal() {
           <Box grow="Yes">
             <Text size="H4">Report an Issue</Text>
           </Box>
-          <IconButton size="300" radii="300" onClick={close}>
+          <IconButton aria-label="Close" size="300" radii="300" onClick={close}>
             {composerIcon(X)}
           </IconButton>
         </Header>
