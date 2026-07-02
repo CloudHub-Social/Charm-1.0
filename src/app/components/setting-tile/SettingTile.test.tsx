@@ -12,6 +12,19 @@ import {
 
 const writeText = vi.fn<() => Promise<void>>();
 
+function buildFragmentWrappedSwitch() {
+  return (
+    <>
+      {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+      <button type="button" role="switch" aria-checked={false} />
+    </>
+  );
+}
+
+function CustomSelect({ disabled }: { disabled?: boolean }) {
+  return <button type="button">{disabled ? 'Disabled' : 'Enabled'}</button>;
+}
+
 function renderTile(
   screenSize: ScreenSize,
   focusId?: string,
@@ -108,5 +121,203 @@ describe('SettingTile', () => {
     expect(screen.getByRole('button', { name: /copy settings link/i })).toHaveClass(
       settingTileSettingLinkActionMobileVisible
     );
+  });
+
+  it('labels a trailing switch with the tile title via aria-labelledby', () => {
+    renderTile(ScreenSize.Desktop, 'system-theme', {
+      title: 'System Theme',
+      // SettingTile injects the label at runtime; this control has none of its own.
+      // oxlint-disable-next-line jsx-a11y/control-has-associated-label
+      after: <button type="button" role="switch" aria-checked={false} />,
+    });
+
+    const titleEl = screen.getByText('System Theme');
+    const switchEl = screen.getByRole('switch');
+
+    expect(titleEl.id).toBeTruthy();
+    expect(switchEl).toHaveAttribute('aria-labelledby', titleEl.id);
+    expect(screen.getByRole('switch', { name: 'System Theme' })).toBeInTheDocument();
+  });
+
+  it('does not override an after element that already declares its own accessible name', () => {
+    renderTile(ScreenSize.Desktop, 'reduced-motion', {
+      title: 'Reduced Motion',
+      after: <button type="button" role="switch" aria-checked={false} aria-label="Custom label" />,
+    });
+
+    const switchEl = screen.getByRole('switch');
+    expect(switchEl).toHaveAttribute('aria-label', 'Custom label');
+    expect(switchEl).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not crash when after is not a single valid element', () => {
+    expect(() =>
+      renderTile(ScreenSize.Desktop, 'multi-after', {
+        title: 'Multiple Controls',
+        after: (
+          <>
+            <button type="button">One</button>
+            <button type="button">Two</button>
+          </>
+        ),
+      })
+    ).not.toThrow();
+  });
+
+  it('does not override an after element that already has its own text-content label', () => {
+    renderTile(ScreenSize.Desktop, 'reset-all-push-notifications', {
+      title: 'Reset All Push Notifications',
+      after: <button type="button">Reset All</button>,
+    });
+
+    const button = screen.getByRole('button', { name: 'Reset All' });
+    expect(button).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not warn or crash when after is a custom component with no children of its own', () => {
+    expect(() =>
+      renderTile(ScreenSize.Desktop, 'custom-select', {
+        title: 'Custom Select',
+        after: <CustomSelect disabled={false} />,
+      })
+    ).not.toThrow();
+
+    expect(screen.getByRole('button', { name: 'Enabled' })).toBeInTheDocument();
+  });
+
+  it('does not add aria-labelledby when the tile has no title', () => {
+    renderTile(ScreenSize.Desktop, undefined, {
+      title: undefined,
+      // SettingTile must not inject a label here; this control has none of its own.
+      // oxlint-disable-next-line jsx-a11y/control-has-associated-label
+      after: <button type="button" role="switch" aria-checked={false} />,
+    });
+
+    expect(screen.getByRole('switch')).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('labels a switch wrapped in a fragment alongside a conditional sibling', () => {
+    const isLoading = false;
+    renderTile(ScreenSize.Desktop, 'system-notification', {
+      title: 'System Notification',
+      after: (
+        <>
+          {/* SettingTile injects the label at runtime; this control has none of its own. */}
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+          <button type="button" role="switch" aria-checked={false} />
+          {isLoading && <span>Loading</span>}
+        </>
+      ),
+    });
+
+    const titleEl = screen.getByText('System Notification');
+    const switchEl = screen.getByRole('switch');
+
+    expect(switchEl).toHaveAttribute('aria-labelledby', titleEl.id);
+    expect(screen.getByRole('switch', { name: 'System Notification' })).toBeInTheDocument();
+  });
+
+  it('labels a switch wrapped in a Box alongside a sibling with its own accessible name', () => {
+    renderTile(ScreenSize.Desktop, 'room-publish', {
+      title: 'Publish to Directory',
+      after: (
+        <div>
+          <button type="button">Reset</button>
+          {/* SettingTile injects the label at runtime; this control has none of its own. */}
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+          <button type="button" role="switch" aria-checked={false} />
+        </div>
+      ),
+    });
+
+    const titleEl = screen.getByText('Publish to Directory');
+    const switchEl = screen.getByRole('switch');
+
+    expect(switchEl).toHaveAttribute('aria-labelledby', titleEl.id);
+    expect(screen.getByRole('button', { name: 'Reset' })).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not label anything inside a wrapper with no labelable candidate', () => {
+    renderTile(ScreenSize.Desktop, 'no-candidate', {
+      title: 'No Candidate',
+      after: (
+        <div>
+          <button type="button">One</button>
+          <button type="button">Two</button>
+        </div>
+      ),
+    });
+
+    expect(screen.getByRole('button', { name: 'One' })).not.toHaveAttribute('aria-labelledby');
+    expect(screen.getByRole('button', { name: 'Two' })).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not label inside a wrapper with multiple labelable candidates', () => {
+    renderTile(ScreenSize.Desktop, 'multi-candidate', {
+      title: 'Multi Candidate',
+      after: (
+        <div>
+          {/* Two ambiguous childless controls - SettingTile should not guess which to label. */}
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+          <button type="button" role="switch" aria-checked={false} data-testid="switch-a" />
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+          <button type="button" role="switch" aria-checked={false} data-testid="switch-b" />
+        </div>
+      ),
+    });
+
+    expect(screen.getByTestId('switch-a')).not.toHaveAttribute('aria-labelledby');
+    expect(screen.getByTestId('switch-b')).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not unwrap a wrapper that already declares its own accessible name', () => {
+    renderTile(ScreenSize.Desktop, 'labeled-wrapper', {
+      title: 'Labeled Wrapper',
+      after: (
+        <div aria-label="Custom wrapper label">
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+          <button type="button" role="switch" aria-checked={false} />
+        </div>
+      ),
+    });
+
+    expect(screen.getByRole('switch')).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not remount a fragment-wrapped switch across re-renders with a fresh after element', () => {
+    // Regression test for a Sentry review comment claiming Children.toArray
+    // generates unstable keys on every render, causing the wrapped control to
+    // unmount/remount (losing focus/state). Children.toArray's generated keys
+    // are a deterministic function of tree position, not of object identity,
+    // so a fresh `after` JSX literal with the same shape each render should
+    // still reconcile to the same DOM node.
+    const { rerender } = renderTile(ScreenSize.Desktop, 'remount-check', {
+      title: 'Remount Check',
+      after: buildFragmentWrappedSwitch(),
+    });
+
+    const switchEl = screen.getByRole('switch');
+    switchEl.focus();
+    expect(switchEl).toHaveFocus();
+
+    rerender(
+      <ClientConfigProvider value={{}}>
+        <ScreenSizeProvider value={ScreenSize.Desktop}>
+          <SettingsLinkProvider
+            value={{ section: 'appearance', baseUrl: 'https://settings.example' }}
+          >
+            <SettingTile
+              focusId="remount-check"
+              title="Remount Check"
+              after={buildFragmentWrappedSwitch()}
+            />
+          </SettingsLinkProvider>
+        </ScreenSizeProvider>
+      </ClientConfigProvider>
+    );
+
+    const switchElAfterRerender = screen.getByRole('switch');
+    expect(switchElAfterRerender).toBe(switchEl);
+    expect(switchElAfterRerender).toHaveFocus();
   });
 });
