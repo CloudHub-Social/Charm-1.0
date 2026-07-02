@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { installSmokeApp } from './smokeApp';
+import { installSmokeApp, stubToolbar } from './smokeApp';
 
 const snapshotOutputDir = process.env.PLAYWRIGHT_SNAPSHOT_OUTPUT_DIR;
 
@@ -17,6 +17,11 @@ const captureSnapshot = async (page: Page, name: string) => {
 test.describe('emoji polish fixture smoke', () => {
   test.beforeEach(async ({ page }) => {
     await installSmokeApp(page, { hashRouter: false });
+    // Sentry's real dev toolbar (enabled in the Sentry Snapshots CI job)
+    // renders its own UI over the app, which would bleed into these
+    // uploaded layout-harness screenshots and produce false baseline
+    // diffs -- this spec doesn't test the toolbar, so stub it away.
+    await stubToolbar(page);
   });
 
   test('keeps emoji picker labels clear of the emoji rows', async ({ page }) => {

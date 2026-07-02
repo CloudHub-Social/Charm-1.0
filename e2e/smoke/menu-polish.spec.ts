@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { installSmokeApp } from './smokeApp';
+import { installSmokeApp, stubToolbar } from './smokeApp';
 
 const snapshotOutputDir = process.env.PLAYWRIGHT_SNAPSHOT_OUTPUT_DIR;
 
@@ -17,6 +17,10 @@ const captureSnapshot = async (page: Page, name: string) => {
 test.describe('menu polish fixture smoke', () => {
   test.beforeEach(async ({ page }) => {
     await installSmokeApp(page, { hashRouter: false });
+    // See emoji-polish.spec.ts for why: Sentry's real dev toolbar (enabled
+    // in the Sentry Snapshots CI job) would otherwise bleed into these
+    // uploaded layout-harness screenshots.
+    await stubToolbar(page);
   });
 
   test('keeps selector menus and account sections visually grouped', async ({ page }) => {

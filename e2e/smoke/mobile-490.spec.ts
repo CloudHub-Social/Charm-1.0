@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { devices, expect, test } from '@playwright/test';
-import { installSmokeApp, seedStoredSession } from './smokeApp';
+import { installSmokeApp, seedStoredSession, stubToolbar } from './smokeApp';
 
 // Reproduces the three bugs from issue #490 and verifies the fixes via layout
 // geometry checks in the mobile-shell fixture routes.
@@ -25,6 +25,12 @@ test.describe('issue #490 — mobile UI/UX regressions', () => {
   test.beforeEach(async ({ page }) => {
     await installSmokeApp(page, { authenticatedSession: true, hashRouter: false });
     await seedStoredSession(page);
+    // See emoji-polish.spec.ts for why: Sentry's real dev toolbar (enabled
+    // in the Sentry Snapshots CI job) would otherwise bleed into these
+    // uploaded layout-harness screenshots -- and on the mobile viewport
+    // these tests use, the toolbar overlay could plausibly overlap the
+    // exact safe-area/notch gutters this file is checking.
+    await stubToolbar(page);
   });
 
   // Bug #1: Image/media viewer was nearly full-screen but hard to exit because
