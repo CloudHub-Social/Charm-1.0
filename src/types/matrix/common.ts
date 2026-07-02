@@ -1,8 +1,8 @@
-import type { SerializableMap } from "$types/wrapper/SerializableMap";
-import type { SerializableSet } from "$types/wrapper/SerializableSet";
-import type { EncryptedAttachmentInfo } from "browser-encrypt-attachment";
-import type { MsgType } from "$types/matrix-sdk";
-import type * as prefix from "$unstable/prefixes";
+import type { SerializableMap } from '$types/wrapper/SerializableMap';
+import type { SerializableSet } from '$types/wrapper/SerializableSet';
+import type { EncryptedAttachmentInfo } from 'browser-encrypt-attachment';
+import type { MsgType } from '$types/matrix-sdk';
+import type * as prefix from '$unstable/prefixes';
 
 export type IImageInfo = {
   w?: number;
@@ -13,7 +13,7 @@ export type IImageInfo = {
 };
 
 export type MatrixRelatesTo = {
-  rel_type: "m.annotation";
+  rel_type: 'm.annotation';
   event_id: string;
   key?: string;
 };
@@ -58,9 +58,9 @@ export type MSC1767Text = {
 };
 
 export type MatrixReactionEvent = {
-  "m.relates_to": MatrixRelatesTo;
+  'm.relates_to': MatrixRelatesTo;
   shortcode?: string;
-  "com.beeper.reaction.shortcode"?: string;
+  'com.beeper.reaction.shortcode'?: string;
   /**
    * a map of image pack references
    */
