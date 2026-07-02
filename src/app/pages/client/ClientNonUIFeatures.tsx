@@ -283,7 +283,7 @@ function SystemEmojiFeature() {
 
     const updateEffectiveEmojiStyle = async () => {
       try {
-        const sampleEmoji = '🫩';
+        const sampleEmoji = '🪩';
         await document.fonts.load('16px "Twemoji"', sampleEmoji);
         await document.fonts.ready;
         if (cancelled) return;
@@ -814,6 +814,16 @@ function MessageNotifications() {
       <source src={NotificationSound} type="audio/ogg" />
     </audio>
   );
+}
+
+function A11yHighlightsFeature() {
+  const [showHighlights] = useSetting(settingsAtom, 'showAccessibilityHighlights');
+
+  useEffect(() => {
+    document.body.classList.toggle('sable-a11y-highlights', showHighlights);
+  }, [showHighlights]);
+
+  return null;
 }
 
 function PrivacyBlurFeature() {
@@ -1664,6 +1674,7 @@ export function ClientNonUIFeatures({ children }: ClientNonUIFeaturesProps) {
     <SearchIndexProvider>
       <SystemEmojiFeature />
       <PageZoomFeature />
+      <A11yHighlightsFeature />
       <PrivacyBlurFeature />
       <WebPushStartupReconciler />
       <FaviconUpdater />
