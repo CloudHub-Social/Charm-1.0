@@ -564,6 +564,7 @@ export function MessageOptionsBar({
                               }
                               if (e.key === 'Escape') closeMenu();
                             }}
+                            data-focus-ring-self
                             style={{
                               background: 'var(--mx-c-surface)',
                               color: 'var(--mx-c-on-surface)',

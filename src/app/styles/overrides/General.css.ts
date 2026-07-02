@@ -55,8 +55,6 @@ globalStyle(
   `
     a:focus-visible,
     button:focus-visible,
-    input:focus-visible,
-    textarea:focus-visible,
     select:focus-visible,
     [role="button"]:focus-visible,
     [role="tab"]:focus-visible,
@@ -78,6 +76,50 @@ globalStyle(
   }
 );
 
+// `input`/`textarea` need special handling, split out from the selector list
+// above, to avoid a double-ring artifact (Sentry comment_id=3514683656) on
+// folds' `Input` component.
+//
+// folds' `Input` renders a wrapper `<div>` around a plain inner `<input>`,
+// explicitly zeroes the native outline on that inner input via `:focus`, and
+// instead shows its own low-contrast, non-`:focus-visible`-gated box-shadow
+// cue on the wrapper. The rule below this one gives that wrapper div a real
+// ring. If the direct-element rule *also* matched the inner `<input>`, a
+// focused folds `Input` would show two concentric rings (one tight around
+// the `<input>`, one around the padded wrapper `<div>`) instead of one.
+//
+// folds' generated class names are content hashes (e.g. `_1rrvnjmr`) with no
+// stable, human-readable substring to select on across folds versions/dev
+// vs. prod builds — confirmed empirically that the `[class*="Button"]`-style
+// substring selectors above don't actually match folds' shipped classes in
+// this build (folds is prebuilt with its own vanilla-extract identifier
+// mode, independent of this app's `identifiers: 'debug'` vite config). So
+// instead of trying to positively match folds' wrapper, this repo's own raw
+// `<input>`/`<textarea>` elements that (a) are NOT folds' `Input`/`TextArea`
+// and (b) explicitly suppress their own native outline (relying entirely on
+// this override for any visible ring at all) opt back in to the direct-ring
+// behavior via `data-focus-ring-self`. See e.g.
+// `src/app/components/user-profile/UserChips.tsx`,
+// `src/app/features/room/message/MessageOptionsMenu.tsx`,
+// `src/app/components/message/modals/Options.tsx` (nickname-edit inputs,
+// each a direct child of a plain `Box`/div wrapper), and
+// `src/app/components/image-viewer/ImageViewer.tsx` (zoom input, uses
+// `all: unset`). Any *other* raw input/textarea that is not a direct child
+// of a `<div>` (e.g. ImageViewer's, whose parent is a `<span>`) is
+// unaffected either way and always gets its own ring from this rule.
+globalStyle(
+  `
+    input:focus-visible:not(div > input),
+    textarea:focus-visible:not(div > textarea),
+    div > input:focus-visible[data-focus-ring-self],
+    div > textarea:focus-visible[data-focus-ring-self]
+`,
+  {
+    outline: '2px solid var(--sable-primary-main) !important',
+    outlineOffset: '2px !important',
+  }
+);
+
 // folds' `Input` wrapper renders its own focus cue as a `box-shadow` on the
 // wrapper div when the inner `<input>`/`<textarea>` is focused (via
 // `:has(input:focus)` / `:focus-within`), and explicitly zeroes the native
@@ -85,11 +127,22 @@ globalStyle(
 // (a subtle border-color swap) and is not driven by `:focus-visible`, so it
 // still fires on mouse clicks and can be invisible depending on the
 // surrounding container. Give the wrapper a real, theme-adaptive ring too
-// whenever the input inside it currently has keyboard focus.
-globalStyle('div:has(> input:focus-visible), div:has(> textarea:focus-visible)', {
-  outline: '2px solid var(--sable-primary-main) !important',
-  outlineOffset: '2px !important',
-});
+// whenever the input inside it currently has keyboard focus — but only when
+// the input isn't already getting its own direct ring from the rule above
+// (`data-focus-ring-self`), otherwise a raw input that happens to sit
+// directly inside a `Box`/div (e.g. the nickname-edit inputs) would get a
+// second ring on its wrapper on top of its own, recreating the same
+// double-ring bug for a different pairing of elements.
+globalStyle(
+  `
+    div:has(> input:focus-visible:not([data-focus-ring-self])),
+    div:has(> textarea:focus-visible:not([data-focus-ring-self]))
+`,
+  {
+    outline: '2px solid var(--sable-primary-main) !important',
+    outlineOffset: '2px !important',
+  }
+);
 
 globalStyle(
   `

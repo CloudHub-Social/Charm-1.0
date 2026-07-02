@@ -66,7 +66,7 @@ test.describe('global focus-visible indicator', () => {
     expect(outline.outlineColor).not.toBe('rgba(0, 0, 0, 0.5)');
   });
 
-  test('gives a folds Input wrapper the theme-adaptive 2px outline when the inner input has keyboard focus', async ({
+  test('gives a folds Input wrapper the theme-adaptive 2px outline when the inner input has keyboard focus, without a double ring on the input itself', async ({
     page,
   }) => {
     await page.goto('/');
@@ -75,32 +75,117 @@ test.describe('global focus-visible indicator', () => {
     const usernameInput = page.locator('#login-username-input');
     await expect(usernameInput).toBeVisible();
 
-    // folds' `Input` renders `<div class="..."><input/></div>`. The broad
-    // selector list matches `input:focus-visible` directly (so the inner
-    // input itself also gets an outline, overriding folds' own
-    // `outline: none`), and the wrapper-targeted rule
-    // (`div:has(> input:focus-visible)`) is what puts a *second*, matching
-    // outline on the wrapper div — that wrapper rule is the one this test
-    // is really pinning down, since it's the special case folds needs.
+    // folds' `Input` renders `<div class="..."><input/></div>` and
+    // explicitly zeroes the native outline on the inner `<input>` in favor
+    // of a low-contrast, non-`:focus-visible`-gated box-shadow on the
+    // wrapper. The wrapper-targeted rule (`div:has(> input:focus-visible)`)
+    // is what puts a real outline on that wrapper div.
+    //
+    // Regression coverage for Sentry comment_id=3514683656: earlier versions
+    // of this fix had the broad direct-element selector list *also* match
+    // `input:focus-visible` unconditionally, so a focused folds `Input`
+    // rendered two concentric rings — one tight around the `<input>` itself,
+    // one around the padded wrapper `<div>`. The fix scopes the direct-input
+    // rule to skip inputs that are a direct child of a `<div>` (folds'
+    // `Input` shape) unless explicitly opted back in via
+    // `data-focus-ring-self` (used by this repo's own raw, non-folds inputs
+    // — see the next test), so only the wrapper should show a ring here.
     await usernameInput.focus();
     await expect(usernameInput).toBeFocused();
 
-    const wrapperOutline = await usernameInput.evaluate((el) => {
+    const outlines = await usernameInput.evaluate((el) => {
       const wrapper = el.parentElement;
-      if (!wrapper) return null;
-      const style = getComputedStyle(wrapper);
+      const ownStyle = getComputedStyle(el);
+      const wrapperStyle = wrapper ? getComputedStyle(wrapper) : null;
       return {
-        outlineStyle: style.outlineStyle,
-        outlineWidth: style.outlineWidth,
-        outlineOffset: style.outlineOffset,
-        outlineColor: style.outlineColor,
+        own: {
+          outlineStyle: ownStyle.outlineStyle,
+          outlineWidth: ownStyle.outlineWidth,
+        },
+        wrapper: wrapperStyle
+          ? {
+              outlineStyle: wrapperStyle.outlineStyle,
+              outlineWidth: wrapperStyle.outlineWidth,
+              outlineOffset: wrapperStyle.outlineOffset,
+              outlineColor: wrapperStyle.outlineColor,
+            }
+          : null,
       };
     });
 
-    expect(wrapperOutline).not.toBeNull();
-    expect(wrapperOutline?.outlineStyle).toBe('solid');
-    expect(wrapperOutline?.outlineWidth).toBe('2px');
-    expect(wrapperOutline?.outlineOffset).toBe('2px');
+    // The inner input itself must NOT get its own direct ring — only the
+    // wrapper should. `outlineStyle: none` means no outline is painted at
+    // all, regardless of what `outlineWidth` computes to.
+    expect(outlines.own.outlineStyle).toBe('none');
+
+    expect(outlines.wrapper).not.toBeNull();
+    expect(outlines.wrapper?.outlineStyle).toBe('solid');
+    expect(outlines.wrapper?.outlineWidth).toBe('2px');
+    expect(outlines.wrapper?.outlineOffset).toBe('2px');
+  });
+
+  test('gives a standalone raw input inside a div wrapper its own direct ring (not the wrapper), unlike folds Input', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await expect(page).toHaveURL(/#\/login\/smoke\.test\/?$/);
+
+    // Simulate this repo's own raw, non-folds inputs that explicitly
+    // suppress their native outline and rely entirely on this override for
+    // any visible ring (e.g. the nickname-edit inputs in
+    // `UserChips.tsx`/`MessageOptionsMenu.tsx`/`Options.tsx`, and the
+    // zoom-level input in `ImageViewer.tsx`). Each is a direct child of a
+    // plain layout `Box`/div, structurally identical to folds' `Input`
+    // wrapper shape, and is marked with `data-focus-ring-self` so it keeps
+    // its own ring instead of only the wrapper getting one.
+    const ids = await page.evaluate(() => {
+      const wrapper = document.createElement('div');
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.style.outline = 'none';
+      input.id = 'raw-input-smoke-test';
+      input.setAttribute('data-focus-ring-self', '');
+      wrapper.id = 'raw-input-wrapper-smoke-test';
+      wrapper.appendChild(input);
+      document.body.appendChild(wrapper);
+      return { inputId: input.id, wrapperId: wrapper.id };
+    });
+
+    const rawInput = page.locator(`#${ids.inputId}`);
+    const rawWrapper = page.locator(`#${ids.wrapperId}`);
+
+    await rawInput.focus();
+    await expect(rawInput).toBeFocused();
+
+    const outlines = await rawInput.evaluate((el) => {
+      const wrapper = el.parentElement;
+      const ownStyle = getComputedStyle(el);
+      const wrapperStyle = wrapper ? getComputedStyle(wrapper) : null;
+      return {
+        own: {
+          outlineStyle: ownStyle.outlineStyle,
+          outlineWidth: ownStyle.outlineWidth,
+          outlineOffset: ownStyle.outlineOffset,
+        },
+        wrapper: wrapperStyle
+          ? {
+              outlineStyle: wrapperStyle.outlineStyle,
+              outlineWidth: wrapperStyle.outlineWidth,
+            }
+          : null,
+      };
+    });
+
+    // The raw input itself gets the direct ring...
+    expect(outlines.own.outlineStyle).toBe('solid');
+    expect(outlines.own.outlineWidth).toBe('2px');
+    expect(outlines.own.outlineOffset).toBe('2px');
+
+    // ...and its plain div wrapper must NOT also get a ring (that would be
+    // the double-ring bug for this pairing instead).
+    expect(outlines.wrapper?.outlineStyle).toBe('none');
+
+    await expect(rawWrapper).toBeAttached();
   });
 
   test('keeps the outline theme-adaptive: matches --sable-primary-main, not a hardcoded color', async ({
