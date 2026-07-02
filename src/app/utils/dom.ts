@@ -5,6 +5,49 @@ export const targetFromEvent = (evt: Event, selector: string): Element | undefin
   return targets.find((target) => target.matches?.(selector));
 };
 
+/**
+ * Builds a `fallbackFocus` callback for `focus-trap-react`'s `focusTrapOptions`
+ * that always resolves to the given container ref, never to `document.body`.
+ *
+ * `focus-trap` (see `getNodeForOption` in `focus-trap/src/focus-trap.js`) calls
+ * this function and inspects its *return value* at runtime - a `HTMLElement`
+ * cast on a possibly-null ref (`ref.current as HTMLElement`) does not make the
+ * value non-null, it just hides the type error from the compiler. If the ref
+ * were ever genuinely null when focus-trap calls this, the cast would let
+ * `null` flow straight into focus-trap's internals, which throws synchronously:
+ * "`fallbackFocus` was specified but was not a node, or did not return a node".
+ *
+ * `focus-trap-react`'s own published types (`FocusTarget = HTMLElement |
+ * SVGElement | string | (() => HTMLElement | SVGElement | string)`) require
+ * the callback to always return a real node - `undefined` is rejected at the
+ * type level even though `focus-trap`'s *runtime* treats it as "no fallback
+ * given" and degrades gracefully. Since the type doesn't allow us to signal
+ * "no node yet" honestly, this throws a clear, attributable error instead of
+ * silently letting `null` reach focus-trap's own less-diagnosable throw path.
+ *
+ * In practice this should never throw: refs are assigned by React during the
+ * commit phase, and `focus-trap-react` only activates the trap (and thus only
+ * calls `fallbackFocus`) from `componentDidMount` / `componentDidUpdate`,
+ * which run after every ref in that commit has already been attached. This
+ * helper exists as defense-in-depth against that invariant ever being
+ * violated (e.g. a future refactor that activates the trap imperatively
+ * before the container renders), turning a silent/opaque crash into a loud,
+ * traceable one rather than because the null case is currently reachable.
+ */
+export const focusTrapFallbackFocus =
+  (containerRef: { current: HTMLElement | null }) => (): HTMLElement => {
+    const { current } = containerRef;
+    if (!current) {
+      throw new Error(
+        'focusTrapFallbackFocus: container ref was null when focus-trap requested a ' +
+          'fallback focus target. This should be unreachable (refs are populated during ' +
+          "React's commit phase, before focus-trap-react ever activates the trap) - if you " +
+          'see this, the trap is likely being activated before its container has mounted.'
+      );
+    }
+    return current;
+  };
+
 export const editableActiveElement = (): boolean =>
   !!document.activeElement &&
   (document.activeElement.nodeName.toLowerCase() === 'input' ||

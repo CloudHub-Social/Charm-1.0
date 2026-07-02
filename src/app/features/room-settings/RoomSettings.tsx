@@ -164,7 +164,11 @@ export function RoomSettings({ initialPage, requestClose }: RoomSettingsProps) {
                 </Box>
                 <Box shrink="No">
                   {isPhoneLayout && (
-                    <IconButton onClick={requestClose} variant="Background">
+                    <IconButton
+                      aria-label="Close settings"
+                      onClick={requestClose}
+                      variant="Background"
+                    >
                       {composerIcon(X)}
                     </IconButton>
                   )}

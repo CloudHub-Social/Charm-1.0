@@ -16,16 +16,20 @@ export const ImageViewerHeader = style([
     borderBottomWidth: config.borderWidth.B300,
     flexShrink: 0,
     gap: config.space.S200,
+    // Folds' Header size="400" sets a fixed height (2.5rem/40px), but this
+    // header contains size="500" IconButtons (44px) for touch-target
+    // compliance. Override the fixed height at all viewport widths so the
+    // box grows to fit its content instead of clipping/overflowing the
+    // buttons.
+    height: 'auto',
+    minHeight: toRem(40),
+    paddingTop: 'env(safe-area-inset-top, 0px)',
+    paddingBottom: config.space.S200,
     '@media': {
       '(max-width: 600px)': {
-        // Folds' Header size="400" sets a fixed height; override it so the
-        // box actually grows to fit both wrapped rows instead of the
-        // second row overflowing into (and being unclickable under) the
+        // On narrow viewports the controls also wrap onto a second row
+        // instead of overflowing into (and being unclickable under) the
         // image content area below.
-        height: 'auto',
-        minHeight: toRem(40),
-        paddingTop: 'env(safe-area-inset-top, 0px)',
-        paddingBottom: config.space.S200,
         flexWrap: 'wrap',
         rowGap: config.space.S100,
       },

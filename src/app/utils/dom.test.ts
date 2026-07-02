@@ -1,6 +1,7 @@
 /* oxlint-disable vitest/require-mock-type-parameters */
 import type * as DomModule from './dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { focusTrapFallbackFocus } from './dom';
 
 const mediaTransport = vi.hoisted(() => ({
   fetchMediaBlob: vi.fn(),
@@ -84,5 +85,28 @@ describe('loadImageElementFromMediaUrl', () => {
     expect(result.blob).toBe(stickerBlob);
     expect(result.image.src).toBe('blob:loaded-image');
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:loaded-image');
+  });
+});
+
+describe('focusTrapFallbackFocus', () => {
+  it('returns the ref element when it is populated', () => {
+    const element = document.createElement('div');
+    const ref = { current: element };
+
+    expect(focusTrapFallbackFocus(ref)()).toBe(element);
+  });
+
+  it('throws a clear, attributable error instead of silently passing null to focus-trap', () => {
+    // A raw `ref.current as HTMLElement` cast would silently pass `null`
+    // through to focus-trap, which throws its own less-diagnosable error
+    // ("`fallbackFocus` was specified but was not a node, or did not return
+    // a node") deep inside `focus-trap`'s internals. This helper fails fast
+    // and loud instead, at the actual source of the problem, before that
+    // value ever reaches focus-trap - and does so without ever falling back
+    // to `document.body`, which would silently reintroduce the "focus
+    // escapes the trap" bug this code exists to prevent.
+    const ref = { current: null };
+
+    expect(() => focusTrapFallbackFocus(ref)()).toThrow(/container ref was null/);
   });
 });

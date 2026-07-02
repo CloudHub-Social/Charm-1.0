@@ -164,11 +164,12 @@ describe('mobile PWA dogfood contract', () => {
     const bugReportModal = readWorkspaceFile('src/app/features/bug-report/BugReportModal.tsx');
 
     expect(roomSettingsRenderer).toContain(
-      '<Modal500 requestClose={closeSettings} fullScreenOnMobile>'
+      '<Modal500 requestClose={closeSettings} fullScreenOnMobile ariaLabel={`${roomName} Settings`}>'
     );
-    expect(spaceSettingsRenderer).toContain(
-      '<Modal500 requestClose={closeSettings} fullScreenOnMobile>'
-    );
+    expect(spaceSettingsRenderer).toContain('<Modal500');
+    expect(spaceSettingsRenderer).toContain('requestClose={closeSettings}');
+    expect(spaceSettingsRenderer).toContain('fullScreenOnMobile');
+    expect(spaceSettingsRenderer).toContain('ariaLabel={`${settingsSubjectName} Settings`}');
     expect(roomSettings).toContain('const isPhoneLayout = screenSize === ScreenSize.Mobile ||');
     expect(roomSettings).toContain('isPhoneLayoutDevice();');
     expect(roomSettings).toContain(
@@ -184,9 +185,13 @@ describe('mobile PWA dogfood contract', () => {
     expect(userRoomProfileRenderer).toContain(
       'const isMobile = screenSize === ScreenSize.Mobile || isPhoneLayoutDevice();'
     );
-    expect(userRoomProfileRenderer).toContain('<Modal500 requestClose={close} fullScreenOnMobile>');
+    expect(userRoomProfileRenderer).toContain(
+      '<Modal500 requestClose={close} fullScreenOnMobile ariaLabel="Member Profile">'
+    );
     expect(userRoomProfileRenderer).toContain('Member Profile');
-    expect(bugReportModal).toContain('<Modal500 requestClose={close} fullScreenOnMobile>');
+    expect(bugReportModal).toContain(
+      '<Modal500 requestClose={close} fullScreenOnMobile ariaLabel="Report an Issue">'
+    );
     expect(bugReportModal).toContain(
       '<Scroll size="300" hideTrack style={{ flex: 1, minHeight: 0 }}>'
     );

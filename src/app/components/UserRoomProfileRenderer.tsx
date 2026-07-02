@@ -27,7 +27,7 @@ function UserRoomProfileContextMenu({ state }: { state: UserRoomProfileState }) 
 
   if (isMobile) {
     return (
-      <Modal500 requestClose={close} fullScreenOnMobile>
+      <Modal500 requestClose={close} fullScreenOnMobile ariaLabel="Member Profile">
         <SpaceProvider value={space ?? null}>
           <RoomProvider value={room}>
             <Box
@@ -48,7 +48,7 @@ function UserRoomProfileContextMenu({ state }: { state: UserRoomProfileState }) 
                 <Text size="H4" truncate>
                   Member Profile
                 </Text>
-                <IconButton onClick={close} variant="Background">
+                <IconButton aria-label="Close" onClick={close} variant="Background">
                   {composerIcon(X)}
                 </IconButton>
               </Box>

@@ -274,7 +274,7 @@ function BugReportModal() {
   };
 
   return (
-    <Modal500 requestClose={close} fullScreenOnMobile>
+    <Modal500 requestClose={close} fullScreenOnMobile ariaLabel="Report an Issue">
       <Box
         direction="Column"
         style={{ height: '100%', maxHeight: isPhoneLayout ? '100%' : '90vh', overflow: 'hidden' }}
@@ -291,7 +291,7 @@ function BugReportModal() {
           <Box grow="Yes">
             <Text size="H4">Report an Issue</Text>
           </Box>
-          <IconButton size="300" radii="300" onClick={close}>
+          <IconButton aria-label="Close" size="300" radii="300" onClick={close}>
             {composerIcon(X)}
           </IconButton>
         </Header>
