@@ -28,6 +28,10 @@ type PermissionGroupsProps = {
   permissionGroups: PermissionGroup[];
 };
 
+// Safe as a Map key only because every `location` value is a literal object built
+// once in code (see permission group definitions like CALL_PERMISSIONS_GROUP) — key
+// order is therefore stable across calls. Do not feed this dynamically-ordered or
+// user-supplied objects.
 const getPermissionLocationKey = (location: PermissionLocation | PermissionLocation[]): string =>
   JSON.stringify(location);
 

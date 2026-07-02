@@ -148,32 +148,24 @@ function RemoveBookmarkDialog({
                   direction="Column"
                   gap="200"
                 >
-                  {sender && (
-                    <Box gap="200" alignItems="Center">
-                      <Avatar size="200">
-                        <UserAvatar
-                          userId={sender}
-                          src={
-                            senderAvatarMxc
-                              ? (mxcUrlToHttp(
-                                  mx,
-                                  senderAvatarMxc,
-                                  useAuthentication,
-                                  32,
-                                  32,
-                                  'crop'
-                                ) ?? undefined)
-                              : undefined
-                          }
-                          alt={displayName ?? sender}
-                          renderFallback={() => <Icon size="50" src={Icons.User} filled />}
-                        />
-                      </Avatar>
-                      <Text size="T300" truncate>
-                        <b>{displayName ?? sender}</b>
-                      </Text>
-                    </Box>
-                  )}
+                  <Box gap="200" alignItems="Center">
+                    <Avatar size="200">
+                      <UserAvatar
+                        userId={sender}
+                        src={
+                          senderAvatarMxc
+                            ? (mxcUrlToHttp(mx, senderAvatarMxc, useAuthentication, 32, 32, 'crop') ??
+                              undefined)
+                            : undefined
+                        }
+                        alt={displayName ?? sender}
+                        renderFallback={() => <Icon size="50" src={Icons.User} filled />}
+                      />
+                    </Avatar>
+                    <Text size="T300" truncate>
+                      <b>{displayName ?? sender}</b>
+                    </Text>
+                  </Box>
                   {renderMatrixEvent()}
                 </Box>
               )}

@@ -103,11 +103,9 @@ export const createPushNotifications = (
     title: string,
     body: string | undefined,
     data: Record<string, unknown>,
-    silent?: boolean,
-    icon?: string,
-    badge?: string,
-    tagOverride?: string
+    options: { silent?: boolean; icon?: string; badge?: string; tagOverride?: string } = {}
   ) => {
+    const { silent, icon, badge, tagOverride } = options;
     const roomId: string | undefined = data?.room_id as string | undefined;
     // Group by room so new messages in the same room replace the previous
     // notification rather than stacking individually. renotify: true ensures
@@ -146,8 +144,9 @@ export const createPushNotifications = (
   };
 
   const handleCallNotification = async (pushData: MatrixPushData) => {
-    if (pushData.type === EventType.RoomMessageEncrypted) return;
-
+    // Note: pushData.type is commonly `m.room.encrypted` here — the RTC notification
+    // content above is delivered in the clear alongside the encrypted event so the SW
+    // can show a call notification without decrypting. Do not bail on that type.
     const notificationTypeRaw = pushData?.content?.notification_type;
     if (!isCallNotificationType(notificationTypeRaw)) return;
 
@@ -188,15 +187,11 @@ export const createPushNotifications = (
     };
 
     const callTag = pushData?.room_id ? `call-${pushData.room_id}` : undefined;
-    await showNotificationWithData(
-      copy.title,
-      copy.body,
-      data,
-      resolveSilent(),
-      pushData?.room_avatar_url,
-      undefined,
-      callTag
-    );
+    await showNotificationWithData(copy.title, copy.body, data, {
+      silent: resolveSilent(),
+      icon: pushData?.room_avatar_url,
+      tagOverride: callTag,
+    });
   };
 
   const handleRoomMessageNotification = async (pushData: MatrixPushData) => {
@@ -226,14 +221,11 @@ export const createPushNotifications = (
       recipientId: typeof pushData?.user_id === 'string' ? pushData.user_id : undefined,
       data,
     });
-    await showNotificationWithData(
-      notificationPayload.title,
-      notificationPayload.options.body,
-      data,
-      notificationPayload.options.silent ?? undefined,
-      notificationPayload.options.icon,
-      notificationPayload.options.badge
-    );
+    await showNotificationWithData(notificationPayload.title, notificationPayload.options.body, data, {
+      silent: notificationPayload.options.silent ?? undefined,
+      icon: notificationPayload.options.icon,
+      badge: notificationPayload.options.badge,
+    });
   };
 
   const handleEncryptedMessageNotification = async (pushData: MatrixPushData) => {
@@ -262,14 +254,11 @@ export const createPushNotifications = (
       recipientId: typeof pushData?.user_id === 'string' ? pushData.user_id : undefined,
       data,
     });
-    await showNotificationWithData(
-      notificationPayload.title,
-      notificationPayload.options.body,
-      data,
-      notificationPayload.options.silent ?? undefined,
-      notificationPayload.options.icon,
-      notificationPayload.options.badge
-    );
+    await showNotificationWithData(notificationPayload.title, notificationPayload.options.body, data, {
+      silent: notificationPayload.options.silent ?? undefined,
+      icon: notificationPayload.options.icon,
+      badge: notificationPayload.options.badge,
+    });
   };
 
   const handleInvitationNotification = async (pushData: MatrixPushData) => {
@@ -290,7 +279,7 @@ export const createPushNotifications = (
       ...pushData.data,
     };
 
-    await showNotificationWithData('New Invitation', body, data, resolveSilent());
+    await showNotificationWithData('New Invitation', body, data, { silent: resolveSilent() });
   };
 
   const handlePushNotificationPushData = async (pushData: MatrixPushData) => {

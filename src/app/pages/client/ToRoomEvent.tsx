@@ -103,6 +103,10 @@ export function ToRoomEvent() {
 
     // Replace /to/… in history so the back button doesn't return to this route.
     window.history.replaceState({}, '', '/');
+    // searchParams is read above via its stable rawSearchParams string form (see comment
+    // near its declaration); depending on the URLSearchParams object itself would re-fire
+    // this effect on every render.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [
     eventId,
     jumpMode,
@@ -111,7 +115,7 @@ export function ToRoomEvent() {
     mDirects,
     mutedRoomId,
     roomId,
-    searchParams,
+    rawSearchParams,
     setActiveSessionId,
     setIncomingCall,
     setPending,

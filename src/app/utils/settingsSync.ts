@@ -24,6 +24,7 @@ export const NON_SYNCABLE_KEYS = new Set<keyof Settings>([
   'isNotificationSounds',
   // Call audio is device-local (speaker setup + custom files in IndexedDB)
   'incomingCallSoundEnabled',
+  'incomingVoiceRoomCallSoundEnabled',
   'outgoingRingbackEnabled',
   'callRingtoneVolume',
   'callRingtoneId',

@@ -37,6 +37,7 @@ describe('NON_SYNCABLE_KEYS', () => {
       'memberSortFilterIndex',
       'isNotificationSounds',
       'incomingCallSoundEnabled',
+      'incomingVoiceRoomCallSoundEnabled',
       'outgoingRingbackEnabled',
       'callRingtoneVolume',
       'callRingtoneId',

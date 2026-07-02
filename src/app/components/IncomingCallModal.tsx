@@ -199,7 +199,11 @@ export function IncomingCallInternal({ room, incomingCall, onClose }: IncomingCa
       handleClose();
       return;
     }
-    if (evt.key === 'Enter' && canAnswer) {
+    // Buttons already answer/decline on their own Enter keypress via native activation.
+    // Only handle Enter here when it didn't originate on a button, so that a focused
+    // Decline button isn't overridden into answering the call.
+    const targetIsButton = evt.target instanceof HTMLElement && evt.target.closest('button');
+    if (evt.key === 'Enter' && canAnswer && !targetIsButton) {
       evt.preventDefault();
       evt.stopPropagation();
       handleAnswer();

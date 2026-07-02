@@ -2,4 +2,4 @@
 default: patch
 ---
 
-Fix codebase issues with gadient themes
+Fix codebase issues with gradient themes

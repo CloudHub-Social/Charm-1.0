@@ -19,6 +19,9 @@ import { useRoomCreators } from '$hooks/useRoomCreators';
 import { SequenceCardStyle } from '$features/common-settings/styles.css';
 import type { PermissionGroup } from './types';
 
+// Safe as a React key only because every `location` value is a literal object built
+// once in code — key order is therefore stable across renders. See the identical
+// helper in PermissionGroups.tsx for the same invariant.
 const getPermissionLocationKey = (location: PermissionLocation | PermissionLocation[]): string =>
   JSON.stringify(location);
 

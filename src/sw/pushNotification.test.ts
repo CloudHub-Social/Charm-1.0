@@ -129,7 +129,7 @@ describe('createPushNotifications', () => {
     });
 
     expect(showNotification).toHaveBeenCalledWith(
-      'Incoming Call',
+      'Incoming voice call',
       expect.objectContaining({
         body: 'Alice is calling you in General',
       })

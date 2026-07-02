@@ -19,13 +19,9 @@ import { useKeyDown } from '$hooks/useKeyDown';
 import {
   getDirectRoomPath,
   getHomeRoomPath,
-  getHomeSearchPath,
   getInboxBookmarksPath,
   getSpaceRoomPath,
-  getSpaceSearchPath,
-  withSearchParam,
 } from '$pages/pathUtils';
-import type { SearchPathSearchParams } from '$pages/paths';
 import { HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH } from '$pages/paths';
 import { getCanonicalAliasOrRoomId, getCanonicalAliasRoomId } from '$utils/matrix';
 import { announce } from '$utils/announce';
