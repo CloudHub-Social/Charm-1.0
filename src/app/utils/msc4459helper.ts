@@ -10,13 +10,29 @@ import { getMxIdServer } from './mxIdHelper';
 import { isRoomPrivate } from './roomVisibility';
 
 /**
- * lookup table for global mxc => MSC4459ImagePackReference
- * TODO this is far from a perfect solution
+ * Lookup table: global mxc URL → MSC4459ImagePackReference.
+ *
+ * Known limitations:
+ * - Entries are never invalidated. If a global image pack is removed or its
+ *   state changes, stale references will be returned until the page reloads.
+ * - Module-scope singleton couples all callers to shared mutable state.
+ *
+ * This helper implements the draft MSC4459 proposal. Revisit once MSC4459
+ * is accepted/merged into the Matrix spec.
+ * @see https://github.com/matrix-org/matrix-spec-proposals/pull/4459
+ *
+ * A proper solution would listen for room state events on image-pack rooms
+ * and evict affected cache entries, or use a reactive store tied to the
+ * Matrix SDK event timeline.
  */
 const globalLookupTable = new Map<string, MSC4459ImagePackReference>();
 /**
- * lookup table for room local mxc => MSC4459ImagePackReference
- * TODO this is far from a perfect solution
+ * Lookup table: room ID → (mxc URL → MSC4459ImagePackReference).
+ *
+ * Same limitations as {@link globalLookupTable}: no cache invalidation,
+ * module-scope mutable state. Entries accumulate for the lifetime of the page.
+ *
+ * @see https://github.com/matrix-org/matrix-spec-proposals/pull/4459
  */
 const roomLookupTable = new Map<string, Map<string, MSC4459ImagePackReference>>();
 
