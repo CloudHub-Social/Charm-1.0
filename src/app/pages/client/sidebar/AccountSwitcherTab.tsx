@@ -580,7 +580,11 @@ export function AccountSwitcherTab({ isBottom }: { isBottom?: boolean }) {
 
       {useModalAccountSwitcher ? (
         menuAnchor && (
-          <Modal500 requestClose={() => setMenuAnchor(undefined)} sheetOnMobile>
+          <Modal500
+            requestClose={() => setMenuAnchor(undefined)}
+            sheetOnMobile
+            ariaLabel="Accounts"
+          >
             <Box
               direction="Column"
               style={{ height: '100%', maxHeight: '100%', overflow: 'hidden' }}

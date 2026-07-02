@@ -19,8 +19,10 @@ function RenderSettings({ state }: RenderSettingsProps) {
 
   if (!room) return null;
 
+  const roomName = room.name || 'Room';
+
   return (
-    <Modal500 requestClose={closeSettings} fullScreenOnMobile>
+    <Modal500 requestClose={closeSettings} fullScreenOnMobile ariaLabel={`${roomName} Settings`}>
       <SpaceProvider value={space ?? null}>
         <RoomProvider value={room}>
           <RoomSettings initialPage={page} requestClose={closeSettings} />

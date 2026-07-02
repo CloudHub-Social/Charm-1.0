@@ -27,7 +27,7 @@ function UserRoomProfileContextMenu({ state }: { state: UserRoomProfileState }) 
 
   if (isMobile) {
     return (
-      <Modal500 requestClose={close} fullScreenOnMobile>
+      <Modal500 requestClose={close} fullScreenOnMobile ariaLabel="Member Profile">
         <SpaceProvider value={space ?? null}>
           <RoomProvider value={room}>
             <Box

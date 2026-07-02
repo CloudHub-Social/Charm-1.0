@@ -274,7 +274,7 @@ function BugReportModal() {
   };
 
   return (
-    <Modal500 requestClose={close} fullScreenOnMobile>
+    <Modal500 requestClose={close} fullScreenOnMobile ariaLabel="Report an Issue">
       <Box
         direction="Column"
         style={{ height: '100%', maxHeight: isPhoneLayout ? '100%' : '90vh', overflow: 'hidden' }}

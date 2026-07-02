@@ -15,6 +15,7 @@ import {
 import { menuIcon, X } from '$components/icons/phosphor';
 
 import { stopPropagation } from '$utils/keyboard';
+import { focusTrapFallbackFocus } from '$utils/dom';
 
 type ThemeCatalogOnboardingProps = {
   open: boolean;
@@ -59,10 +60,10 @@ export function ThemeCatalogOnboarding({ open, onEnable, onDecline }: ThemeCatal
             // Falling back to the dialog root keeps us safe if the dialog
             // body ever renders without a focusable descendant. The dialog
             // root has `tabIndex={-1}`, so it's always programmatically
-            // focusable here; never fall back to `document.body`, which
-            // would reintroduce the exact bug this trap exists to fix if
-            // the ref were ever momentarily null during activation.
-            fallbackFocus: () => dialogRef.current as HTMLElement,
+            // focusable here; never fall back to `document.body`. Uses the
+            // shared `focusTrapFallbackFocus` helper (see `$utils/dom`) which
+            // is null-safe at runtime instead of casting the ref.
+            fallbackFocus: focusTrapFallbackFocus(dialogRef),
             onDeactivate: handleTrapDeactivate,
             clickOutsideDeactivates: false,
             escapeDeactivates: stopPropagation,

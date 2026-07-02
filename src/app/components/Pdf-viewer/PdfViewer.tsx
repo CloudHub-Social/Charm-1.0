@@ -33,6 +33,7 @@ import { AsyncStatus } from '$hooks/useAsyncCallback';
 import { useImageGestures } from '$hooks/useImageGestures';
 import { createPage, usePdfDocumentLoader, usePdfJSLoader } from '$plugins/pdfjs-dist';
 import { stopPropagation } from '$utils/keyboard';
+import { focusTrapFallbackFocus } from '$utils/dom';
 import * as css from './PdfViewer.css';
 
 export type PdfViewerProps = {
@@ -134,8 +135,10 @@ export const PdfViewer = as<'div', PdfViewerProps>(
           // The viewer root has `tabIndex={-1}` below, so it's always
           // programmatically focusable; never fall back to `document.body`,
           // which would leave focus outside the trap (see Finding 1's fix
-          // in ThemeCatalogOnboarding.tsx for the same failure mode).
-          fallbackFocus: () => rootRef.current as HTMLElement,
+          // in ThemeCatalogOnboarding.tsx for the same failure mode). Uses
+          // the shared `focusTrapFallbackFocus` helper (see `$utils/dom`)
+          // which is null-safe at runtime instead of casting the ref.
+          fallbackFocus: focusTrapFallbackFocus(rootRef),
           onDeactivate: requestClose,
           // This trap is nested inside FileContent.tsx's `ReadPdfFile`
           // FocusTrap (which has `clickOutsideDeactivates: true` for
@@ -272,8 +275,11 @@ export const PdfViewer = as<'div', PdfViewerProps>(
                         // keyboard users without focus moved into this
                         // popout when it opened. The popout root has
                         // `tabIndex={-1}` below, so fallbackFocus always
-                        // resolves to it rather than `document.body`.
-                        fallbackFocus: () => jumpMenuRef.current as HTMLElement,
+                        // resolves to it rather than `document.body`. Uses
+                        // the shared `focusTrapFallbackFocus` helper (see
+                        // `$utils/dom`) which is null-safe at runtime
+                        // instead of casting the ref.
+                        fallbackFocus: focusTrapFallbackFocus(jumpMenuRef),
                         onDeactivate: () => setJumpAnchor(undefined),
                         clickOutsideDeactivates: true,
                         escapeDeactivates: stopPropagation,

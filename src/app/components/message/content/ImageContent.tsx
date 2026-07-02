@@ -40,6 +40,7 @@ import { useMediaUrlCacheContext } from '$hooks/useMediaUrlCacheContext';
 import { bytesToSize } from '$utils/common';
 import { FALLBACK_MIMETYPE } from '$utils/mimeTypes';
 import { stopPropagation } from '$utils/keyboard';
+import { focusTrapFallbackFocus } from '$utils/dom';
 import { decryptFileSafe, downloadEncryptedMedia, downloadMedia } from '$utils/matrix';
 import { getDecryptedBlob, storeDecryptedBlob } from '$hooks/useBlobCache';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
@@ -561,8 +562,11 @@ export const ImageContent = as<'div', ImageContentProps>(
                   // tabbable thumbnail `<img>` that triggered it), leaving
                   // that background element in the tab order alongside the
                   // dialog. fallbackFocus targets the Modal root itself,
-                  // which is made focusable via tabIndex below.
-                  fallbackFocus: () => viewerModalRef.current as HTMLElement,
+                  // which is made focusable via tabIndex below. Uses the
+                  // shared `focusTrapFallbackFocus` helper (see
+                  // `$utils/dom`) which is null-safe at runtime instead of
+                  // casting the ref.
+                  fallbackFocus: focusTrapFallbackFocus(viewerModalRef),
                   onDeactivate: () => setViewer(false),
                   clickOutsideDeactivates: true,
                   escapeDeactivates: stopPropagation,
