@@ -48,6 +48,7 @@ export const PdfViewer = as<'div', PdfViewerProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const rootRef = useRef<HTMLDivElement | null>(null);
+    const jumpMenuRef = useRef<HTMLDivElement>(null);
     const setRootRef = (node: HTMLDivElement | null) => {
       rootRef.current = node;
       if (typeof forwardedRef === 'function') {
@@ -130,9 +131,22 @@ export const PdfViewer = as<'div', PdfViewerProps>(
     return (
       <FocusTrap
         focusTrapOptions={{
-          fallbackFocus: () => rootRef.current ?? document.body,
+          // The viewer root has `tabIndex={-1}` below, so it's always
+          // programmatically focusable; never fall back to `document.body`,
+          // which would leave focus outside the trap (see Finding 1's fix
+          // in ThemeCatalogOnboarding.tsx for the same failure mode).
+          fallbackFocus: () => rootRef.current as HTMLElement,
           onDeactivate: requestClose,
-          clickOutsideDeactivates: false,
+          // This trap is nested inside FileContent.tsx's `ReadPdfFile`
+          // FocusTrap (which has `clickOutsideDeactivates: true` for
+          // backdrop-click-to-close). Once this inner trap activates, it
+          // pauses the outer one, so the outer trap's
+          // `clickOutsideDeactivates` no longer has any effect on backdrop
+          // clicks - only this trap's own config does. Setting it to
+          // `true` here (with `onDeactivate: requestClose` above) keeps
+          // backdrop-click-to-close working end to end instead of
+          // silently swallowing the click.
+          clickOutsideDeactivates: true,
           escapeDeactivates: stopPropagation,
         }}
       >
@@ -250,13 +264,22 @@ export const PdfViewer = as<'div', PdfViewerProps>(
                   content={
                     <FocusTrap
                       focusTrapOptions={{
-                        initialFocus: false,
+                        // NOT `initialFocus: false`: that option makes
+                        // focus-trap-react skip moving focus into the trap
+                        // entirely instead of falling back to the first
+                        // tabbable node (see Finding 3/the theme catalog
+                        // dialog fix for the same failure mode), which left
+                        // keyboard users without focus moved into this
+                        // popout when it opened. The popout root has
+                        // `tabIndex={-1}` below, so fallbackFocus always
+                        // resolves to it rather than `document.body`.
+                        fallbackFocus: () => jumpMenuRef.current as HTMLElement,
                         onDeactivate: () => setJumpAnchor(undefined),
                         clickOutsideDeactivates: true,
                         escapeDeactivates: stopPropagation,
                       }}
                     >
-                      <Menu variant="Surface">
+                      <Menu ref={jumpMenuRef} tabIndex={-1} variant="Surface">
                         <Box
                           as="form"
                           onSubmit={handleJumpSubmit}

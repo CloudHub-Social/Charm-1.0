@@ -11,12 +11,24 @@ type Modal500Props = {
   sheetOnMobile?: boolean;
   requestClose: () => void;
   children: ReactNode;
+  /**
+   * Accessible name for the dialog, announced by screen readers alongside
+   * `role="dialog"`. Prefer `ariaLabelledBy` when the modal already renders
+   * a visible heading; fall back to `ariaLabel` otherwise. If neither is
+   * provided, screen readers only announce "dialog" with no indication of
+   * its purpose.
+   */
+  ariaLabel?: string;
+  /** ID of an element (typically the modal's own heading) that labels the dialog. */
+  ariaLabelledBy?: string;
 };
 export function Modal500({
   requestClose,
   children,
   fullScreenOnMobile = false,
   sheetOnMobile = false,
+  ariaLabel,
+  ariaLabelledBy,
 }: Modal500Props) {
   const modalRef = useRef<HTMLDivElement | null>(null);
   const screenSize = useScreenSizeContext();
@@ -40,6 +52,8 @@ export function Modal500({
         variant="Background"
         role="dialog"
         aria-modal="true"
+        aria-label={ariaLabelledBy ? undefined : ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         style={
           useFullScreen
             ? {

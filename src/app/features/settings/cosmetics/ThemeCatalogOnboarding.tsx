@@ -57,8 +57,12 @@ export function ThemeCatalogOnboarding({ open, onEnable, onDecline }: ThemeCatal
             // node), which left focus on <body> and let the fully-obscured
             // Settings controls behind the backdrop stay in the tab order.
             // Falling back to the dialog root keeps us safe if the dialog
-            // body ever renders without a focusable descendant.
-            fallbackFocus: () => dialogRef.current ?? document.body,
+            // body ever renders without a focusable descendant. The dialog
+            // root has `tabIndex={-1}`, so it's always programmatically
+            // focusable here; never fall back to `document.body`, which
+            // would reintroduce the exact bug this trap exists to fix if
+            // the ref were ever momentarily null during activation.
+            fallbackFocus: () => dialogRef.current as HTMLElement,
             onDeactivate: handleTrapDeactivate,
             clickOutsideDeactivates: false,
             escapeDeactivates: stopPropagation,
