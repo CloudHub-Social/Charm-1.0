@@ -463,9 +463,16 @@ export function useIncomingCallSignaling() {
       if (event.isDecryptionFailure()) {
         return;
       }
+      // Re-read type/relation instead of the pre-decryption `type`/`relation` captured
+      // above: parseEvent already decrypted this event as a side effect (for any
+      // encrypted event, regardless of whether it turned out to be a notification), so
+      // by this point an encrypted decline's m.relates_to is visible via these getters.
+      // Using the stale pre-decrypt values meant encrypted declines were never even
+      // handed to parseRtcDeclineFromTimelineEvent, so remote declines in E2EE outgoing
+      // calls were silently ignored and the caller kept ringing.
       const shouldCheckDecline =
-        type === RTC_DECLINE_EVENT_TYPE ||
-        (event.isEncrypted() && relation?.rel_type === REFERENCE_REL_TYPE);
+        event.getType() === RTC_DECLINE_EVENT_TYPE ||
+        (event.isEncrypted() && event.getRelation()?.rel_type === REFERENCE_REL_TYPE);
       if (!shouldCheckDecline) {
         return;
       }

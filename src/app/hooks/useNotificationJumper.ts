@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useAtom, useAtomValue } from 'jotai';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { SyncState, ClientEvent } from '$types/matrix-sdk';
 import * as Sentry from '@sentry/react';
 import { activeSessionIdAtom, pendingNotificationAtom } from '$state/sessions';
 import { mDirectAtom } from '$state/mDirectList';
+import { incomingCallAtom, mutedCallRoomIdAtom } from '$state/callEmbed';
+import { resolveIncomingCallFromSearchParams } from '$features/call/callNotificationBridge';
+import { isIncomingCallSuppressed } from '$features/call/callIncomingIngress';
+import { settingsAtom } from '$state/settings';
+import { useSetting } from '$state/hooks/settings';
 import { roomToParentsAtom, roomToParentsReadyAtom } from '$state/room/roomToParents';
 import { getStoredRoomNavRoot } from '$state/room/roomNavRoots';
 import { useSyncState } from './useSyncState';
@@ -91,6 +96,12 @@ export function NotificationJumper() {
   const mDirects = useAtomValue(mDirectAtom);
   const roomToParents = useAtomValue(roomToParentsAtom);
   const roomToParentsReady = useAtomValue(roomToParentsReadyAtom);
+  const mutedRoomId = useAtomValue(mutedCallRoomIdAtom);
+  const [incomingVoiceRoomCallSoundEnabled] = useSetting(
+    settingsAtom,
+    'incomingVoiceRoomCallSoundEnabled'
+  );
+  const setIncomingCall = useSetAtom(incomingCallAtom);
   const mx = useMatrixClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -102,6 +113,10 @@ export function NotificationJumper() {
   // churn re-calls performJump (from the ClientEvent.Room listener or effect
   // re-runs) before React has committed the null, causing repeated navigation.
   const jumpingRef = useRef(false);
+  // Guards deferred call resolution the same way jumpingRef guards the room jump:
+  // performJump can run multiple times while waiting on room/sync state, and
+  // resolving+setting the incoming call more than once would re-trigger the ringtone.
+  const handledCallRef = useRef(false);
   const parentGraphWaitTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const performJump = useCallback(() => {
@@ -137,6 +152,26 @@ export function NotificationJumper() {
         currentUserId: mx.getUserId(),
       });
       return;
+    }
+
+    // Both session gates above passed, so mDirects/mutedRoomId/the notification-sound
+    // setting now reflect the target session — safe to resolve the deferred incoming
+    // call that ToRoomEvent couldn't resolve correctly before the account switch.
+    if (pending.callSearchParams && !handledCallRef.current) {
+      handledCallRef.current = true;
+      const callParams = new URLSearchParams(pending.callSearchParams);
+      const incomingCall = resolveIncomingCallFromSearchParams(
+        callParams,
+        pending.roomId,
+        pending.eventId,
+        mDirects.has(pending.roomId)
+      );
+      if (
+        incomingCall &&
+        !isIncomingCallSuppressed(incomingCall, mutedRoomId, incomingVoiceRoomCallSoundEnabled)
+      ) {
+        setIncomingCall(incomingCall);
+      }
     }
 
     const isSyncing = mx.getSyncState() === SyncState.Syncing;
@@ -343,15 +378,19 @@ export function NotificationJumper() {
     mDirects,
     roomToParents,
     roomToParentsReady,
+    mutedRoomId,
+    incomingVoiceRoomCallSoundEnabled,
+    setIncomingCall,
     navigate,
     location,
     setPending,
     log,
   ]);
 
-  // Reset the guard only when pending is replaced (new notification or cleared).
+  // Reset the guards only when pending is replaced (new notification or cleared).
   useEffect(() => {
     jumpingRef.current = false;
+    handledCallRef.current = false;
   }, [pending]);
 
   // Keep a stable ref to the latest performJump so that the listeners below

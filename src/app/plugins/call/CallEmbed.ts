@@ -19,6 +19,21 @@ import { createDebugLogger } from '$utils/debugLogger';
 
 const debugLog = createDebugLogger('CallEmbed');
 
+const HAS_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+
+/**
+ * `new URL(value, origin)` silently treats a scheme-less host like "call.example.org"
+ * as a path relative to `origin` (producing "https://<app-origin>/call.example.org")
+ * instead of the remote host the deployment actually meant. Normalize bare hosts to
+ * https:// so they resolve as a real origin; leave absolute URLs and same-origin
+ * relative paths (leading "/" or "//") untouched.
+ */
+export const normalizeElementCallUrl = (value: string): string => {
+  const trimmed = value.trim();
+  if (HAS_SCHEME_RE.test(trimmed) || trimmed.startsWith('/')) return trimmed;
+  return `https://${trimmed}`;
+};
+
 const resolveCssVar = (variable: string): string => {
   const match = variable.match(/var\((--[^,)]+)/);
   if (match && match[1]) {
@@ -125,7 +140,7 @@ export class CallEmbed {
     let widgetUrl: URL;
     if (elementCallUrl && elementCallUrl.trim()) {
       try {
-        widgetUrl = new URL(elementCallUrl, window.location.origin);
+        widgetUrl = new URL(normalizeElementCallUrl(elementCallUrl), window.location.origin);
       } catch (error) {
         debugLog.warn(
           'call',

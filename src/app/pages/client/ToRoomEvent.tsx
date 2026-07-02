@@ -35,6 +35,7 @@ export function ToRoomEvent() {
   const { user_id: userId, room_id: roomId, event_id: eventId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const activeSessionId = useAtomValue(activeSessionIdAtom);
   const mDirects = useAtomValue(mDirectAtom);
   const mutedRoomId = useAtomValue(mutedCallRoomIdAtom);
   const [incomingVoiceRoomCallSoundEnabled] = useSetting(
@@ -77,6 +78,7 @@ export function ToRoomEvent() {
     });
     // Switch to the target account first so the notification jumper navigates
     // under the correct session.
+    const needsAccountSwitch = !!userId && userId !== activeSessionId;
     if (userId) setActiveSessionId(userId);
     setPending(
       createPendingNotification({
@@ -87,20 +89,27 @@ export function ToRoomEvent() {
         targetSessionId: userId,
         swClickId,
         source: 'to_room_event',
+        // Resolving now would read mDirects/mutedRoomId/settings for the session that
+        // was active *before* the switch, not the target session — defer to
+        // NotificationJumper, which already waits for the target session's client to
+        // become active before touching session-scoped atoms.
+        callSearchParams: needsAccountSwitch ? rawSearchParams : undefined,
       })
     );
 
-    const incomingCall = resolveIncomingCallFromSearchParams(
-      searchParams,
-      roomId,
-      eventId,
-      mDirects.has(roomId)
-    );
-    if (
-      incomingCall &&
-      !isIncomingCallSuppressed(incomingCall, mutedRoomId, incomingVoiceRoomCallSoundEnabled)
-    ) {
-      setIncomingCall(incomingCall);
+    if (!needsAccountSwitch) {
+      const incomingCall = resolveIncomingCallFromSearchParams(
+        searchParams,
+        roomId,
+        eventId,
+        mDirects.has(roomId)
+      );
+      if (
+        incomingCall &&
+        !isIncomingCallSuppressed(incomingCall, mutedRoomId, incomingVoiceRoomCallSoundEnabled)
+      ) {
+        setIncomingCall(incomingCall);
+      }
     }
 
     // Replace /to/… in history so the back button doesn't return to this route. Uses the
@@ -109,7 +118,11 @@ export function ToRoomEvent() {
     navigate(getRootPath(), { replace: true });
     // searchParams is read above via its stable rawSearchParams string form (see comment
     // near its declaration); depending on the URLSearchParams object itself would re-fire
-    // this effect on every render.
+    // this effect on every render. activeSessionId is intentionally read once (not listed
+    // as a dep): it's only used to snapshot whether this click needs an account switch,
+    // and listing it would re-run this effect (redundantly re-navigating and re-stashing
+    // pending state) once setActiveSessionId's own update lands — the component navigates
+    // away immediately below regardless.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [
     eventId,
