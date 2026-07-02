@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/react';
 import { callRingtoneVolumeToGain } from './callRingtone';
-import { resolveCallToneSources } from './callToneSources';
+import { resolveCallToneSources, revokeUnusedCustomToneUrls } from './callToneSources';
 import type { Settings, CallRingtoneId } from '$state/settings';
 
 export type PreviewTone = 'incoming' | 'outgoing';
@@ -101,22 +101,13 @@ class CallRingtoneManager {
     });
     const source = tone === 'incoming' ? resolved.incomingUrl : resolved.outgoingUrl;
 
-    // When ringtone and ringback are both set to the same custom file, incomingUrl and
-    // outgoingUrl are the same blob URL — don't revoke it as "the other tone's unused
-    // URL" when it's actually the one we're about to play as `source`.
-    if (
-      tone === 'incoming' &&
-      resolved.outgoingUrl?.startsWith('blob:') &&
-      resolved.outgoingUrl !== source
-    ) {
-      URL.revokeObjectURL(resolved.outgoingUrl);
-    } else if (
-      tone === 'outgoing' &&
-      resolved.incomingUrl?.startsWith('blob:') &&
-      resolved.incomingUrl !== source
-    ) {
-      URL.revokeObjectURL(resolved.incomingUrl);
-    }
+    // Revoke whichever custom blob URL isn't the one about to play — using the
+    // dedicated helper (keyed off the raw customRingtone/customRingback object URLs)
+    // rather than re-deriving this from incomingUrl/outgoingUrl, so cleanup doesn't
+    // depend on assuming how those get resolved. Runs before the early return below so
+    // a silent-preview selection (source === null) still revokes any blob that was
+    // created for the *other* tone.
+    revokeUnusedCustomToneUrls(resolved, source);
 
     if (!source) return;
 
