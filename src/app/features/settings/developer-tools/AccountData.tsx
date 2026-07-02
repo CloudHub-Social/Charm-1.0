@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { Box, Text, Button, MenuItem } from 'folds';
+import { useCallback, useState } from "react";
+import { Box, Text, Button, MenuItem } from "folds";
 import {
   CaretDown,
   CaretRight,
@@ -7,32 +7,42 @@ import {
   chipIcon,
   menuIcon,
   Plus,
-} from '$components/icons/phosphor';
-import { SequenceCard } from '$components/sequence-card';
-import { SettingTile } from '$components/setting-tile';
-import { useMatrixClient } from '$hooks/useMatrixClient';
-import { useAccountDataCallback } from '$hooks/useAccountDataCallback';
-import { CutoutCard } from '$components/cutout-card';
-import { SequenceCardStyle } from '$features/settings/styles.css';
+} from "$components/icons/phosphor";
+import { SequenceCard } from "$components/sequence-card";
+import { SettingTile } from "$components/setting-tile";
+import { useMatrixClient } from "$hooks/useMatrixClient";
+import { useAccountDataCallback } from "$hooks/useAccountDataCallback";
+import { CutoutCard } from "$components/cutout-card";
+import { SequenceCardStyle } from "$features/settings/styles.css";
 
 type AccountDataProps = {
   expand: boolean;
   onExpandToggle: (expand: boolean) => void;
   onSelect: (type: string | null) => void;
 };
-export function AccountData({ expand, onExpandToggle, onSelect }: AccountDataProps) {
+export function AccountData({
+  expand,
+  onExpandToggle,
+  onSelect,
+}: AccountDataProps) {
   const mx = useMatrixClient();
   const [accountDataTypes, setAccountDataKeys] = useState<string[]>(() =>
-    // TODO: tighten this once account data event typing is standardized.
-    Array.from(mx.store.accountData.keys())
+    // mx.store.accountData is a stringly-typed Map<string, MatrixEvent> — its
+    // .keys() iterator yields untyped strings. There is no SDK-level generic for
+    // enumerating all account-data event types, so we collect them as string[].
+    // See issue #502 for the tracked improvement.
+    Array.from(mx.store.accountData.keys()),
   );
 
   useAccountDataCallback(
     mx,
     useCallback(() => {
-      // TODO: tighten this once account data event typing is standardized.
+      // mx.store.accountData is a stringly-typed Map<string, MatrixEvent> — its
+      // .keys() iterator yields untyped strings. There is no SDK-level generic for
+      // enumerating all account-data event types, so we collect them as string[].
+      // See issue #502 for the tracked improvement.
       setAccountDataKeys(Array.from(mx.store.accountData.keys()));
-    }, [mx])
+    }, [mx]),
   );
 
   return (
@@ -56,9 +66,11 @@ export function AccountData({ expand, onExpandToggle, onSelect }: AccountDataPro
               size="300"
               radii="300"
               outlined
-              before={menuIcon(expand ? CaretUp : CaretDown, { weight: 'fill' })}
+              before={menuIcon(expand ? CaretUp : CaretDown, {
+                weight: "fill",
+              })}
             >
-              <Text size="B300">{expand ? 'Collapse' : 'Expand'}</Text>
+              <Text size="B300">{expand ? "Collapse" : "Expand"}</Text>
             </Button>
           }
         />
