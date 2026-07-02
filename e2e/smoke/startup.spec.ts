@@ -8,7 +8,11 @@ test.describe('app startup smoke', () => {
     await page.goto('/');
 
     await expect(page).toHaveURL(/#\/login\/smoke\.test\/?$/);
-    await expect(page.getByRole('button', { name: 'Login' })).toBeVisible();
+    // `exact: true` avoids matching Sentry's own dev-toolbar "Login to
+    // Sentry" button, which also satisfies a non-exact { name: 'Login' }
+    // role query when VITE_SENTRY_TOOLBAR is enabled (as it is in the
+    // Sentry Snapshots CI job, but not in a bare local run).
+    await expect(page.getByRole('button', { name: 'Login', exact: true })).toBeVisible();
     expect(smokeApp.getConfigRequestCount()).toBe(3);
   });
 
