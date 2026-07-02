@@ -156,14 +156,29 @@ globalStyle(
 // row loses its ring on the edges flush against the card.
 //
 // This is not a one-off: it recurs anywhere a component both clips overflow
-// and butts focusable children flush against its edge. Rather than patch
-// each call site, `CutoutCard`'s own class is targeted directly here (its
-// vanilla-extract debug identifier — this app builds with `identifiers:
-// 'debug'` — keeps a stable `CutoutCard` substring, unlike folds' prebuilt
-// classes; see the `[class*="Button"]`-style comment above for why that
-// substring approach doesn't work for folds' own classes). Any current or
-// future `CutoutCard` usage is covered automatically, with no per-call-site
-// opt-in needed, since every `CutoutCard` clips overflow by construction.
+// and butts focusable children flush against its edge. However, matching
+// broadly on `[class*="CutoutCard"]` (an earlier version of this rule) is
+// too broad: `CutoutCard` doesn't always clip its children flush against the
+// edge — several call sites (`UserModeration.tsx`'s ban/kick/invite alerts,
+// `RoomAddress.tsx`'s published-addresses list, `PowerChip.tsx`'s error
+// card, `UserChips.tsx`'s `IgnoredUserAlert`) pass an inline
+// `style={{ padding: ... }}` that already buffers focusable children from
+// the clipped edge, so they were never at clipping risk. Forcing the inset
+// ring on those unconditionally pulled the ring inside the focused
+// element's own border box for no reason, where it can overlap the
+// element's own content (Sentry LOW severity finding on this PR,
+// comment_id=3515284845).
+//
+// Since padding is applied via an arbitrary inline `style` prop (not a CSS
+// class), a plain selector can't distinguish "this instance has padding"
+// from "this instance doesn't". `CutoutCard` (`src/app/components/
+// cutout-card/CutoutCard.tsx`) instead exposes an explicit `unpadded` prop
+// for genuinely flush/clipping-risk instances, which sets a
+// `data-focus-ring-inset` marker attribute — mirroring the existing
+// `data-focus-ring-self` opt-in pattern above rather than inventing a new
+// convention. Only `CutoutCard` instances that opt in via `unpadded` (i.e.
+// `AccountData.tsx`, `DevelopTools.tsx`) get the inset treatment; padded
+// instances keep the normal outset ring like every other focusable element.
 //
 // The global *positive* offset is intentionally left unchanged for
 // everywhere else: it reads clearly against non-clipping backgrounds, and
@@ -171,22 +186,22 @@ globalStyle(
 // content everywhere, a worse look for the common (non-clipped) case.
 globalStyle(
   `
-    [class*="CutoutCard"] a:focus-visible,
-    [class*="CutoutCard"] button:focus-visible,
-    [class*="CutoutCard"] select:focus-visible,
-    [class*="CutoutCard"] [role="button"]:focus-visible,
-    [class*="CutoutCard"] [role="tab"]:focus-visible,
-    [class*="CutoutCard"] [role="menuitem"]:focus-visible,
-    [class*="CutoutCard"] [role="option"]:focus-visible,
-    [class*="CutoutCard"] [role="checkbox"]:focus-visible,
-    [class*="CutoutCard"] [role="radio"]:focus-visible,
-    [class*="CutoutCard"] [role="switch"]:focus-visible,
-    [class*="CutoutCard"] [role="textbox"]:focus-visible,
-    [class*="CutoutCard"] [tabindex="0"]:focus-visible,
-    [class*="CutoutCard"] [class*="Button"]:focus-visible,
-    [class*="CutoutCard"] [class*="Chip"]:focus-visible,
-    [class*="CutoutCard"] [class*="MenuItem"]:focus-visible,
-    [class*="CutoutCard"] [class*="IconButton"]:focus-visible
+    [data-focus-ring-inset] a:focus-visible,
+    [data-focus-ring-inset] button:focus-visible,
+    [data-focus-ring-inset] select:focus-visible,
+    [data-focus-ring-inset] [role="button"]:focus-visible,
+    [data-focus-ring-inset] [role="tab"]:focus-visible,
+    [data-focus-ring-inset] [role="menuitem"]:focus-visible,
+    [data-focus-ring-inset] [role="option"]:focus-visible,
+    [data-focus-ring-inset] [role="checkbox"]:focus-visible,
+    [data-focus-ring-inset] [role="radio"]:focus-visible,
+    [data-focus-ring-inset] [role="switch"]:focus-visible,
+    [data-focus-ring-inset] [role="textbox"]:focus-visible,
+    [data-focus-ring-inset] [tabindex="0"]:focus-visible,
+    [data-focus-ring-inset] [class*="Button"]:focus-visible,
+    [data-focus-ring-inset] [class*="Chip"]:focus-visible,
+    [data-focus-ring-inset] [class*="MenuItem"]:focus-visible,
+    [data-focus-ring-inset] [class*="IconButton"]:focus-visible
 `,
   {
     outlineOffset: '-2px !important',

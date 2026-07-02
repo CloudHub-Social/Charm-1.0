@@ -271,17 +271,26 @@ test.describe('global focus-visible indicator', () => {
     // in `AccountData.tsx` and `DevelopTools.tsx`.
     //
     // This synthesizes that exact shape: a container carrying a class name
-    // containing `CutoutCard` (matching the `[class*="CutoutCard"]` selector
-    // the fix targets) with `overflow: hidden` and zero padding, and a
-    // `[class*="MenuItem"]`-classed button flush against its edge. Real
-    // `CutoutCard`/`MenuItem` usage can't easily be driven through this
-    // login-page smoke harness (it requires an authenticated session, a
-    // space, and developer tools enabled), so this exercises the shipped
-    // selector/CSS directly instead of the full component tree.
+    // containing `CutoutCard` with `overflow: hidden` and zero padding, and
+    // a `[class*="MenuItem"]`-classed button flush against its edge. The
+    // container also carries `data-focus-ring-inset`, the marker attribute
+    // `CutoutCard` (`src/app/components/cutout-card/CutoutCard.tsx`) sets
+    // when its call site opts in via the `unpadded` prop — as
+    // `AccountData.tsx`/`DevelopTools.tsx` do for exactly this flush shape.
+    // The selector targets that marker attribute rather than the class name
+    // alone (see the follow-up fix below for why: a bare `[class*="CutoutCard"]`
+    // match is too broad and also matches padded `CutoutCard` instances that
+    // were never at clipping risk, incorrectly forcing the inset ring on
+    // them too — comment_id=3515284845). Real `CutoutCard`/`MenuItem` usage
+    // can't easily be driven through this login-page smoke harness (it
+    // requires an authenticated session, a space, and developer tools
+    // enabled), so this exercises the shipped selector/CSS directly instead
+    // of the full component tree.
     const ids = await page.evaluate(() => {
       const container = document.createElement('div');
       container.id = 'cutout-card-smoke-test';
       container.className = 'CutoutCard_CutoutCard__smoketest';
+      container.setAttribute('data-focus-ring-inset', '');
       Object.assign(container.style, {
         overflow: 'hidden',
         border: '2px solid black',
@@ -353,5 +362,84 @@ test.describe('global focus-visible indicator', () => {
         containerBox.y + containerBox.height + 0.5
       );
     }
+  });
+
+  test('keeps the normal outset ring for a focusable element inside a padded CutoutCard, not the inset treatment', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await expect(page).toHaveURL(/#\/login\/smoke\.test\/?$/);
+
+    // Regression coverage for the Sentry LOW-severity finding on this PR
+    // (comment_id=3515284845): the `[class*="CutoutCard"]`-scoped inset rule
+    // above matched ANY element with `CutoutCard` in its class name,
+    // regardless of whether that specific instance actually had padding.
+    // Several real call sites give their focusable children real buffer via
+    // an inline `style={{ padding: ... }}` (e.g. `UserModeration.tsx`'s
+    // ban/kick/invite alerts, `RoomAddress.tsx`'s published-addresses list)
+    // and were never at clipping risk — forcing the inset ring on them can
+    // pull the ring inside the focused element's own content instead of
+    // drawing it cleanly outside.
+    //
+    // `CutoutCard` (`src/app/components/cutout-card/CutoutCard.tsx`) now
+    // only sets the `data-focus-ring-inset` marker attribute the CSS rule
+    // targets when the call site explicitly opts in via the `unpadded`
+    // prop (used only by the genuinely flush/clipping-risk instances in
+    // `AccountData.tsx`/`DevelopTools.tsx`). This synthesizes a *padded*
+    // `CutoutCard`-shaped container — same `overflow: hidden` clipping,
+    // same `[class*="CutoutCard"]`-matching class name, but WITHOUT the
+    // `data-focus-ring-inset` marker and WITH real padding — to prove its
+    // focusable child keeps the app-wide default outset ring instead.
+    const ids = await page.evaluate(() => {
+      const container = document.createElement('div');
+      container.id = 'cutout-card-padded-smoke-test';
+      container.className = 'CutoutCard_CutoutCard__smoketest';
+      Object.assign(container.style, {
+        overflow: 'hidden',
+        border: '2px solid black',
+        borderRadius: '8px',
+        width: '200px',
+        padding: '12px',
+        margin: '40px',
+        boxSizing: 'border-box',
+      });
+
+      const button = document.createElement('button');
+      button.id = 'cutout-card-padded-button-smoke-test';
+      button.textContent = 'Unban';
+      Object.assign(button.style, {
+        display: 'block',
+        width: '100%',
+        boxSizing: 'border-box',
+        border: 'none',
+      });
+
+      container.appendChild(button);
+      document.body.appendChild(container);
+
+      return { containerId: container.id, buttonId: button.id };
+    });
+
+    const button = page.locator(`#${ids.buttonId}`);
+
+    await button.focus();
+    await expect(button).toBeFocused();
+
+    const result = await button.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        outlineStyle: style.outlineStyle,
+        outlineWidth: style.outlineWidth,
+        outlineOffset: style.outlineOffset,
+      };
+    });
+
+    expect(result.outlineStyle).toBe('solid');
+    expect(result.outlineWidth).toBe('2px');
+    // Positive offset (the app-wide default), NOT the `-2px` inset
+    // treatment — this padded container never opted into
+    // `data-focus-ring-inset`, so the ring draws normally outside the
+    // button's border box like everywhere else in the app.
+    expect(result.outlineOffset).toBe('2px');
   });
 });
