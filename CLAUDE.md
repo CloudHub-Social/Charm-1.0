@@ -40,7 +40,9 @@ Fall back to `grep`/`Explore` for exact string/symbol lookups the graph wasn't b
 
 ## Automated hooks
 
-Two repo-local hooks run automatically for every Claude Code session in this repo (see `.claude/settings.json` and `.claude/hooks/`):
+Two repo-local hooks run automatically for every Claude Code session in this repo (see `.claude/settings.json` and `.claude/hooks/`). Both are `python3` scripts invoked in exec form (`command`/`args`, not a shell string) so they run the same way regardless of platform shell — this matters because Windows sessions without Git Bash use a `PowerShell` tool where a bash script or POSIX `$VAR` syntax in a shell-form command wouldn't work:
 
-- **`check-pr-base.sh`** (PreToolUse on `Bash`/`PowerShell`) — blocks any `gh pr create` that doesn't pass `--base integration` or `--base release/*`. If a PR create gets blocked, fix the `--base` flag rather than retrying with `--no-verify`-style workarounds.
-- **`lint-on-edit.sh`** (PostToolUse on `Edit`/`Write`) — runs `oxlint` against a `.ts`/`.tsx` file immediately after it's edited and surfaces issues inline. Fix reported issues before moving on rather than deferring to a later manual lint pass.
+- **`check-pr-base.py`** (PreToolUse on `Bash`/`PowerShell`) — blocks any `gh pr create` that doesn't pass `--base integration` or `--base release/*`. Tokenizes the command with `shlex` rather than regex-matching the raw string, so it isn't fooled by a `--base` value quoted inside an unrelated flag (e.g. `--title "...--base integration..."`), a `--base` belonging to a different chained command (`;`/`&&`/`||`), or `gh`'s own global flags (`-R`/`--repo`) appearing before `pr create`. If a PR create gets blocked, fix the `--base` flag rather than retrying with `--no-verify`-style workarounds.
+- **`lint-on-edit.py`** (PostToolUse on `Edit`/`Write`) — runs `oxlint` against a `.ts`/`.tsx` file immediately after it's edited and surfaces issues inline. Fix reported issues before moving on rather than deferring to a later manual lint pass.
+
+Both require `python3` on `PATH`; if it's missing, the hook fails to spawn and silently doesn't run (fail-open, not blocking) — a known, low-probability gap rather than a hard requirement.
