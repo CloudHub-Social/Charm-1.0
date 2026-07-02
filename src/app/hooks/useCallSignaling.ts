@@ -40,10 +40,15 @@ import {
 } from '$features/call/callMembershipState';
 import { ringtoneManager } from '$features/call/CallRingtoneManager';
 import { OUTGOING_RING_TIMEOUT_MS } from '$features/call/callSignalingPolicy';
+import { getSlidingSyncManager } from '$client/initMatrix';
+import { LIST_DMS } from '$client/slidingSync';
 import { useMatrixClient } from './useMatrixClient';
 import { createDebugLogger } from '../utils/debugLogger';
 
 const debugLog = createDebugLogger('CallSignaling');
+
+const CALL_SIGNAL_DM_EXPAND_BATCH = 30;
+const CALL_SIGNAL_DM_EXPAND_INTERVAL_MS = 5000;
 
 const canSenderStartCalls = (room: Room, senderId: string): boolean =>
   room.currentState?.maySendStateEvent('org.matrix.msc3401.call.member', senderId) ?? false;
@@ -86,6 +91,10 @@ export function useIncomingCallSignaling() {
   const activeOutgoingNotificationIdRef = useRef<string | null>(null);
   const seenDeclineEventIdsRef = useRef<Set<string>>(new Set());
   const hasCallBeenActiveRef = useRef<boolean>(false);
+  const callSubscriptionRoomIdRef = useRef<string | null>(null);
+  const dmListExpansionAtRef = useRef<number>(0);
+  const mDirectsRef = useRef(mDirects);
+  mDirectsRef.current = mDirects;
 
   type SignalingHandlerRefs = {
     callEmbed: typeof callEmbed;
@@ -578,6 +587,58 @@ export function useIncomingCallSignaling() {
       handlers().stopOutgoingRing();
     };
   }, [mx]);
+
+  // Subscribe the active call room to sliding sync for real-time events.
+  useEffect(() => {
+    const slidingSyncManager = getSlidingSyncManager(mx);
+    if (!slidingSyncManager) return undefined;
+
+    const activeCallRoomId = incomingCall?.roomId ?? callEmbed?.roomId ?? null;
+    const previousCallRoomId = callSubscriptionRoomIdRef.current;
+
+    if (activeCallRoomId && activeCallRoomId !== previousCallRoomId) {
+      if (previousCallRoomId) slidingSyncManager.unsubscribeFromRoom(previousCallRoomId);
+      slidingSyncManager.subscribeToRoom(activeCallRoomId);
+      callSubscriptionRoomIdRef.current = activeCallRoomId;
+    } else if (!activeCallRoomId && previousCallRoomId) {
+      slidingSyncManager.unsubscribeFromRoom(previousCallRoomId);
+      callSubscriptionRoomIdRef.current = null;
+    }
+
+    return undefined;
+  }, [incomingCall, callEmbed, mx]);
+
+  // Periodically expand the DM sliding-sync list window while idle so that
+  // incoming calls in not-yet-loaded DM rooms can be detected.
+  useEffect(() => {
+    const slidingSyncManager = getSlidingSyncManager(mx);
+    if (!slidingSyncManager) return undefined;
+
+    const tryExpandDmList = () => {
+      if (incomingCallRef.current || callEmbed) return;
+
+      const unloadedDmCount = [...mDirectsRef.current].filter((id) => !mx.getRoom(id)).length;
+      if (unloadedDmCount === 0) return;
+
+      const dmDiagnostics = slidingSyncManager.getListDiagnostics(LIST_DMS);
+      const canExpand =
+        dmDiagnostics &&
+        dmDiagnostics.knownCount > 0 &&
+        dmDiagnostics.rangeEnd < dmDiagnostics.knownCount - 1;
+
+      const now = Date.now();
+      if (canExpand && now - dmListExpansionAtRef.current >= CALL_SIGNAL_DM_EXPAND_INTERVAL_MS) {
+        dmListExpansionAtRef.current = now;
+        slidingSyncManager.requestListWindow(
+          LIST_DMS,
+          dmDiagnostics.rangeEnd + CALL_SIGNAL_DM_EXPAND_BATCH
+        );
+      }
+    };
+
+    const intervalId = window.setInterval(tryExpandDmList, CALL_SIGNAL_DM_EXPAND_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [mx, callEmbed]);
 
   return null;
 }
