@@ -660,7 +660,13 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
           <BackRouteHandler>
             {(onBack) => (
               <Box shrink="No" alignItems="Center">
-                <IconButton fill="None" onClick={onBack} style={{ position: 'relative' }}>
+                <IconButton
+                  fill="None"
+                  size="500"
+                  onClick={onBack}
+                  style={{ position: 'relative' }}
+                  aria-label="Back"
+                >
                   {highlightedUnreadCount > 0 && (
                     <span className={css.BackButtonBadge}>
                       <UnreadBadge highlight count={highlightedUnreadCount} />
@@ -748,7 +754,13 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                   }
                 >
                   {(triggerRef) => (
-                    <IconButton fill="None" ref={triggerRef} onClick={handleSearchClick}>
+                    <IconButton
+                      fill="None"
+                      size="500"
+                      ref={triggerRef}
+                      onClick={handleSearchClick}
+                      aria-label={encryptedRoom ? 'Search (local cache)' : 'Search'}
+                    >
                       {composerIcon(MagnifyingGlass)}
                     </IconButton>
                   )}
@@ -766,10 +778,12 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                 {(triggerRef) => (
                   <IconButton
                     fill="None"
+                    size="500"
                     style={{ position: 'relative' }}
                     onClick={handleOpenPinMenu}
                     ref={triggerRef}
                     aria-pressed={!!pinMenuAnchor}
+                    aria-label="Pinned Messages"
                   >
                     {unreadPinsCount > 0 && (
                       <Badge
@@ -828,6 +842,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                 {(triggerRef) => (
                   <IconButton
                     fill="None"
+                    size="500"
                     ref={triggerRef}
                     onClick={() => {
                       // If a thread is open, close it and open thread browser
@@ -841,6 +856,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                     }}
                     aria-pressed={threadBrowserOpen || !!openThreadId}
                     style={{ position: 'relative' }}
+                    aria-label="Threads"
                   >
                     {unreadThreadsCount > 0 && (
                       <Badge
@@ -879,9 +895,11 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
               {(triggerRef) => (
                 <IconButton
                   fill="None"
+                  size="500"
                   ref={triggerRef}
                   onClick={() => setWidgetDrawer((d) => !d)}
                   style={{ position: 'relative' }}
+                  aria-label={widgetDrawer ? 'Hide Widgets' : 'Show Widgets'}
                 >
                   {widgets.length > 0 && (
                     <Badge
@@ -920,7 +938,13 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
               }
             >
               {(triggerRef) => (
-                <IconButton fill="None" ref={triggerRef} onClick={handleMemberToggle}>
+                <IconButton
+                  fill="None"
+                  size="500"
+                  ref={triggerRef}
+                  onClick={handleMemberToggle}
+                  aria-label={callView ? 'Members' : peopleDrawer ? 'Hide Members' : 'Show Members'}
+                >
                   {composerIcon(UserCircle, { weight: peopleDrawer ? 'fill' : 'regular' })}
                 </IconButton>
               )}
@@ -940,10 +964,12 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
               {(triggerRef) => (
                 <IconButton
                   fill="None"
+                  size="500"
                   ref={triggerRef}
                   onClick={() => {
                     setChat(!chat);
                   }}
+                  aria-label={chat ? 'Hide Chat' : 'Show Chat'}
                 >
                   {composerIcon(ChatCircleDots, { weight: chat ? 'fill' : 'regular' })}
                 </IconButton>
@@ -964,9 +990,11 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
             {(triggerRef) => (
               <IconButton
                 fill="None"
+                size="500"
                 onClick={handleOpenMenu}
                 ref={triggerRef}
                 aria-pressed={!!menuAnchor}
+                aria-label="More Options"
               >
                 {composerIcon(DotsThreeOutlineVerticalIcon, {
                   weight: menuAnchor ? 'fill' : 'regular',

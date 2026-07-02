@@ -67,6 +67,7 @@ export function RoomCallButton({ room }: RoomCallButtonProps) {
       {(triggerRef) => (
         <IconButton
           fill="None"
+          size="500"
           ref={triggerRef}
           onClick={handleStartCall}
           aria-label="Start Voice Call"

@@ -2363,9 +2363,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                         setSendError(undefined);
                       }}
                       variant="SurfaceVariant"
-                      size="300"
+                      size="400"
                       radii="300"
-                      title="schedule message send"
+                      title="Cancel scheduled send"
+                      aria-label="Cancel scheduled send"
                     >
                       {chipIcon(X)}
                     </IconButton>
@@ -2395,7 +2396,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                         resetEditorHistory(editor);
                       }}
                       variant="SurfaceVariant"
-                      size="300"
+                      size="400"
                       radii="300"
                       aria-label="Cancel edit"
                       title="Cancel edit"
@@ -2458,7 +2459,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                         }
                       }}
                       variant="SurfaceVariant"
-                      size="300"
+                      size="400"
                       radii="300"
                       aria-label="Cancel reply"
                       title="Cancel reply"
@@ -2486,7 +2487,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       </Box>
                       <IconButton
                         variant="SurfaceVariant"
-                        size="300"
+                        size="400"
                         radii="300"
                         title={
                           silentReply ? 'Unmute reply notifications' : 'Mute reply notifications'
@@ -2573,7 +2574,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   void openAddMenu(evt.currentTarget);
                 }}
                 variant="SurfaceVariant"
-                size="300"
+                size="400"
                 radii="300"
                 title={editorOldAddFile ? 'Upload File' : 'Add'}
                 aria-label={editorOldAddFile ? 'Upload and attach a File' : 'Add new Item'}
@@ -2588,7 +2589,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               <IconButton
                 ref={micBtnRef}
                 variant={showAudioRecorder ? 'Critical' : 'SurfaceVariant'}
-                size="300"
+                size="400"
                 radii="300"
                 title={showAudioRecorder ? 'Stop recording' : 'Record audio message'}
                 aria-label={showAudioRecorder ? 'Stop recording' : 'Record audio message'}
@@ -2726,7 +2727,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     onPointerDownCapture={prepareComposerOverlayTrigger}
                     onClick={() => void openEmojiBoard(EmojiBoardTab.Sticker)}
                     variant="SurfaceVariant"
-                    size="300"
+                    size="400"
                     radii="300"
                     title="open sticker picker"
                     aria-label="Open sticker picker"
@@ -2742,7 +2743,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     onPointerDownCapture={prepareComposerOverlayTrigger}
                     onClick={() => void openEmojiBoard(EmojiBoardTab.Gif)}
                     variant="SurfaceVariant"
-                    size="300"
+                    size="400"
                     radii="300"
                     title="open GIF picker"
                     aria-label="Open GIF picker"
@@ -2760,7 +2761,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   onPointerDownCapture={prepareComposerOverlayTrigger}
                   onClick={() => void openEmojiBoard(EmojiBoardTab.Emoji)}
                   variant="SurfaceVariant"
-                  size="300"
+                  size="400"
                   radii="300"
                   title="open emoji picker"
                   aria-label="Open emoji picker"
@@ -2932,7 +2933,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     }
                   }}
                   variant={scheduledTime ? 'Primary' : 'SurfaceVariant'}
-                  size="300"
+                  size="400"
                   radii="0"
                   className={
                     delayedEventsSupported && !isMobileLayout ? css.SplitSendButton : undefined
@@ -2948,7 +2949,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     title="Schedule Message"
                     aria-label="Schedule message send"
                     variant={scheduledTime ? 'Primary' : 'SurfaceVariant'}
-                    size="300"
+                    size="400"
                     radii="0"
                     className={css.SplitChevronButton}
                   >
