@@ -12,6 +12,10 @@ import {
 
 const writeText = vi.fn<() => Promise<void>>();
 
+function CustomSelect({ disabled }: { disabled?: boolean }) {
+  return <button type="button">{disabled ? 'Disabled' : 'Enabled'}</button>;
+}
+
 function renderTile(
   screenSize: ScreenSize,
   focusId?: string,
@@ -108,5 +112,80 @@ describe('SettingTile', () => {
     expect(screen.getByRole('button', { name: /copy settings link/i })).toHaveClass(
       settingTileSettingLinkActionMobileVisible
     );
+  });
+
+  it('labels a trailing switch with the tile title via aria-labelledby', () => {
+    renderTile(ScreenSize.Desktop, 'system-theme', {
+      title: 'System Theme',
+      // SettingTile injects the label at runtime; this control has none of its own.
+      // oxlint-disable-next-line jsx-a11y/control-has-associated-label
+      after: <button type="button" role="switch" aria-checked={false} />,
+    });
+
+    const titleEl = screen.getByText('System Theme');
+    const switchEl = screen.getByRole('switch');
+
+    expect(titleEl.id).toBeTruthy();
+    expect(switchEl).toHaveAttribute('aria-labelledby', titleEl.id);
+    expect(screen.getByRole('switch', { name: 'System Theme' })).toBeInTheDocument();
+  });
+
+  it('does not override an after element that already declares its own accessible name', () => {
+    renderTile(ScreenSize.Desktop, 'reduced-motion', {
+      title: 'Reduced Motion',
+      after: (
+        <button type="button" role="switch" aria-checked={false} aria-label="Custom label" />
+      ),
+    });
+
+    const switchEl = screen.getByRole('switch');
+    expect(switchEl).toHaveAttribute('aria-label', 'Custom label');
+    expect(switchEl).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not crash when after is not a single valid element', () => {
+    expect(() =>
+      renderTile(ScreenSize.Desktop, 'multi-after', {
+        title: 'Multiple Controls',
+        after: (
+          <>
+            <button type="button">One</button>
+            <button type="button">Two</button>
+          </>
+        ),
+      })
+    ).not.toThrow();
+  });
+
+  it('does not override an after element that already has its own text-content label', () => {
+    renderTile(ScreenSize.Desktop, 'reset-all-push-notifications', {
+      title: 'Reset All Push Notifications',
+      after: <button type="button">Reset All</button>,
+    });
+
+    const button = screen.getByRole('button', { name: 'Reset All' });
+    expect(button).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not warn or crash when after is a custom component with no children of its own', () => {
+    expect(() =>
+      renderTile(ScreenSize.Desktop, 'custom-select', {
+        title: 'Custom Select',
+        after: <CustomSelect disabled={false} />,
+      })
+    ).not.toThrow();
+
+    expect(screen.getByRole('button', { name: 'Enabled' })).toBeInTheDocument();
+  });
+
+  it('does not add aria-labelledby when the tile has no title', () => {
+    renderTile(ScreenSize.Desktop, undefined, {
+      title: undefined,
+      // SettingTile must not inject a label here; this control has none of its own.
+      // oxlint-disable-next-line jsx-a11y/control-has-associated-label
+      after: <button type="button" role="switch" aria-checked={false} />,
+    });
+
+    expect(screen.getByRole('switch')).not.toHaveAttribute('aria-labelledby');
   });
 });

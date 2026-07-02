@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { cloneElement, isValidElement, useId, type ReactNode } from 'react';
 import { Box, IconButton, Text } from 'folds';
 import { Check, Link, sizedIcon } from '$components/icons/phosphor';
 import { BreakWord } from '$styles/Text.css';
@@ -64,6 +64,29 @@ function SettingTileSettingLinkAction({
   );
 }
 
+/**
+ * Clones `after` (the trailing control, e.g. a Switch) to inject
+ * `aria-labelledby={titleId}` so it picks up the tile's title as its
+ * accessible name. Only applies when `after` is a single valid element that:
+ *  - hasn't already declared its own `aria-label`/`aria-labelledby` (don't
+ *    override a caller that already self-labels), and
+ *  - has no `children` (don't override an element like a `<Button>` that
+ *    already derives its accessible name from visible text content - only
+ *    childless controls like folds' `<Switch>` have nothing to name them).
+ */
+function labelAfterWithTitle(after: ReactNode, titleId: string): ReactNode {
+  if (!isValidElement<Record<string, unknown>>(after)) return after;
+
+  const existingLabel = after.props['aria-label'];
+  const existingLabelledBy = after.props['aria-labelledby'];
+  if (existingLabel != null || existingLabelledBy != null) return after;
+
+  const hasChildren = after.props.children != null;
+  if (hasChildren) return after;
+
+  return cloneElement(after, { 'aria-labelledby': titleId });
+}
+
 export function SettingTile({
   focusId,
   showSettingLinkAction = true,
@@ -75,6 +98,8 @@ export function SettingTile({
   children,
 }: SettingTileProps) {
   const settingsLink = useSettingsLinkContext();
+  const generatedTitleId = useId();
+  const titleId = focusId ? `${focusId}-title` : generatedTitleId;
   const copyAction =
     settingsLink && focusId && showSettingLinkAction ? (
       <SettingTileSettingLinkAction
@@ -86,10 +111,12 @@ export function SettingTile({
   const titleAction = title ? copyAction : null;
   const trailingCopyAction = title ? null : copyAction;
 
+  const labeledAfter = title ? labelAfterWithTitle(after, titleId) : after;
+
   const trailing =
     after || trailingCopyAction ? (
       <Box shrink="No" alignItems="Center" gap="200">
-        {after}
+        {labeledAfter}
         {trailingCopyAction}
       </Box>
     ) : null;
@@ -111,7 +138,7 @@ export function SettingTile({
             alignItems="Center"
             gap="100"
           >
-            <Text className={BreakWord} size="T300">
+            <Text id={titleId} className={BreakWord} size="T300">
               {title}
             </Text>
             {titleAction}

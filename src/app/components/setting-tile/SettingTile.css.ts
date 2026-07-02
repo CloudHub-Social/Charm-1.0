@@ -31,11 +31,18 @@ export const settingTileSettingLinkActionTransparentBackground = style({
 export const settingTileSettingLinkAction = style([
   settingLinkActionBase,
   {
-    minWidth: 0,
-    minHeight: 0,
+    // Keep the icon glyph small (sized via `sizedIcon(..., '50')`) but
+    // guarantee a tap target that meets the WCAG 2.1 AA touch-target
+    // recommendation (44x44 CSS px) via padding around the smaller icon,
+    // rather than scaling the icon itself up.
+    minWidth: 44,
+    minHeight: 44,
     width: 'auto',
     height: 'auto',
     padding: 0,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 ]);
 
