@@ -233,6 +233,32 @@ export async function installSmokeApp(page: Page, options: SmokeAppOptions = {})
   };
 }
 
+const toolbarEnabled = process.env.VITE_SENTRY_TOOLBAR === 'true';
+
+/**
+ * Neutralizes Sentry's real dev toolbar so smoke specs get a clean DOM.
+ * Without this, when VITE_SENTRY_TOOLBAR is enabled (as it is in the
+ * Sentry Snapshots CI job, but typically not in a bare local run), the
+ * toolbar renders its own UI on top of the app -- including a "Login to
+ * Sentry" button that collides with non-exact `getByRole('button', { name:
+ * 'Login' })` queries against the app's own login button, and can shift
+ * focus/outline behavior for assertions that aren't about the toolbar
+ * itself. Originally written once inline in observability.spec.ts (which
+ * intentionally tests toolbar-enabled/disabled behavior directly and needs
+ * more nuanced handling than a blanket stub); extracted here so any other
+ * smoke spec that doesn't care about the toolbar can opt in with one call.
+ */
+export async function stubToolbar(page: Page) {
+  if (!toolbarEnabled) return;
+  await page.addInitScript(() => {
+    window.SentryToolbar = {
+      init() {
+        return undefined;
+      },
+    };
+  });
+}
+
 export async function seedStoredSession(page: Page, sessionOverrides: StoredSessionOptions = {}) {
   const session = {
     ...defaultStoredSession(),

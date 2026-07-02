@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { installSmokeApp } from './smokeApp';
+import { installSmokeApp, stubToolbar } from './smokeApp';
 
 // Regression coverage for the global `:focus-visible` indicator added in
 // `src/app/styles/overrides/General.css.ts`. jsdom (used by this repo's
@@ -30,6 +30,12 @@ import { installSmokeApp } from './smokeApp';
 test.describe('global focus-visible indicator', () => {
   test.beforeEach(async ({ page }) => {
     await installSmokeApp(page);
+    // Sentry's real dev toolbar (enabled in the Sentry Snapshots CI job)
+    // renders its own "Login to Sentry" button, which collides with
+    // non-exact { name: 'Login' } role queries below and can otherwise
+    // interfere with these precise CSS assertions. This spec doesn't test
+    // toolbar behavior itself, so it's stubbed away unconditionally.
+    await stubToolbar(page);
   });
 
   test('gives a folds Button the theme-adaptive 2px outline on keyboard focus', async ({
@@ -38,7 +44,7 @@ test.describe('global focus-visible indicator', () => {
     await page.goto('/');
     await expect(page).toHaveURL(/#\/login\/smoke\.test\/?$/);
 
-    const loginButton = page.getByRole('button', { name: 'Login' });
+    const loginButton = page.getByRole('button', { name: 'Login', exact: true });
     await expect(loginButton).toBeVisible();
 
     await loginButton.focus();
@@ -194,7 +200,7 @@ test.describe('global focus-visible indicator', () => {
     await page.goto('/');
     await expect(page).toHaveURL(/#\/login\/smoke\.test\/?$/);
 
-    const loginButton = page.getByRole('button', { name: 'Login' });
+    const loginButton = page.getByRole('button', { name: 'Login', exact: true });
     await loginButton.focus();
     await expect(loginButton).toBeFocused();
 
