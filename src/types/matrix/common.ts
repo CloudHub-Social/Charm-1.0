@@ -1,8 +1,8 @@
-import type { SerializableMap } from '$types/wrapper/SerializableMap';
-import type { SerializableSet } from '$types/wrapper/SerializableSet';
-import type { EncryptedAttachmentInfo } from 'browser-encrypt-attachment';
-import type { MsgType } from '$types/matrix-sdk';
-import type * as prefix from '$unstable/prefixes';
+import type { SerializableMap } from "$types/wrapper/SerializableMap";
+import type { SerializableSet } from "$types/wrapper/SerializableSet";
+import type { EncryptedAttachmentInfo } from "browser-encrypt-attachment";
+import type { MsgType } from "$types/matrix-sdk";
+import type * as prefix from "$unstable/prefixes";
 
 export type IImageInfo = {
   w?: number;
@@ -13,7 +13,7 @@ export type IImageInfo = {
 };
 
 export type MatrixRelatesTo = {
-  rel_type: 'm.annotation';
+  rel_type: "m.annotation";
   event_id: string;
   key?: string;
 };
@@ -33,11 +33,21 @@ export type MSC4459ImagePackReference = {
    */
   via?: SerializableSet<string>;
   /**
-   * TODO doc
+   * The Matrix state key of the image pack state event (whose event *type* is
+   * `im.ponies.room_emotes` or equivalent) within the image pack room. Together
+   * with `room_id`, this uniquely identifies the state event that carries the
+   * pack definition.
+   *
+   * Per MSC4459, the state key is typically an empty string (`""`) for the
+   * default pack, or a pack-specific identifier for named packs.
+   * **Note:** an empty string is a valid value and must not be treated as absent
+   * (avoid falsy checks like `if (ref.state_key)`).
+   *
+   * @see https://github.com/matrix-org/matrix-spec-proposals/pull/4459
    */
   state_key?: string;
   /**
-   * the shortcode this emoji is refered by
+   * The shortcode this emoji is referred to by.
    */
   shortcode?: string;
 };
@@ -48,9 +58,9 @@ export type MSC1767Text = {
 };
 
 export type MatrixReactionEvent = {
-  'm.relates_to': MatrixRelatesTo;
+  "m.relates_to": MatrixRelatesTo;
   shortcode?: string;
-  'com.beeper.reaction.shortcode'?: string;
+  "com.beeper.reaction.shortcode"?: string;
   /**
    * a map of image pack references
    */
