@@ -24,7 +24,7 @@ interface MatrixPushData {
     sender_ts?: number;
     lifetime?: number;
     'm.call.intent'?: string;
-    'm.relates_to'?: { event_id?: string; key?: string };
+    'm.relates_to'?: { event_id?: string; key?: string }; // key is the m.annotation reaction emoji
   };
   sender_display_name?: string;
   sender_id?: string;

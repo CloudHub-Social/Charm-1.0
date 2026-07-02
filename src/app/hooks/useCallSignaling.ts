@@ -596,16 +596,19 @@ export function useIncomingCallSignaling() {
     const activeCallRoomId = incomingCall?.roomId ?? callEmbed?.roomId ?? null;
     const previousCallRoomId = callSubscriptionRoomIdRef.current;
 
-    if (activeCallRoomId && activeCallRoomId !== previousCallRoomId) {
-      if (previousCallRoomId) slidingSyncManager.unsubscribeFromRoom(previousCallRoomId);
-      slidingSyncManager.subscribeToRoom(activeCallRoomId);
-      callSubscriptionRoomIdRef.current = activeCallRoomId;
-    } else if (!activeCallRoomId && previousCallRoomId) {
-      slidingSyncManager.unsubscribeFromRoom(previousCallRoomId);
-      callSubscriptionRoomIdRef.current = null;
-    }
+    if (activeCallRoomId === previousCallRoomId) return undefined;
 
-    return undefined;
+    if (previousCallRoomId) slidingSyncManager.unsubscribeFromRoom(previousCallRoomId);
+    if (activeCallRoomId) slidingSyncManager.subscribeToRoom(activeCallRoomId);
+    callSubscriptionRoomIdRef.current = activeCallRoomId;
+
+    return () => {
+      // Unsubscribe on unmount so rooms don't remain pinned in sliding sync.
+      if (callSubscriptionRoomIdRef.current) {
+        slidingSyncManager.unsubscribeFromRoom(callSubscriptionRoomIdRef.current);
+        callSubscriptionRoomIdRef.current = null;
+      }
+    };
   }, [incomingCall, callEmbed, mx]);
 
   // Periodically expand the DM sliding-sync list window while idle so that

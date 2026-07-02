@@ -41,10 +41,14 @@ export function ToRoomEvent() {
   );
   const setActiveSessionId = useSetAtom(activeSessionIdAtom);
   const setPending = useSetAtom(pendingNotificationAtom);
+  // Extract primitive values from searchParams so the navigation effect below
+  // depends on stable values, not the URLSearchParams object reference (which
+  // React Router v6 recreates on every render).
   const joinCall = searchParams.get('joinCall') === 'true';
   const swClickId = searchParams.get('swClickId') ?? undefined;
   const jumpMode =
     searchParams.get('jumpMode') === 'notification_live' ? 'notification_live' : 'history_context';
+  const rawSearchParams = searchParams.toString();
   const setIncomingCall = useSetAtom(incomingCallAtom);
 
   useEffect(() => {

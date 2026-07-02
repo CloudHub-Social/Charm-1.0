@@ -6,6 +6,8 @@ const PRESENCE_TO_SET_PRESENCE: Record<Presence, SetPresence> = {
   [Presence.Online]: SetPresence.Online,
   [Presence.Unavailable]: SetPresence.Unavailable,
   [Presence.Offline]: SetPresence.Offline,
+  // Dnd is a local display-only enum value (signalled via [dnd] status message);
+  // Matrix has no native dnd presence so we map it to unavailable.
   [Presence.Dnd]: SetPresence.Unavailable,
 };
 
