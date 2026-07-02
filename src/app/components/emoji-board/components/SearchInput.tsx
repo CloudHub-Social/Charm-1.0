@@ -14,6 +14,13 @@ type SearchInputProps = {
   allowTextCustomEmoji?: boolean;
   onTextCustomEmojiSelect?: (text: string) => void;
   placeholder?: string;
+  /**
+   * When true, never autofocus on mount even on desktop. Used when this
+   * input is remounting (its parent keys it by active tab) as a result of
+   * keyboard tab navigation, so autofocus doesn't steal focus away from the
+   * tablist mid-navigation.
+   */
+  suppressAutoFocus?: boolean;
 };
 export function SearchInput({
   tab,
@@ -24,6 +31,7 @@ export function SearchInput({
   allowTextCustomEmoji,
   onTextCustomEmojiSelect,
   placeholder,
+  suppressAutoFocus,
 }: SearchInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -33,11 +41,19 @@ export function SearchInput({
     onTextCustomEmojiSelect?.(textEmoji);
   };
 
+  const searchLabel =
+    tab === EmojiBoardTab.Gif
+      ? 'Search GIFs'
+      : tab === EmojiBoardTab.Sticker
+        ? 'Search stickers'
+        : 'Search emoji';
+
   return (
     <Input
       ref={inputRef}
       variant="SurfaceVariant"
       size="400"
+      aria-label={searchLabel}
       placeholder={
         placeholder ??
         (allowTextCustomEmoji && tab !== EmojiBoardTab.Gif ? 'Search or Text Reaction' : 'Search')
@@ -71,7 +87,7 @@ export function SearchInput({
         ) : undefined
       }
       onChange={onChange}
-      autoFocus={!mobileOrTablet()}
+      autoFocus={!suppressAutoFocus && !mobileOrTablet()}
     />
   );
 }
