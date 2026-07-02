@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./node_modules/.bin/oxfmt --check *)",
+      "Bash(node_modules/.bin/oxfmt --check *)",
+      "Bash(node_modules/.bin/vitest run *)",
+      "Bash(./node_modules/.bin/vitest run *)",
+      "Bash(npx vitest run *)",
+      "Bash(npx tsc --noEmit *)",
+      "Bash(node_modules/.bin/tsc --noEmit *)",
+      "Bash(pnpm tsc --noEmit *)",
+      "Bash(node_modules/.bin/oxlint *)",
+      "Bash(./node_modules/.bin/oxlint *)",
+      "Bash(git merge-base *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/check-pr-base.py"]
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/lint-on-edit.py"]
+          }
+        ]
+      }
+    ]
+  }
+}

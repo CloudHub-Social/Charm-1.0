@@ -13,6 +13,11 @@ devAssets
 .env
 
 .wrangler
+
+.claude/settings.local.json
+.claude/launch.json
+.claude/scheduled_tasks.lock
+.claude/worktrees/
 .dev.vars*
 .terraform/
 *.tfstate
