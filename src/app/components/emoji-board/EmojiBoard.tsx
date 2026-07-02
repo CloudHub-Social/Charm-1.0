@@ -865,6 +865,12 @@ export function EmojiBoard({
     velocityY: number;
   } | null>(null);
   const activeTabRef = useRef(activeTab);
+  // Set synchronously (before the activeTab state update that remounts
+  // SearchInput below) whenever a tab change originates from keyboard arrow
+  // navigation, so that remount doesn't autofocus the search input and
+  // steal focus away from the tablist mid-navigation. See EmojiBoardTabs'
+  // onKeyboardTabChange.
+  const suppressSearchAutoFocusRef = useRef(false);
 
   const previewAtom = useMemo(
     () =>
@@ -1341,7 +1347,14 @@ export function EmojiBoard({
             {onTabChange && (
               <EmojiBoardTabs
                 tab={activeTab}
-                onTabChange={onTabChange}
+                onTabChange={(t) => {
+                  suppressSearchAutoFocusRef.current = false;
+                  onTabChange(t);
+                }}
+                onKeyboardTabChange={(t) => {
+                  suppressSearchAutoFocusRef.current = true;
+                  onTabChange(t);
+                }}
                 showGifTab={gifsEnabled}
                 boardId={boardId}
               />
@@ -1358,6 +1371,7 @@ export function EmojiBoard({
                   placeholder="Search Klipy"
                   allowTextCustomEmoji={allowTextCustomEmoji}
                   onTextCustomEmojiSelect={handleTextCustomEmojiSelect}
+                  suppressAutoFocus={suppressSearchAutoFocusRef.current}
                 />
                 <Box
                   className={componentCss.GifSearchMeta}
@@ -1384,6 +1398,7 @@ export function EmojiBoard({
                 onChange={handleOnChange}
                 allowTextCustomEmoji={allowTextCustomEmoji}
                 onTextCustomEmojiSelect={handleTextCustomEmojiSelect}
+                suppressAutoFocus={suppressSearchAutoFocusRef.current}
               />
             )}
           </Box>

@@ -50,7 +50,7 @@ describe('EmojiBoardTabs', () => {
     expect(gifTab).toHaveAttribute('tabindex', '-1');
   });
 
-  it('gives each tab its own aria-controls target matching the tab id, not a shared panel id', () => {
+  it('only the selected tab carries aria-controls, targeting its own panel id -- inactive tabs omit it rather than referencing a panel that is not mounted', () => {
     render(
       <EmojiBoardTabs
         tab={EmojiBoardTab.Emoji}
@@ -65,8 +65,7 @@ describe('EmojiBoardTabs', () => {
     const stickerControls = stickerTab.getAttribute('aria-controls');
 
     expect(emojiControls).toBe(`${BOARD_ID}-EmojiBoardTabPanel-${EmojiBoardTab.Emoji}`);
-    expect(stickerControls).toBe(`${BOARD_ID}-EmojiBoardTabPanel-${EmojiBoardTab.Sticker}`);
-    expect(emojiControls).not.toBe(stickerControls);
+    expect(stickerControls).toBeNull();
   });
 
   it('calls onTabChange when a tab is clicked', async () => {

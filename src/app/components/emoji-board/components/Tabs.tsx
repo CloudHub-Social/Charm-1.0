@@ -10,11 +10,20 @@ const styles: CSSProperties = {
 export function EmojiBoardTabs({
   tab,
   onTabChange,
+  onKeyboardTabChange,
   showGifTab = true,
   boardId,
 }: {
   tab: EmojiBoardTab;
   onTabChange: (tab: EmojiBoardTab) => void;
+  /**
+   * Called instead of onTabChange when a tab is selected via keyboard
+   * (Arrow/Home/End) navigation rather than a click. Falls back to
+   * onTabChange when not provided. Lets callers distinguish keyboard-driven
+   * selection so they can, e.g., avoid stealing focus away from the tablist
+   * (see EmojiBoard's search-input autoFocus suppression).
+   */
+  onKeyboardTabChange?: (tab: EmojiBoardTab) => void;
   showGifTab?: boolean;
   /** Unique id for this EmojiBoard instance, so tab/panel ids never collide across multiple boards mounted at once. */
   boardId: string;
@@ -45,7 +54,7 @@ export function EmojiBoardTabs({
     const target = tabs[wrapped];
     if (!target) return;
     tabRefs.current[wrapped]?.focus();
-    onTabChange(target.id);
+    (onKeyboardTabChange ?? onTabChange)(target.id);
   };
 
   const handleKeyDown = (evt: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -90,7 +99,7 @@ export function EmojiBoardTabs({
             role="tab"
             tabIndex={selected ? 0 : -1}
             aria-selected={selected}
-            aria-controls={`${boardId}-EmojiBoardTabPanel-${item.id}`}
+            aria-controls={selected ? `${boardId}-EmojiBoardTabPanel-${item.id}` : undefined}
             variant={selected ? 'Primary' : 'Secondary'}
             fill={selected ? 'Solid' : 'None'}
             size="500"

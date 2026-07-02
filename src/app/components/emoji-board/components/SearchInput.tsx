@@ -14,6 +14,13 @@ type SearchInputProps = {
   allowTextCustomEmoji?: boolean;
   onTextCustomEmojiSelect?: (text: string) => void;
   placeholder?: string;
+  /**
+   * When true, never autofocus on mount even on desktop. Used when this
+   * input is remounting (its parent keys it by active tab) as a result of
+   * keyboard tab navigation, so autofocus doesn't steal focus away from the
+   * tablist mid-navigation.
+   */
+  suppressAutoFocus?: boolean;
 };
 export function SearchInput({
   tab,
@@ -24,6 +31,7 @@ export function SearchInput({
   allowTextCustomEmoji,
   onTextCustomEmojiSelect,
   placeholder,
+  suppressAutoFocus,
 }: SearchInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -79,7 +87,7 @@ export function SearchInput({
         ) : undefined
       }
       onChange={onChange}
-      autoFocus={!mobileOrTablet()}
+      autoFocus={!suppressAutoFocus && !mobileOrTablet()}
     />
   );
 }
