@@ -144,12 +144,61 @@ globalStyle(
   }
 );
 
+// Codex post-merge review of #514 (comment_id=3515157099) flagged that the
+// global rules above use a *positive* `outlineOffset` (`2px`, drawn outside
+// the element's border box), which gets silently clipped whenever the
+// focused element sits flush (no padding) inside an `overflow: hidden`
+// ancestor — the ring is cropped on whichever edges touch the container
+// boundary. Confirmed concretely: `CutoutCard` (`src/app/components/
+// cutout-card/CutoutCard.css.ts`) sets `overflow: 'hidden'` with zero
+// padding, and both `AccountData.tsx` and `DevelopTools.tsx` render
+// `MenuItem` rows as its direct children with no gap, so a keyboard-focused
+// row loses its ring on the edges flush against the card.
+//
+// This is not a one-off: it recurs anywhere a component both clips overflow
+// and butts focusable children flush against its edge. Rather than patch
+// each call site, `CutoutCard`'s own class is targeted directly here (its
+// vanilla-extract debug identifier — this app builds with `identifiers:
+// 'debug'` — keeps a stable `CutoutCard` substring, unlike folds' prebuilt
+// classes; see the `[class*="Button"]`-style comment above for why that
+// substring approach doesn't work for folds' own classes). Any current or
+// future `CutoutCard` usage is covered automatically, with no per-call-site
+// opt-in needed, since every `CutoutCard` clips overflow by construction.
+//
+// The global *positive* offset is intentionally left unchanged for
+// everywhere else: it reads clearly against non-clipping backgrounds, and
+// flipping it negative app-wide would draw the ring on top of/inside
+// content everywhere, a worse look for the common (non-clipped) case.
 globalStyle(
   `
-    button, 
-    [role="button"], 
-    [class*="Button"], 
-    [class*="Chip"], 
+    [class*="CutoutCard"] a:focus-visible,
+    [class*="CutoutCard"] button:focus-visible,
+    [class*="CutoutCard"] select:focus-visible,
+    [class*="CutoutCard"] [role="button"]:focus-visible,
+    [class*="CutoutCard"] [role="tab"]:focus-visible,
+    [class*="CutoutCard"] [role="menuitem"]:focus-visible,
+    [class*="CutoutCard"] [role="option"]:focus-visible,
+    [class*="CutoutCard"] [role="checkbox"]:focus-visible,
+    [class*="CutoutCard"] [role="radio"]:focus-visible,
+    [class*="CutoutCard"] [role="switch"]:focus-visible,
+    [class*="CutoutCard"] [role="textbox"]:focus-visible,
+    [class*="CutoutCard"] [tabindex="0"]:focus-visible,
+    [class*="CutoutCard"] [class*="Button"]:focus-visible,
+    [class*="CutoutCard"] [class*="Chip"]:focus-visible,
+    [class*="CutoutCard"] [class*="MenuItem"]:focus-visible,
+    [class*="CutoutCard"] [class*="IconButton"]:focus-visible
+`,
+  {
+    outlineOffset: '-2px !important',
+  }
+);
+
+globalStyle(
+  `
+    button,
+    [role="button"],
+    [class*="Button"],
+    [class*="Chip"],
     [class*="MenuItem"]
 `,
   {
