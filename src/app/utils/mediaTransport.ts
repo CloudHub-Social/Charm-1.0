@@ -287,7 +287,27 @@ async function fetchMediaResponse(
     ...(Object.keys(headers).length > 0 ? { headers } : {}),
   };
 
-  return fetch(url, init);
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    // fetch() itself only ever rejects for network-level failures (CORS, DNS,
+    // connection refused) — it never rejects for HTTP error statuses. Wrap
+    // whatever it throws as a synthetic Response so callers can handle it
+    // uniformly via response.ok / response.status instead of needing
+    // try/catch everywhere.
+    const message = error instanceof Error ? error.message : 'Network error';
+    return new Response(
+      JSON.stringify({
+        errcode: 'M_UNKNOWN',
+        error: `Network error: ${message}`,
+      }),
+      {
+        status: 502,
+        statusText: 'Bad Gateway',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  }
 }
 
 async function storeMediaMetadataIfMissing(
