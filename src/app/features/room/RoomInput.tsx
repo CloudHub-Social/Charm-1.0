@@ -205,7 +205,6 @@ import type {
   AudioRecordingCompletePayload,
 } from './AudioMessageRecorder';
 import { AudioMessageRecorder } from './AudioMessageRecorder';
-import { primeAudioContext } from '$plugins/voice-recorder-kit';
 import { PollCreator } from './PollCreator';
 import { sendImmediateMessage } from './sendImmediateMessage';
 import {
@@ -2614,12 +2613,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 onPointerDown={() => {
                   if (!mobileOrTablet()) return;
                   if (showAudioRecorder) return;
-                  // Pre-create and resume an AudioContext synchronously while we
-                  // are still inside the user-gesture callstack. iOS Safari will
-                  // refuse to resume an AudioContext that is created after an
-                  // await (e.g. inside the getUserMedia async path), causing the
-                  // recorder to produce silence or nothing on the 2nd+ attempt.
-                  primeAudioContext();
                   micHoldStartRef.current = Date.now();
                   setShowAudioRecorder(true);
 
