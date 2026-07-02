@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAtomValue, useSetAtom } from 'jotai';
 import * as Sentry from '@sentry/react';
 import {
@@ -17,6 +17,7 @@ import { resolveIncomingCallFromSearchParams } from '$features/call/callNotifica
 import { isIncomingCallSuppressed } from '$features/call/callIncomingIngress';
 import { settingsAtom } from '$state/settings';
 import { useSetting } from '$state/hooks/settings';
+import { getRootPath } from '$pages/pathUtils';
 
 // ToRoomEvent handles /to/:user_id/:room_id/:event_id? — the canonical deep-link
 // URL used by the service worker's notificationclick handler.
@@ -33,6 +34,7 @@ import { useSetting } from '$state/hooks/settings';
 export function ToRoomEvent() {
   const { user_id: userId, room_id: roomId, event_id: eventId } = useParams();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const mDirects = useAtomValue(mDirectAtom);
   const mutedRoomId = useAtomValue(mutedCallRoomIdAtom);
   const [incomingVoiceRoomCallSoundEnabled] = useSetting(
@@ -101,8 +103,10 @@ export function ToRoomEvent() {
       setIncomingCall(incomingCall);
     }
 
-    // Replace /to/… in history so the back button doesn't return to this route.
-    window.history.replaceState({}, '', '/');
+    // Replace /to/… in history so the back button doesn't return to this route. Uses the
+    // router's navigate (not window.history.replaceState) so the basename/hash-router
+    // config configured in Router.tsx is respected instead of always landing on origin root.
+    navigate(getRootPath(), { replace: true });
     // searchParams is read above via its stable rawSearchParams string form (see comment
     // near its declaration); depending on the URLSearchParams object itself would re-fire
     // this effect on every render.
@@ -114,6 +118,7 @@ export function ToRoomEvent() {
     swClickId,
     mDirects,
     mutedRoomId,
+    navigate,
     roomId,
     rawSearchParams,
     setActiveSessionId,

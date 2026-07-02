@@ -827,9 +827,10 @@ export function EmojiBoard({
 }: Readonly<EmojiBoardProps>) {
   const mx = useMatrixClient();
   const [saveStickerEmojiBandwidth] = useSetting(settingsAtom, 'saveStickerEmojiBandwidth');
+  const [enableGifPicker] = useSetting(settingsAtom, 'enableGifPicker');
   const useAuthentication = useMediaAuthentication();
   const clientConfig = useClientConfig();
-  const gifsEnabled = gifSearchConfigured(clientConfig);
+  const gifsEnabled = enableGifPicker && gifSearchConfigured(clientConfig);
   const activeTab = !gifsEnabled && tab === EmojiBoardTab.Gif ? EmojiBoardTab.Sticker : tab;
 
   const emojiTab = activeTab === EmojiBoardTab.Emoji;

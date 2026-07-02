@@ -80,6 +80,14 @@ export function PermissionGroups({
       const editedPowerLevels = produce(powerLevels, (draftPowerLevels) => {
         permissionGroups.forEach((group) =>
           group.items.forEach((item) => {
+            // Skip grouped (array) locations here: getPermissionPower reports their max
+            // power across sub-locations for display, and re-applying that max to every
+            // sub-location would silently raise any lower-power member of the group (e.g.
+            // bumping "Join Call" up to match a stricter "Start Call" power) on every save,
+            // even when this item was never touched. Explicit edits to a grouped item still
+            // go through permissionUpdate below, which applies one chosen power to the
+            // whole group intentionally.
+            if (Array.isArray(item.location)) return;
             const power = getPermissionPower(powerLevels, item.location);
             applyPermissionPower(draftPowerLevels, item.location, power);
           })

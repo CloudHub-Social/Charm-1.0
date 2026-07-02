@@ -3,7 +3,7 @@ import type { MatrixClient, MatrixEvent, Room } from '$types/matrix-sdk';
 import { decryptRtcTimelineEvent } from './callSignalingDecrypt';
 import { parseRtcDecline, type ParsedRtcDecline } from './rtcNotificationParser';
 
-const relationFromContent = (content: unknown) => {
+export const relationFromContent = (content: unknown) => {
   if (!content || typeof content !== 'object') return undefined;
   const maybeRelates = (content as { 'm.relates_to'?: unknown })['m.relates_to'];
   if (!maybeRelates || typeof maybeRelates !== 'object') return undefined;

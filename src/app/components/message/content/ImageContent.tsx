@@ -56,6 +56,8 @@ import {
 } from '$unstable/prefixes';
 import { gifSearchConfigured, useClientConfig } from '$hooks/useClientConfig';
 import { useFavoriteGifs } from '$hooks/useFavoriteGifs';
+import { useSetting } from '$state/hooks/settings';
+import { settingsAtom } from '$state/settings';
 import { hasControllingServiceWorker } from '$utils/platform';
 
 const ANIMATED_IMAGE_MIME_TYPES = new Set(['image/gif', 'image/apng']);
@@ -164,7 +166,8 @@ function GifFavoriteAction({
 }: Readonly<GifFavoriteActionProps>) {
   const mx = useMatrixClient();
   const clientConfig = useClientConfig();
-  const gifsEnabled = gifSearchConfigured(clientConfig);
+  const [enableGifPicker] = useSetting(settingsAtom, 'enableGifPicker');
+  const gifsEnabled = enableGifPicker && gifSearchConfigured(clientConfig);
   const favoritedContent = useFavoriteGifs();
   const favoriteGifsRef = useRef(favoritedContent.gifs);
   const [favorited, setFavorited] = useState(favoritedContent.gifs.some((v) => v.url === url));

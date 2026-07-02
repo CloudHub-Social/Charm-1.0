@@ -54,4 +54,27 @@ describe('evaluateIncomingCallFallback', () => {
     );
     expect(action).toEqual({ kind: 'clear', reason: 'membership_dropped' });
   });
+
+  it('keeps a not-yet-synced room pending during the grace window', () => {
+    expect(
+      evaluateIncomingCallFallback(incomingCall, NOW, {
+        myUserId: '@self:example.org',
+        getRoom: () => null,
+        getSessionDescription: () => EMPTY_SESSION,
+      })
+    ).toEqual({ kind: 'none' });
+  });
+
+  it('clears an incoming call whose room never syncs after the grace window', () => {
+    const action = evaluateIncomingCallFallback(
+      { ...incomingCall, senderTs: NOW - INCOMING_MEMBERSHIP_GRACE_MS - 1 },
+      NOW,
+      {
+        myUserId: '@self:example.org',
+        getRoom: () => null,
+        getSessionDescription: () => EMPTY_SESSION,
+      }
+    );
+    expect(action).toEqual({ kind: 'clear', reason: 'missing_room' });
+  });
 });

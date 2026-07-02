@@ -24,7 +24,16 @@ export const evaluateIncomingCallFallback = (
   if (now >= incoming.expiresAt) return { kind: 'clear', reason: 'expired' };
 
   const incomingRoom = context.getRoom(incoming.roomId);
-  if (!incomingRoom) return { kind: 'clear', reason: 'missing_room' };
+  if (!incomingRoom) {
+    // On a cold launch (e.g. tap-to-answer from a notification) initial sync may not have
+    // delivered this room yet. Treat it as pending — not gone — until the grace window
+    // passes or the call's own expiry above fires, rather than dropping the incoming-call
+    // UI the instant sync hasn't caught up.
+    if (now - incoming.senderTs < INCOMING_MEMBERSHIP_GRACE_MS) {
+      return { kind: 'none' };
+    }
+    return { kind: 'clear', reason: 'missing_room' };
+  }
 
   const sessionDescription = context.getSessionDescription(incomingRoom);
   const isIncomingActive = context.isIncomingActive ?? isIncomingCallActive;

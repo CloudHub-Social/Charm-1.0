@@ -28,7 +28,10 @@ import {
   applyOutgoingDeclineToTracker,
   type OutgoingDeclineEvent,
 } from '$features/call/outgoingDeclineHandler';
-import { parseRtcDeclineFromTimelineEvent } from '$features/call/rtcTimelineDecline';
+import {
+  parseRtcDeclineFromTimelineEvent,
+  relationFromContent,
+} from '$features/call/rtcTimelineDecline';
 import { evaluateIncomingCallFallback } from '$features/call/callSignalingFallback';
 import { canPlayCallAudio } from '$features/call/callRingtone';
 import { dismissSystemCallNotifications } from '$features/call/callNotificationBridge';
@@ -184,7 +187,13 @@ export function useIncomingCallSignaling() {
       const myUserId = mx.getSafeUserId();
       const sessionDescription = mx.matrixRTC.getRoomSession(outgoingRoom).sessionDescription;
       let remoteJoinedIds = getRemoteRtcMemberUserIds(myUserId, outgoingRoom, sessionDescription);
-      if (remoteJoinedIds.size === 0) {
+      // Only fall back to the decliner as the sole target for direct rooms, where there's
+      // exactly one possible remote party anyway. For group calls, an empty target set just
+      // means membership state hasn't caught up yet with the decline event — treating the
+      // lone decliner as the entire target here would let one decline end a group call that
+      // other invitees haven't responded to (applyOutgoingDeclineToTracker already handles a
+      // genuinely empty group target set as "ignore, wait for more signal").
+      if (remoteJoinedIds.size === 0 && mDirects.has(decline.roomId)) {
         remoteJoinedIds = new Set([decline.senderId]);
       }
 
@@ -347,9 +356,6 @@ export function useIncomingCallSignaling() {
       room: Room,
       liveEvent: boolean
     ): Promise<IncomingCall | undefined> => {
-      const relation = event.getRelation();
-      if (relation?.rel_type !== REFERENCE_REL_TYPE || !relation.event_id) return undefined;
-
       let eventType = event.getType();
       let content = event.getContent();
 
@@ -362,6 +368,11 @@ export function useIncomingCallSignaling() {
         eventType = decrypted.type;
         content = decrypted.content;
       }
+
+      // Read after decryption: for encrypted events, m.relates_to normally only
+      // becomes visible once the ciphertext above has been decrypted.
+      const relation = event.getRelation() ?? relationFromContent(content);
+      if (relation?.rel_type !== REFERENCE_REL_TYPE || !relation.event_id) return undefined;
 
       const parsed = await parseIncomingRtcNotification(
         {

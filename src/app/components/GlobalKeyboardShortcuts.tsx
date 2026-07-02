@@ -196,6 +196,10 @@ export function GlobalKeyboardShortcuts() {
   const handleBookmarkKeyDown = useCallback(
     (evt: KeyboardEvent) => {
       if (!isKeyHotkey('mod+b', evt)) return;
+      // The message composer also binds mod+b for bold markdown and calls
+      // preventDefault() when it handles the key — respect that so typing bold text
+      // doesn't also navigate away from the room.
+      if (evt.defaultPrevented) return;
       evt.preventDefault();
 
       navigate(getInboxBookmarksPath());

@@ -28,17 +28,15 @@ describe('ToRoomEvent', () => {
             '/to/%40alice%3Aexample/!room%3Aexample/%24event123?joinCall=true&swClickId=notification-click-123&jumpMode=notification_live',
           ]}
         >
+          {/* AtomProbe lives outside <Routes> — ToRoomEvent navigates away to "/" once its
+              effect runs, so a probe scoped to the /to/... route would unmount before this
+              test can read the atoms it set. The "/" route below is only there so that
+              navigation resolves to a real match instead of an unmatched-route warning. */}
           <Routes>
-            <Route
-              path="/to/:user_id/:room_id/:event_id?"
-              element={
-                <>
-                  <ToRoomEvent />
-                  <AtomProbe />
-                </>
-              }
-            />
+            <Route path="/to/:user_id/:room_id/:event_id?" element={<ToRoomEvent />} />
+            <Route path="/" element={<div />} />
           </Routes>
+          <AtomProbe />
         </MemoryRouter>
       </Provider>
     );
@@ -75,16 +73,10 @@ describe('ToRoomEvent', () => {
       <Provider>
         <MemoryRouter initialEntries={['/to/%40alice%3Aexample/!room%3Aexample/%24event123']}>
           <Routes>
-            <Route
-              path="/to/:user_id/:room_id/:event_id?"
-              element={
-                <>
-                  <ToRoomEvent />
-                  <AtomProbe />
-                </>
-              }
-            />
+            <Route path="/to/:user_id/:room_id/:event_id?" element={<ToRoomEvent />} />
+            <Route path="/" element={<div />} />
           </Routes>
+          <AtomProbe />
         </MemoryRouter>
       </Provider>
     );
