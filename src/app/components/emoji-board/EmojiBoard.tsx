@@ -5,7 +5,7 @@ import type {
   PointerEventHandler,
   ReactNode,
 } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Box, Chip, Text, config } from 'folds';
 import { AuthenticatedImg } from '$components/AuthenticatedImg';
 import { ClockCounterClockwise } from '$components/icons/phosphor';
@@ -653,11 +653,15 @@ type EmojiGroupHolderProps = {
   previewAtom: PrimitiveAtom<PreviewData | undefined>;
   children?: ReactNode;
   onGroupItemClick: MouseEventHandler;
+  id?: string;
+  activeTabLabelId?: string;
 };
 function EmojiGroupHolder({
   previewAtom,
   onGroupItemClick,
   children,
+  id,
+  activeTabLabelId,
 }: Readonly<EmojiGroupHolderProps>) {
   const setPreviewData = useSetAtom(previewAtom);
 
@@ -692,6 +696,10 @@ function EmojiGroupHolder({
 
   return (
     <Box
+      id={id}
+      role={id ? 'tabpanel' : undefined}
+      aria-labelledby={activeTabLabelId}
+      tabIndex={id ? 0 : undefined}
       onClick={onGroupItemClick}
       onMouseMove={handleEmojiHover}
       onFocus={handleEmojiFocus}
@@ -831,6 +839,11 @@ export function EmojiBoard({
   const clientConfig = useClientConfig();
   const gifsEnabled = gifSearchConfigured(clientConfig);
   const activeTab = !gifsEnabled && tab === EmojiBoardTab.Gif ? EmojiBoardTab.Sticker : tab;
+  // Instance-scoped so multiple EmojiBoard mounts (e.g. a per-message
+  // reaction picker alongside the composer's own picker) never collide on
+  // DOM id, even though only the composer currently renders tabs at all.
+  const boardId = useId();
+  const tabPanelId = `${boardId}-EmojiBoardTabPanel`;
 
   const emojiTab = activeTab === EmojiBoardTab.Emoji;
   const gifTab = activeTab === EmojiBoardTab.Gif;
@@ -1326,7 +1339,13 @@ export function EmojiBoard({
         header={
           <Box direction="Column" gap="200">
             {onTabChange && (
-              <EmojiBoardTabs tab={activeTab} onTabChange={onTabChange} showGifTab={gifsEnabled} />
+              <EmojiBoardTabs
+                tab={activeTab}
+                onTabChange={onTabChange}
+                showGifTab={gifsEnabled}
+                boardId={boardId}
+                panelId={tabPanelId}
+              />
             )}
             {gifTab ? (
               <Box className={componentCss.GifHeader} direction="Column" gap="200">
@@ -1420,6 +1439,8 @@ export function EmojiBoard({
           key={activeTab}
           previewAtom={previewAtom}
           onGroupItemClick={handleGroupItemClick}
+          id={onTabChange ? tabPanelId : undefined}
+          activeTabLabelId={onTabChange ? `${boardId}-EmojiBoardTab-${activeTab}` : undefined}
         >
           {gifTab && isGifDiscovery && (
             <Box className={componentCss.GifDiscovery} direction="Column" gap="300" shrink="No">

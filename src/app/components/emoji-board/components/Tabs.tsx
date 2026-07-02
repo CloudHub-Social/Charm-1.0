@@ -10,10 +10,16 @@ export function EmojiBoardTabs({
   tab,
   onTabChange,
   showGifTab = true,
+  boardId,
+  panelId,
 }: {
   tab: EmojiBoardTab;
   onTabChange: (tab: EmojiBoardTab) => void;
   showGifTab?: boolean;
+  /** Unique id for this EmojiBoard instance, so tab/panel ids never collide across multiple boards mounted at once. */
+  boardId: string;
+  /** id of the tabpanel these tabs control. */
+  panelId: string;
 }) {
   const tabs = [
     {
@@ -36,6 +42,7 @@ export function EmojiBoardTabs({
 
   return (
     <Box
+      role="tablist"
       gap="100"
       style={{
         padding: config.space.S100,
@@ -44,21 +51,30 @@ export function EmojiBoardTabs({
         width: '100%',
       }}
     >
-      {tabs.map((item) => (
-        <Badge
-          key={item.id}
-          style={{ ...styles, flex: 1, justifyContent: 'center' }}
-          as="button"
-          variant={tab === item.id ? 'Primary' : 'Secondary'}
-          fill={tab === item.id ? 'Solid' : 'None'}
-          size="500"
-          onClick={() => onTabChange(item.id)}
-        >
-          <Text as="span" size="L400">
-            {item.label}
-          </Text>
-        </Badge>
-      ))}
+      {tabs.map((item) => {
+        const selected = tab === item.id;
+        return (
+          <Badge
+            key={item.id}
+            id={`${boardId}-EmojiBoardTab-${item.id}`}
+            style={{ ...styles, flex: 1, justifyContent: 'center' }}
+            as="button"
+            type="button"
+            role="tab"
+            tabIndex={0}
+            aria-selected={selected}
+            aria-controls={panelId}
+            variant={selected ? 'Primary' : 'Secondary'}
+            fill={selected ? 'Solid' : 'None'}
+            size="500"
+            onClick={() => onTabChange(item.id)}
+          >
+            <Text as="span" size="L400">
+              {item.label}
+            </Text>
+          </Badge>
+        );
+      })}
     </Box>
   );
 }

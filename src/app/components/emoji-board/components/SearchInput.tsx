@@ -33,11 +33,19 @@ export function SearchInput({
     onTextCustomEmojiSelect?.(textEmoji);
   };
 
+  const searchLabel =
+    tab === EmojiBoardTab.Gif
+      ? 'Search GIFs'
+      : tab === EmojiBoardTab.Sticker
+        ? 'Search stickers'
+        : 'Search emoji';
+
   return (
     <Input
       ref={inputRef}
       variant="SurfaceVariant"
       size="400"
+      aria-label={searchLabel}
       placeholder={
         placeholder ??
         (allowTextCustomEmoji && tab !== EmojiBoardTab.Gif ? 'Search or Text Reaction' : 'Search')
