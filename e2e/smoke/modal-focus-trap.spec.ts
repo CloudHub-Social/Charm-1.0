@@ -57,9 +57,7 @@ test.describe('modal focus trap real-route smoke', () => {
     });
     expect(activeElementInsideDialog).toBe(true);
 
-    const activeElementIsBody = await page.evaluate(
-      () => document.activeElement === document.body
-    );
+    const activeElementIsBody = await page.evaluate(() => document.activeElement === document.body);
     expect(activeElementIsBody).toBe(false);
 
     // The dialog's own focusable controls, in DOM order: Close, "Yes, use
