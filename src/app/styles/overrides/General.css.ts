@@ -20,12 +20,37 @@ globalStyle('#root', {
 // most buttons, links, and inputs.
 //
 // This is a single global override rather than per-component patches.
-// `:focus-visible` (not `:focus`) is used so mouse/touch activation never
-// shows the ring — only keyboard/programmatic focus does. `--sable-primary-main`
-// is the app's theme-adaptive primary accent (defined for both light and
-// dark themes, and swapped by custom theme catalogs), so the ring keeps
+// `:focus-visible` (not `:focus`) is used so that, per the CSS spec's
+// heuristics, mouse/touch activation generally does not show the ring in
+// most browsers — only keyboard/programmatic focus does. This isn't an
+// absolute cross-browser guarantee (`:focus-visible` heuristics for text
+// inputs in particular can still match on a mouse click in some browsers),
+// but it's a strict improvement over `:focus`. `--sable-primary-main` is
+// the app's theme-adaptive primary accent (defined for both light and dark
+// themes, and swapped by custom theme catalogs), so the ring keeps
 // sufficient contrast against either background rather than relying on a
 // hardcoded color that could disappear on one theme.
+//
+// `[role="textbox"]` covers the Slate `<Editable>` message composer/editor
+// (see `src/app/components/editor/Editor.tsx`, which renders
+// `role="textbox"` when not read-only): `Editor.css.ts` explicitly zeroes
+// the native outline on `&:focus`, so without this the single most-used
+// interactive surface in the app would have no visible focus indicator.
+//
+// `[tabindex="0"]` (rather than the broader `[tabindex]`) intentionally
+// excludes `tabindex="-1"` elements, which are only programmatically
+// focusable and not real keyboard tab-stops. Note this still matches some
+// non-interactive scroll/reading containers that use `tabIndex={0}` purely
+// to make overflowing content keyboard-scrollable (e.g.
+// `src/app/features/settings/general/General.tsx`) — those pick up a
+// focus ring that can look like a misleading "this is clickable" cue.
+// Fixing that fully requires marking those containers distinctly in their
+// component code (e.g. `role="group"` or a dedicated class) since there is
+// no CSS-only way to tell them apart from genuinely-interactive
+// `tabIndex={0}` elements that have no other role/class (e.g.
+// `src/app/features/lobby/RoomItem.tsx`); tracked as a follow-up rather
+// than done here to avoid scope-creeping this global CSS fix into
+// per-component changes.
 globalStyle(
   `
     a:focus-visible,
@@ -40,7 +65,8 @@ globalStyle(
     [role="checkbox"]:focus-visible,
     [role="radio"]:focus-visible,
     [role="switch"]:focus-visible,
-    [tabindex]:focus-visible,
+    [role="textbox"]:focus-visible,
+    [tabindex="0"]:focus-visible,
     [class*="Button"]:focus-visible,
     [class*="Chip"]:focus-visible,
     [class*="MenuItem"]:focus-visible,
