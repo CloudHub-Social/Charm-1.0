@@ -26,7 +26,10 @@ export function RoomCallButton({ room }: RoomCallButtonProps) {
     startCall(room, { microphone, video, sound });
     try {
       const now = Date.now();
-      // TODO not use as any one day someday i swear
+      // as never: matrix-js-sdk's setAccountData/getAccountData have typed overloads
+      // only for known event types. Arbitrary event types require this cast until
+      // matrix-js-sdk exposes a generic overload or we define our own wrapper.
+      // See issue #502 for the tracked improvement.
       await mx.sendEvent(
         room.roomId,
         'org.matrix.msc4075.rtc.notification' as keyof TimelineEvents,
