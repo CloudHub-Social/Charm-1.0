@@ -47,12 +47,12 @@ describe('call intent cross-path consistency', () => {
     const fromBridge = resolveIncomingCallFromNotificationData(
       {
         isCall: true,
-        roomId: parsed!.roomId,
-        eventId: parsed!.notificationEventId,
+        room_id: parsed!.roomId,
+        event_id: parsed!.notificationEventId,
+        sender_id: parsed!.senderId,
         callNotificationType: parsed!.notificationType,
         callIntentRaw: parsed!.intentRaw,
         callRefEventId: parsed!.refEventId,
-        callSenderId: parsed!.senderId,
         callSenderTs: parsed!.senderTs,
         callExpiresAt: parsed!.expiresAt,
       },
@@ -86,8 +86,8 @@ describe('call intent cross-path consistency', () => {
     const fromBridge = resolveIncomingCallFromNotificationData(
       {
         isCall: true,
-        roomId: '!room:example.org',
-        eventId: '$notif',
+        room_id: '!room:example.org',
+        event_id: '$notif',
         callNotificationType: 'ring',
         callIntentRaw: 'start_call_dm',
         callSenderTs: NOW - 500,

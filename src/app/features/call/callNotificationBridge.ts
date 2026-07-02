@@ -45,13 +45,19 @@ const fromCandidate = (candidate: CallCandidate, now = Date.now()): IncomingCall
   };
 };
 
+// Reads the same shape createPushNotifications' handleCallNotification builds as
+// Notification.data (see sw/pushNotification.ts) — room_id/event_id/sender_id are
+// snake_case there (mirroring the Matrix push gateway payload), while the call_*
+// fields are camelCase (added directly by this app, not passed through from the
+// gateway). Keep these aligned with that source rather than with the URL-search-param
+// naming used by resolveIncomingCallFromSearchParams below, which is a separate format.
 export const resolveIncomingCallFromNotificationData = (
   data: Record<string, unknown>,
   isDirect: boolean,
   now = Date.now()
 ): IncomingCall | undefined => {
-  const roomId = typeof data.roomId === 'string' ? data.roomId : undefined;
-  const eventId = typeof data.eventId === 'string' ? data.eventId : undefined;
+  const roomId = typeof data.room_id === 'string' ? data.room_id : undefined;
+  const eventId = typeof data.event_id === 'string' ? data.event_id : undefined;
   const callType =
     typeof data.callNotificationType === 'string' ? data.callNotificationType : undefined;
 
@@ -66,7 +72,7 @@ export const resolveIncomingCallFromNotificationData = (
       intentKindRaw: typeof data.callIntentKind === 'string' ? data.callIntentKind : undefined,
       intentRaw: typeof data.callIntentRaw === 'string' ? data.callIntentRaw : undefined,
       refEventIdRaw: typeof data.callRefEventId === 'string' ? data.callRefEventId : undefined,
-      senderIdRaw: typeof data.callSenderId === 'string' ? data.callSenderId : undefined,
+      senderIdRaw: typeof data.sender_id === 'string' ? data.sender_id : undefined,
       senderTsRaw: typeof data.callSenderTs === 'number' ? data.callSenderTs : undefined,
       expiresAtRaw: typeof data.callExpiresAt === 'number' ? data.callExpiresAt : undefined,
       isDirect,

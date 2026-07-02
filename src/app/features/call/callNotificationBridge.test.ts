@@ -10,12 +10,12 @@ describe('callNotificationBridge', () => {
     const incoming = resolveIncomingCallFromNotificationData(
       {
         isCall: true,
-        roomId: '!room:test',
-        eventId: '$notif',
+        room_id: '!room:test',
+        event_id: '$notif',
+        sender_id: '@alice:test',
         callNotificationType: 'ring',
         callIntentKind: 'video',
         callRefEventId: '$ref',
-        callSenderId: '@alice:test',
         callSenderTs: now - 1_000,
         callExpiresAt: now + 10_000,
       },
@@ -39,8 +39,8 @@ describe('callNotificationBridge', () => {
     const incoming = resolveIncomingCallFromNotificationData(
       {
         isCall: true,
-        roomId: '!room:test',
-        eventId: '$notif',
+        room_id: '!room:test',
+        event_id: '$notif',
         callNotificationType: 'ring',
         callExpiresAt: now - 1,
       },
