@@ -39,6 +39,7 @@ export const EmojiBoardLayout = as<
     const pinnedFooterRef = useRef<HTMLDivElement>(null);
     const [pinnedFooterHeight, setPinnedFooterHeight] = useState(0);
 
+    const hasPinnedFooter = Boolean(pinnedSidebarFooter);
     useEffect(() => {
       const el = pinnedFooterRef.current;
       if (!el) {
@@ -50,7 +51,12 @@ export const EmojiBoardLayout = as<
       });
       observer.observe(el);
       return () => observer.disconnect();
-    }, [pinnedSidebarFooter]);
+      // Only rerun when the footer's presence toggles (mount/unmount) —
+      // pinnedSidebarFooter is a new ReactNode reference on most renders,
+      // which would otherwise tear down and recreate the ResizeObserver on
+      // every re-render even though the observed DOM node hasn't changed.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hasPinnedFooter]);
 
     return (
       <Box
