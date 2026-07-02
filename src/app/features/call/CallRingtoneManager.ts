@@ -104,7 +104,11 @@ class CallRingtoneManager {
     // When ringtone and ringback are both set to the same custom file, incomingUrl and
     // outgoingUrl are the same blob URL — don't revoke it as "the other tone's unused
     // URL" when it's actually the one we're about to play as `source`.
-    if (tone === 'incoming' && resolved.outgoingUrl?.startsWith('blob:') && resolved.outgoingUrl !== source) {
+    if (
+      tone === 'incoming' &&
+      resolved.outgoingUrl?.startsWith('blob:') &&
+      resolved.outgoingUrl !== source
+    ) {
       URL.revokeObjectURL(resolved.outgoingUrl);
     } else if (
       tone === 'outgoing' &&

@@ -154,8 +154,14 @@ function RemoveBookmarkDialog({
                         userId={sender}
                         src={
                           senderAvatarMxc
-                            ? (mxcUrlToHttp(mx, senderAvatarMxc, useAuthentication, 32, 32, 'crop') ??
-                              undefined)
+                            ? (mxcUrlToHttp(
+                                mx,
+                                senderAvatarMxc,
+                                useAuthentication,
+                                32,
+                                32,
+                                'crop'
+                              ) ?? undefined)
                             : undefined
                         }
                         alt={displayName ?? sender}

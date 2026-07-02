@@ -52,7 +52,8 @@ export function buildNotificationClickTargetUrl(
       // call. Without them a cold launch would fall back to a fresh full lifetime and
       // lose which call this notification was actually for (video/audio, who rang,
       // which event to correlate a decline against).
-      if (data.callNotificationType) roomUrl.searchParams.set('callType', data.callNotificationType);
+      if (data.callNotificationType)
+        roomUrl.searchParams.set('callType', data.callNotificationType);
       if (data.callIntentKind) roomUrl.searchParams.set('callIntentKind', data.callIntentKind);
       if (data.callIntentRaw) roomUrl.searchParams.set('callIntentRaw', data.callIntentRaw);
       if (data.callRefEventId) roomUrl.searchParams.set('callRefEventId', data.callRefEventId);

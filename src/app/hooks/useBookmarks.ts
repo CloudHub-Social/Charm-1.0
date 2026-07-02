@@ -42,7 +42,7 @@ export function useBookmarkActions() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const items = await listBookmarks(mx);
+      const items = listBookmarks(mx);
       setList(items);
       setRefreshError(undefined);
     } catch (error) {

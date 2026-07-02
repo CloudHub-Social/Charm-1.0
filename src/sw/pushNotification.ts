@@ -221,11 +221,16 @@ export const createPushNotifications = (
       recipientId: typeof pushData?.user_id === 'string' ? pushData.user_id : undefined,
       data,
     });
-    await showNotificationWithData(notificationPayload.title, notificationPayload.options.body, data, {
-      silent: notificationPayload.options.silent ?? undefined,
-      icon: notificationPayload.options.icon,
-      badge: notificationPayload.options.badge,
-    });
+    await showNotificationWithData(
+      notificationPayload.title,
+      notificationPayload.options.body,
+      data,
+      {
+        silent: notificationPayload.options.silent ?? undefined,
+        icon: notificationPayload.options.icon,
+        badge: notificationPayload.options.badge,
+      }
+    );
   };
 
   const handleEncryptedMessageNotification = async (pushData: MatrixPushData) => {
@@ -254,11 +259,16 @@ export const createPushNotifications = (
       recipientId: typeof pushData?.user_id === 'string' ? pushData.user_id : undefined,
       data,
     });
-    await showNotificationWithData(notificationPayload.title, notificationPayload.options.body, data, {
-      silent: notificationPayload.options.silent ?? undefined,
-      icon: notificationPayload.options.icon,
-      badge: notificationPayload.options.badge,
-    });
+    await showNotificationWithData(
+      notificationPayload.title,
+      notificationPayload.options.body,
+      data,
+      {
+        silent: notificationPayload.options.silent ?? undefined,
+        icon: notificationPayload.options.icon,
+        badge: notificationPayload.options.badge,
+      }
+    );
   };
 
   const handleInvitationNotification = async (pushData: MatrixPushData) => {

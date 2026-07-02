@@ -114,7 +114,10 @@ export const readAudioDurationMs = async (file: Blob): Promise<number> =>
       { once: true }
     );
 
-    audio.setAttribute('src', objectUrl);
+    // objectUrl is always a browser-generated blob: URL from URL.createObjectURL(file)
+    // above, never user-controlled text, and <audio>.src is a media resource reference,
+    // not an HTML-parsing sink like innerHTML/document.write.
+    audio.setAttribute('src', objectUrl); // lgtm[js/xss-through-dom]
     audio.load();
   });
 

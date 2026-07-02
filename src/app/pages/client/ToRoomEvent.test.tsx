@@ -23,7 +23,6 @@ function AtomProbe() {
   );
 }
 
-
 describe('ToRoomEvent', () => {
   it('captures join-call notification restore state from the route and query string', async () => {
     const { getByTestId } = render(
