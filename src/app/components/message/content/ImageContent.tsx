@@ -40,6 +40,7 @@ import { useMediaUrlCacheContext } from '$hooks/useMediaUrlCacheContext';
 import { bytesToSize } from '$utils/common';
 import { FALLBACK_MIMETYPE } from '$utils/mimeTypes';
 import { stopPropagation } from '$utils/keyboard';
+import { focusTrapFallbackFocus } from '$utils/dom';
 import { decryptFileSafe, downloadEncryptedMedia, downloadMedia } from '$utils/matrix';
 import { getDecryptedBlob, storeDecryptedBlob } from '$hooks/useBlobCache';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
@@ -272,6 +273,7 @@ export const ImageContent = as<'div', ImageContentProps>(
     const blurHash = validBlurHash(info?.[MATRIX_UNSTABLE_BLUR_HASH_PROPERTY_NAME]);
 
     const mediaUseAuthentication = useAuthentication;
+    const viewerModalRef = useRef<HTMLDivElement | null>(null);
     const [load, setLoad] = useState(false);
     const [error, setError] = useState(false);
     const [viewer, setViewer] = useState(false);
@@ -547,15 +549,37 @@ export const ImageContent = as<'div', ImageContentProps>(
             <OverlayCenter>
               <FocusTrap
                 focusTrapOptions={{
-                  initialFocus: false,
+                  // NOT `initialFocus: false`: that option makes
+                  // focus-trap-react skip moving focus into the trap
+                  // entirely instead of falling back to the first tabbable
+                  // node (the same failure mode fixed for the theme catalog
+                  // dialog in this PR). The image viewer's Modal has no
+                  // tabIndex/ref of its own and its content (ImageViewer)
+                  // has no focusable descendant on mount either, so with
+                  // `initialFocus: false` focus was never moved into the
+                  // dialog at all - it silently stayed on whatever was
+                  // focused before the viewer opened (typically the
+                  // tabbable thumbnail `<img>` that triggered it), leaving
+                  // that background element in the tab order alongside the
+                  // dialog. fallbackFocus targets the Modal root itself,
+                  // which is made focusable via tabIndex below. Uses the
+                  // shared `focusTrapFallbackFocus` helper (see
+                  // `$utils/dom`) which is null-safe at runtime instead of
+                  // casting the ref.
+                  fallbackFocus: focusTrapFallbackFocus(viewerModalRef),
                   onDeactivate: () => setViewer(false),
                   clickOutsideDeactivates: true,
                   escapeDeactivates: stopPropagation,
                 }}
               >
                 <Modal
+                  ref={viewerModalRef}
+                  tabIndex={-1}
                   className={ModalWide}
                   size="500"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={safeBody}
                   onContextMenu={(evt: React.MouseEvent) => evt.stopPropagation()}
                 >
                   {renderViewer({

@@ -23,7 +23,7 @@ export function SettingsShallowRouteRenderer() {
   };
 
   return (
-    <Modal500 requestClose={handleRequestClose}>
+    <Modal500 requestClose={handleRequestClose} ariaLabel="Settings">
       <SettingsRoute routeSection={routeMatch.params.section} />
     </Modal500>
   );
