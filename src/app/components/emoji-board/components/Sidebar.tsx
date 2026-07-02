@@ -1,17 +1,17 @@
 import type { ReactNode } from 'react';
-import { Box, Scroll, Line, as, TooltipProvider, Tooltip, Text, IconButton } from 'folds';
+import { Box, Line, as, TooltipProvider, Tooltip, Text, IconButton } from 'folds';
 import classNames from 'classnames';
 import { sizedIcon, Image, type PhosphorIcon } from '$components/icons/phosphor';
 import * as css from './styles.css';
 
+// Scrolls together with the picker content (see EmojiBoardLayout) rather
+// than in its own independent scroll region.
 export function Sidebar({ children }: { children: ReactNode }) {
   return (
     <Box className={css.Sidebar} shrink="No">
-      <Scroll size="0">
-        <Box className={css.SidebarContent} direction="Column" alignItems="Center" gap="100">
-          {children}
-        </Box>
-      </Scroll>
+      <Box className={css.SidebarContent} direction="Column" alignItems="Center" gap="100">
+        {children}
+      </Box>
     </Box>
   );
 }
