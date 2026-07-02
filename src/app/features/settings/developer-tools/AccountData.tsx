@@ -23,14 +23,20 @@ type AccountDataProps = {
 export function AccountData({ expand, onExpandToggle, onSelect }: AccountDataProps) {
   const mx = useMatrixClient();
   const [accountDataTypes, setAccountDataKeys] = useState<string[]>(() =>
-    // TODO: tighten this once account data event typing is standardized.
+    // as never: matrix-js-sdk's setAccountData/getAccountData have typed overloads
+    // only for known event types. Arbitrary event types require this cast until
+    // matrix-js-sdk exposes a generic overload or we define our own wrapper.
+    // See issue #502 for the tracked improvement.
     Array.from(mx.store.accountData.keys())
   );
 
   useAccountDataCallback(
     mx,
     useCallback(() => {
-      // TODO: tighten this once account data event typing is standardized.
+      // as never: matrix-js-sdk's setAccountData/getAccountData have typed overloads
+      // only for known event types. Arbitrary event types require this cast until
+      // matrix-js-sdk exposes a generic overload or we define our own wrapper.
+      // See issue #502 for the tracked improvement.
       setAccountDataKeys(Array.from(mx.store.accountData.keys()));
     }, [mx])
   );
