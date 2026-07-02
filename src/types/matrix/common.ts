@@ -33,9 +33,10 @@ export type MSC4459ImagePackReference = {
    */
   via?: SerializableSet<string>;
   /**
-   * The Matrix state key of the image pack state event (`im.ponies.room_emotes`
-   * or equivalent) within the image pack room. Together with `room_id`, this
-   * uniquely identifies the state event that carries the pack definition.
+   * The Matrix state key of the image pack state event (whose event *type* is
+   * `im.ponies.room_emotes` or equivalent) within the image pack room. Together
+   * with `room_id`, this uniquely identifies the state event that carries the
+   * pack definition.
    *
    * Per MSC4459, the state key is typically an empty string (`""`) for the
    * default pack, or a pack-specific identifier for named packs.
@@ -46,7 +47,7 @@ export type MSC4459ImagePackReference = {
    */
   state_key?: string;
   /**
-   * the shortcode this emoji is referred by
+   * The shortcode this emoji is referred to by.
    */
   shortcode?: string;
 };
