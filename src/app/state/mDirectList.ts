@@ -18,8 +18,19 @@ export const mDirectAtom = atom<Set<string>, [MDirectAction], undefined>(
   }
 );
 
+// True once useBindMDirectAtom's effect has run at least once for the active client, so
+// consumers that need to know "is this room a DM" *correctly* (not just with whatever
+// mDirectAtom's initial empty-Set default happens to be) have a readiness signal to wait
+// on. ClientBindAtoms — which calls useBindMDirectAtom — is the parent of both
+// NotificationJumper and the routed ToRoomEvent, so on a cold launch their effects run
+// before this one: reading mDirectAtom.has(roomId) there before this atom is true can
+// read false for a genuine DM, misclassifying an incoming call notification. Plain
+// writable atom (not a derived read-only view) so tests can seed it directly.
+export const mDirectReadyAtom = atom(false);
+
 export const useBindMDirectAtom = (mx: MatrixClient, mDirect: typeof mDirectAtom) => {
   const setMDirect = useSetAtom(mDirect);
+  const setMDirectReady = useSetAtom(mDirectReadyAtom);
 
   useEffect(() => {
     const mDirectEvent = getAccountData(mx, EventType.Direct);
@@ -29,6 +40,7 @@ export const useBindMDirectAtom = (mx: MatrixClient, mDirect: typeof mDirectAtom
         rooms: getMDirects(mDirectEvent),
       });
     }
+    setMDirectReady(true);
 
     const handleAccountData = (event: MatrixEvent) => {
       if (event.getType() === (EventType.Direct as string)) {
@@ -42,6 +54,7 @@ export const useBindMDirectAtom = (mx: MatrixClient, mDirect: typeof mDirectAtom
     mx.on(ClientEvent.AccountData, handleAccountData);
     return () => {
       mx.removeListener(ClientEvent.AccountData, handleAccountData);
+      setMDirectReady(false);
     };
-  }, [mx, setMDirect]);
+  }, [mx, setMDirect, setMDirectReady]);
 };

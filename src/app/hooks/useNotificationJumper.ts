@@ -4,7 +4,7 @@ import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { SyncState, ClientEvent } from '$types/matrix-sdk';
 import * as Sentry from '@sentry/react';
 import { activeSessionIdAtom, pendingNotificationAtom } from '$state/sessions';
-import { mDirectAtom } from '$state/mDirectList';
+import { mDirectAtom, mDirectReadyAtom } from '$state/mDirectList';
 import { incomingCallAtom, mutedCallRoomIdAtom } from '$state/callEmbed';
 import { resolveIncomingCallFromSearchParams } from '$features/call/callNotificationBridge';
 import { isIncomingCallSuppressed } from '$features/call/callIncomingIngress';
@@ -94,6 +94,7 @@ export function NotificationJumper() {
   const [pending, setPending] = useAtom(pendingNotificationAtom);
   const activeSessionId = useAtomValue(activeSessionIdAtom);
   const mDirects = useAtomValue(mDirectAtom);
+  const mDirectReady = useAtomValue(mDirectReadyAtom);
   const roomToParents = useAtomValue(roomToParentsAtom);
   const roomToParentsReady = useAtomValue(roomToParentsReadyAtom);
   const mutedRoomId = useAtomValue(mutedCallRoomIdAtom);
@@ -156,8 +157,10 @@ export function NotificationJumper() {
 
     // Both session gates above passed, so mDirects/mutedRoomId/the notification-sound
     // setting now reflect the target session — safe to resolve the deferred incoming
-    // call that ToRoomEvent couldn't resolve correctly before the account switch.
-    if (pending.callSearchParams && !handledCallRef.current) {
+    // call that ToRoomEvent couldn't resolve correctly before the account switch or
+    // (on a cold launch) before mDirectAtom was bound. Wait for mDirectReady too rather
+    // than marking handled and resolving against a still-empty Set.
+    if (pending.callSearchParams && !handledCallRef.current && mDirectReady) {
       handledCallRef.current = true;
       const callParams = new URLSearchParams(pending.callSearchParams);
       const incomingCall = resolveIncomingCallFromSearchParams(
@@ -376,6 +379,7 @@ export function NotificationJumper() {
     activeSessionId,
     mx,
     mDirects,
+    mDirectReady,
     roomToParents,
     roomToParentsReady,
     mutedRoomId,

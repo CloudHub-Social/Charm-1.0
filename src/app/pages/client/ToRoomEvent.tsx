@@ -11,7 +11,7 @@ import {
   buildNotificationBreadcrumb,
   buildNotificationMetricAttributes,
 } from '$utils/notificationTelemetry';
-import { mDirectAtom } from '$state/mDirectList';
+import { mDirectAtom, mDirectReadyAtom } from '$state/mDirectList';
 import { incomingCallAtom, mutedCallRoomIdAtom } from '$state/callEmbed';
 import { resolveIncomingCallFromSearchParams } from '$features/call/callNotificationBridge';
 import { isIncomingCallSuppressed } from '$features/call/callIncomingIngress';
@@ -37,6 +37,7 @@ export function ToRoomEvent() {
   const navigate = useNavigate();
   const activeSessionId = useAtomValue(activeSessionIdAtom);
   const mDirects = useAtomValue(mDirectAtom);
+  const mDirectReady = useAtomValue(mDirectReadyAtom);
   const mutedRoomId = useAtomValue(mutedCallRoomIdAtom);
   const [incomingVoiceRoomCallSoundEnabled] = useSetting(
     settingsAtom,
@@ -79,6 +80,12 @@ export function ToRoomEvent() {
     // Switch to the target account first so the notification jumper navigates
     // under the correct session.
     const needsAccountSwitch = !!userId && userId !== activeSessionId;
+    // On a cold launch, ClientBindAtoms (which populates mDirectAtom) is the parent of
+    // both NotificationJumper and the routed ToRoomEvent, so its effect hasn't run yet
+    // when this one does — mDirects.has(roomId) below would read the initial empty Set
+    // even for a genuine DM, misclassifying the call and never getting a chance to
+    // self-correct (this component navigates itself away immediately after).
+    const needsDeferral = needsAccountSwitch || !mDirectReady;
     if (userId) setActiveSessionId(userId);
     setPending(
       createPendingNotification({
@@ -89,15 +96,16 @@ export function ToRoomEvent() {
         targetSessionId: userId,
         swClickId,
         source: 'to_room_event',
-        // Resolving now would read mDirects/mutedRoomId/settings for the session that
-        // was active *before* the switch, not the target session — defer to
-        // NotificationJumper, which already waits for the target session's client to
-        // become active before touching session-scoped atoms.
-        callSearchParams: needsAccountSwitch ? rawSearchParams : undefined,
+        // Resolving now would read mDirects/mutedRoomId/settings before they're
+        // trustworthy (either the pre-switch session's, or not yet bound at all) —
+        // defer to NotificationJumper, which already waits for both the target
+        // session's client to become active and (see mDirectReadyAtom) for
+        // session-scoped atoms to actually be populated.
+        callSearchParams: needsDeferral ? rawSearchParams : undefined,
       })
     );
 
-    if (!needsAccountSwitch) {
+    if (!needsDeferral) {
       const incomingCall = resolveIncomingCallFromSearchParams(
         searchParams,
         roomId,
@@ -118,11 +126,12 @@ export function ToRoomEvent() {
     navigate(getRootPath(), { replace: true });
     // searchParams is read above via its stable rawSearchParams string form (see comment
     // near its declaration); depending on the URLSearchParams object itself would re-fire
-    // this effect on every render. activeSessionId is intentionally read once (not listed
-    // as a dep): it's only used to snapshot whether this click needs an account switch,
-    // and listing it would re-run this effect (redundantly re-navigating and re-stashing
-    // pending state) once setActiveSessionId's own update lands — the component navigates
-    // away immediately below regardless.
+    // this effect on every render. activeSessionId and mDirectReady are intentionally
+    // read once (not listed as deps): they're only used to snapshot whether this click
+    // needs to defer resolution, and listing them would re-run this effect (redundantly
+    // re-navigating and re-stashing pending state) once they update — the component
+    // navigates away immediately below regardless, so a second run couldn't self-correct
+    // anyway (see needsDeferral above for why that matters here).
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [
     eventId,

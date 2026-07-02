@@ -257,7 +257,16 @@ export class CallEmbed {
   }
 
   get document(): Document | undefined {
-    return this.iframe.contentDocument ?? this.iframe.contentWindow?.document;
+    // contentDocument is null (not a throw) for a cross-origin iframe, but reading
+    // .document off contentWindow directly throws a SecurityError in that case rather
+    // than returning null/undefined — unlike contentDocument, browsers don't silently
+    // no-op it. Reachable now that elementCallUrl can point at a genuinely different
+    // origin (see normalizeElementCallUrl) instead of always resolving same-origin.
+    try {
+      return this.iframe.contentDocument ?? this.iframe.contentWindow?.document;
+    } catch {
+      return undefined;
+    }
   }
 
   public setTheme(theme: ElementCallThemeKind) {

@@ -167,6 +167,12 @@ export const createPushNotifications = (
     });
     const originTs = typeof pushData.timestamp === 'number' ? pushData.timestamp : Date.now();
     const { senderTs, expiresAt } = getCallTiming(pushData.content, originTs);
+    // The push can arrive after the call notification's own lifetime has elapsed (device
+    // asleep, delayed/queued push delivery). resolveIncomingCallFromSearchParams and
+    // resolveIncomingCallFromNotificationData both reject an expired candidate on tap, so
+    // showing the notification here would just leave the user with a call they can't
+    // answer — skip it instead.
+    if (Date.now() >= expiresAt) return;
 
     const data = {
       type: resolveNotificationEventType(pushData),

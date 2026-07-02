@@ -135,4 +135,38 @@ describe('createPushNotifications', () => {
       })
     );
   });
+
+  it('does not show a notification for a call push that already expired', async () => {
+    const showNotification = vi
+      .fn<(title: string, options?: NotificationOptions) => Promise<void>>()
+      .mockResolvedValue(undefined);
+    const handle = createPushNotifications(
+      {
+        registration: { showNotification },
+      } as unknown as ServiceWorkerGlobalScope,
+      () => ({
+        showMessageContent: true,
+        showEncryptedMessageContent: true,
+      }),
+      vi.fn().mockResolvedValue(undefined)
+    );
+
+    await handle.handlePushNotificationPushData({
+      type: 'org.matrix.msc4075.rtc.notification',
+      content: {
+        notification_type: 'ring',
+        // Delivered long after the call's own 30s lifetime elapsed (device asleep,
+        // delayed push delivery, etc.) — should not be shown at all.
+        sender_ts: Date.now() - 120_000,
+        lifetime: 30_000,
+      },
+      sender_display_name: 'Alice',
+      room_name: 'General',
+      room_id: '!room:example.org',
+      user_id: '@me:example.org',
+      timestamp: Date.now() - 120_000,
+    });
+
+    expect(showNotification).not.toHaveBeenCalled();
+  });
 });

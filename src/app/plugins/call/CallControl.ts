@@ -19,7 +19,14 @@ export class CallControl extends EventEmitter implements CallControlState {
   private controlMutationObserver: MutationObserver;
 
   private get document(): Document | undefined {
-    return this.iframe.contentDocument ?? this.iframe.contentWindow?.document;
+    // See the identical guard in CallEmbed.ts: contentWindow?.document throws a
+    // SecurityError for a cross-origin iframe rather than returning null like
+    // contentDocument does, so this needs its own try/catch.
+    try {
+      return this.iframe.contentDocument ?? this.iframe.contentWindow?.document;
+    } catch {
+      return undefined;
+    }
   }
 
   private get screenshareButton(): HTMLElement | undefined {

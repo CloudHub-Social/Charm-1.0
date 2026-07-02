@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { activeSessionIdAtom, pendingNotificationAtom } from '$state/sessions';
 import { incomingCallAtom } from '$state/callEmbed';
-import { mDirectAtom } from '$state/mDirectList';
+import { mDirectAtom, mDirectReadyAtom } from '$state/mDirectList';
 import { ToRoomEvent } from './ToRoomEvent';
 
 function AtomProbe() {
@@ -88,6 +88,9 @@ describe('ToRoomEvent', () => {
     // isIncomingCallSuppressed drops non-direct room calls unless a setting is enabled —
     // mark this room as a DM so the resolved call isn't suppressed for an unrelated reason.
     store.set(mDirectAtom, { type: 'INITIALIZE', rooms: new Set(['!room:example']) });
+    // ClientBindAtoms hasn't run in this test, so seed readiness directly — otherwise
+    // ToRoomEvent now (correctly) defers instead of resolving eagerly.
+    store.set(mDirectReadyAtom, true);
 
     const { getByTestId } = render(
       <Provider store={store}>
