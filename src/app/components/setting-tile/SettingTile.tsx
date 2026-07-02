@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useId, type ReactNode } from 'react';
+import { Children, cloneElement, Fragment, isValidElement, useId, type ReactNode } from 'react';
 import { Box, IconButton, Text } from 'folds';
 import { Check, Link, sizedIcon } from '$components/icons/phosphor';
 import { BreakWord } from '$styles/Text.css';
@@ -65,26 +65,64 @@ function SettingTileSettingLinkAction({
 }
 
 /**
+ * Whether `element` is itself eligible to receive `aria-labelledby`: it
+ * hasn't already declared its own `aria-label`/`aria-labelledby` (don't
+ * override a caller that already self-labels), and has no `children` (don't
+ * override an element like a `<Button>` that already derives its accessible
+ * name from visible text content - only childless controls like folds'
+ * `<Switch>` have nothing to name them).
+ */
+function isLabelableControl(element: React.ReactElement<Record<string, unknown>>): boolean {
+  const existingLabel = element.props['aria-label'];
+  const existingLabelledBy = element.props['aria-labelledby'];
+  if (existingLabel != null || existingLabelledBy != null) return false;
+
+  return element.props.children == null;
+}
+
+/**
  * Clones `after` (the trailing control, e.g. a Switch) to inject
  * `aria-labelledby={titleId}` so it picks up the tile's title as its
- * accessible name. Only applies when `after` is a single valid element that:
- *  - hasn't already declared its own `aria-label`/`aria-labelledby` (don't
- *    override a caller that already self-labels), and
- *  - has no `children` (don't override an element like a `<Button>` that
- *    already derives its accessible name from visible text content - only
- *    childless controls like folds' `<Switch>` have nothing to name them).
+ * accessible name.
+ *
+ * Handles two shapes:
+ *  - `after` is itself the labelable control (see `isLabelableControl`).
+ *  - `after` is a plain wrapper (a `Fragment` or an element with no
+ *    `aria-label`/`aria-labelledby` of its own, e.g. a layout `<Box>`) around
+ *    exactly one labelable control, possibly alongside other elements that
+ *    already have their own accessible name (text content or an explicit
+ *    label) or non-element children from conditional expressions. In that
+ *    case the wrapper is returned with that one child labeled instead.
+ *
+ * Only unwraps a single level - deeper nesting is left untouched rather than
+ * guessed at. If a wrapper contains zero or more than one labelable
+ * candidate, nothing is labeled (avoids mislabeling the wrong control).
  */
 function labelAfterWithTitle(after: ReactNode, titleId: string): ReactNode {
   if (!isValidElement<Record<string, unknown>>(after)) return after;
 
-  const existingLabel = after.props['aria-label'];
-  const existingLabelledBy = after.props['aria-labelledby'];
-  if (existingLabel != null || existingLabelledBy != null) return after;
+  if (isLabelableControl(after)) {
+    return cloneElement(after, { 'aria-labelledby': titleId });
+  }
 
-  const hasChildren = after.props.children != null;
-  if (hasChildren) return after;
+  const isPlainWrapper =
+    after.type === Fragment ||
+    (after.props['aria-label'] == null && after.props['aria-labelledby'] == null);
+  if (!isPlainWrapper) return after;
 
-  return cloneElement(after, { 'aria-labelledby': titleId });
+  const children = Children.toArray(after.props.children as ReactNode);
+  const candidates = children.filter(
+    (child): child is React.ReactElement<Record<string, unknown>> =>
+      isValidElement<Record<string, unknown>>(child) && isLabelableControl(child)
+  );
+  if (candidates.length !== 1) return after;
+
+  const target = candidates[0];
+  const labeledChildren = children.map((child) =>
+    child === target ? cloneElement(target, { 'aria-labelledby': titleId }) : child
+  );
+
+  return cloneElement(after, undefined, ...labeledChildren);
 }
 
 export function SettingTile({

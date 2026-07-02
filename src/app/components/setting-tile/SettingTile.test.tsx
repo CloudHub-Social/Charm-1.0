@@ -186,4 +186,92 @@ describe('SettingTile', () => {
 
     expect(screen.getByRole('switch')).not.toHaveAttribute('aria-labelledby');
   });
+
+  it('labels a switch wrapped in a fragment alongside a conditional sibling', () => {
+    const isLoading = false;
+    renderTile(ScreenSize.Desktop, 'system-notification', {
+      title: 'System Notification',
+      after: (
+        <>
+          {/* SettingTile injects the label at runtime; this control has none of its own. */}
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+          <button type="button" role="switch" aria-checked={false} />
+          {isLoading && <span>Loading</span>}
+        </>
+      ),
+    });
+
+    const titleEl = screen.getByText('System Notification');
+    const switchEl = screen.getByRole('switch');
+
+    expect(switchEl).toHaveAttribute('aria-labelledby', titleEl.id);
+    expect(screen.getByRole('switch', { name: 'System Notification' })).toBeInTheDocument();
+  });
+
+  it('labels a switch wrapped in a Box alongside a sibling with its own accessible name', () => {
+    renderTile(ScreenSize.Desktop, 'room-publish', {
+      title: 'Publish to Directory',
+      after: (
+        <div>
+          <button type="button">Reset</button>
+          {/* SettingTile injects the label at runtime; this control has none of its own. */}
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+          <button type="button" role="switch" aria-checked={false} />
+        </div>
+      ),
+    });
+
+    const titleEl = screen.getByText('Publish to Directory');
+    const switchEl = screen.getByRole('switch');
+
+    expect(switchEl).toHaveAttribute('aria-labelledby', titleEl.id);
+    expect(screen.getByRole('button', { name: 'Reset' })).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not label anything inside a wrapper with no labelable candidate', () => {
+    renderTile(ScreenSize.Desktop, 'no-candidate', {
+      title: 'No Candidate',
+      after: (
+        <div>
+          <button type="button">One</button>
+          <button type="button">Two</button>
+        </div>
+      ),
+    });
+
+    expect(screen.getByRole('button', { name: 'One' })).not.toHaveAttribute('aria-labelledby');
+    expect(screen.getByRole('button', { name: 'Two' })).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not label inside a wrapper with multiple labelable candidates', () => {
+    renderTile(ScreenSize.Desktop, 'multi-candidate', {
+      title: 'Multi Candidate',
+      after: (
+        <div>
+          {/* Two ambiguous childless controls - SettingTile should not guess which to label. */}
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+          <button type="button" role="switch" aria-checked={false} data-testid="switch-a" />
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+          <button type="button" role="switch" aria-checked={false} data-testid="switch-b" />
+        </div>
+      ),
+    });
+
+    expect(screen.getByTestId('switch-a')).not.toHaveAttribute('aria-labelledby');
+    expect(screen.getByTestId('switch-b')).not.toHaveAttribute('aria-labelledby');
+  });
+
+  it('does not unwrap a wrapper that already declares its own accessible name', () => {
+    renderTile(ScreenSize.Desktop, 'labeled-wrapper', {
+      title: 'Labeled Wrapper',
+      after: (
+        <div aria-label="Custom wrapper label">
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label */}
+          <button type="button" role="switch" aria-checked={false} />
+        </div>
+      ),
+    });
+
+    expect(screen.getByRole('switch')).not.toHaveAttribute('aria-labelledby');
+  });
 });

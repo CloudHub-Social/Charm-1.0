@@ -33,8 +33,8 @@ export const settingTileSettingLinkAction = style([
   {
     // Keep the icon glyph small (sized via `sizedIcon(..., '50')`) but
     // guarantee a tap target that meets the WCAG 2.1 AA touch-target
-    // recommendation (44x44 CSS px) via padding around the smaller icon,
-    // rather than scaling the icon itself up.
+    // recommendation (44x44 CSS px) via minWidth/minHeight plus centering
+    // the smaller icon within that box, rather than scaling the icon itself up.
     minWidth: 44,
     minHeight: 44,
     width: 'auto',
