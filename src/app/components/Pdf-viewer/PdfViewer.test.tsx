@@ -54,6 +54,16 @@ const renderViewer = () => {
   return { requestClose, ...utils };
 };
 
+// Rendered without the "outside" wrapper button used elsewhere in this file,
+// so the returned `unmount` tears down the whole tree including PdfViewer's
+// own FocusTrap - needed to exercise `componentWillUnmount`'s deactivation
+// path directly (see the `requestCloseOnce` guard test below).
+const renderViewerOnly = () => {
+  const requestClose = vi.fn<() => void>();
+  const utils = render(<PdfViewer name="test.pdf" src="blob:test" requestClose={requestClose} />);
+  return { requestClose, ...utils };
+};
+
 const openJumpMenu = async (user: ReturnType<typeof userEvent.setup>) => {
   const jumpChip = screen.getByText('1/5');
   await user.click(jumpChip);
@@ -193,4 +203,37 @@ describe('PdfViewer nested focus-trap click-outside', () => {
     });
     expect(requestClose).not.toHaveBeenCalled();
   });
+});
+
+describe('PdfViewer requestClose de-duplication', () => {
+  const originalResizeObserver = globalThis.ResizeObserver;
+
+  beforeEach(() => {
+    globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
+  });
+
+  afterEach(() => {
+    globalThis.ResizeObserver = originalResizeObserver;
+    vi.clearAllMocks();
+  });
+
+  it(
+    'calls requestClose only once when the Close button is clicked, even though ' +
+      'unmounting also triggers the FocusTrap onDeactivate handler (bug prediction 1514785)',
+    async () => {
+      const user = userEvent.setup();
+      const { requestClose, unmount } = renderViewerOnly();
+
+      // Clicking Close calls `requestClose` directly, then (in production)
+      // the parent removes PdfViewer from the tree in response - simulated
+      // here via `unmount()`. Without the `requestCloseOnce` guard,
+      // focus-trap-react's `componentWillUnmount` would call the trap's
+      // still-active `onDeactivate` a second time during that unmount.
+      await user.click(screen.getByRole('button', { name: 'Close' }));
+      expect(requestClose).toHaveBeenCalledTimes(1);
+
+      unmount();
+      expect(requestClose).toHaveBeenCalledTimes(1);
+    }
+  );
 });

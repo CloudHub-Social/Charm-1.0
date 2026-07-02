@@ -69,6 +69,26 @@ export const PdfViewer = as<'div', PdfViewerProps>(
       [forwardedRef]
     );
 
+    // Guards against calling `requestClose` twice for a single close: the
+    // outer FocusTrap's own `deactivate()` (Escape, click-outside) invokes
+    // `onDeactivate: requestClose` synchronously, but focus-trap-react's
+    // `componentWillUnmount` *also* calls the trap's `deactivate()` (and
+    // therefore `onDeactivate`) if the underlying trap is still marked
+    // active when this component unmounts - which it is when `requestClose`
+    // is triggered directly (e.g. the header's Close button, line ~284
+    // below) rather than through the trap's own deactivation path, since
+    // that unmounts `PdfViewer` before the trap ever calls its own
+    // `deactivate()`. `requestClose` is normally just a `useState` setter
+    // (see `ReadPdfFile` in `FileContent.tsx`), so a second call is
+    // harmless in practice, but it's still a spurious update on an
+    // unmounting component - guard it out at the source instead.
+    const closeRequestedRef = useRef(false);
+    const requestCloseOnce = useCallback(() => {
+      if (closeRequestedRef.current) return;
+      closeRequestedRef.current = true;
+      requestClose();
+    }, [requestClose]);
+
     const {
       transforms: { zoom },
       zoomIn,
@@ -152,9 +172,9 @@ export const PdfViewer = as<'div', PdfViewerProps>(
         !root.contains(target) &&
         !(menu && menu.contains(target))
       ) {
-        requestClose();
+        requestCloseOnce();
       }
-    }, [requestClose]);
+    }, [requestCloseOnce]);
 
     // The shared `stopPropagation` helper (from `$utils/keyboard`) is used as
     // the *outer* viewer trap's `escapeDeactivates` deliberately: it declines
@@ -253,14 +273,14 @@ export const PdfViewer = as<'div', PdfViewerProps>(
           // the shared `focusTrapFallbackFocus` helper (see `$utils/dom`)
           // which is null-safe at runtime instead of casting the ref.
           fallbackFocus: focusTrapFallbackFocus(rootRef),
-          onDeactivate: requestClose,
+          onDeactivate: requestCloseOnce,
           // This trap is nested inside FileContent.tsx's `ReadPdfFile`
           // FocusTrap (which has `clickOutsideDeactivates: true` for
           // backdrop-click-to-close). Once this inner trap activates, it
           // pauses the outer one, so the outer trap's
           // `clickOutsideDeactivates` no longer has any effect on backdrop
           // clicks - only this trap's own config does. Setting it to
-          // `true` here (with `onDeactivate: requestClose` above) keeps
+          // `true` here (with `onDeactivate: requestCloseOnce` above) keeps
           // backdrop-click-to-close working end to end instead of
           // silently swallowing the click.
           clickOutsideDeactivates: true,
@@ -281,7 +301,7 @@ export const PdfViewer = as<'div', PdfViewerProps>(
         >
           <Header className={css.PdfViewerHeader} size="400">
             <Box grow="Yes" alignItems="Center" gap="200">
-              <IconButton size="300" radii="300" onClick={requestClose} aria-label="Close">
+              <IconButton size="300" radii="300" onClick={requestCloseOnce} aria-label="Close">
                 {sizedIcon(ArrowLeft, '50')}
               </IconButton>
               <Text id={titleId} size="T300" truncate>
