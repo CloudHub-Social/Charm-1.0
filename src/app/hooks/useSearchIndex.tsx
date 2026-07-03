@@ -108,6 +108,13 @@ const BACKFILL_STARTUP_DELAY_MS = 15_000;
  */
 const MAX_WORKER_AUTO_RESTARTS = 3;
 
+/**
+ * Cap on live timeline events buffered while a worker restart is pending, so
+ * an extended outage (e.g. auto-restarts exhausted, no reload yet) can't grow
+ * this queue unboundedly.
+ */
+const MAX_QUEUED_LIVE_EVENTS = 500;
+
 const canRunMobileBackfill = (): boolean =>
   HAS_IDLE_CALLBACK || (document.visibilityState === 'visible' && document.hasFocus());
 
@@ -319,6 +326,16 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
   const failWorkerRef = useRef<((errorMsg: string, options?: FailWorkerOptions) => void) | null>(
     null
   );
+  // Handle for the pending auto-restart setTimeout, so it can be cancelled if
+  // the effect tears down (for any reason) before the delay elapses — without
+  // this, a stale timer can fire setWorkerRestartCount against a worker that
+  // has already been replaced or unmounted.
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Live timeline events buffered while a worker restart is pending (the old
+  // worker's ref has been nulled but the new one hasn't spawned yet), so they
+  // can be replayed once the respawned worker reaches READY instead of being
+  // silently dropped by postToWorker.
+  const pendingLiveEventsRef = useRef<IndexableEvent[]>([]);
 
   const workerRef = useRef<Worker | null>(null);
   const pendingQueriesRef = useRef<Map<string, PendingQuery>>(new Map());
@@ -354,7 +371,15 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
       const handleDecrypted = () => {
         try {
           const ev = toIndexableEvent(mEvent, room.roomId);
-          if (ev) postToWorker({ type: 'INDEX_EVENTS', events: [ev] });
+          if (!ev) return;
+          if (workerRef.current) {
+            postToWorker({ type: 'INDEX_EVENTS', events: [ev] });
+          } else if (pendingLiveEventsRef.current.length < MAX_QUEUED_LIVE_EVENTS) {
+            // Worker was killed and a respawn is pending — postToWorker would
+            // silently no-op here. Buffer instead so this event isn't lost
+            // once the restarted worker resumes from persisted backfill state.
+            pendingLiveEventsRef.current.push(ev);
+          }
         } catch (e) {
           // Skip events that fail to process without halting live indexing
           console.warn(
@@ -488,6 +513,20 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
         roomSpan.setAttribute('backfill.stopped_reason', 'pagination_error');
         roomSpan.setAttribute('backfill.total_events', totalEventsThisSession);
         roomSpan.setAttribute('backfill.total_pages', totalPagesThisSession);
+        roomSpan.end();
+        return;
+      }
+
+      // The worker may have died and been reset while this page was in
+      // flight (a bare async call — cancelIdlesRef only stops idle callbacks
+      // that hadn't started yet). resetRuntimeState() clears this room from
+      // backfillingRoomsRef on failure; if it's gone, the restarted worker
+      // has already resumed this room from persisted state, so posting this
+      // stale page would duplicate work or clobber the fresh token/count.
+      if (!backfillingRoomsRef.current.has(room.roomId)) {
+        pageSpan.setAttribute('backfill.stale_after_restart', true);
+        pageSpan.end();
+        roomSpan.setAttribute('backfill.stopped_reason', 'worker_restarted');
         roomSpan.end();
         return;
       }
@@ -731,6 +770,13 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
             },
           });
           setIsReady(true);
+          // Replay any live events buffered while this worker was down (e.g.
+          // during an auto-restart) before requesting backfill states, so
+          // they land ahead of the resumed backfill's own INDEX_EVENTS posts.
+          if (pendingLiveEventsRef.current.length > 0) {
+            postToWorker({ type: 'INDEX_EVENTS', events: pendingLiveEventsRef.current });
+            pendingLiveEventsRef.current = [];
+          }
           // Request backfill states, then start background fill
           postToWorker({ type: 'GET_BACKFILL_STATES' });
           break;
@@ -919,6 +965,22 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
     };
     failWorkerRef.current = failWorker;
 
+    // True once this worker instance has sent READY at least once. Gates
+    // auto-restart so pre-READY load failures (404/CORS/stale cache — worker
+    // script itself is broken) surface the hard-reload state immediately
+    // instead of retrying the same broken asset MAX_WORKER_AUTO_RESTARTS
+    // times. Reset to false on every effect run since it describes this
+    // specific worker instance, not the isReady *state* (which lags behind
+    // via React's async updates and wouldn't reflect this correctly).
+    let hasReachedReady = false;
+    // Guards against scheduling more than one restart timer per worker
+    // instance — if several `error` events fire in quick succession before
+    // the effect re-runs, workerRestartCount is still the same stale value
+    // for all of them, so without this guard each one schedules its own
+    // increment and multiple restart attempts get consumed for what should
+    // count as one.
+    let restartScheduled = false;
+
     // Handle worker runtime errors (e.g., MIME type errors from failed imports)
     const handleWorkerError = (error: ErrorEvent) => {
       // Null-check error.message — it may be undefined on ErrorEvent (SABLE-52)
@@ -967,16 +1029,29 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
 
       // Auto-restart on unexpected OS-level termination (e.g. iOS kills the
       // Web Worker under image-decode memory pressure). Skip for MIME / stale-
-      // cache errors — those need a hard reload, not a respawn.
-      if (!isMimeError && workerRestartCount < MAX_WORKER_AUTO_RESTARTS) {
+      // cache errors — those need a hard reload, not a respawn. Also skip
+      // pre-READY failures — those mean the worker script itself failed to
+      // load (404/CORS/stale cache), so retrying just repeats the same
+      // broken request three times before reaching the hard-reload state.
+      if (
+        !isMimeError &&
+        hasReachedReady &&
+        !restartScheduled &&
+        workerRestartCount < MAX_WORKER_AUTO_RESTARTS
+      ) {
+        restartScheduled = true;
+        const attempt = workerRestartCount + 1;
         Sentry.addBreadcrumb({
           category: 'search.index',
-          message: `Scheduling search worker auto-restart (attempt ${workerRestartCount + 1}/${MAX_WORKER_AUTO_RESTARTS})`,
+          message: `Scheduling search worker auto-restart (attempt ${attempt}/${MAX_WORKER_AUTO_RESTARTS})`,
           level: 'warning',
-          data: { restartCount: workerRestartCount },
+          data: { restartCount: attempt },
         });
         // Brief 2 s delay so iOS memory pressure can subside before respawning.
-        setTimeout(() => setWorkerRestartCount((c) => c + 1), 2_000);
+        restartTimerRef.current = setTimeout(() => {
+          restartTimerRef.current = null;
+          setWorkerRestartCount((c) => c + 1);
+        }, 2_000);
       }
     };
     worker.addEventListener('error', handleWorkerError);
@@ -998,6 +1073,7 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
         clearTimeout(initTimeout);
         if (event.data.type === 'READY') {
           setInitError(null); // Clear any previous error only on successful READY
+          hasReachedReady = true;
         }
       }
       originalHandler(event);
@@ -1076,6 +1152,10 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
     return () => {
       failWorkerRef.current = null;
       clearTimeout(initTimeout);
+      if (restartTimerRef.current !== null) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
       worker.removeEventListener('message', wrappedHandler as EventListener);
       worker.removeEventListener('error', handleWorkerError);
       detachMatrixListeners();
