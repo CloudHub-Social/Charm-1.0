@@ -19,7 +19,11 @@ import { createDebugLogger } from '$utils/debugLogger';
 
 const debugLog = createDebugLogger('CallEmbed');
 
-const HAS_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+// Requires "://" (not just a bare ":") so a host:port value like "call.example.org:8443"
+// or "localhost:8080" isn't mistaken for "<scheme>:<rest>" — a colon-only match would
+// treat the host itself as the scheme and return the value unchanged, leaving
+// new URL() to parse a bogus non-http protocol instead of an https:// origin.
+const HAS_SCHEME_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 /**
  * `new URL(value, origin)` silently treats a scheme-less host like "call.example.org"
