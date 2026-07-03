@@ -64,6 +64,7 @@ import type { GifData } from './types';
 import { EmojiBoardTab, EmojiType } from './types';
 import { getMobileSheetHeights } from './mobileSheetHeights';
 import { shouldDismissMobileSheet } from './mobileSheetDismiss';
+import { useMobileSheetHeight } from './useMobileSheetHeight';
 import {
   addGifSentBreadcrumb,
   addGifTabOpenedBreadcrumb,
@@ -831,9 +832,11 @@ export function EmojiBoard({
   const emojiTab = activeTab === EmojiBoardTab.Emoji;
   const gifTab = activeTab === EmojiBoardTab.Gif;
   const usage = emojiTab ? ImageUsage.Emoticon : ImageUsage.Sticker;
-  const [mobileSheetHeight, setMobileSheetHeight] = useState<number>();
-  const mobileSheetHeightRef = useRef(mobileSheetHeight);
-  mobileSheetHeightRef.current = mobileSheetHeight;
+  const [mobileSheetHeight, setMobileSheetHeight, mobileSheetHeightRef] = useMobileSheetHeight(
+    isMobileSheet,
+    active,
+    activeTab
+  );
   const mobileSheetDragRef = useRef<{
     currentHeight: number;
     startY: number;
@@ -980,21 +983,6 @@ export function EmojiBoard({
   useEffect(() => {
     setRecentGifSearches(getRecentGifSearches(userId));
   }, [userId]);
-
-  useEffect(() => {
-    if (!isMobileSheet) return undefined;
-
-    const applyHeight = () => {
-      const heights = getMobileSheetHeights(window.innerHeight, activeTab);
-      setMobileSheetHeight(heights.initial);
-    };
-
-    applyHeight();
-    window.addEventListener('resize', applyHeight);
-    return () => {
-      window.removeEventListener('resize', applyHeight);
-    };
-  }, [activeTab, isMobileSheet]);
 
   const rememberGifSearch = useCallback(
     (term: string) => {
@@ -1232,17 +1220,12 @@ export function EmojiBoard({
 
         // Pulling the handle well past the min height, or flicking down
         // fast while already near the min height, dismisses the sheet —
-        // the same gesture users expect from a native bottom sheet.
+        // the same gesture users expect from a native bottom sheet. Leave
+        // the height wherever the drag left it: the close animation (see
+        // RoomInput) carries the sheet the rest of the way off-screen, and
+        // useMobileSheetHeight computes a fresh initial height the next time
+        // the sheet actually re-opens, so there's nothing to reset here.
         if (shouldDismissMobileSheet(dragState, heights)) {
-          // The picker stays mounted (just hidden) between opens, so reset
-          // the height now — otherwise the next open would reuse the
-          // collapsed height left over from this dismiss drag. Setting it to
-          // `undefined` isn't enough: the effect that computes `initial`
-          // only reruns on [activeTab, isMobileSheet], neither of which
-          // changes on a same-tab reopen, so it would never recompute and
-          // the sheet would fall back to the static CSS height instead.
-          // Compute the initial height directly instead.
-          setMobileSheetHeight(heights.initial);
           requestClose();
           return;
         }
@@ -1257,7 +1240,7 @@ export function EmojiBoard({
       window.addEventListener('pointermove', handlePointerMove);
       window.addEventListener('pointerup', handlePointerUp, { once: true });
     },
-    [isMobileSheet, requestClose]
+    [isMobileSheet, requestClose, setMobileSheetHeight, mobileSheetHeightRef]
   );
 
   useEffect(

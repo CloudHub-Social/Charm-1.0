@@ -78,6 +78,13 @@ import { plainToEditorInput } from '$components/editor/input';
 import { htmlToMarkdown } from '$plugins/markdown';
 import type { GifData } from '$components/emoji-board';
 import { EmojiBoard, EmojiBoardTab } from '$components/emoji-board';
+import {
+  MOBILE_SHEET_ANIMATION_DURATION_MS,
+  MOBILE_SHEET_ANIMATION_EASING,
+  getMobileSheetCloseKeyframes,
+  getMobileSheetOpenKeyframes,
+  prefersReducedMotion,
+} from '$components/emoji-board/mobileSheetAnimation';
 import { getKlipyRemoteId, isKlipyProxyMxc, normalizeGifProxyHost } from '$utils/gifs';
 import type { TUploadContent } from '$utils/matrix';
 import { encryptFile, getImageInfo, mxcUrlToHttp, toggleReaction } from '$utils/matrix';
@@ -205,6 +212,7 @@ import type {
   AudioRecordingCompletePayload,
 } from './AudioMessageRecorder';
 import { AudioMessageRecorder } from './AudioMessageRecorder';
+import { bindMicHoldGesture } from './micHoldGesture';
 import { primeAudioContext } from '$plugins/voice-recorder-kit';
 import { PollCreator } from './PollCreator';
 import { sendImmediateMessage } from './sendImmediateMessage';
@@ -446,37 +454,115 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const micBtnRef = useRef<HTMLButtonElement>(null);
     const emojiPickerRef = useRef<HTMLDivElement>(null);
     const prevEmojiBoardTabRef = useRef<EmojiBoardTab | undefined>(emojiBoardTab);
+    // Bumped whenever the sheet genuinely opens from closed, or is kept open
+    // (tab switch, reopen) while a close animation is still in flight. Lets
+    // a pending close's `.finally()` (below) tell whether it's still closing
+    // the same "session" it started against, or whether the sheet was
+    // reopened/re-engaged while it was playing -- in which case it must not
+    // go on to hide the sheet the user is now interacting with.
+    const emojiBoardOpenGenerationRef = useRef(0);
+    // The generation a close animation is currently in flight for, or null.
+    // Scoped to the generation (rather than a plain boolean) so a dismiss
+    // that arrives after a reopen isn't dropped as "already closing" -- the
+    // in-flight animation belongs to a stale generation and no longer counts.
+    const closingGenerationRef = useRef<number | null>(null);
+    const closeAnimationRef = useRef<Animation | null>(null);
+    // Drives pointer-events on the mobile sheet portal (below) so a rapid
+    // double-tap during the ~280ms close fade can't land a second selection
+    // on content that's already being dismissed.
+    const [isClosingMobileEmojiBoard, setIsClosingMobileEmojiBoard] = useState(false);
 
     // Slide-in animation for the mobile emoji/GIF/sticker picker — same motion
-    // as the long-press context menu (220ms, cubic-bezier(0.32, 0.72, 0, 1)).
-    // Only plays when the picker opens (undefined → tab), not on tab switches.
+    // as the long-press context menu. Only plays when the picker opens
+    // (undefined → tab), not on tab switches. The close half of this motion
+    // lives in closeMobileEmojiBoard below, sharing the same keyframes/timing
+    // so open and close mirror each other instead of close being an instant cut.
     useLayoutEffect(() => {
       const wasOpen = prevEmojiBoardTabRef.current !== undefined;
       prevEmojiBoardTabRef.current = emojiBoardTab;
+
+      if (emojiBoardTab !== undefined && closingGenerationRef.current !== null) {
+        // The sheet is being kept open/re-engaged (reopened, or switched tabs
+        // via the keyboard shortcut or the picker's own tab bar) while a
+        // previous close animation is still playing. `emojiBoardTab` never
+        // passed through `undefined` here, so the `!wasOpen` check below
+        // wouldn't catch this -- cancel the stale close immediately instead
+        // of leaving its fill-forwards effect (opacity/translateY) applied
+        // until that animation finishes on its own.
+        closeAnimationRef.current?.cancel();
+        closeAnimationRef.current = null;
+        closingGenerationRef.current = null;
+        setIsClosingMobileEmojiBoard(false);
+        emojiBoardOpenGenerationRef.current += 1;
+      }
+      if (emojiBoardTab !== undefined && !wasOpen) {
+        emojiBoardOpenGenerationRef.current += 1;
+      }
 
       const el = emojiPickerRef.current;
       if (!el || emojiBoardTab === undefined || wasOpen) return;
       // Skip animation if either the OS or the app's own Reduced Motion
       // setting is on. The swipe gesture itself is unaffected by this guard.
-      if (
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
-        document.body.classList.contains('reduced-motion')
-      )
-        return;
+      if (prefersReducedMotion()) return;
       // On phone layouts the element is centered with translateX(-50%); include
-      // it in both keyframes so the horizontal centering is preserved throughout.
+      // it in every keyframe so the horizontal centering is preserved throughout.
       const xCenter = isPhoneLayoutDevice() ? ' translateX(-50%)' : '';
-      // Use 40% translation (not 16px) so the sheet visibly slides up from
-      // below — closer to native bottom-sheet open feel.
-      const anim = el.animate(
-        [
-          { opacity: '0', transform: `translateY(40%)${xCenter}` },
-          { opacity: '1', transform: `translateY(0)${xCenter}` },
-        ],
-        { duration: 280, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'forwards' }
-      );
+      const anim = el.animate(getMobileSheetOpenKeyframes(xCenter), {
+        duration: MOBILE_SHEET_ANIMATION_DURATION_MS,
+        easing: MOBILE_SHEET_ANIMATION_EASING,
+        fill: 'forwards',
+      });
       return () => anim.cancel();
     }, [emojiBoardTab]);
+
+    // Mirrors the open animation above so dismissing the mobile sheet (tap
+    // outside, escape, selecting an emoji, or dragging past the dismiss
+    // threshold) slides/fades it fully off-screen instead of instantly
+    // cutting to hidden. Used only for the mobile sheet's requestClose --
+    // the desktop PopOut keeps the plain, unanimated closeEmojiBoard.
+    const closeMobileEmojiBoard = useCallback(() => {
+      const generationAtClose = emojiBoardOpenGenerationRef.current;
+      if (closingGenerationRef.current === generationAtClose) return;
+
+      const el = emojiPickerRef.current;
+      if (!el || emojiBoardTab === undefined || prefersReducedMotion()) {
+        closeEmojiBoard();
+        return;
+      }
+
+      closingGenerationRef.current = generationAtClose;
+      setIsClosingMobileEmojiBoard(true);
+      const xCenter = isPhoneLayoutDevice() ? ' translateX(-50%)' : '';
+      const anim = el.animate(getMobileSheetCloseKeyframes(xCenter), {
+        duration: MOBILE_SHEET_ANIMATION_DURATION_MS,
+        easing: MOBILE_SHEET_ANIMATION_EASING,
+        fill: 'forwards',
+      });
+      closeAnimationRef.current = anim;
+      anim.finished
+        .catch(() => undefined)
+        .finally(() => {
+          // Always clear the filled effect once the animation is done playing
+          // -- "fill: forwards" otherwise leaves its final opacity/transform
+          // applied indefinitely, which could leave a later reduced-motion
+          // reopen looking invisible since nothing would create a new
+          // animation to override it.
+          anim.cancel();
+          if (closeAnimationRef.current === anim) {
+            closeAnimationRef.current = null;
+          }
+          if (closingGenerationRef.current === generationAtClose) {
+            closingGenerationRef.current = null;
+          }
+          setIsClosingMobileEmojiBoard(false);
+          // If the sheet was reopened (or kept open via a tab switch) while
+          // this animation was playing, that bumped the generation counter --
+          // don't let this stale close request hide the sheet the user just
+          // interacted with.
+          if (emojiBoardOpenGenerationRef.current !== generationAtClose) return;
+          closeEmojiBoard();
+        });
+    }, [closeEmojiBoard, emojiBoardTab]);
 
     // Preserve stable list keys across metadata/description replacements without
     // storing UI-only IDs in the upload draft state.
@@ -526,8 +612,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
     const [showAudioRecorder, setShowAudioRecorder] = useState(false);
     const audioRecorderRef = useRef<AudioMessageRecorderHandle>(null);
-    const micHoldStartRef = useRef(0);
-    const HOLD_THRESHOLD_MS = 400;
     const [autocompleteQuery, setAutocompleteQuery] =
       useState<AutocompleteQuery<AutocompletePrefix>>();
     const [isQuickTextReact, setQuickTextReact] = useState(false);
@@ -2633,28 +2717,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   // await (e.g. inside the getUserMedia async path), causing the
                   // recorder to produce silence or nothing on the 2nd+ attempt.
                   primeAudioContext();
-                  micHoldStartRef.current = Date.now();
                   setShowAudioRecorder(true);
-
-                  function onUp() {
-                    cleanup();
-                    const held = Date.now() - micHoldStartRef.current;
-                    if (held >= HOLD_THRESHOLD_MS) {
-                      setTimeout(() => {
-                        audioRecorderRef.current?.stop();
-                      }, 50);
-                    } else {
-                      setTimeout(() => {
-                        audioRecorderRef.current?.cancel();
-                      }, 50);
-                    }
-                  }
-                  function cleanup() {
-                    window.removeEventListener('pointerup', onUp);
-                    window.removeEventListener('pointercancel', cleanup);
-                  }
-                  window.addEventListener('pointerup', onUp);
-                  window.addEventListener('pointercancel', cleanup);
+                  bindMicHoldGesture({ getRecorder: () => audioRecorderRef.current });
                 }}
               >
                 {showAudioRecorder ? (
@@ -2703,6 +2767,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                               : getEmojiBoardWidth(window.innerWidth),
                           }),
                           display: emojiBoardTab !== undefined ? undefined : 'none',
+                          // Blocks a rapid double-tap during the close fade
+                          // from landing a second emoji/sticker/GIF selection
+                          // on content that's already being dismissed.
+                          pointerEvents: isClosingMobileEmojiBoard ? 'none' : undefined,
                         }}
                       >
                         <EmojiBoard
@@ -2716,7 +2784,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                           onStickerSelect={handleStickerSelect}
                           onGifSelect={handleGifSelect}
                           isMobileSheet
-                          requestClose={closeEmojiBoard}
+                          requestClose={closeMobileEmojiBoard}
                         />
                       </div>
                     );
