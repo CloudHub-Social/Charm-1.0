@@ -23,9 +23,10 @@ import { ClientConfigProvider } from '$hooks/useClientConfig';
 import { ScreenSize, ScreenSizeProvider } from '$hooks/useScreenSize';
 import { SpecVersionsProvider } from '$hooks/useSpecVersions';
 import { ThemeContextProvider, ThemeKind } from '$hooks/useTheme';
+import { AutoDiscoveryInfoProvider } from '$hooks/useAutoDiscoveryInfo';
 import { makeCallPreferencesAtom } from '$state/callPreferences';
 import { CallPreferencesProvider } from '$state/hooks/callPreferences';
-import { AutoDiscoveryInfoProvider } from '$hooks/useAutoDiscoveryInfo';
+import type { AutoDiscoveryInfo } from '$app/cs-api';
 import { RoomViewHeader } from './RoomViewHeader';
 
 // RoomCallButton pulls in the call-embedding subsystem (CallEmbedRef context,
@@ -118,11 +119,12 @@ function buildRoomFixture() {
 function renderRoomViewHeader(screenSize: ScreenSize = ScreenSize.Desktop) {
   const { mx, room } = buildRoomFixture();
   // RoomViewHeader reads call preferences and call-start capabilities
-  // directly (not just via the mocked RoomCallButton), so both providers
-  // must be present even though this test never exercises call
-  // functionality itself.
+  // directly (useCallPreferences, useCallStartCapabilities -> useLivekitSupport
+  // -> useAutoDiscoveryInfo), not just through the mocked-out RoomCallButton —
+  // needs their own atom/context values, mirroring how ClientInitStorageAtom
+  // and AutoDiscovery.tsx wire them up for the real app.
   const callPreferencesAtom = makeCallPreferencesAtom(USER_ID);
-  const autoDiscoveryInfo = { 'm.homeserver': { base_url: 'https://smoke.test' } };
+  const autoDiscoveryInfo: AutoDiscoveryInfo = { 'm.homeserver': { base_url: mx.baseUrl } };
 
   render(
     <JotaiProvider>
@@ -133,17 +135,17 @@ function renderRoomViewHeader(screenSize: ScreenSize = ScreenSize.Desktop) {
               <ThemeContextProvider
                 value={{ id: 'sable-light', kind: ThemeKind.Light, classNames: [] }}
               >
-                <MatrixClientProvider value={mx}>
-                  <RoomProvider value={room}>
-                    <IsDirectRoomProvider value={false}>
-                      <CallPreferencesProvider value={callPreferencesAtom}>
-                        <AutoDiscoveryInfoProvider value={autoDiscoveryInfo}>
+                <AutoDiscoveryInfoProvider value={autoDiscoveryInfo}>
+                  <MatrixClientProvider value={mx}>
+                    <RoomProvider value={room}>
+                      <IsDirectRoomProvider value={false}>
+                        <CallPreferencesProvider value={callPreferencesAtom}>
                           <RoomViewHeader />
-                        </AutoDiscoveryInfoProvider>
-                      </CallPreferencesProvider>
-                    </IsDirectRoomProvider>
-                  </RoomProvider>
-                </MatrixClientProvider>
+                        </CallPreferencesProvider>
+                      </IsDirectRoomProvider>
+                    </RoomProvider>
+                  </MatrixClientProvider>
+                </AutoDiscoveryInfoProvider>
               </ThemeContextProvider>
             </ScreenSizeProvider>
           </ClientConfigProvider>

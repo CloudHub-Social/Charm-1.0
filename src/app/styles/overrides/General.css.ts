@@ -197,14 +197,19 @@ globalStyle(
 // flipping it negative app-wide would draw the ring on top of/inside
 // content everywhere, a worse look for the common (non-clipped) case.
 //
-// The `body:not(.sable-a11y-highlights-disabled)` prefix below is required,
-// not cosmetic: without it, this rule's specificity is (0,3,0) versus the
-// broad rule's (0,3,1) (that extra point comes from `body` being a type
-// selector), so the broad *positive*-offset rule would always win the
-// cascade regardless of source order or `!important` — silently defeating
-// the inset-ring fix this block exists to provide, and also leaking the ring
-// past the Focus Highlights accessibility setting, which every other rule in
-// this file respects.
+// Prefixed with `body:not(.sable-a11y-highlights-disabled)`, same as the
+// base outset rule above, for two reasons: (1) specificity — the base rule
+// gained that `body:not()` prefix when Focus Highlights became a toggle
+// (#521/#539), which raised its specificity from (0,2,0) to (0,3,1); this
+// rule's bare `[data-focus-ring-inset] [class*="..."]:focus-visible` was
+// only (0,3,0), so on the element-count tiebreak the base rule's positive
+// `2px` offset started winning over this rule's `-2px`, un-clipping the ring
+// back onto the flush CutoutCard edge it was meant to fix (regression
+// caught by e2e/smoke/focus-visible.spec.ts's CutoutCard inset-ring test).
+// Adding the same prefix here brings this rule to (0,4,1), restoring its
+// edge over the base rule. (2) correctness — this also makes the inset
+// variant respect the Focus Highlights setting like every other ring rule,
+// instead of always overriding `outlineOffset` even when rings are off.
 globalStyle(
   `
     body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] a:focus-visible,

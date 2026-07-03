@@ -38,16 +38,20 @@ export const EmojiBoardLayout = as<
   ) => {
     const pinnedFooterRef = useRef<HTMLDivElement>(null);
     const [pinnedFooterHeight, setPinnedFooterHeight] = useState(0);
+    const [pinnedFooterWidth, setPinnedFooterWidth] = useState(0);
 
     const hasPinnedFooter = Boolean(pinnedSidebarFooter);
     useEffect(() => {
       const el = pinnedFooterRef.current;
       if (!el) {
         setPinnedFooterHeight(0);
+        setPinnedFooterWidth(0);
         return undefined;
       }
       const observer = new ResizeObserver((entries) => {
-        setPinnedFooterHeight(entries[0]?.contentRect.height ?? 0);
+        const rect = entries[0]?.contentRect;
+        setPinnedFooterHeight(rect?.height ?? 0);
+        setPinnedFooterWidth(rect?.width ?? 0);
       });
       observer.observe(el);
       return () => observer.disconnect();
@@ -91,8 +95,23 @@ export const EmojiBoardLayout = as<
              * measured height, so scrolling to the end reveals the last
              * content/sidebar rows above the footer instead of leaving them
              * permanently hidden underneath its absolute-positioned overlay.
+             *
+             * paddingRight does the same horizontally, but only when there's
+             * no in-flow sidebar: an in-flow sidebar already reserves its own
+             * width in the row, so content naturally stops short of it. When
+             * pinnedSidebarFooter stands in for the sidebar entirely (no
+             * in-flow sidebar), nothing else claims that width — without this,
+             * content grows the full row width and the absolutely-positioned
+             * footer overlaps (and can intercept clicks on) whatever is
+             * underneath its right edge.
              */}
-            <Box direction="Row" style={{ paddingBottom: pinnedFooterHeight }}>
+            <Box
+              direction="Row"
+              style={{
+                paddingBottom: pinnedFooterHeight,
+                paddingRight: sidebar ? undefined : pinnedFooterWidth,
+              }}
+            >
               <Box grow="Yes" direction="Column" style={{ minWidth: 0 }}>
                 {children}
               </Box>

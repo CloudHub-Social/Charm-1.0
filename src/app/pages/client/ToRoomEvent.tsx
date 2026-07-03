@@ -13,7 +13,10 @@ import {
 } from '$utils/notificationTelemetry';
 import { mDirectAtom, mDirectReadyAtom } from '$state/mDirectList';
 import { incomingCallAtom, mutedCallRoomIdAtom } from '$state/callEmbed';
-import { resolveIncomingCallFromSearchParams } from '$features/call/callNotificationBridge';
+import {
+  isCallDeepLinkSearchParams,
+  resolveIncomingCallFromSearchParams,
+} from '$features/call/callNotificationBridge';
 import { isIncomingCallSuppressed } from '$features/call/callIncomingIngress';
 import { settingsAtom } from '$state/settings';
 import { useSetting } from '$state/hooks/settings';
@@ -100,8 +103,12 @@ export function ToRoomEvent() {
         // trustworthy (either the pre-switch session's, or not yet bound at all) —
         // defer to NotificationJumper, which already waits for both the target
         // session's client to become active and (see mDirectReadyAtom) for
-        // session-scoped atoms to actually be populated.
-        callSearchParams: needsDeferral ? rawSearchParams : undefined,
+        // session-scoped atoms to actually be populated. Only stash this for URLs that
+        // actually carry call metadata — NotificationJumper treats any truthy
+        // callSearchParams as "this click needs deferred call resolution", so setting it
+        // for an ordinary (non-call) notification click would misroute it into that path.
+        callSearchParams:
+          needsDeferral && isCallDeepLinkSearchParams(searchParams) ? rawSearchParams : undefined,
       })
     );
 

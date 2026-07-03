@@ -41,4 +41,12 @@ describe('normalizeElementCallUrl', () => {
       'https://matrix.cloudhub.social'
     );
   });
+
+  it('prepends https:// to a bare host with a port', () => {
+    expect(normalizeElementCallUrl('call.example.org:8443')).toBe('https://call.example.org:8443');
+  });
+
+  it('prepends https:// to localhost with a port', () => {
+    expect(normalizeElementCallUrl('localhost:8080')).toBe('https://localhost:8080');
+  });
 });
