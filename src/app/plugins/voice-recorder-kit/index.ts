@@ -1,4 +1,4 @@
-export { useVoiceRecorder } from './useVoiceRecorder';
+export { useVoiceRecorder, primeAudioContext } from './useVoiceRecorder';
 export type {
   UseVoiceRecorderOptions,
   UseVoiceRecorderReturn,
