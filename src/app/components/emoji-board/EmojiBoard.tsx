@@ -489,28 +489,32 @@ const useItemRenderer = (tab: EmojiBoardTab, saveStickerEmojiBandwidth: boolean)
   return renderItem;
 };
 
-type EmojiSidebarProps = {
+type EmojiSidebarPinnedProps = {
   activeGroupAtom: PrimitiveAtom<string | undefined>;
   packs: ImagePack[];
   saveStickerEmojiBandwidth: boolean;
   onScrollToGroup: (groupId: string) => void;
 };
-// Scrolls together with the picker content (Recent + custom packs). The
-// standard emoji-group categories are rendered separately by
-// EmojiSidebarPinned, outside the shared scroll — position: sticky doesn't
-// reliably stay pinned once content and sidebar share one scroll container
-// (observed on real Chromium/Android builds, not just the dev fixture: the
-// sticky group scrolls fully out of view instead of pinning to the bottom).
-function EmojiSidebar({
+// All emoji sidebar navigation is pinned outside the shared scroll so it is
+// always reachable regardless of scroll position. Recent + custom packs are
+// rendered above the standard emoji-group categories.
+//
+// Previously EmojiSidebar (Recent + packs) lived inside the shared
+// content+sidebar scroll while EmojiSidebarPinned (standard groups) was
+// pinned via position:absolute at the bottom. The pinned footer (~380 px
+// for 9 groups) covered the full height of the 450 px picker, hiding user
+// pack icons entirely — issue #520.
+function EmojiSidebarPinned({
   activeGroupAtom,
   packs,
   saveStickerEmojiBandwidth,
   onScrollToGroup,
-}: Readonly<EmojiSidebarProps>) {
+}: Readonly<EmojiSidebarPinnedProps>) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
-
   const [activeGroupId, setActiveGroupId] = useAtom(activeGroupAtom);
+  const labels = useEmojiGroupLabels();
+  const icons = useEmojiGroupIcons();
   const usage = ImageUsage.Emoticon;
 
   const handleScrollToGroup = (groupId: string) => {
@@ -520,6 +524,9 @@ function EmojiSidebar({
 
   return (
     <Sidebar>
+      {/* Recent + user packs — above the standard groups so they are never
+          obscured by the pinned footer itself. PinnedSidebarFooter already
+          has overflowY:auto so the whole column scrolls if packs overflow. */}
       <SidebarStack>
         <GroupIcon
           active={activeGroupId === RECENT_GROUP_ID}
@@ -536,8 +543,7 @@ function EmojiSidebar({
             let label = pack.meta.name;
             if (!label) label = isUserId(pack.id) ? 'Personal Pack' : mx.getRoom(pack.id)?.name;
 
-            // limit width and height to 36 to prevent very large icons from breaking the layout, since custom emoji pack icons can be of any size
-            // trying to get close to the render target size of the icons in the sidebar, which is around 24px
+            // Limit to 36 px to prevent oversized custom pack icons breaking layout.
             const url = saveStickerEmojiBandwidth
               ? mxcUrlToHttp(mx, pack.getAvatarUrl(usage) ?? '', useAuthentication, 36, 36)
               : mxcUrlToHttp(mx, pack.getAvatarUrl(usage) ?? '', useAuthentication);
@@ -555,31 +561,7 @@ function EmojiSidebar({
           })}
         </SidebarStack>
       )}
-    </Sidebar>
-  );
-}
-
-type EmojiSidebarPinnedProps = {
-  activeGroupAtom: PrimitiveAtom<string | undefined>;
-  onScrollToGroup: (groupId: string) => void;
-};
-// The standard emoji-group categories, always visible/reachable — rendered
-// outside the shared scroll (see EmojiSidebar above for why).
-function EmojiSidebarPinned({
-  activeGroupAtom,
-  onScrollToGroup,
-}: Readonly<EmojiSidebarPinnedProps>) {
-  const [activeGroupId, setActiveGroupId] = useAtom(activeGroupAtom);
-  const labels = useEmojiGroupLabels();
-  const icons = useEmojiGroupIcons();
-
-  const handleScrollToGroup = (groupId: string) => {
-    setActiveGroupId(groupId);
-    onScrollToGroup(groupId);
-  };
-
-  return (
-    <Sidebar>
+      {/* Standard emoji-group categories below */}
       <SidebarStack>
         <SidebarDivider />
         {emojiGroups.map((group) => (
@@ -1422,28 +1404,23 @@ export function EmojiBoard({
           ) : undefined
         }
         sidebar={
-          emojiTab ? (
-            <EmojiSidebar
-              activeGroupAtom={activeGroupIdAtom}
-              packs={imagePacks}
-              saveStickerEmojiBandwidth={saveStickerEmojiBandwidth}
-              onScrollToGroup={handleScrollToGroup}
-            />
-          ) : (
-            !gifTab && (
-              <StickerSidebar
-                activeGroupAtom={activeGroupIdAtom}
-                packs={imagePacks}
-                saveStickerEmojiBandwidth={saveStickerEmojiBandwidth}
-                onScrollToGroup={handleScrollToGroup}
-              />
-            )
-          )
+          emojiTab
+            ? undefined
+            : !gifTab && (
+                <StickerSidebar
+                  activeGroupAtom={activeGroupIdAtom}
+                  packs={imagePacks}
+                  saveStickerEmojiBandwidth={saveStickerEmojiBandwidth}
+                  onScrollToGroup={handleScrollToGroup}
+                />
+              )
         }
         pinnedSidebarFooter={
           emojiTab && (
             <EmojiSidebarPinned
               activeGroupAtom={activeGroupIdAtom}
+              packs={imagePacks}
+              saveStickerEmojiBandwidth={saveStickerEmojiBandwidth}
               onScrollToGroup={handleScrollToGroup}
             />
           )
