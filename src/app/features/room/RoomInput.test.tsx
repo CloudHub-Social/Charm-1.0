@@ -24,10 +24,12 @@
  * `size` recipe class a button receives, without hardcoding the actual
  * (folds-version-specific) class name/hash.
  */
-import type { RefObject } from 'react';
-import { render, screen } from '@testing-library/react';
+import type { ReactNode, RefObject } from 'react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createStore, Provider as JotaiProvider } from 'jotai';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Editor as SlateEditor, Transforms } from 'slate';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createClient, MatrixEvent, Room } from '$types/matrix-sdk';
 import { MatrixClientProvider } from '$hooks/useMatrixClient';
@@ -38,6 +40,13 @@ import { getSettings, settingsAtom, type Settings } from '$state/settings';
 import { useEditor } from '$components/editor/Editor';
 import type * as UseCommandsModule from '$hooks/useCommands';
 import { RoomInput } from './RoomInput';
+
+// jsdom doesn't perform layout, so focus-trap-react's tabbable-node check
+// (which relies on real geometry) throws when the Add menu's PopOut opens.
+// Same workaround as AutocompleteMenu.test.tsx / Verification.test.tsx.
+vi.mock('focus-trap-react', () => ({
+  default: ({ children }: { children: ReactNode }) => children,
+}));
 
 // The following hooks/subsystems are unrelated to touch-target sizing —
 // they cover file pickers, slash commands, typing indicators, scheduled
@@ -205,11 +214,14 @@ const defaultPowerLevels: Required<IPowerLevels> = {
 function RoomInputHarness({
   room,
   settingsOverrides,
+  onEditor,
 }: {
   room: Room;
   settingsOverrides?: Partial<Settings>;
+  onEditor?: (editor: ReturnType<typeof useEditor>) => void;
 }) {
   const editor = useEditor();
+  onEditor?.(editor);
   const fileDropContainerRef = { current: null } as RefObject<HTMLElement>;
   const store = createStore();
   store.set(settingsAtom, { ...getSettings(), ...settingsOverrides });
@@ -234,16 +246,23 @@ function RoomInputHarness({
 
 function renderRoomInput(settingsOverrides?: Partial<Settings>) {
   const { mx, room } = buildRoomFixture();
+  let editorRef: ReturnType<typeof useEditor> | undefined;
 
   const result = render(
     <MatrixClientProvider value={mx}>
       <RoomProvider value={room}>
-        <RoomInputHarness room={room} settingsOverrides={settingsOverrides} />
+        <RoomInputHarness
+          room={room}
+          settingsOverrides={settingsOverrides}
+          onEditor={(editor) => {
+            editorRef = editor;
+          }}
+        />
       </RoomProvider>
     </MatrixClientProvider>
   );
 
-  return { mx, room, unmount: result.unmount };
+  return { mx, room, unmount: result.unmount, editor: editorRef as ReturnType<typeof useEditor> };
 }
 
 describe('RoomInput Touch Spacing sizing', () => {
@@ -311,5 +330,52 @@ describe('RoomInput Touch Spacing sizing', () => {
     }).className;
 
     expect(offClassName).not.toBe(onClassName);
+  });
+});
+
+// Coverage for issue #542 P1 (Discord-reference composer/picker redesign).
+describe('RoomInput composer typing state (#542 P1)', () => {
+  it('highlights the send button once text is entered, and reverts when the composer is cleared', async () => {
+    const { editor } = renderRoomInput();
+    const sendButtonName = { name: 'Send your composed Message' };
+    const emptyClassName = screen.getByRole('button', sendButtonName).className;
+
+    // Slate's onChange (which drives the `hasText` state update) fires on a
+    // microtask after the operation is applied, not synchronously within the
+    // act() callback -- wait for the resulting re-render like the editor's
+    // own layout-effect-driven tests do (see Editor.test.tsx).
+    act(() => {
+      Transforms.insertText(editor, 'hello');
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', sendButtonName).className).not.toBe(emptyClassName);
+    });
+
+    act(() => {
+      Transforms.select(editor, SlateEditor.range(editor, []));
+      Transforms.delete(editor);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', sendButtonName).className).toBe(emptyClassName);
+    });
+  });
+});
+
+describe('RoomInput attachment menu regrouping (#542 P1)', () => {
+  it('orders File and Location ahead of Poll to match the Discord-reference grouping', async () => {
+    renderRoomInput();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Add new Item' }));
+
+    const fileItem = await screen.findByText('Add File');
+    const locationItem = screen.getByText('Add Location');
+    const pollItem = screen.getByText('Create Poll');
+
+    expect(
+      fileItem.compareDocumentPosition(locationItem) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      locationItem.compareDocumentPosition(pollItem) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
   });
 });

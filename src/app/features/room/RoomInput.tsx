@@ -171,6 +171,7 @@ import {
   composerIcon,
   dropzoneIcon,
   File as FileIcon,
+  Keyboard,
   ListBullets,
   MapPinPlusIcon,
   menuIcon,
@@ -397,6 +398,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     // after first open (avoids re-initializing virtualizer on every open).
     const [emojiBoardTab, setEmojiBoardTab] = useState<EmojiBoardTab | undefined>(undefined);
     const [emojiBoardAnchorRect, setEmojiBoardAnchorRect] = useState<DOMRect | null>(null);
+    // Drives the composer's "typing" state (highlighted send button). Kept as
+    // its own reactive flag rather than re-deriving from `editor` on every
+    // render, since isEmptyEditor(editor) needs a Slate onChange to know it
+    // changed at all.
+    const [hasText, setHasText] = useState(false);
     const overlayOpenSequenceRef = useRef(0);
     const prepareComposerOverlayTrigger = useCallback(() => {
       if (!isMobileLayout) return;
@@ -2447,6 +2453,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           placeholder="Send a message..."
           onKeyDown={handleKeyDown}
           onKeyUp={handleKeyUp}
+          onChange={() => setHasText(!isEmptyEditor(editor))}
           onPaste={handlePaste}
           responsiveAfter={audioRecorder}
           forceMultilineLayout={showAudioRecorder}
@@ -2631,16 +2638,19 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   >
                     <Menu>
                       <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
+                        {/* Ordered media/upload-first, most-specialized-last to mirror
+                            the Discord reference's attachment menu shape (photo/file
+                            actions lead, poll trails). See issue #542 P1. */}
                         <MenuItem
                           size="300"
                           radii="300"
                           onClick={() => {
+                            pickFile('*');
                             setAddMenuAnchor(undefined);
-                            void openPollCreator();
                           }}
-                          before={menuIcon(ListBullets)}
+                          before={menuIcon(PlusCircle)}
                         >
-                          <Text size="B300">Create Poll</Text>
+                          <Text size="B300">Add File</Text>
                         </MenuItem>
                         <MenuItem
                           size="300"
@@ -2657,12 +2667,12 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                           size="300"
                           radii="300"
                           onClick={() => {
-                            pickFile('*');
                             setAddMenuAnchor(undefined);
+                            void openPollCreator();
                           }}
-                          before={menuIcon(PlusCircle)}
+                          before={menuIcon(ListBullets)}
                         >
-                          <Text size="B300">Add File</Text>
+                          <Text size="B300">Create Poll</Text>
                         </MenuItem>
                       </Box>
                     </Menu>
@@ -2859,18 +2869,28 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   variant="SurfaceVariant"
                   size={touchTargetSize}
                   radii="300"
-                  title="open emoji picker"
-                  aria-label="Open emoji picker"
+                  title={
+                    isMobileLayout && emojiBoardTab !== undefined
+                      ? 'close picker'
+                      : 'open emoji picker'
+                  }
+                  aria-label={
+                    isMobileLayout && emojiBoardTab !== undefined
+                      ? 'Close picker and show keyboard'
+                      : 'Open emoji picker'
+                  }
                 >
-                  {composerIcon(Smiley, {
-                    weight: hideStickerBtn
-                      ? emojiBoardTab
-                        ? 'fill'
-                        : 'regular'
-                      : emojiBoardTab === EmojiBoardTab.Emoji
-                        ? 'fill'
-                        : 'regular',
-                  })}
+                  {isMobileLayout && emojiBoardTab !== undefined
+                    ? composerIcon(Keyboard)
+                    : composerIcon(Smiley, {
+                        weight: hideStickerBtn
+                          ? emojiBoardTab
+                            ? 'fill'
+                            : 'regular'
+                          : emojiBoardTab === EmojiBoardTab.Emoji
+                            ? 'fill'
+                            : 'regular',
+                      })}
                 </IconButton>
               </PopOut>
               <PopOut
@@ -3028,7 +3048,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       resetLongPressState();
                     }
                   }}
-                  variant={scheduledTime ? 'Primary' : 'SurfaceVariant'}
+                  variant={scheduledTime || hasText ? 'Primary' : 'SurfaceVariant'}
                   size={touchTargetSize}
                   radii="0"
                   className={

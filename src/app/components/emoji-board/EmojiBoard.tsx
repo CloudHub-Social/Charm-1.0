@@ -64,6 +64,7 @@ import type { GifData } from './types';
 import { EmojiBoardTab, EmojiType } from './types';
 import { getMobileSheetHeights } from './mobileSheetHeights';
 import { shouldDismissMobileSheet } from './mobileSheetDismiss';
+import { shouldAutoExpandOnScroll } from './mobileSheetScrollExpand';
 import { useMobileSheetHeight } from './useMobileSheetHeight';
 import {
   addGifSentBreadcrumb,
@@ -1257,6 +1258,28 @@ export function EmojiBoard({
     },
     []
   );
+
+  // Scrolling down through the tab content while the sheet is resting at its
+  // min height auto-expands it to max, same as dragging the handle up. Only
+  // fires while at rest (not mid-drag) so it can't fight an in-progress
+  // manual resize.
+  useEffect(() => {
+    if (!isMobileSheet) return undefined;
+    const scrollElement = contentScrollRef.current;
+    if (!scrollElement) return undefined;
+
+    const handleScroll = () => {
+      const heights = getMobileSheetHeights(window.innerHeight, activeTabRef.current);
+      const currentHeight = mobileSheetHeightRef.current ?? heights.initial;
+      const isDragging = mobileSheetDragRef.current !== null;
+      if (shouldAutoExpandOnScroll(scrollElement.scrollTop, currentHeight, heights, isDragging)) {
+        setMobileSheetHeight(heights.max);
+      }
+    };
+
+    scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+    return () => scrollElement.removeEventListener('scroll', handleScroll);
+  }, [isMobileSheet, setMobileSheetHeight, mobileSheetHeightRef]);
 
   // sync active sidebar tab with scroll
   useEffect(() => {
