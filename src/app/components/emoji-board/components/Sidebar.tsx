@@ -23,6 +23,7 @@ export const SidebarStack = as<'div'>(({ className, children, ...props }, ref) =
     alignItems="Center"
     gap="100"
     {...props}
+    shrink="No"
     ref={ref}
   >
     {children}
