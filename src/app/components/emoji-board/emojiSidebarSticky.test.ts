@@ -40,4 +40,18 @@ describe('emoji sidebar pinned-footer contract', () => {
     expect(pinnedFooterBlock).toContain('bottom: 0');
     expect(pinnedFooterBlock).not.toContain("bottom: '-67%'");
   });
+
+  it('reserves horizontal space for the pinned footer when there is no in-flow sidebar', () => {
+    const layout = readWorkspaceFile('src/app/components/emoji-board/components/Layout.tsx');
+
+    // The emoji tab has no in-flow `sidebar` (EmojiSidebarPinned replaces it
+    // entirely via pinnedSidebarFooter), so nothing else in the row claims
+    // width for it. Without an explicit reservation, content grows the full
+    // row width and the absolutely-positioned, right-anchored footer
+    // overlaps (and can intercept clicks on) whatever sits underneath its
+    // right edge — same failure mode as the paddingBottom footer-height
+    // reservation just above, but horizontal.
+    expect(layout).toContain('pinnedFooterWidth');
+    expect(layout).toMatch(/paddingRight:\s*sidebar\s*\?\s*undefined\s*:\s*pinnedFooterWidth/);
+  });
 });
