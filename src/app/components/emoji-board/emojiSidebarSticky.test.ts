@@ -61,16 +61,23 @@ describe('emoji sidebar pinned-footer contract', () => {
     // PinnedSidebarFooter's whole column (Recent + packs + standard groups)
     // is one flex column taller than the footer's own maxHeight:100% once a
     // user has enough packs. Without shrink="No" on each SidebarStack, the
-    // default flex-shrink:1 compresses every stack's box to fit — the fixed
-    // -size icon buttons inside don't shrink with it, so they overflow past
-    // their own (squished) stack and visually overlap the next stack's
+    // default flex-shrink:1 compresses every stack's box to fit — the
+    // fixed-size icon buttons inside don't shrink with it, so they overflow
+    // past their own (squished) stack and visually overlap the next stack's
     // icons (e.g. a pack icon hidden under a standard-group icon). Confirmed
     // live: recreating this with real packs on a mobile viewport reproduced
     // the exact overlap, and shrink="No" fixed it.
     const stackStart = sidebar.indexOf('export const SidebarStack');
-    const stackEnd = sidebar.indexOf('export function SidebarDivider');
+    // Match either `export function SidebarDivider` or a future
+    // `export const SidebarDivider` — the slice boundary shouldn't care
+    // which export form follows, only that it marks the end of the
+    // SidebarStack block.
+    const stackEndMatch = sidebar
+      .slice(stackStart)
+      .match(/export (?:function|const) SidebarDivider/);
     expect(stackStart).toBeGreaterThan(-1);
-    expect(stackEnd).toBeGreaterThan(stackStart);
+    expect(stackEndMatch).not.toBeNull();
+    const stackEnd = stackStart + stackEndMatch!.index!;
     const stackBlock = sidebar.slice(stackStart, stackEnd);
     expect(stackBlock).toContain('shrink="No"');
   });
