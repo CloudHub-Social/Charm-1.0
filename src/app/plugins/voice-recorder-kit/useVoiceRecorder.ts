@@ -35,8 +35,12 @@ function getSharedAudioContext(): AudioContext {
  *
  * If the recording flow aborts before setupAudioGraph() consumes this context
  * (permission denied, no supported codec, unmount mid-gesture), it would
- * otherwise keep running indefinitely. cleanupAudioContext() — already called
- * on every one of those abort paths — discards it via discardPrimedAudioContext().
+ * otherwise keep running indefinitely. Each of those specific abort paths
+ * calls discardPrimedAudioContext() directly — this deliberately isn't
+ * wired into the general-purpose cleanupAudioContext(), since that also
+ * runs for unrelated playback teardown and successful recording stops,
+ * where discarding the shared primed context could wipe out one just
+ * primed for a different, still-pending recording attempt.
  */
 let primedAudioContext: AudioContext | null = null;
 
@@ -177,12 +181,6 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
   }, []);
 
   const cleanupAudioContext = useCallback(() => {
-    // A primed context that was never consumed by setupAudioGraph() (start
-    // aborted before the audio graph was built) would otherwise keep running
-    // indefinitely. This is a no-op once setupAudioGraph() has already nulled
-    // it out.
-    discardPrimedAudioContext();
-
     const audioContext = audioContextRef.current;
     const recordingSource = recordingSourceRef.current;
     const recordingAnalyser = recordingAnalyserRef.current;
@@ -395,6 +393,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       const codec = getSupportedAudioCodec();
       if (!codec) {
         setError('No supported audio codec found for recording.');
+        discardPrimedAudioContext();
         cleanupStream();
         return;
       }
@@ -491,6 +490,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       pausedTimeRef.current = 0;
     } catch {
       setError('Microphone access denied or an error occurred.');
+      discardPrimedAudioContext();
       cleanupAudioContext();
       cleanupStream();
       cleanupMediaRecorder();
@@ -985,6 +985,11 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       } else {
         cleanupMediaRecorder();
       }
+      // Unmounting mid-gesture (before getUserMedia/setupAudioGraph ever
+      // consumed it) would otherwise leave the primed context running — the
+      // mic button can't re-prime for a new attempt while this instance is
+      // still mounted, so it's safe to discard here.
+      discardPrimedAudioContext();
       cleanupAudioContext();
       cleanupStream();
       stopTimer();

@@ -353,4 +353,35 @@ describe('useVoiceRecorder', () => {
     // reuse it rather than creating a third one.
     expect(createdAudioContexts).toHaveLength(2);
   });
+
+  it('does not let an unrelated cleanupAudioContext() call discard a context primed for the next attempt', async () => {
+    // Prime a context for an upcoming recording attempt.
+    act(() => {
+      primeAudioContext();
+    });
+    const primedContext = createdAudioContexts[0];
+    expect(primedContext?.close).not.toHaveBeenCalled();
+
+    // A separate hook instance's cleanupAudioContext() runs for an unrelated
+    // reason (e.g. playback teardown, or tearing down an idle recorder) with
+    // no primed context of its own to consume. This must not reach into the
+    // shared primedAudioContext and discard the one above.
+    const { result: unrelated } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+    act(() => {
+      unrelated.current.handleDelete();
+    });
+
+    expect(primedContext?.close).not.toHaveBeenCalled();
+
+    // The primed context must still be available for the real next attempt.
+    const { result } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+    act(() => {
+      result.current.start();
+    });
+    await waitFor(() => {
+      expect(result.current.isRecording).toBe(true);
+    });
+    expect(createdAudioContexts).toHaveLength(1);
+    expect(createdAudioContexts[0]).toBe(primedContext);
+  });
 });
