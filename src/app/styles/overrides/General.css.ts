@@ -196,24 +196,33 @@ globalStyle(
 // everywhere else: it reads clearly against non-clipping backgrounds, and
 // flipping it negative app-wide would draw the ring on top of/inside
 // content everywhere, a worse look for the common (non-clipped) case.
+//
+// The `body:not(.sable-a11y-highlights-disabled)` prefix below is required,
+// not cosmetic: without it, this rule's specificity is (0,3,0) versus the
+// broad rule's (0,3,1) (that extra point comes from `body` being a type
+// selector), so the broad *positive*-offset rule would always win the
+// cascade regardless of source order or `!important` — silently defeating
+// the inset-ring fix this block exists to provide, and also leaking the ring
+// past the Focus Highlights accessibility setting, which every other rule in
+// this file respects.
 globalStyle(
   `
-    [data-focus-ring-inset] a:focus-visible,
-    [data-focus-ring-inset] button:focus-visible,
-    [data-focus-ring-inset] select:focus-visible,
-    [data-focus-ring-inset] [role="button"]:focus-visible,
-    [data-focus-ring-inset] [role="tab"]:focus-visible,
-    [data-focus-ring-inset] [role="menuitem"]:focus-visible,
-    [data-focus-ring-inset] [role="option"]:focus-visible,
-    [data-focus-ring-inset] [role="checkbox"]:focus-visible,
-    [data-focus-ring-inset] [role="radio"]:focus-visible,
-    [data-focus-ring-inset] [role="switch"]:focus-visible,
-    [data-focus-ring-inset] [role="textbox"]:focus-visible,
-    [data-focus-ring-inset] [tabindex="0"]:focus-visible,
-    [data-focus-ring-inset] [class*="Button"]:focus-visible,
-    [data-focus-ring-inset] [class*="Chip"]:focus-visible,
-    [data-focus-ring-inset] [class*="MenuItem"]:focus-visible,
-    [data-focus-ring-inset] [class*="IconButton"]:focus-visible
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] a:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] button:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] select:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [role="button"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [role="tab"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [role="menuitem"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [role="option"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [role="checkbox"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [role="radio"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [role="switch"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [role="textbox"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [tabindex="0"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [class*="Button"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [class*="Chip"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [class*="MenuItem"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [data-focus-ring-inset] [class*="IconButton"]:focus-visible
 `,
   {
     outlineOffset: '-2px !important',
