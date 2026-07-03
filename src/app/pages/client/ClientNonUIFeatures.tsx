@@ -283,7 +283,7 @@ function SystemEmojiFeature() {
 
     const updateEffectiveEmojiStyle = async () => {
       try {
-        const sampleEmoji = '🫩';
+        const sampleEmoji = '🪩';
         await document.fonts.load('16px "Twemoji"', sampleEmoji);
         await document.fonts.ready;
         if (cancelled) return;

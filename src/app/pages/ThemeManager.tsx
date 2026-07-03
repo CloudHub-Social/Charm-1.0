@@ -130,6 +130,7 @@ export function AuthRouteThemeManager({ children }: { children: ReactNode }) {
   const [saturation] = useSetting(settingsAtom, 'saturationLevel');
   const [underlineLinks] = useSetting(settingsAtom, 'underlineLinks');
   const [reducedMotion] = useSetting(settingsAtom, 'reducedMotion');
+  const [showAccessibilityHighlights] = useSetting(settingsAtom, 'showAccessibilityHighlights');
   const [enabledTweakUrls] = useSetting(settingsAtom, 'themeRemoteEnabledTweakFullUrls');
   const [systemTheme] = useSetting(settingsAtom, 'useSystemTheme');
   const [lightRemoteUrl] = useSetting(settingsAtom, 'themeRemoteLightFullUrl');
@@ -162,6 +163,15 @@ export function AuthRouteThemeManager({ children }: { children: ReactNode }) {
       document.body.classList.remove('reduced-motion');
     }
 
+    // The Focus Highlights CSS (General.css.ts) defaults to ON via
+    // `body:not(.sable-a11y-highlights-disabled)`, so only the disabled case
+    // needs a class. Toggling it in this same effect — rather than a
+    // separate feature/effect — matters because this effect resets
+    // `document.body.className` outright on every theme/saturation/
+    // underline-link/reduced-motion change; a class added elsewhere would
+    // get wiped here and never reapplied.
+    document.body.classList.toggle('sable-a11y-highlights-disabled', !showAccessibilityHighlights);
+
     if (saturation === 0) {
       document.body.style.filter = 'grayscale(1)';
     } else if (saturation && saturation < 100) {
@@ -169,7 +179,7 @@ export function AuthRouteThemeManager({ children }: { children: ReactNode }) {
     } else {
       document.body.style.filter = '';
     }
-  }, [activeTheme, saturation, underlineLinks, reducedMotion]);
+  }, [activeTheme, saturation, underlineLinks, reducedMotion, showAccessibilityHighlights]);
 
   useLayoutEffect(() => {
     if (!settingsInitialized) return;
