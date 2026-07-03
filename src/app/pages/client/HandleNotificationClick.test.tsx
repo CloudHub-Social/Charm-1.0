@@ -139,4 +139,41 @@ describe('HandleNotificationClick', () => {
       });
     });
   });
+
+  it('carries call metadata through to the pending notification for tap-to-answer on an already-open tab', async () => {
+    const serviceWorker = installServiceWorkerMock();
+
+    const { getByTestId } = render(
+      <Provider>
+        <MemoryRouter initialEntries={['/home/%21current%3Aexample']}>
+          <HandleNotificationClick />
+          <Routes>
+            <Route path="*" element={<Probe />} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+
+    act(() => {
+      serviceWorker.emit({
+        type: 'notificationClick',
+        clickId: 'notification-click-456',
+        userId: '@alice:example',
+        roomId: '!room:example',
+        eventId: '$event456',
+        isCall: true,
+        callSearchParams: 'joinCall=true&callType=ring&callIntentKind=video',
+      });
+    });
+
+    await waitFor(() => {
+      const payload = JSON.parse(getByTestId('probe').textContent ?? '{}') as {
+        pendingNotification?: { callSearchParams?: string };
+      };
+
+      expect(payload.pendingNotification?.callSearchParams).toBe(
+        'joinCall=true&callType=ring&callIntentKind=video'
+      );
+    });
+  });
 });

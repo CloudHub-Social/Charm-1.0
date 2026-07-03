@@ -452,7 +452,7 @@ export function DeveloperTools({ requestClose }: DeveloperToolsProps) {
                           <Text size="L400">Events</Text>
                           <Text size="L400">Total: {roomState.size}</Text>
                         </Box>
-                        <CutoutCard>
+                        <CutoutCard unpadded>
                           <MenuItem
                             onClick={() => setComposeEvent({ stateKey: '' })}
                             variant="Surface"
@@ -583,7 +583,7 @@ export function DeveloperTools({ requestClose }: DeveloperToolsProps) {
                           <Text size="L400">Events</Text>
                           <Text size="L400">Total: {accountData.size}</Text>
                         </Box>
-                        <CutoutCard>
+                        <CutoutCard unpadded>
                           <MenuItem
                             variant="Surface"
                             fill="None"

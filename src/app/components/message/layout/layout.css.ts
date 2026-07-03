@@ -307,22 +307,52 @@ export const MessageTextBody = recipe({
       extraSmall: {
         fontSize: '1.25rem !important',
         lineHeight: '1.4em',
+        paddingTop: '0.08em',
+        paddingBottom: '0.08em',
+        vars: {
+          '--sable-system-emoji-top-offset': '-0.2em',
+          '--sable-custom-emoji-top-offset': '-0.2em',
+        },
       },
       small: {
         fontSize: '1.5rem !important',
         lineHeight: '1.5em',
+        paddingTop: '0.08em',
+        paddingBottom: '0.08em',
+        vars: {
+          '--sable-system-emoji-top-offset': '-0.2em',
+          '--sable-custom-emoji-top-offset': '-0.2em',
+        },
       },
       normal: {
         fontSize: '1.805rem !important',
         lineHeight: '1.625em',
+        paddingTop: '0.08em',
+        paddingBottom: '0.08em',
+        vars: {
+          '--sable-system-emoji-top-offset': '-0.2em',
+          '--sable-custom-emoji-top-offset': '-0.2em',
+        },
       },
       large: {
         fontSize: '2.1rem !important',
         lineHeight: '1.675em',
+        paddingTop: '0.08em',
+        paddingBottom: '0.08em',
+        vars: {
+          '--sable-system-emoji-top-offset': '-0.2em',
+          '--sable-custom-emoji-top-offset': '-0.2em',
+        },
       },
       extraLarge: {
         fontSize: '2.4rem !important',
         lineHeight: '1.7em',
+        paddingTop: '0.08em',
+        paddingBottom: '0.08em',
+        vars: {
+          '--sable-system-emoji-top-offset': '-0.2em',
+          '--sable-custom-emoji-top-offset': '-0.2em',
+        },
       },
     },
     emote: {

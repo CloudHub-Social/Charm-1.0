@@ -76,7 +76,7 @@ export function AccountData({ expand, onExpandToggle, onSelect }: AccountDataPro
               <Text size="L400">Events</Text>
               <Text size="L400">Total: {accountDataTypes.length}</Text>
             </Box>
-            <CutoutCard>
+            <CutoutCard unpadded>
               <MenuItem
                 variant="Surface"
                 fill="None"

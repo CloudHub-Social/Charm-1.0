@@ -26,6 +26,7 @@ export type SettingsPathSearchParams = {
 export const CREATE_PATH_SEGMENT = 'create/';
 export const JOIN_PATH_SEGMENT = 'join/';
 export const LOBBY_PATH_SEGMENT = 'lobby/';
+export const BOOKMARKS_PATH_SEGMENT = 'bookmarks/';
 /**
  * array of rooms and senders mxId assigned
  * to search param as string should be "," separated
@@ -41,7 +42,6 @@ export type SearchPathSearchParams = {
   grouped?: string;
 };
 export const SEARCH_PATH_SEGMENT = 'search/';
-export const BOOKMARKS_PATH_SEGMENT = 'bookmarks/';
 
 export type RoomSearchParams = {
   /* comma separated string of servers */

@@ -56,6 +56,7 @@ import { settingsSyncLastSyncedAtom, settingsSyncStatusAtom } from '$hooks/useSe
 import { exportSettingsAsJson, importSettingsFromJson } from '$utils/settingsSync';
 import { reloadWithTelemetry } from '$utils/reloadWithTelemetry';
 import { SettingsSectionPage } from '$features/settings/SettingsSectionPage';
+import { CallSoundSettings } from './CallSoundSettings';
 
 type DateHintProps = {
   hasChanges: boolean;
@@ -805,6 +806,27 @@ function SelectRightSwipeAction({ disabled }: Readonly<{ disabled?: boolean }>) 
   );
 }
 
+function Accessibility() {
+  const [showHighlights, setShowHighlights] = useSetting(
+    settingsAtom,
+    'showAccessibilityHighlights'
+  );
+
+  return (
+    <Box direction="Column" gap="100">
+      <Text size="L400">Accessibility</Text>
+      <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+        <SettingTile
+          title="Focus Highlights"
+          focusId="focus-highlights"
+          description="Show visible focus rings around interactive elements when navigating with a keyboard."
+          after={<Switch variant="Primary" value={showHighlights} onChange={setShowHighlights} />}
+        />
+      </SequenceCard>
+    </Box>
+  );
+}
+
 function Gestures({ isMobile }: Readonly<{ isMobile: boolean }>) {
   const [mobileGestures, setMobileGestures] = useSetting(settingsAtom, 'mobileGestures');
 
@@ -966,6 +988,7 @@ function Calls() {
           }
         />
       </SequenceCard>
+      <CallSoundSettings />
     </Box>
   );
 }
@@ -1309,6 +1332,7 @@ function Embeds() {
     settingsAtom,
     'clientPreviewYoutube'
   );
+  const [enableGifPicker, setEnableGifPicker] = useSetting(settingsAtom, 'enableGifPicker');
   return (
     <Box direction="Column" gap="100">
       <Text size="L400">Embeds</Text>
@@ -1401,6 +1425,21 @@ function Embeds() {
           </SequenceCard>
         </>
       )}
+      <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+        <SettingTile
+          title="Enable Gif Picker"
+          focusId="enable-gif-picker"
+          description="Enables the gif picker in the emoji board. This reduces Privacy because it makes requests to klipy.com whenever you search for a gif."
+          after={
+            <Switch
+              variant="Primary"
+              value={enableGifPicker}
+              onChange={setEnableGifPicker}
+              title={enableGifPicker ? 'Disable Gif Picker' : 'Enable Gif Picker'}
+            />
+          }
+        />
+      </SequenceCard>
       <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
         <SettingTile
           title="Show Interactive maps"
@@ -1722,6 +1761,7 @@ export function General({ requestBack, requestClose }: Readonly<GeneralProps>) {
           <PageContent>
             <Box direction="Column" gap="700">
               <DateAndTime />
+              <Accessibility />
               <Gestures isMobile={mobileOrTablet()} />
               <Editor isMobile={isPhone()} />
               <Messages />
