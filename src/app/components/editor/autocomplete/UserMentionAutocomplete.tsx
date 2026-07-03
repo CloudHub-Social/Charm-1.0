@@ -53,6 +53,9 @@ function UnknownMentionItem({
       onKeyDown={(evt: ReactKeyboardEvent<HTMLButtonElement>) =>
         onTabPress(evt, () => handleAutocomplete(userId, name))
       }
+      // Prevent the editor from losing focus (and the keyboard from dismissing)
+      // when the user taps an autocomplete item on mobile.
+      onMouseDown={(e) => e.preventDefault()}
       onClick={() => handleAutocomplete(userId, name)}
       before={
         <Avatar size="200">
@@ -184,6 +187,7 @@ export function UserMentionAutocomplete({
               onKeyDown={(evt: ReactKeyboardEvent<HTMLButtonElement>) =>
                 onTabPress(evt, () => handleAutocomplete(roomMember.userId, getName(roomMember)))
               }
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => handleAutocomplete(roomMember.userId, getName(roomMember))}
               after={
                 <Text size="T200" priority="300" truncate>
