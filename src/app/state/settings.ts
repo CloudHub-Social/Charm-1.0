@@ -253,6 +253,7 @@ export interface Settings {
   faviconForMentionsOnly: boolean;
   highlightMentions: boolean;
   showAccessibilityHighlights: boolean;
+  showTouchSpacing: boolean;
   pkCompat: boolean;
   pmpProxying: boolean;
   mentionInReplies: boolean;
@@ -441,6 +442,7 @@ export const defaultSettings: Settings = {
   faviconForMentionsOnly: false,
   highlightMentions: true,
   showAccessibilityHighlights: true,
+  showTouchSpacing: true,
   pkCompat: false,
   pmpProxying: false,
   mentionInReplies: true,
