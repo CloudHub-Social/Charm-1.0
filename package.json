@@ -29,7 +29,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:live": "playwright test e2e/live/liveMatrix.spec.ts --project chromium --workers 1",
-    "test:e2e:snapshots": "playwright test e2e/smoke/observability.spec.ts e2e/smoke/modal-focus-trap.spec.ts",
+    "test:e2e:snapshots": "playwright test e2e/smoke",
     "test:e2e:headed": "playwright test --headed",
     "knip": "knip",
     "semgrep": "semgrep scan --config semgrep/charm-stability.yml --error",
