@@ -85,22 +85,38 @@ jobs:
             exit 1
           fi
 
-      - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium webkit
 
-      # `test:e2e:snapshots` (package.json) runs the whole e2e/smoke directory,
-      # not a hardcoded file list -- any new spec that calls captureSnapshot()
+      - name: Check every smoke spec has Sentry Snapshot coverage
+        run: pnpm run test:e2e:snapshot-coverage
+
+      # playwright.config.ts defines three projects: `chromium` (desktop),
+      # `mobile-android` (Pixel 7, Chromium-engine), and `mobile-ios`
+      # (iPhone 17, WebKit-engine). `test:e2e:snapshots` (package.json) runs
+      # the whole e2e/smoke directory with no --project filter, so Playwright
+      # cross-multiplies every spec across all three automatically -- not a
+      # hardcoded file list -- any new spec that calls captureSnapshot()
       # is picked up automatically. (A prior version of this script hardcoded
       # 7 file names; 5 spec files with real captureSnapshot() calls were
       # silently excluded because nobody remembered to add them, so their
       # captures never reached Sentry despite the tests themselves passing.)
+      # `test:e2e:snapshot-coverage` above is the modern equivalent of that
+      # guard -- it fails the build instead of silently dropping a spec.
       # The tradeoff is a couple of e2e/smoke specs that don't capture
-      # anything (e.g. startup.spec.ts, search-shortcuts.spec.ts) also run
-      # here as harmless overhead -- worth it to make this whole class of
+      # anything (e.g. focus-visible.spec.ts, which is exempted -- see its
+      # `snapshot-exempt` comment) also run here as harmless overhead --
+      # worth it to make this whole class of
       # silent-drop bug structurally impossible.
       - name: Capture deterministic observability snapshots
         run: pnpm run test:e2e:snapshots
 
+      # Kept opt-in (push/workflow_dispatch/`live-smoke` label) rather than
+      # default-on-every-PR: this logs into one shared real Matrix account,
+      # and concurrent PRs hitting it at once (login/logout, room state) can
+      # race regardless of what's being screenshotted. --workers 1 also
+      # forces the three projects below to run one at a time within this job
+      # rather than three simultaneous live sessions.
       - name: Capture live Matrix reference snapshots
         if: >
           env.LIVE_MATRIX_REFERENCE_SNAPSHOTS_ENABLED == 'true' &&
@@ -121,7 +137,9 @@ jobs:
           LIVE_MATRIX_ROOM_NAME: Test
           LIVE_MATRIX_EMOJI_QA_ROOM_PATH_SEGMENT: '!OUj74q04t8IrfJzG-m5YSEFn9k028-A1EgPQc0ZU3bA'
           LIVE_MATRIX_EMOJI_QA_ROOM_NAME: Emoji QA
-        run: pnpm exec playwright test e2e/live/liveMatrix.spec.ts --project chromium --workers 1
+        run: >
+          pnpm exec playwright test e2e/live/liveMatrix.spec.ts
+          --project chromium --project mobile-android --project mobile-ios --workers 1
 
       - name: Upload snapshot artifact for debugging
         if: always() && hashFiles('.artifacts/sentry-snapshots/**/*.png') != ''
@@ -130,6 +148,24 @@ jobs:
           name: sentry-snapshots-${{ github.event.pull_request.number || github.sha }}
           path: .artifacts/sentry-snapshots
 
+      # Single --app-id for all three playwright.config.ts projects is
+      # intentional, not a bucketing bug: sentry-cli identifies each snapshot
+      # by its full relative path within this directory (subdirectory paths
+      # become part of the name shown in Sentry's UI -- see
+      # https://docs.sentry.io/cli/snapshots/), and captureSnapshot()
+      # (e2e/smoke/snapshot.ts) already writes each project under its own
+      # `<project>/...` subdirectory. So `chromium/real-routes/login.png`,
+      # `mobile-android/real-routes/login.png`, and
+      # `mobile-ios/real-routes/login.png` are three distinct snapshots with
+      # independent baselines, not one shared bucket -- this is the same
+      # "prefix or directory-scope" pattern Sentry's iOS multi-simulator docs
+      # recommend (https://docs.sentry.io/platforms/apple/guides/ios/snapshots/),
+      # just applied to Playwright's projects instead of iOS simulators.
+      # Splitting this into per-project --app-id values instead would
+      # fragment each variant into its own separate baseline lineage and
+      # break Sentry's cross-variant view (e.g. its agentic-workflow docs'
+      # "12 of 340 snapshots changed, all in the navigation sidebar" style
+      # summary), which wants related variants under one app.
       - name: Upload snapshots to Sentry
         id: sentry_upload
         if: env.SENTRY_SNAPSHOTS_ENABLED == 'true' && hashFiles('.artifacts/sentry-snapshots/**/*.png') != ''

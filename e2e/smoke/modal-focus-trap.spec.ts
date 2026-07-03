@@ -1,18 +1,6 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 import { installSmokeApp, seedSettings, seedStoredSession } from './smokeApp';
-
-const snapshotOutputDir = process.env.PLAYWRIGHT_SNAPSHOT_OUTPUT_DIR;
-
-const captureSnapshot = async (page: Page, name: string) => {
-  if (!snapshotOutputDir) return;
-
-  const outputPath = path.join(snapshotOutputDir, `${name}.png`);
-  await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await page.screenshot({ path: outputPath, fullPage: true });
-};
+import { captureSnapshot } from './snapshot';
 
 // Regression coverage for PR #512 (fix(a11y): trap focus and add dialog
 // semantics to modal overlays). The "Remote themes" confirmation dialog was
@@ -22,7 +10,9 @@ const captureSnapshot = async (page: Page, name: string) => {
 // fully-obscured Settings page before ever reaching the dialog's own
 // buttons, and the trap's escape-recovery listener never engaged either.
 test.describe('modal focus trap real-route smoke', () => {
-  test('moves focus into the Remote themes dialog and traps Tab within it', async ({ page }) => {
+  test('moves focus into the Remote themes dialog and traps Tab within it', async ({
+    page,
+  }, testInfo) => {
     await installSmokeApp(page, { authenticatedSession: true });
     await seedStoredSession(page);
     // Mark onboarding as already-seen so the dialog does not auto-open on
@@ -45,7 +35,7 @@ test.describe('modal focus trap real-route smoke', () => {
     await expect(dialog).toHaveAttribute('role', 'dialog');
     await expect(dialog).toHaveAttribute('aria-modal', 'true');
 
-    await captureSnapshot(page, 'real-routes/settings-remote-themes-dialog');
+    await captureSnapshot(page, testInfo, 'real-routes/settings-remote-themes-dialog');
 
     // The core regression: focus must land inside the dialog, not on
     // <body> and not on a background Settings control left over from

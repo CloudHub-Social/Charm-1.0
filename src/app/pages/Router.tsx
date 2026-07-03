@@ -92,6 +92,7 @@ import { RouteSpaceProvider, Space, SpaceRouteRoomProvider, SpaceSearch } from '
 import { Explore, FeaturedRooms, PublicRooms } from './client/explore';
 import { Notifications, Inbox, Invites } from './client/inbox';
 import { setAfterLoginRedirectPath } from './afterLoginRedirectPath';
+import { recoverNotificationLaunchPath } from './notificationLaunchRecovery';
 import { WelcomePage } from './client/WelcomePage';
 import { SidebarNav } from './client/SidebarNav';
 import { MobileFriendlyPageNav, MobileFriendlyClientNav } from './MobileFriendly';
@@ -136,12 +137,54 @@ export const createRouter = (clientConfig: ClientConfig, mobile: boolean) => {
       >
         <Route
           index
-          loader={() => {
+          loader={async () => {
+            // Awaited unconditionally (rather than a fire-and-forget
+            // redirect elsewhere racing this loader's own default-landing
+            // redirect) so recovery is deterministic: a data-router loader
+            // is fully resolved before anything renders or navigates,
+            // regardless of how fast/slow Cache Storage happens to be on a
+            // given browser engine. Must run for logged-out sessions too --
+            // the launch context lives in Cache Storage, not the current
+            // URL, so a logged-out cold start needs this to know the
+            // post-login redirect target at all.
+            const recovered = await recoverNotificationLaunchPath(hashRouter).catch(
+              () => undefined
+            );
+            if (recovered) {
+              Sentry.addBreadcrumb({
+                category: 'app.launch',
+                message: 'Recovered notification launch target during bootstrap',
+                level: 'info',
+                data: {
+                  launchAgeMs: recovered.launchAgeMs,
+                  hasUserId: recovered.hasUserId,
+                  hasRoomId: recovered.hasRoomId,
+                  hasEventId: recovered.hasEventId,
+                },
+              });
+              Sentry.metrics.count('sable.app.launch_context', 1, {
+                attributes: {
+                  source: 'notification_click',
+                  has_user_id: recovered.hasUserId,
+                  has_room_id: recovered.hasRoomId,
+                  has_event_id: recovered.hasEventId,
+                },
+              });
+              Sentry.metrics.distribution(
+                'sable.app.launch_context_age_ms',
+                recovered.launchAgeMs,
+                { attributes: { source: 'notification_click' } }
+              );
+            }
+
             if (hasStoredSession()) {
+              if (recovered) return redirect(recovered.path);
+
               const settings = getSettings();
               return redirect(getLandingPath(settings.defaultLandingScreen));
             }
-            const afterLoginPath = getAppPathFromWindowHref(hashRouter);
+
+            const afterLoginPath = recovered?.path ?? getAppPathFromWindowHref(hashRouter);
             if (afterLoginPath) setAfterLoginRedirectPath(afterLoginPath);
             return redirect(getLoginPath());
           }}

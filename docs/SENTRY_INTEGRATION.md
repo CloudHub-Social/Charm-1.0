@@ -310,8 +310,18 @@ The repo-side wiring for this is:
   - upserts the sticky PR comment
   - creates or reopens GitHub issues for matching Sentry issues
 - `.github/workflows/sentry-snapshots.yml`
-  - installs Chromium and runs `e2e/smoke/observability.spec.ts`
-  - writes stable screenshots to `.artifacts/sentry-snapshots`
+  - installs Chromium and WebKit, then runs the whole `e2e/smoke` directory across all three
+    `playwright.config.ts` projects: `chromium` (desktop), `mobile-android` (Pixel 7,
+    Chromium-engine), and `mobile-ios` (iPhone 17, WebKit-engine)
+  - a `test:e2e:snapshot-coverage` check (`scripts/check-snapshot-coverage.js`) fails the build if
+    any `e2e/smoke` or `e2e/live` spec has neither a `captureSnapshot()` call nor a documented
+    `// snapshot-exempt: <reason>` comment
+  - writes stable screenshots to `.artifacts/sentry-snapshots/<project>/...`, namespaced by
+    project so the three device streams don't overwrite each other
+  - on push/`workflow_dispatch`/PRs labeled `live-smoke`, also runs `e2e/live/liveMatrix.spec.ts`
+    (real Matrix account, real room content) across all three projects -- kept opt-in rather than
+    default-on-every-PR since it logs into one shared account and concurrent PRs racing on it is a
+    real risk independent of what's being screenshotted
   - uploads those screenshots with `pnpm dlx @sentry/cli@latest snapshots upload` when the
     repository variable `SENTRY_SNAPSHOTS_ENABLED=true` is set
 
@@ -341,6 +351,11 @@ Reviewer expectations for Snapshots:
 - A failed Snapshot check should be reviewed as a visual change signal, not assumed to be a bug by default.
 - The workflow uploads the same PNG set as a GitHub artifact for debugging when you need to inspect exactly what was rendered.
 - CI fails fast if the preview Sentry env expected by the observability smoke suite is missing.
+- The three `chromium` / `mobile-android` / `mobile-ios` streams are separate snapshots with independent
+  baselines, not one merged bucket -- `captureSnapshot()` (`e2e/smoke/snapshot.ts`) writes each project under
+  its own subdirectory, and sentry-cli uses the full relative path (subdirectory included) as each snapshot's
+  identity. They share one `--app-id` (`charm-web-preview`) deliberately, since this is one web app at three
+  viewports rather than three separate apps.
 
 Operational notes:
 

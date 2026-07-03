@@ -8,7 +8,6 @@ import { hasServiceWorker } from './app/utils/platform';
 import { reloadWithTelemetry } from './app/utils/reloadWithTelemetry';
 import { markRecentServiceWorkerControllerChange } from './client/cryptoStoreErrors';
 import { pushSessionToSW } from './sw-session';
-import { consumeLaunchContext } from './launch-context-persistence';
 import { appEvents } from './app/utils/appEvents';
 
 const log = createLogger('service-worker-bootstrap');
@@ -48,24 +47,6 @@ const recordWatchdogRecoveryAttempt = (
     attributes: { reason },
   });
 };
-
-function maybeRecoverNotificationLaunch(targetUrl: string | undefined, clickedAt: number): boolean {
-  if (!targetUrl) return false;
-
-  const launchAgeMs = Date.now() - clickedAt;
-  if (launchAgeMs > 15_000) return false;
-
-  try {
-    const target = new URL(targetUrl, window.location.origin);
-    const current = new URL(window.location.href);
-    if (target.origin !== current.origin || target.href === current.href) return false;
-
-    window.location.replace(`${target.pathname}${target.search}${target.hash}`);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function sendActiveSessionToServiceWorker() {
   const sessions = getLocalStorageItem<Sessions>(MATRIX_SESSIONS_KEY, []);
@@ -282,50 +263,18 @@ export function registerAppServiceWorker() {
 
   sendActiveSessionToServiceWorker();
 
-  void consumeLaunchContext()
-    .then((launchContext) => {
-      if (!launchContext) return;
-      const launchAgeMs = Date.now() - launchContext.clickedAt;
-      Sentry.addBreadcrumb({
-        category: 'app.launch',
-        message: 'Consumed persisted launch context',
-        level: 'info',
-        data: {
-          source: launchContext.source,
-          launchAgeMs,
-          hasUserId: !!launchContext.userId,
-          hasRoomId: !!launchContext.roomId,
-          hasEventId: !!launchContext.eventId,
-        },
-      });
-      Sentry.metrics.count('sable.app.launch_context', 1, {
-        attributes: {
-          source: launchContext.source,
-          has_user_id: !!launchContext.userId,
-          has_room_id: !!launchContext.roomId,
-          has_event_id: !!launchContext.eventId,
-        },
-      });
-      Sentry.metrics.distribution('sable.app.launch_context_age_ms', launchAgeMs, {
-        attributes: { source: launchContext.source },
-      });
-      if (maybeRecoverNotificationLaunch(launchContext.targetUrl, launchContext.clickedAt)) {
-        Sentry.addBreadcrumb({
-          category: 'app.launch',
-          message: 'Recovered notification launch target during bootstrap',
-          level: 'warning',
-          data: { launchAgeMs },
-        });
-      }
-    })
-    .catch((err) => {
-      Sentry.addBreadcrumb({
-        category: 'app.launch',
-        message: 'Failed to consume persisted launch context',
-        level: 'warning',
-        data: { error: err instanceof Error ? err.message : String(err) },
-      });
-    });
+  // Persisted notification-click launch context (`sable-launch-context-v1` in
+  // Cache Storage) is consumed and recovered by the router's index-route
+  // loader (`recoverNotificationLaunchPath` in
+  // `app/pages/notificationLaunchRecovery.ts`), not here. It used to be a
+  // fire-and-forget `consumeLaunchContext().then(...)` in this function that
+  // called `window.location.replace(...)` once the cache read resolved --
+  // that raced the router's own synchronous "restore session -> default
+  // landing" redirect, and consistently lost that race on WebKit (Cache
+  // Storage/microtask timing differs enough from Chromium to flip the
+  // outcome). A data-router loader is awaited before anything renders, so
+  // doing the same check there instead makes recovery deterministic on every
+  // engine rather than timing-dependent.
 
   Sentry.addBreadcrumb({
     category: 'service_worker',

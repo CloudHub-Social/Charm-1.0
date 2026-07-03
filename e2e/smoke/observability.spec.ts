@@ -1,10 +1,8 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 import { installSmokeApp, seedSentryPreference, seedSettings, seedStoredSession } from './smokeApp';
+import { captureSnapshot } from './snapshot';
 
-const snapshotOutputDir = process.env.PLAYWRIGHT_SNAPSHOT_OUTPUT_DIR;
 const sentryConfigured = Boolean(process.env.VITE_SENTRY_DSN);
 const toolbarEnabled = process.env.VITE_SENTRY_TOOLBAR === 'true';
 const isCI = Boolean(process.env.CI);
@@ -28,18 +26,10 @@ const stubToolbar = async (page: Page) => {
   });
 };
 
-const captureSnapshot = async (page: Page, name: string) => {
-  if (!snapshotOutputDir) return;
-
-  const outputPath = path.join(snapshotOutputDir, `${name}.png`);
-  await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await page.screenshot({ path: outputPath, fullPage: true });
-};
-
 test.describe('observability real-route smoke', () => {
   test('shows the telemetry consent banner on the logged-in home route for preview sessions', async ({
     page,
-  }) => {
+  }, testInfo) => {
     assertSentryConfigured();
     await stubToolbar(page);
     await installSmokeApp(page, { authenticatedSession: true });
@@ -48,10 +38,18 @@ test.describe('observability real-route smoke', () => {
     await page.goto('/');
 
     await expect(page).toHaveURL(/#\/home\/?$/);
-    await expect(page.getByRole('link', { name: 'Source Code' })).toBeVisible();
+    // `WelcomePage` (the "Source Code" link's only home) is deliberately not
+    // rendered on mobile -- Router.tsx gates it behind `{mobile ? null :
+    // <WelcomePage />}` for the Home/Direct/Space/Explore index routes, since
+    // the mobile layout goes straight to the room list instead of a "no room
+    // selected" placeholder. Only assert it on desktop; the actual point of
+    // this test (the consent banner below) still applies on every project.
+    if (testInfo.project.name === 'chromium') {
+      await expect(page.getByRole('link', { name: 'Source Code' })).toBeVisible();
+    }
     await expect(page.getByRole('region', { name: /crash reporting prompt/i })).toBeVisible();
     await page.waitForTimeout(900);
-    await captureSnapshot(page, 'real-routes/home-telemetry-consent-banner');
+    await captureSnapshot(page, testInfo, 'real-routes/home-telemetry-consent-banner');
 
     await page.getByRole('button', { name: /no thanks/i }).click();
 
@@ -62,7 +60,7 @@ test.describe('observability real-route smoke', () => {
 
   test('persists diagnostics toggles and exposes the preview toolbar build signal on real settings routes', async ({
     page,
-  }) => {
+  }, testInfo) => {
     assertSentryConfigured();
     await stubToolbar(page);
     await installSmokeApp(page, { authenticatedSession: true });
@@ -74,7 +72,7 @@ test.describe('observability real-route smoke', () => {
 
     const errorReportingTile = page.locator('[data-settings-focus="error-reporting"]');
     await expect(errorReportingTile).toBeVisible();
-    await captureSnapshot(page, 'real-routes/settings-general-diagnostics');
+    await captureSnapshot(page, testInfo, 'real-routes/settings-general-diagnostics');
 
     await errorReportingTile.getByRole('switch').click();
     await expect
@@ -101,6 +99,6 @@ test.describe('observability real-route smoke', () => {
       )
       .toBe(toolbarEnabled ? 'enabled' : 'disabled');
 
-    await captureSnapshot(page, 'real-routes/settings-developer-tools-sentry');
+    await captureSnapshot(page, testInfo, 'real-routes/settings-developer-tools-sentry');
   });
 });

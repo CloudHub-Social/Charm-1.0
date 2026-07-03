@@ -22,11 +22,11 @@ jobs:
       - name: Setup app
         uses: ./.github/actions/setup
 
-      - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium webkit
 
       - name: Run Playwright startup smoke
-        run: pnpm exec playwright test e2e/smoke/startup.spec.ts --project chromium
+        run: pnpm exec playwright test e2e/smoke/startup.spec.ts --project chromium --project mobile-android --project mobile-ios
 
       - name: Upload Playwright report
         if: failure()
