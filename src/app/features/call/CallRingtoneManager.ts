@@ -115,7 +115,16 @@ class CallRingtoneManager {
     this.previewAudio.src = source;
     this.previewAudio.volume = callRingtoneVolumeToGain(settings.callRingtoneVolume);
 
-    await this.previewAudio.play();
+    try {
+      await this.previewAudio.play();
+    } catch (err) {
+      // currentPreviewUrl is set above so a failed play() (e.g. NotAllowedError from an
+      // autoplay policy) doesn't leak this blob URL — clean up here rather than relying
+      // on every caller to call stopPreview() in their own catch block, and re-throw so
+      // callers can still distinguish error types for their own UI handling.
+      this.stopPreview();
+      throw err;
+    }
   }
 
   public stopPreview() {

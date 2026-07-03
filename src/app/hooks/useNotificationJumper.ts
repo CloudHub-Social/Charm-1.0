@@ -159,8 +159,12 @@ export function NotificationJumper() {
     // setting now reflect the target session — safe to resolve the deferred incoming
     // call that ToRoomEvent couldn't resolve correctly before the account switch or
     // (on a cold launch) before mDirectAtom was bound. Wait for mDirectReady too rather
-    // than marking handled and resolving against a still-empty Set.
-    if (pending.callSearchParams && !handledCallRef.current && mDirectReady) {
+    // than marking handled and resolving against a still-empty Set — and return here
+    // (rather than falling through to the room-jump below) so a same-session call click
+    // that beats useBindMDirectAtom's readiness flip doesn't navigate + clear `pending`
+    // before the call is ever resolved, which would silently drop the answer/decline UI.
+    if (pending.callSearchParams && !handledCallRef.current) {
+      if (!mDirectReady) return;
       handledCallRef.current = true;
       const callParams = new URLSearchParams(pending.callSearchParams);
       const incomingCall = resolveIncomingCallFromSearchParams(
@@ -461,7 +465,10 @@ export function NotificationJumper() {
         parentGraphWaitTimerRef.current = undefined;
       }
     };
-  }, [pending, roomToParents, roomToParentsReady, mDirects, mx]);
+    // mDirectReady is included so that a jump deferred above (waiting on it to resolve
+    // a pending incoming call) actually resumes once useBindMDirectAtom flips it true —
+    // nothing else in this effect's other deps changes when that happens.
+  }, [pending, roomToParents, roomToParentsReady, mDirects, mDirectReady, mx]);
 
   return null;
 }

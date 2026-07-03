@@ -203,8 +203,13 @@ export function CallSoundSettings() {
       setHasCustomRingtone(true);
       setCallRingtoneId('custom');
       setCustomRingtoneMeta(toCustomToneMetadata(stored));
+      // setCallRingtoneId is a no-op when callRingtoneId is already 'custom' (replacing
+      // an existing file), so useCallSignaling's settings-watching effect won't rerun to
+      // pick up the new blob — resync explicitly so ringtoneManager doesn't keep serving
+      // the stale one until some other setting changes or the app reloads.
+      void ringtoneManager.syncSources('custom', callRingbackTone, callRingtoneVolume);
     });
-  }, [importCustomTone, setCallRingtoneId]);
+  }, [importCustomTone, setCallRingtoneId, callRingbackTone, callRingtoneVolume]);
 
   const handleResetCustomRingtone = useCallback(async () => {
     setCustomError(null);
@@ -221,8 +226,10 @@ export function CallSoundSettings() {
       setHasCustomRingback(true);
       setCallRingbackTone('custom');
       setCustomRingbackMeta(toCustomToneMetadata(stored));
+      // Same resync-on-replace issue as handleImportCustomRingtone above.
+      void ringtoneManager.syncSources(callRingtoneId, 'custom', callRingtoneVolume);
     });
-  }, [importCustomTone, setCallRingbackTone]);
+  }, [importCustomTone, setCallRingbackTone, callRingtoneId, callRingtoneVolume]);
 
   const handleResetCustomRingback = useCallback(async () => {
     setCustomError(null);
