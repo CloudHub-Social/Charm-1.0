@@ -68,7 +68,11 @@ export const MobileSheetHandle = style([
     width: toRem(44),
     height: toRem(5),
     borderRadius: config.radii.Pill,
-    backgroundColor: color.SurfaceVariant.ContainerLine,
+    // ContainerLine (a 1px-divider-tier token) measures ~1.3:1 contrast
+    // against the sheet background in dark theme -- effectively invisible.
+    // OnContainer clears ~8:1 (dark) / ~13.6:1 (light) so the handle actually
+    // reads as a grabbable control.
+    backgroundColor: color.SurfaceVariant.OnContainer,
     margin: '0 auto',
     cursor: 'ns-resize',
     border: 'none',
