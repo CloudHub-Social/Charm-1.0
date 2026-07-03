@@ -23,6 +23,9 @@ import { ClientConfigProvider } from '$hooks/useClientConfig';
 import { ScreenSize, ScreenSizeProvider } from '$hooks/useScreenSize';
 import { SpecVersionsProvider } from '$hooks/useSpecVersions';
 import { ThemeContextProvider, ThemeKind } from '$hooks/useTheme';
+import { makeCallPreferencesAtom } from '$state/callPreferences';
+import { CallPreferencesProvider } from '$state/hooks/callPreferences';
+import { AutoDiscoveryInfoProvider } from '$hooks/useAutoDiscoveryInfo';
 import { RoomViewHeader } from './RoomViewHeader';
 
 // RoomCallButton pulls in the call-embedding subsystem (CallEmbedRef context,
@@ -114,6 +117,12 @@ function buildRoomFixture() {
 
 function renderRoomViewHeader(screenSize: ScreenSize = ScreenSize.Desktop) {
   const { mx, room } = buildRoomFixture();
+  // RoomViewHeader reads call preferences and call-start capabilities
+  // directly (not just via the mocked RoomCallButton), so both providers
+  // must be present even though this test never exercises call
+  // functionality itself.
+  const callPreferencesAtom = makeCallPreferencesAtom(USER_ID);
+  const autoDiscoveryInfo = { 'm.homeserver': { base_url: 'https://smoke.test' } };
 
   render(
     <JotaiProvider>
@@ -127,7 +136,11 @@ function renderRoomViewHeader(screenSize: ScreenSize = ScreenSize.Desktop) {
                 <MatrixClientProvider value={mx}>
                   <RoomProvider value={room}>
                     <IsDirectRoomProvider value={false}>
-                      <RoomViewHeader />
+                      <CallPreferencesProvider value={callPreferencesAtom}>
+                        <AutoDiscoveryInfoProvider value={autoDiscoveryInfo}>
+                          <RoomViewHeader />
+                        </AutoDiscoveryInfoProvider>
+                      </CallPreferencesProvider>
                     </IsDirectRoomProvider>
                   </RoomProvider>
                 </MatrixClientProvider>
