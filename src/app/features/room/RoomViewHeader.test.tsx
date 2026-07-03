@@ -23,6 +23,10 @@ import { ClientConfigProvider } from '$hooks/useClientConfig';
 import { ScreenSize, ScreenSizeProvider } from '$hooks/useScreenSize';
 import { SpecVersionsProvider } from '$hooks/useSpecVersions';
 import { ThemeContextProvider, ThemeKind } from '$hooks/useTheme';
+import { CallPreferencesProvider } from '$state/hooks/callPreferences';
+import { makeCallPreferencesAtom } from '$state/callPreferences';
+import { AutoDiscoveryInfoProvider } from '$hooks/useAutoDiscoveryInfo';
+import type { AutoDiscoveryInfo } from '$app/cs-api';
 import { RoomViewHeader } from './RoomViewHeader';
 
 // RoomCallButton pulls in the call-embedding subsystem (CallEmbedRef context,
@@ -112,27 +116,38 @@ function buildRoomFixture() {
   return { mx, room };
 }
 
+const AUTO_DISCOVERY_INFO: AutoDiscoveryInfo = {
+  'm.homeserver': {
+    base_url: 'https://smoke.test',
+  },
+};
+
 function renderRoomViewHeader(screenSize: ScreenSize = ScreenSize.Desktop) {
   const { mx, room } = buildRoomFixture();
+  const callPreferencesAtom = makeCallPreferencesAtom(USER_ID);
 
   render(
     <JotaiProvider>
       <MemoryRouter initialEntries={[`/home/room/${encodeURIComponent(ROOM_ID)}`]}>
         <SpecVersionsProvider value={{ versions: ['v1.11'] }}>
           <ClientConfigProvider value={{}}>
-            <ScreenSizeProvider value={screenSize}>
-              <ThemeContextProvider
-                value={{ id: 'sable-light', kind: ThemeKind.Light, classNames: [] }}
-              >
-                <MatrixClientProvider value={mx}>
-                  <RoomProvider value={room}>
-                    <IsDirectRoomProvider value={false}>
-                      <RoomViewHeader />
-                    </IsDirectRoomProvider>
-                  </RoomProvider>
-                </MatrixClientProvider>
-              </ThemeContextProvider>
-            </ScreenSizeProvider>
+            <AutoDiscoveryInfoProvider value={AUTO_DISCOVERY_INFO}>
+              <ScreenSizeProvider value={screenSize}>
+                <ThemeContextProvider
+                  value={{ id: 'sable-light', kind: ThemeKind.Light, classNames: [] }}
+                >
+                  <MatrixClientProvider value={mx}>
+                    <RoomProvider value={room}>
+                      <IsDirectRoomProvider value={false}>
+                        <CallPreferencesProvider value={callPreferencesAtom}>
+                          <RoomViewHeader />
+                        </CallPreferencesProvider>
+                      </IsDirectRoomProvider>
+                    </RoomProvider>
+                  </MatrixClientProvider>
+                </ThemeContextProvider>
+              </ScreenSizeProvider>
+            </AutoDiscoveryInfoProvider>
           </ClientConfigProvider>
         </SpecVersionsProvider>
       </MemoryRouter>
