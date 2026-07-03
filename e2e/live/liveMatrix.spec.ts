@@ -341,10 +341,7 @@ test.describe.serial('live matrix authenticated smoke', () => {
     await captureSnapshot(page, testInfo, 'live-matrix/emoji-qa/timeline-alignment');
   });
 
-  test('renders diagnostics and privacy settings on the real settings route', async (
-    _fixtures,
-    testInfo
-  ) => {
+  test('renders diagnostics and privacy settings on the real settings route', async (_fixtures, testInfo) => {
     test.skip(
       Boolean(sentryDsn),
       'Settings assertions run in the non-Sentry live smoke environment'
@@ -360,10 +357,7 @@ test.describe.serial('live matrix authenticated smoke', () => {
     await captureSnapshot(page, testInfo, 'live-matrix/real-routes/settings-general-diagnostics');
   });
 
-  test('renders the developer tools Sentry section on the real settings route', async (
-    _fixtures,
-    testInfo
-  ) => {
+  test('renders the developer tools Sentry section on the real settings route', async (_fixtures, testInfo) => {
     test.skip(
       Boolean(sentryDsn),
       'Settings assertions run in the non-Sentry live smoke environment'

@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { PersistedLaunchContext } from '../../launch-context-persistence';
+import type { PersistedLaunchContext } from '$app/../launch-context-persistence';
 
 const { mockConsumeLaunchContext } = vi.hoisted(() => ({
   mockConsumeLaunchContext: vi.fn<() => Promise<PersistedLaunchContext | undefined>>(),
 }));
 
-vi.mock('../../launch-context-persistence', () => ({
+vi.mock('$app/../launch-context-persistence', () => ({
   consumeLaunchContext: mockConsumeLaunchContext,
 }));
 

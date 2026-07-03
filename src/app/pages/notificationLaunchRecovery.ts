@@ -1,5 +1,5 @@
 import type { HashRouterConfig } from '$hooks/useClientConfig';
-import { consumeLaunchContext } from '../../launch-context-persistence';
+import { consumeLaunchContext } from '$app/../launch-context-persistence';
 import { getAppPathFromHref, getOriginBaseUrl } from './pathUtils';
 
 // A notification click that's this stale is more likely a suspended/backgrounded

@@ -59,8 +59,6 @@ export default defineConfig({
         'src/app/hooks/useTheme.ts',
         'src/app/pages/client/ClientNonUIFeatures.tsx',
         'src/app/pages/client/ClientRoot.tsx',
-        'src/app/pages/notificationLaunchRecovery.ts',
-        'src/app/pages/notificationLaunchRecovery.test.ts',
       ],
       rules: {
         'no-restricted-imports': [
