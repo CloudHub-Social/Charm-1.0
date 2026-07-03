@@ -98,7 +98,7 @@ jobs:
       # anything (e.g. startup.spec.ts, search-shortcuts.spec.ts) also run
       # here as harmless overhead -- worth it to make this whole class of
       # silent-drop bug structurally impossible.
-      - name: Capture deterministic observability and layout harness snapshots
+      - name: Capture deterministic observability snapshots
         run: pnpm run test:e2e:snapshots
 
       - name: Capture live Matrix reference snapshots
@@ -147,7 +147,7 @@ jobs:
           {
             echo "### Sentry Snapshot Upload"
             echo
-            echo "- Real-route observability snapshots and layout harness coverage ran successfully for this pull request."
+            echo "- Real-route observability snapshots ran successfully for this pull request."
             echo "- Snapshot upload to Sentry failed, but the workflow is continuing."
             echo "- Review the \`Upload snapshots to Sentry\` step logs for the CLI/server error details."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -158,7 +158,7 @@ jobs:
           {
             echo "### Sentry Snapshot Upload"
             echo
-            echo "- Real-route observability snapshots and layout harness coverage ran successfully for this pull request."
+            echo "- Real-route observability snapshots ran successfully for this pull request."
             echo "- Upload to Sentry is currently disabled for this repository."
             echo "- Enable the repository variable \`SENTRY_SNAPSHOTS_ENABLED=true\` after the Sentry project has snapshot upload support."
           } >> "$GITHUB_STEP_SUMMARY"
