@@ -38,7 +38,15 @@ test.describe('observability real-route smoke', () => {
     await page.goto('/');
 
     await expect(page).toHaveURL(/#\/home\/?$/);
-    await expect(page.getByRole('link', { name: 'Source Code' })).toBeVisible();
+    // `WelcomePage` (the "Source Code" link's only home) is deliberately not
+    // rendered on mobile -- Router.tsx gates it behind `{mobile ? null :
+    // <WelcomePage />}` for the Home/Direct/Space/Explore index routes, since
+    // the mobile layout goes straight to the room list instead of a "no room
+    // selected" placeholder. Only assert it on desktop; the actual point of
+    // this test (the consent banner below) still applies on every project.
+    if (testInfo.project.name === 'chromium') {
+      await expect(page.getByRole('link', { name: 'Source Code' })).toBeVisible();
+    }
     await expect(page.getByRole('region', { name: /crash reporting prompt/i })).toBeVisible();
     await page.waitForTimeout(900);
     await captureSnapshot(page, testInfo, 'real-routes/home-telemetry-consent-banner');
