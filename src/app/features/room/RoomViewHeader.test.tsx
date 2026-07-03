@@ -23,9 +23,9 @@ import { ClientConfigProvider } from '$hooks/useClientConfig';
 import { ScreenSize, ScreenSizeProvider } from '$hooks/useScreenSize';
 import { SpecVersionsProvider } from '$hooks/useSpecVersions';
 import { ThemeContextProvider, ThemeKind } from '$hooks/useTheme';
-import { CallPreferencesProvider } from '$state/hooks/callPreferences';
-import { makeCallPreferencesAtom } from '$state/callPreferences';
 import { AutoDiscoveryInfoProvider } from '$hooks/useAutoDiscoveryInfo';
+import { makeCallPreferencesAtom } from '$state/callPreferences';
+import { CallPreferencesProvider } from '$state/hooks/callPreferences';
 import type { AutoDiscoveryInfo } from '$app/cs-api';
 import { RoomViewHeader } from './RoomViewHeader';
 
@@ -116,26 +116,26 @@ function buildRoomFixture() {
   return { mx, room };
 }
 
-const AUTO_DISCOVERY_INFO: AutoDiscoveryInfo = {
-  'm.homeserver': {
-    base_url: 'https://smoke.test',
-  },
-};
-
 function renderRoomViewHeader(screenSize: ScreenSize = ScreenSize.Desktop) {
   const { mx, room } = buildRoomFixture();
+  // RoomViewHeader reads call preferences and call-start capabilities
+  // directly (useCallPreferences, useCallStartCapabilities -> useLivekitSupport
+  // -> useAutoDiscoveryInfo), not just through the mocked-out RoomCallButton —
+  // needs their own atom/context values, mirroring how ClientInitStorageAtom
+  // and AutoDiscovery.tsx wire them up for the real app.
   const callPreferencesAtom = makeCallPreferencesAtom(USER_ID);
+  const autoDiscoveryInfo: AutoDiscoveryInfo = { 'm.homeserver': { base_url: mx.baseUrl } };
 
   render(
     <JotaiProvider>
       <MemoryRouter initialEntries={[`/home/room/${encodeURIComponent(ROOM_ID)}`]}>
         <SpecVersionsProvider value={{ versions: ['v1.11'] }}>
           <ClientConfigProvider value={{}}>
-            <AutoDiscoveryInfoProvider value={AUTO_DISCOVERY_INFO}>
-              <ScreenSizeProvider value={screenSize}>
-                <ThemeContextProvider
-                  value={{ id: 'sable-light', kind: ThemeKind.Light, classNames: [] }}
-                >
+            <ScreenSizeProvider value={screenSize}>
+              <ThemeContextProvider
+                value={{ id: 'sable-light', kind: ThemeKind.Light, classNames: [] }}
+              >
+                <AutoDiscoveryInfoProvider value={autoDiscoveryInfo}>
                   <MatrixClientProvider value={mx}>
                     <RoomProvider value={room}>
                       <IsDirectRoomProvider value={false}>
@@ -145,9 +145,9 @@ function renderRoomViewHeader(screenSize: ScreenSize = ScreenSize.Desktop) {
                       </IsDirectRoomProvider>
                     </RoomProvider>
                   </MatrixClientProvider>
-                </ThemeContextProvider>
-              </ScreenSizeProvider>
-            </AutoDiscoveryInfoProvider>
+                </AutoDiscoveryInfoProvider>
+              </ThemeContextProvider>
+            </ScreenSizeProvider>
           </ClientConfigProvider>
         </SpecVersionsProvider>
       </MemoryRouter>

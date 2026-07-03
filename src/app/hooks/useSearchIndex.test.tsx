@@ -5,7 +5,7 @@ import { ClientEvent, RoomEvent, SyncState } from '$types/matrix-sdk';
 
 type SearchIndexValue = NonNullable<ReturnType<typeof useSearchIndex>>;
 
-type WorkerListener = (event: MessageEvent) => void;
+type WorkerListener = (event: MessageEvent | ErrorEvent) => void;
 
 class MockWorker {
   public postMessage = vi.fn<(message: unknown) => void>();
@@ -25,6 +25,14 @@ class MockWorker {
   emit(type: string, data: unknown) {
     const event = { data } as MessageEvent;
     this.listeners.get(type)?.forEach((listener) => listener(event));
+  }
+
+  // Worker 'error' events (ErrorEvent) carry their fields at the top level
+  // (message/filename/lineno/colno/error), not wrapped in `.data` like
+  // 'message' events — so this bypasses emit()'s { data } wrapping.
+  emitError(props: Record<string, unknown>) {
+    const event = props as unknown as ErrorEvent;
+    this.listeners.get('error')?.forEach((listener) => listener(event));
   }
 }
 
@@ -113,6 +121,12 @@ function SearchIndexConsumer({
   const value = useSearchIndex();
   onContext(value);
   return null;
+}
+
+async function bringToReady(worker: MockWorker | undefined) {
+  await act(async () => {
+    worker?.emit('message', { type: 'READY', indexedEventCount: 0, roomCount: 0 });
+  });
 }
 
 describe('SearchIndexProvider', () => {
@@ -234,5 +248,113 @@ describe('SearchIndexProvider', () => {
     expect(mocks.mx.removeListener).toHaveBeenCalledWith(RoomEvent.Timeline, expect.any(Function));
     expect(mocks.mx.removeListener).toHaveBeenCalledWith(ClientEvent.Room, expect.any(Function));
     expect(worker?.terminate).toHaveBeenCalled();
+  });
+
+  describe('worker auto-restart on unexpected termination', () => {
+    // Mirrors the private MAX_WORKER_AUTO_RESTARTS constant in useSearchIndex.tsx.
+    const MAX_WORKER_AUTO_RESTARTS = 3;
+
+    it('respawns the worker after a non-MIME runtime error once already READY', async () => {
+      render(
+        <SearchIndexProvider>
+          <SearchIndexConsumer onContext={() => undefined} />
+        </SearchIndexProvider>
+      );
+
+      const worker = mocks.workerInstances.at(-1);
+      await bringToReady(worker);
+      expect(mocks.workerInstances).toHaveLength(1);
+
+      await act(async () => {
+        worker?.emitError({ message: 'Script error' });
+      });
+      expect(worker?.terminate).toHaveBeenCalled();
+      // No respawn yet — the 2s restart delay hasn't elapsed.
+      expect(mocks.workerInstances).toHaveLength(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      expect(mocks.workerInstances).toHaveLength(2);
+    });
+
+    it('does not exhaust the restart budget across separate, individually-recovered kills', async () => {
+      render(
+        <SearchIndexProvider>
+          <SearchIndexConsumer onContext={() => undefined} />
+        </SearchIndexProvider>
+      );
+
+      // Each cycle reaches READY (which resets the consecutive-failure
+      // counter) before its own kill, modeling a long session with sporadic,
+      // unrelated memory-pressure terminations rather than a crash loop.
+      // This must survive more cycles than MAX_WORKER_AUTO_RESTARTS — a
+      // fixed lifetime cap here (the pre-fix bug) would incorrectly stop
+      // recovering after the 3rd.
+      const cycles = MAX_WORKER_AUTO_RESTARTS + 2;
+      // Each iteration depends on the worker respawned by the previous one,
+      // so these awaits must run in sequence rather than in parallel.
+      for (let cycle = 1; cycle <= cycles; cycle++) {
+        const worker = mocks.workerInstances.at(-1);
+        // oxlint-disable-next-line no-await-in-loop -- sequential by design, see comment above
+        await bringToReady(worker);
+        // oxlint-disable-next-line no-await-in-loop -- sequential by design, see comment above
+        await act(async () => {
+          worker?.emitError({ message: `kill ${cycle}` });
+        });
+        // oxlint-disable-next-line no-await-in-loop -- sequential by design, see comment above
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2_000);
+        });
+        expect(mocks.workerInstances).toHaveLength(cycle + 1);
+      }
+    });
+
+    it('does not auto-restart on a MIME/stale-cache error', async () => {
+      render(
+        <SearchIndexProvider>
+          <SearchIndexConsumer onContext={() => undefined} />
+        </SearchIndexProvider>
+      );
+
+      const worker = mocks.workerInstances.at(-1);
+      await bringToReady(worker);
+
+      await act(async () => {
+        worker?.emitError({
+          message:
+            'Failed to fetch dynamically imported module: MIME type ("text/html") is not a valid JavaScript MIME type.',
+        });
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+
+      expect(mocks.workerInstances).toHaveLength(1);
+    });
+
+    it('consumes only one restart attempt when multiple error events fire before the timer elapses', async () => {
+      render(
+        <SearchIndexProvider>
+          <SearchIndexConsumer onContext={() => undefined} />
+        </SearchIndexProvider>
+      );
+
+      const worker = mocks.workerInstances.at(-1);
+      await bringToReady(worker);
+
+      await act(async () => {
+        worker?.emitError({ message: 'boom 1' });
+        worker?.emitError({ message: 'boom 2' });
+        worker?.emitError({ message: 'boom 3' });
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+
+      // Three error events on the same worker instance must still only
+      // consume a single restart attempt, not one per event.
+      expect(mocks.workerInstances).toHaveLength(2);
+    });
   });
 });
