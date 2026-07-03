@@ -114,6 +114,7 @@ export function useIncomingCallSignaling() {
     stopIncomingRing: () => void;
     stopOutgoingRing: () => void;
     setMutedRoomId: (roomId: string | null) => void;
+    playIncomingRing: () => void;
   };
 
   const signalingHandlerRefs = useRef<SignalingHandlerRefs | null>(null);
@@ -132,11 +133,20 @@ export function useIncomingCallSignaling() {
   }, [callEmbed]);
 
   useEffect(() => {
-    ringtoneManager.syncSources(
-      settings.callRingtoneId,
-      settings.callRingbackTone,
-      settings.callRingtoneVolume
-    );
+    void ringtoneManager
+      .syncSources(settings.callRingtoneId, settings.callRingbackTone, settings.callRingtoneVolume)
+      .then(() => {
+        // resolveCallToneSources reads custom tones from IndexedDB, so this can still be
+        // pending when an incoming call arrives (e.g. a cold-launch tap-to-answer
+        // notification racing this effect's first run). playIncomingRing()'s earlier call
+        // would have seen an empty <audio>.src and resolved immediately without ever
+        // actually playing, and nothing re-triggers it once the source loads — re-evaluate
+        // now via the ref (not a dep here) so this effect doesn't re-run on every
+        // playIncomingRing identity change.
+        if (incomingCallRef.current) {
+          signalingHandlerRefs.current?.playIncomingRing();
+        }
+      });
   }, [settings.callRingtoneId, settings.callRingbackTone, settings.callRingtoneVolume]);
 
   const stopIncomingRing = useCallback(() => {
@@ -309,6 +319,7 @@ export function useIncomingCallSignaling() {
     stopIncomingRing,
     stopOutgoingRing,
     setMutedRoomId,
+    playIncomingRing,
   };
 
   useEffect(() => {
