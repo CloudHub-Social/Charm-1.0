@@ -5,7 +5,7 @@ import { ClientEvent, RoomEvent, SyncState } from '$types/matrix-sdk';
 
 type SearchIndexValue = NonNullable<ReturnType<typeof useSearchIndex>>;
 
-type WorkerListener = (event: MessageEvent) => void;
+type WorkerListener = (event: MessageEvent | ErrorEvent) => void;
 
 class MockWorker {
   public postMessage = vi.fn<(message: unknown) => void>();
@@ -31,7 +31,7 @@ class MockWorker {
   // (message/filename/lineno/colno/error), not wrapped in `.data` like
   // 'message' events — so this bypasses emit()'s { data } wrapping.
   emitError(props: Record<string, unknown>) {
-    const event = props as unknown as MessageEvent;
+    const event = props as unknown as ErrorEvent;
     this.listeners.get('error')?.forEach((listener) => listener(event));
   }
 }

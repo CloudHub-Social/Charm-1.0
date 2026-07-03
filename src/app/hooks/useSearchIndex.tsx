@@ -881,26 +881,33 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
     // disabled) so it can't post stale state once this run completes.
     workerGenerationRef.current += 1;
     workerReadyRef.current = false;
-    // Drop anything buffered while the previous worker was down — carrying
-    // it across an idbSearchIndex disable/re-enable would replay events the
-    // new worker's fresh backfill will already pick up from persisted state.
-    pendingLiveEventsRef.current = [];
 
     if (!idbSearchIndex) {
       setIsReady(false);
+      // No worker will be (re)created — nothing left to ever flush this
+      // buffer, so drop it rather than carrying it across a re-enable.
+      // Do NOT do this unconditionally at the top of the effect: this same
+      // effect also re-runs on a restart (workerRestartCount bump) while a
+      // 2s-delayed buffer from the just-failed worker is still in flight —
+      // clearing it there would drop live events before the replacement
+      // worker's READY handler ever gets to replay them.
+      pendingLiveEventsRef.current = [];
       return () => {};
     }
 
     const userId = mx.getUserId();
-    if (!userId) return () => {};
+    if (!userId) {
+      pendingLiveEventsRef.current = [];
+      return () => {};
+    }
 
     setInitError(null);
-    if (workerRestartCount > 0) {
+    if (consecutiveFailuresRef.current > 0) {
       Sentry.addBreadcrumb({
         category: 'search.index',
-        message: `Search worker auto-restart (attempt ${workerRestartCount}/${MAX_WORKER_AUTO_RESTARTS})`,
+        message: `Search worker auto-restart (attempt ${consecutiveFailuresRef.current}/${MAX_WORKER_AUTO_RESTARTS})`,
         level: 'warning',
-        data: { restartCount: workerRestartCount },
+        data: { restartCount: consecutiveFailuresRef.current },
       });
     }
     Sentry.addBreadcrumb({
@@ -994,6 +1001,13 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
       setInitError(errorMsg);
       setIsReady(false);
       workerReadyRef.current = false;
+      // Bump immediately, not just at the top of the next lifecycle effect
+      // run (which won't happen until the 2s restart delay elapses, if a
+      // restart even fires) — otherwise an in-flight backfillRoom call can
+      // resume during that window, see its generation as still current, and
+      // mutate backfillingRoomsRef/backfillQueueRef with state a fresh
+      // worker's eventual startBackfill wouldn't expect.
+      workerGenerationRef.current += 1;
       setIsBackfilling(false);
       resetRuntimeState(errorMsg, options);
 
