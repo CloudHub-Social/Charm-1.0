@@ -35,28 +35,24 @@ function getSharedAudioContext(): AudioContext {
  *
  * If the recording flow aborts before setupAudioGraph() consumes this context
  * (permission denied, no supported codec, unmount mid-gesture), it would
- * otherwise keep running indefinitely. Each of those specific abort paths
- * calls discardPrimedAudioContext() directly — this deliberately isn't
- * wired into the general-purpose cleanupAudioContext(), since that also
- * runs for unrelated playback teardown and successful recording stops,
- * where discarding the shared primed context could wipe out one just
- * primed for a different, still-pending recording attempt.
+ * otherwise keep running indefinitely. Each hook instance snapshots whatever
+ * was primed at the start of its own start()/handleResume() attempt (see
+ * primedContextAttemptRef below) and discards only that snapshot on abort —
+ * this deliberately isn't a blind clear of the shared slot, since two
+ * composer instances (e.g. the room composer and the thread drawer) can each
+ * prime and await getUserMedia concurrently, and one instance aborting or
+ * unmounting must not discard a context a different, still-pending instance
+ * just primed for itself.
  */
 let primedAudioContext: AudioContext | null = null;
 
-function discardPrimedAudioContext(): void {
-  const context = primedAudioContext;
-  primedAudioContext = null;
-  if (context && context.state !== 'closed') {
-    context.close().catch(() => {});
-  }
-}
-
-// A resume() rejection callback closes over the specific context it was
-// registered for. If that context has since been superseded — consumed by
-// setupAudioGraph() or replaced by a later primeAudioContext() call — it's no
-// longer the shared primedAudioContext, so we leave it alone rather than
-// closing a context that may already be in active use elsewhere.
+// A resume() rejection callback, or an aborting/unmounting hook instance,
+// closes over the specific context it cares about. If that context has since
+// been superseded — consumed by setupAudioGraph(), replaced by a later
+// primeAudioContext() call, or already discarded by whichever instance
+// actually owns it — it's no longer the shared primedAudioContext, so we
+// leave it alone rather than closing a context that may already be in active
+// use elsewhere.
 function discardIfStillPrimed(context: AudioContext): void {
   if (primedAudioContext !== context) return;
   primedAudioContext = null;
@@ -153,6 +149,15 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
   const isTemporaryStopRef = useRef(false);
   const temporaryPreviewUrlRef = useRef<string | null>(null);
   /**
+   * Snapshot of whichever context was primed at the moment this instance's
+   * most recent start()/handleResume() attempt began. Lets an abort or
+   * unmount discard only the context this instance is actually responsible
+   * for, instead of blindly clearing the module-level slot — which could
+   * otherwise steal a context a different, still-pending instance just
+   * primed for itself (see primedAudioContext above).
+   */
+  const primedContextAttemptRef = useRef<AudioContext | null>(null);
+  /**
    * waveform samples collected during recording, used to generate waveform on stop.
    * We collect all samples and downsample at the end to get a more accurate waveform, especially for short recordings.
    * We use a ref to avoid causing re-renders on every sample.
@@ -218,6 +223,17 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
     if (audioContext.state !== 'closed') {
       audioContext.suspend().catch(() => {});
     }
+  }, []);
+
+  // Discards the context snapshot taken at the start of this instance's most
+  // recent start()/handleResume() attempt — but only if it's still the
+  // outstanding shared prime. A no-op if this instance never primed anything,
+  // already consumed it via setupAudioGraph(), or another instance's prime
+  // has since superseded it.
+  const discardOwnPrimedContext = useCallback(() => {
+    const context = primedContextAttemptRef.current;
+    primedContextAttemptRef.current = null;
+    if (context) discardIfStillPrimed(context);
   }, []);
 
   const stopTimer = useCallback(() => {
@@ -387,13 +403,16 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
 
     setError(null);
     isResumingRef.current = false;
+    // Snapshot whichever context is primed right now, before the async gap
+    // below — see primedContextAttemptRef.
+    primedContextAttemptRef.current = primedAudioContext;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const codec = getSupportedAudioCodec();
       if (!codec) {
         setError('No supported audio codec found for recording.');
-        discardPrimedAudioContext();
+        discardOwnPrimedContext();
         cleanupStream();
         return;
       }
@@ -490,7 +509,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       pausedTimeRef.current = 0;
     } catch {
       setError('Microphone access denied or an error occurred.');
-      discardPrimedAudioContext();
+      discardOwnPrimedContext();
       cleanupAudioContext();
       cleanupStream();
       cleanupMediaRecorder();
@@ -501,6 +520,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
     cleanupAudioContext,
     cleanupMediaRecorder,
     cleanupStream,
+    discardOwnPrimedContext,
     emitStopPayload,
     getAudioLength,
     setupAudioGraph,
@@ -781,6 +801,9 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
 
     setError(null);
     isResumingRef.current = true;
+    // Snapshot whichever context is primed right now, before the async gap
+    // below — see primedContextAttemptRef.
+    primedContextAttemptRef.current = primedAudioContext;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -868,6 +891,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       startTimeRef.current = Date.now() - pausedTimeRef.current * 1000;
     } catch {
       setError('Microphone access denied or an error occurred.');
+      discardOwnPrimedContext();
       cleanupAudioContext();
       cleanupStream();
       cleanupMediaRecorder();
@@ -880,6 +904,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
     cleanupAudioContext,
     cleanupMediaRecorder,
     cleanupStream,
+    discardOwnPrimedContext,
     emitStopPayload,
     getAudioLength,
     setupAudioGraph,
@@ -986,10 +1011,12 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
         cleanupMediaRecorder();
       }
       // Unmounting mid-gesture (before getUserMedia/setupAudioGraph ever
-      // consumed it) would otherwise leave the primed context running — the
-      // mic button can't re-prime for a new attempt while this instance is
-      // still mounted, so it's safe to discard here.
-      discardPrimedAudioContext();
+      // consumed it) would otherwise leave the primed context running.
+      // discardOwnPrimedContext() only touches the context snapshotted by
+      // this instance's own attempt, so a different, still-pending instance
+      // (e.g. the thread drawer's composer priming its own attempt) is left
+      // untouched.
+      discardOwnPrimedContext();
       cleanupAudioContext();
       cleanupStream();
       stopTimer();
@@ -1011,6 +1038,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
     cleanupAudioContext,
     cleanupMediaRecorder,
     cleanupStream,
+    discardOwnPrimedContext,
     internalStartRecording,
     stopTimer,
   ]);

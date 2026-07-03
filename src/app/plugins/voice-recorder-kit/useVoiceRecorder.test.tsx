@@ -220,6 +220,15 @@ describe('useVoiceRecorder', () => {
       primeAudioContext();
     });
     expect(createdAudioContexts).toHaveLength(2);
+
+    // Drain this trailing prime so it doesn't bleed into the next test — the
+    // module-level primedAudioContext isn't reset between tests, and a later
+    // primeAudioContext() call would otherwise silently reuse this (running,
+    // unconsumed) context instead of constructing a fresh mock.
+    const trailingPrimedContext = createdAudioContexts[1];
+    await act(async () => {
+      await trailingPrimedContext?.close();
+    });
   });
 
   it('closes an unconsumed primed AudioContext if starting fails before the audio graph is built', async () => {
@@ -383,5 +392,80 @@ describe('useVoiceRecorder', () => {
     });
     expect(createdAudioContexts).toHaveLength(1);
     expect(createdAudioContexts[0]).toBe(primedContext);
+  });
+
+  it('does not let an unmounting instance discard a context primed for a different, still-pending instance', async () => {
+    // An unrelated instance — e.g. the thread drawer's composer — that never
+    // primes or starts anything of its own.
+    const { unmount: unmountOther } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+
+    act(() => {
+      primeAudioContext();
+    });
+    const primedContext = createdAudioContexts[0];
+    expect(primedContext?.close).not.toHaveBeenCalled();
+
+    // Hold getUserMedia pending so this instance's start() has snapshotted
+    // the primed context but not yet consumed it via setupAudioGraph() when
+    // the unrelated instance unmounts.
+    let resolveGetUserMedia: ((stream: MockStream) => void) | undefined;
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementationOnce(
+      () =>
+        new Promise<MockStream>((resolve) => {
+          resolveGetUserMedia = resolve;
+        })
+    );
+
+    const { result } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+    act(() => {
+      result.current.start();
+    });
+
+    // The unrelated instance unmounts while our attempt is still awaiting
+    // getUserMedia — it must not discard the context primed for this attempt.
+    act(() => {
+      unmountOther();
+    });
+    expect(primedContext?.close).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveGetUserMedia?.(inputStream);
+    });
+
+    await waitFor(() => {
+      expect(result.current.isRecording).toBe(true);
+    });
+
+    // setupAudioGraph() should still have reused the primed context.
+    expect(createdAudioContexts).toHaveLength(1);
+    expect(createdAudioContexts[0]).toBe(primedContext);
+  });
+
+  it('discards an unconsumed primed AudioContext if handleResume fails before the audio graph is built', async () => {
+    act(() => {
+      primeAudioContext();
+    });
+    const primedContext = createdAudioContexts[0];
+    expect(primedContext?.close).not.toHaveBeenCalled();
+
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValueOnce(
+      new Error('Permission denied')
+    );
+
+    const { result } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+
+    act(() => {
+      result.current.handleResume();
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toBeTruthy();
+    });
+
+    // The primed context was never handed to setupAudioGraph(), so
+    // handleResume's catch block must close it directly to avoid an
+    // indefinitely running AudioContext — matching internalStartRecording's
+    // catch block.
+    expect(primedContext?.close).toHaveBeenCalledTimes(1);
   });
 });
