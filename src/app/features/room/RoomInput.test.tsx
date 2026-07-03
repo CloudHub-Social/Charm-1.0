@@ -262,9 +262,7 @@ describe('RoomInput Touch Spacing sizing', () => {
 
   it('renders the composer send affordance with Touch Spacing at its default (on)', () => {
     renderRoomInput();
-    expect(
-      screen.getByRole('button', { name: 'Send your composed Message' })
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send your composed Message' })).toBeInTheDocument();
   });
 
   it('applies a different IconButton size class to the Add button when Touch Spacing is off', () => {

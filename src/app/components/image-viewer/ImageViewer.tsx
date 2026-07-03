@@ -183,7 +183,12 @@ export const ImageViewer = as<'div', ImageViewerProps>(
         >
           <Header className={css.ImageViewerHeader} size="400">
             <Box className={css.ImageViewerHeaderTitle} grow="Yes" alignItems="Center" gap="200">
-              <IconButton size={touchTargetSize} radii="300" onClick={requestClose} aria-label="Close">
+              <IconButton
+                size={touchTargetSize}
+                radii="300"
+                onClick={requestClose}
+                aria-label="Close"
+              >
                 {sizedIcon(ArrowLeft, '200')}
               </IconButton>
               <Text size="T300" truncate>

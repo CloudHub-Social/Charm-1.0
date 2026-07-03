@@ -828,11 +828,7 @@ function Accessibility() {
           focusId="touch-spacing"
           description="Use larger touch targets on buttons and controls. Turn off for a more compact layout."
           after={
-            <Switch
-              variant="Primary"
-              value={showTouchSpacing}
-              onChange={setShowTouchSpacing}
-            />
+            <Switch variant="Primary" value={showTouchSpacing} onChange={setShowTouchSpacing} />
           }
         />
       </SequenceCard>
