@@ -469,7 +469,7 @@ describe('useVoiceRecorder', () => {
     expect(primedContext?.close).toHaveBeenCalledTimes(1);
   });
 
-  it('creates a fresh context on each primeAudioContext() call rather than reusing an unconsumed one', () => {
+  it('reuses a live primed context across repeated primeAudioContext() calls rather than closing and replacing it', () => {
     act(() => {
       primeAudioContext();
     });
@@ -478,23 +478,22 @@ describe('useVoiceRecorder', () => {
     expect(first?.close).not.toHaveBeenCalled();
 
     // A second priming attempt (e.g. a different composer instance's mic
-    // button) must not resume/reuse the first — reusing would let two
-    // unrelated attempts end up pointing at the same AudioContext object.
+    // button) while the first is still live must be a no-op — closing it
+    // here would race a different, still-pending instance that already
+    // snapshotted this context and is awaiting getUserMedia.
     act(() => {
       primeAudioContext();
     });
-    expect(createdAudioContexts).toHaveLength(2);
-    expect(createdAudioContexts[1]).not.toBe(first);
-    expect(first?.close).toHaveBeenCalledTimes(1);
+    expect(createdAudioContexts).toHaveLength(1);
+    expect(first?.close).not.toHaveBeenCalled();
 
-    // Drain the trailing prime so it doesn't bleed into the next test.
-    const trailing = createdAudioContexts[1];
+    // Drain it so it doesn't bleed into the next test.
     act(() => {
-      trailing?.close();
+      first?.close();
     });
   });
 
-  it('does not let an earlier, superseded attempt steal a different attempt live primed context', async () => {
+  it('lets two concurrent attempts share one live primed context; only the first to arrive consumes it', async () => {
     // Instance A primes and starts, but its getUserMedia stays pending.
     let resolveFirstGetUserMedia: ((stream: MockStream) => void) | undefined;
     vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementationOnce(
@@ -514,14 +513,13 @@ describe('useVoiceRecorder', () => {
 
     // Before A's getUserMedia resolves, a different instance (e.g. the
     // thread drawer's composer) primes its own attempt. primeAudioContext()
-    // always creates a fresh context now, so this discards A's unconsumed
-    // one rather than letting A and B share it.
+    // is a no-op while a live context is already primed, so B ends up
+    // snapshotting the very same context A did rather than getting its own.
     act(() => {
       primeAudioContext();
     });
-    const secondPrimed = createdAudioContexts[1];
-    expect(secondPrimed).not.toBe(firstPrimed);
-    expect(firstPrimed?.close).toHaveBeenCalledTimes(1);
+    expect(createdAudioContexts).toHaveLength(1);
+    expect(firstPrimed?.close).not.toHaveBeenCalled();
 
     const { result: instanceB } = renderHook(() => useVoiceRecorder({ autoStart: false }));
     act(() => {
@@ -530,21 +528,22 @@ describe('useVoiceRecorder', () => {
     await waitFor(() => {
       expect(instanceB.current.isRecording).toBe(true);
     });
-    // Instance B correctly consumes the context it primed for itself.
-    expect(createdAudioContexts).toHaveLength(2);
+    // Instance B arrives first and consumes the shared primed context.
+    expect(createdAudioContexts).toHaveLength(1);
+    expect(createdAudioContexts[0]).toBe(firstPrimed);
 
     // Instance A's getUserMedia finally resolves. Its own snapshot
-    // (firstPrimed) is stale — already closed and superseded by B's prime —
-    // so setupAudioGraph() must not steal instance B's live context; it
-    // falls back to creating a fresh one for A instead.
+    // (firstPrimed) is now stale — already consumed by B — so
+    // setupAudioGraph() must not steal instance B's live context; it falls
+    // back to creating a fresh one for A instead.
     await act(async () => {
       resolveFirstGetUserMedia?.(inputStream);
     });
     await waitFor(() => {
       expect(instanceA.current.isRecording).toBe(true);
     });
-    expect(createdAudioContexts).toHaveLength(3);
-    expect(createdAudioContexts[2]).not.toBe(secondPrimed);
+    expect(createdAudioContexts).toHaveLength(2);
+    expect(createdAudioContexts[1]).not.toBe(firstPrimed);
   });
 
   it('discards an unconsumed primed AudioContext when getUserMedia is unsupported', async () => {
@@ -574,7 +573,9 @@ describe('useVoiceRecorder', () => {
     expect(primedContext?.close).toHaveBeenCalledTimes(1);
   });
 
-  it('primes a fresh context for handleRestart even though it is not directly wired to any current UI gesture', async () => {
+  it('handleRestart does not call primeAudioContext(), so it cannot discard an unrelated pending prime', async () => {
+    // An unrelated instance starts and finishes recording first, with
+    // nothing primed — the ordinary desktop click-to-record path.
     const { result } = renderHook(() => useVoiceRecorder({ autoStart: false }));
     act(() => {
       result.current.start();
@@ -582,23 +583,29 @@ describe('useVoiceRecorder', () => {
     await waitFor(() => {
       expect(result.current.isRecording).toBe(true);
     });
-    const contextsBeforeRestart = createdAudioContexts.length;
+
+    // A separate priming attempt exists for a different, not-yet-started
+    // recorder — e.g. a mobile mic press whose start() hasn't run yet.
+    act(() => {
+      primeAudioContext();
+    });
+    const unrelatedPrimedContext = createdAudioContexts[createdAudioContexts.length - 1];
+    expect(unrelatedPrimedContext?.close).not.toHaveBeenCalled();
 
     act(() => {
       result.current.handleRestart();
     });
 
-    // handleRestart calls primeAudioContext() synchronously at its start, so
-    // a new context should exist immediately — before internalStartRecording's
-    // own getUserMedia await resolves.
-    expect(createdAudioContexts).toHaveLength(contextsBeforeRestart + 1);
+    // handleRestart must not call primeAudioContext() — if it did, that
+    // call's discard-stale-then-create-fresh semantics (see the "creates a
+    // fresh context on each primeAudioContext() call" test above) would
+    // close the unrelated pending prime as a direct, synchronous side
+    // effect of this call, purely because handleRestart happened to run
+    // while it existed.
+    expect(unrelatedPrimedContext?.close).not.toHaveBeenCalled();
 
     await waitFor(() => {
       expect(result.current.isRecording).toBe(true);
     });
-
-    // setupAudioGraph() should reuse that primed context rather than
-    // creating a second one once getUserMedia resolves.
-    expect(createdAudioContexts).toHaveLength(contextsBeforeRestart + 1);
   });
 });

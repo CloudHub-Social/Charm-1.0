@@ -43,6 +43,14 @@ function getSharedAudioContext(): AudioContext {
  * prime and await getUserMedia concurrently, and one instance aborting or
  * unmounting must not discard a context a different, still-pending instance
  * just primed for itself.
+ *
+ * primeAudioContext() is idempotent while a live (non-closed) context is
+ * already primed: a second composer priming close behind the first reuses
+ * that same context rather than closing it out from under the first
+ * instance's still-pending getUserMedia await (see PRRT_kwDORso5xs6OFYCK).
+ * Two instances can therefore end up sharing one context object; the
+ * `ownPrimedContext === primedAudioContext` check in setupAudioGraph() is
+ * what lets only the first to arrive actually consume it.
  */
 let primedAudioContext: AudioContext | null = null;
 
@@ -63,18 +71,12 @@ function discardIfStillPrimed(context: AudioContext): void {
 
 export function primeAudioContext(): void {
   if (typeof window === 'undefined' || typeof AudioContext === 'undefined') return;
-  // Always create a fresh context for this priming attempt rather than
-  // resuming whatever's already in the shared slot. Reusing one lets two
-  // concurrent attempts (e.g. the room composer and the thread drawer both
-  // priming close together) end up pointing at the very same AudioContext
-  // object, so whichever instance discards or consumes it first silently
-  // steals or kills the context the other is relying on. A fresh object per
-  // attempt is what makes primedContextAttemptRef (see useVoiceRecorder)
-  // able to tell "mine" from "someone else's".
+  // No-op if a live context is already primed: closing it here to make room
+  // for a fresh one would race a different, still-pending composer instance
+  // that already snapshotted it and is awaiting getUserMedia (see the
+  // idempotency note on primedAudioContext above).
   if (primedAudioContext && primedAudioContext.state !== 'closed') {
-    const stale = primedAudioContext;
-    primedAudioContext = null;
-    stale.close().catch(() => {});
+    return;
   }
   try {
     const context = new AudioContext();
@@ -982,16 +984,17 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
     }
   }, [cleanupAudioContext, cleanupMediaRecorder, cleanupStream, onDelete, stopTimer]);
 
+  /**
+   * Not currently wired to any UI (handleRecordAgain is the exported name
+   * callers use). Deliberately does NOT call primeAudioContext() itself:
+   * this function isn't invoked directly from a user-gesture handler, so
+   * priming here would run outside any real gesture and be useless for the
+   * iOS suspended-context workaround anyway. Callers that do wire this to a
+   * UI gesture are responsible for calling primeAudioContext() themselves
+   * from that gesture handler first, the same way the mic button's
+   * onPointerDown does before start().
+   */
   const handleRestart = useCallback(() => {
-    // Not currently wired to any UI (handleRecordAgain is the exported name
-    // callers use), but handleRestart ends this same function body by
-    // calling internalStartRecording() synchronously — nothing here awaits
-    // before that call, so priming here still lands inside the synchronous
-    // callstack of whatever gesture invoked handleRestart. Priming
-    // defensively keeps this path from silently regressing to the
-    // suspended-context iOS bug if it's ever wired directly to a UI gesture
-    // without the caller remembering to prime first.
-    primeAudioContext();
     isRestartingRef.current = true;
     const mediaRecorder = mediaRecorderRef.current;
 
