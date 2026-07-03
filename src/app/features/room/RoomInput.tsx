@@ -353,7 +353,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const draftKey = threadRootId ?? roomId;
     const mx = useMatrixClient();
     const clientConfig = useClientConfig();
-    const gifsEnabled = gifSearchConfigured(clientConfig);
+    const [enableGifPicker] = useSetting(settingsAtom, 'enableGifPicker');
+    const gifsEnabled = enableGifPicker && gifSearchConfigured(clientConfig);
     const useAuthentication = useMediaAuthentication();
     const [enterForNewline] = useSetting(settingsAtom, 'enterForNewline');
     const [editorOldAddFile] = useSetting(settingsAtom, 'editorOldAddFile');
@@ -452,16 +453,24 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
       const el = emojiPickerRef.current;
       if (!el || emojiBoardTab === undefined || wasOpen) return;
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      // Skip animation if either the OS or the app's own Reduced Motion
+      // setting is on. The swipe gesture itself is unaffected by this guard.
+      if (
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+        document.body.classList.contains('reduced-motion')
+      )
+        return;
       // On phone layouts the element is centered with translateX(-50%); include
       // it in both keyframes so the horizontal centering is preserved throughout.
       const xCenter = isPhoneLayoutDevice() ? ' translateX(-50%)' : '';
+      // Use 40% translation (not 16px) so the sheet visibly slides up from
+      // below — closer to native bottom-sheet open feel.
       const anim = el.animate(
         [
-          { opacity: '0', transform: `translateY(16px)${xCenter}` },
+          { opacity: '0', transform: `translateY(40%)${xCenter}` },
           { opacity: '1', transform: `translateY(0)${xCenter}` },
         ],
-        { duration: 220, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'forwards' }
+        { duration: 280, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'forwards' }
       );
       return () => anim.cancel();
     }, [emojiBoardTab]);
@@ -622,10 +631,20 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const isEncrypted = room.hasEncryptionStateEvent();
 
     const { triggerPreLift } = useKeyboardHeight();
-    const handleMobilePreLift = useCallback(() => {
-      if (!isMobileLayout) return;
-      triggerPreLift();
-    }, [isMobileLayout, triggerPreLift]);
+    const handleMobilePreLift = useCallback(
+      (evt: React.SyntheticEvent) => {
+        if (!isMobileLayout) return;
+        // Skip pre-lift when the user taps a button or interactive control.
+        // Pre-lift is only meaningful when focus is moving to an editable element
+        // (opening the keyboard). Triggering it on button taps causes a React
+        // state update between pointerdown and click, which can shift the layout
+        // enough that iOS drops the click entirely — requiring a second tap.
+        const target = evt.target as Element | null;
+        if (target?.closest?.('button, [role="button"], input, select')) return;
+        triggerPreLift();
+      },
+      [isMobileLayout, triggerPreLift]
+    );
     // Always active on mobile: iOS can apply window.scrollY even with overflow:hidden
     // on body (scroll-prediction bug). The lock snaps scrollY back to 0 immediately
     // on any scroll event, preventing the "header scrolls up then snaps" jank.

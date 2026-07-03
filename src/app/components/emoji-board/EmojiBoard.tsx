@@ -835,9 +835,10 @@ export function EmojiBoard({
 }: Readonly<EmojiBoardProps>) {
   const mx = useMatrixClient();
   const [saveStickerEmojiBandwidth] = useSetting(settingsAtom, 'saveStickerEmojiBandwidth');
+  const [enableGifPicker] = useSetting(settingsAtom, 'enableGifPicker');
   const useAuthentication = useMediaAuthentication();
   const clientConfig = useClientConfig();
-  const gifsEnabled = gifSearchConfigured(clientConfig);
+  const gifsEnabled = enableGifPicker && gifSearchConfigured(clientConfig);
   const activeTab = !gifsEnabled && tab === EmojiBoardTab.Gif ? EmojiBoardTab.Sticker : tab;
   // Instance-scoped so multiple EmojiBoard mounts (e.g. a per-message
   // reaction picker alongside the composer's own picker) never collide on
@@ -1191,7 +1192,7 @@ export function EmojiBoard({
     virtualizer.scrollToIndex(groupIndex, { align: 'start' });
   };
 
-  const handleMobileSheetPointerDown: PointerEventHandler<HTMLButtonElement> = useCallback(
+  const handleMobileSheetPointerDown: PointerEventHandler<HTMLElement> = useCallback(
     (evt) => {
       if (!isMobileSheet) return;
 
@@ -1405,12 +1406,17 @@ export function EmojiBoard({
         }
         mobileSheetHandle={
           isMobileSheet ? (
-            <Box className={componentCss.MobileSheetHandleShell}>
+            // Attach drag handler to the whole shell so any tap/drag anywhere
+            // in the handle region (including its vertical padding) dismisses
+            // the sheet — not just the 44×5 px visual pill inside.
+            <Box
+              className={componentCss.MobileSheetHandleShell}
+              onPointerDown={handleMobileSheetPointerDown}
+            >
               <button
                 type="button"
                 className={componentCss.MobileSheetHandle}
                 aria-label="Resize picker"
-                onPointerDown={handleMobileSheetPointerDown}
               />
             </Box>
           ) : undefined

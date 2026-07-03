@@ -51,24 +51,36 @@ globalStyle('#root', {
 // `src/app/features/lobby/RoomItem.tsx`); tracked as a follow-up rather
 // than done here to avoid scope-creeping this global CSS fix into
 // per-component changes.
+//
+// All three blocks are scoped under `body:not(.sable-a11y-highlights-disabled)`
+// so the rings are ON by default (matching pre-existing app-wide behaviour,
+// including on unauthenticated routes like /login that never mount any
+// settings-driven feature) and are only suppressed once the user turns off
+// the Focus Highlights setting (Settings > General > Accessibility). This
+// opt-out shape means the default case needs no JS to take effect (no
+// first-paint flash) and unauthenticated routes, which have no settings UI
+// and never toggle the class, simply keep the default rings. The disabled
+// class is toggled by AuthRouteThemeManager in ThemeManager.tsx, in the same
+// effect that already resets `document.body.className` for theme/motion/
+// underline-link settings, so the class survives those resets.
 globalStyle(
   `
-    a:focus-visible,
-    button:focus-visible,
-    select:focus-visible,
-    [role="button"]:focus-visible,
-    [role="tab"]:focus-visible,
-    [role="menuitem"]:focus-visible,
-    [role="option"]:focus-visible,
-    [role="checkbox"]:focus-visible,
-    [role="radio"]:focus-visible,
-    [role="switch"]:focus-visible,
-    [role="textbox"]:focus-visible,
-    [tabindex="0"]:focus-visible,
-    [class*="Button"]:focus-visible,
-    [class*="Chip"]:focus-visible,
-    [class*="MenuItem"]:focus-visible,
-    [class*="IconButton"]:focus-visible
+    body:not(.sable-a11y-highlights-disabled) a:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) button:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) select:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="button"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="tab"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="menuitem"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="option"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="checkbox"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="radio"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="switch"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="textbox"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [tabindex="0"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [class*="Button"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [class*="Chip"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [class*="MenuItem"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [class*="IconButton"]:focus-visible
 `,
   {
     outline: '2px solid var(--sable-primary-main) !important',
@@ -109,10 +121,10 @@ globalStyle(
 // unaffected either way and always gets its own ring from this rule.
 globalStyle(
   `
-    input:focus-visible:not(div > input),
-    textarea:focus-visible:not(div > textarea),
-    div > input:focus-visible[data-focus-ring-self],
-    div > textarea:focus-visible[data-focus-ring-self]
+    body:not(.sable-a11y-highlights-disabled) input:focus-visible:not(div > input),
+    body:not(.sable-a11y-highlights-disabled) textarea:focus-visible:not(div > textarea),
+    body:not(.sable-a11y-highlights-disabled) div > input:focus-visible[data-focus-ring-self],
+    body:not(.sable-a11y-highlights-disabled) div > textarea:focus-visible[data-focus-ring-self]
 `,
   {
     outline: '2px solid var(--sable-primary-main) !important',
@@ -135,8 +147,8 @@ globalStyle(
 // double-ring bug for a different pairing of elements.
 globalStyle(
   `
-    div:has(> input:focus-visible:not([data-focus-ring-self])),
-    div:has(> textarea:focus-visible:not([data-focus-ring-self]))
+    body:not(.sable-a11y-highlights-disabled) div:has(> input:focus-visible:not([data-focus-ring-self])),
+    body:not(.sable-a11y-highlights-disabled) div:has(> textarea:focus-visible:not([data-focus-ring-self]))
 `,
   {
     outline: '2px solid var(--sable-primary-main) !important',

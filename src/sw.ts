@@ -2339,6 +2339,14 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
         }))
       );
 
+      // For call notifications, targetUrl already carries the call metadata as query
+      // params (see buildNotificationClickTargetUrl). The already-live-client path
+      // below routes via roomId/userId directly rather than navigating to targetUrl,
+      // so thread those same params through the postMessage payload too — otherwise a
+      // tap-to-answer on an already-open tab loses which call this notification was
+      // for (video/audio, who rang, which event to correlate a decline against).
+      const callSearchParams = isCall ? new URL(targetUrl).search.slice(1) : undefined;
+
       for (const wc of rankedClients) {
         console.debug('[SW notificationclick] postMessage to existing client:', wc.url);
         try {
@@ -2355,6 +2363,7 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
             navigate: pushNavigate,
             isInvite,
             isCall,
+            callSearchParams,
           });
 
           // Give already-live clients a chance to route without forcing a reload.

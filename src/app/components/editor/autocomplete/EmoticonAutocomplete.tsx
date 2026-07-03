@@ -125,6 +125,7 @@ export function EmoticonAutocomplete({
             onKeyDown={(evt: ReactKeyboardEvent<HTMLButtonElement>) =>
               onTabPress(evt, () => handleAutocomplete(key, emoticon.shortcode))
             }
+            onMouseDown={(e) => e.preventDefault()}
             onClick={() => handleAutocomplete(key, emoticon.shortcode)}
             before={
               isCustomEmoji && customEmojiUrl ? (
