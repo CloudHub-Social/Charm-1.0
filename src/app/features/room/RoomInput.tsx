@@ -452,16 +452,24 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
       const el = emojiPickerRef.current;
       if (!el || emojiBoardTab === undefined || wasOpen) return;
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      // Skip animation if either the OS or the app's own Reduced Motion
+      // setting is on. The swipe gesture itself is unaffected by this guard.
+      if (
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+        document.body.classList.contains('reduced-motion')
+      )
+        return;
       // On phone layouts the element is centered with translateX(-50%); include
       // it in both keyframes so the horizontal centering is preserved throughout.
       const xCenter = isPhoneLayoutDevice() ? ' translateX(-50%)' : '';
+      // Use 40% translation (not 16px) so the sheet visibly slides up from
+      // below — closer to native bottom-sheet open feel.
       const anim = el.animate(
         [
-          { opacity: '0', transform: `translateY(16px)${xCenter}` },
+          { opacity: '0', transform: `translateY(40%)${xCenter}` },
           { opacity: '1', transform: `translateY(0)${xCenter}` },
         ],
-        { duration: 220, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'forwards' }
+        { duration: 280, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'forwards' }
       );
       return () => anim.cancel();
     }, [emojiBoardTab]);
