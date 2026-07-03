@@ -11,10 +11,17 @@ describe('mobile PWA dogfood contract', () => {
   it('pre-lifts the mobile composer before touch and pointer focus paths', () => {
     const roomInput = readWorkspaceFile('src/app/features/room/RoomInput.tsx');
 
-    expect(roomInput).toContain('const handleMobilePreLift = useCallback((evt: React.SyntheticEvent) => {');
+    expect(roomInput).toContain('const handleMobilePreLift = useCallback(');
+    expect(roomInput).toContain('(evt: React.SyntheticEvent) => {');
     expect(roomInput).toContain('onPointerDownCapture={handleMobilePreLift}');
     expect(roomInput).toContain('onTouchStartCapture={handleMobilePreLift}');
     expect(roomInput).toContain('onMouseDown={handleMobilePreLift}');
+  });
+
+  it('skips the mobile pre-lift when the tap targets an interactive control', () => {
+    const roomInput = readWorkspaceFile('src/app/features/room/RoomInput.tsx');
+
+    expect(roomInput).toContain('target?.closest?.(\'button, [role="button"], input, select\')');
   });
 
   it('clears the composer before awaiting the immediate send path', () => {

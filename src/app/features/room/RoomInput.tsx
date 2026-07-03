@@ -622,17 +622,20 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const isEncrypted = room.hasEncryptionStateEvent();
 
     const { triggerPreLift } = useKeyboardHeight();
-    const handleMobilePreLift = useCallback((evt: React.SyntheticEvent) => {
-      if (!isMobileLayout) return;
-      // Skip pre-lift when the user taps a button or interactive control.
-      // Pre-lift is only meaningful when focus is moving to an editable element
-      // (opening the keyboard). Triggering it on button taps causes a React
-      // state update between pointerdown and click, which can shift the layout
-      // enough that iOS drops the click entirely — requiring a second tap.
-      const target = evt.target as Element | null;
-      if (target?.closest?.('button, [role="button"], input, select')) return;
-      triggerPreLift();
-    }, [isMobileLayout, triggerPreLift]);
+    const handleMobilePreLift = useCallback(
+      (evt: React.SyntheticEvent) => {
+        if (!isMobileLayout) return;
+        // Skip pre-lift when the user taps a button or interactive control.
+        // Pre-lift is only meaningful when focus is moving to an editable element
+        // (opening the keyboard). Triggering it on button taps causes a React
+        // state update between pointerdown and click, which can shift the layout
+        // enough that iOS drops the click entirely — requiring a second tap.
+        const target = evt.target as Element | null;
+        if (target?.closest?.('button, [role="button"], input, select')) return;
+        triggerPreLift();
+      },
+      [isMobileLayout, triggerPreLift]
+    );
     // Always active on mobile: iOS can apply window.scrollY even with overflow:hidden
     // on body (scroll-prediction bug). The lock snaps scrollY back to 0 immediately
     // on any scroll event, preventing the "header scrolls up then snaps" jank.
