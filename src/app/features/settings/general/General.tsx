@@ -806,7 +806,10 @@ function SelectRightSwipeAction({ disabled }: Readonly<{ disabled?: boolean }>) 
 }
 
 function Accessibility() {
-  const [showHighlights, setShowHighlights] = useSetting(settingsAtom, 'showAccessibilityHighlights');
+  const [showHighlights, setShowHighlights] = useSetting(
+    settingsAtom,
+    'showAccessibilityHighlights'
+  );
 
   return (
     <Box direction="Column" gap="100">
@@ -816,13 +819,7 @@ function Accessibility() {
           title="Focus Highlights"
           focusId="focus-highlights"
           description="Show visible focus rings around interactive elements when navigating with a keyboard."
-          after={
-            <Switch
-              variant="Primary"
-              value={showHighlights}
-              onChange={setShowHighlights}
-            />
-          }
+          after={<Switch variant="Primary" value={showHighlights} onChange={setShowHighlights} />}
         />
       </SequenceCard>
     </Box>
