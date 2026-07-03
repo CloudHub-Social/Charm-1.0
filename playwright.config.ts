@@ -38,5 +38,23 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    // Chromium-engine mobile emulation (Android-shaped). 412px is below this
+    // app's own `MOBILE_BREAKPOINT` (750px, see `useScreenSize.ts`), so this
+    // exercises the app's real mobile layout branch, not just a squeezed
+    // desktop one.
+    {
+      name: 'mobile-android',
+      use: { ...devices['Pixel 7'] },
+    },
+    // WebKit-engine mobile emulation (iOS-shaped). Android (Blink/Chromium)
+    // and iOS (WebKit) render text, scrollbars, form controls, and safe-area
+    // insets differently enough that a single "mobile" stream can miss
+    // regressions that only show up on one engine -- this is a distinct
+    // browser engine, not just a different viewport size, so it needs its
+    // own project rather than folding into `mobile-android`.
+    {
+      name: 'mobile-ios',
+      use: { ...devices['iPhone 17'] },
+    },
   ],
 });

@@ -1,7 +1,6 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+import { captureSnapshot } from '../smoke/snapshot';
 
 const server = process.env.LIVE_MATRIX_SERVER;
 const username = process.env.LIVE_MATRIX_USERNAME;
@@ -10,7 +9,6 @@ const recoveryKey = process.env.LIVE_MATRIX_RECOVERY_KEY;
 const roomId = process.env.LIVE_MATRIX_ROOM_ID;
 const roomName = process.env.LIVE_MATRIX_ROOM_NAME;
 const roomPathSegment = process.env.LIVE_MATRIX_ROOM_PATH_SEGMENT;
-const snapshotOutputDir = process.env.PLAYWRIGHT_SNAPSHOT_OUTPUT_DIR;
 const emojiQaRoomPathSegment =
   process.env.LIVE_MATRIX_EMOJI_QA_ROOM_PATH_SEGMENT ?? process.env.LIVE_MATRIX_EMOJI_QA_ROOM_ID;
 const sentryDsn = process.env.VITE_SENTRY_DSN;
@@ -20,14 +18,6 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 const requireEnv = (value: string | undefined, name: string): string => {
   if (!value) throw new Error(`${name} must be set`);
   return value;
-};
-
-const captureSnapshot = async (page: Page, name: string) => {
-  if (!snapshotOutputDir) return;
-
-  const outputPath = path.join(snapshotOutputDir, `${name}.png`);
-  await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await page.screenshot({ path: outputPath, fullPage: true });
 };
 
 const expectStoredSession = async (page: Page) => {
@@ -254,7 +244,7 @@ test.describe.serial('live matrix authenticated smoke', () => {
     }
   });
 
-  test('captures the Emoji QA alignment reference room', async () => {
+  test('captures the Emoji QA alignment reference room', async (_fixtures, testInfo) => {
     test.skip(
       !emojiQaRoomPathSegment,
       'LIVE_MATRIX_EMOJI_QA_ROOM_PATH_SEGMENT must be set to capture the Emoji QA alignment reference room'
@@ -348,10 +338,13 @@ test.describe.serial('live matrix authenticated smoke', () => {
     expect(metrics.heartEmoji!.y).toBeGreaterThanOrEqual(metrics.heartRow!.y - 2);
     expect(metrics.heartEmoji!.bottom).toBeLessThanOrEqual(metrics.heartRow!.bottom + 2);
 
-    await captureSnapshot(page, 'live-matrix/emoji-qa/timeline-alignment');
+    await captureSnapshot(page, testInfo, 'live-matrix/emoji-qa/timeline-alignment');
   });
 
-  test('renders diagnostics and privacy settings on the real settings route', async () => {
+  test('renders diagnostics and privacy settings on the real settings route', async (
+    _fixtures,
+    testInfo
+  ) => {
     test.skip(
       Boolean(sentryDsn),
       'Settings assertions run in the non-Sentry live smoke environment'
@@ -364,9 +357,13 @@ test.describe.serial('live matrix authenticated smoke', () => {
       timeout: 60_000,
     });
     await expect(page.locator('[data-settings-focus="error-reporting"]')).toBeVisible();
+    await captureSnapshot(page, testInfo, 'live-matrix/real-routes/settings-general-diagnostics');
   });
 
-  test('renders the developer tools Sentry section on the real settings route', async () => {
+  test('renders the developer tools Sentry section on the real settings route', async (
+    _fixtures,
+    testInfo
+  ) => {
     test.skip(
       Boolean(sentryDsn),
       'Settings assertions run in the non-Sentry live smoke environment'
@@ -384,5 +381,10 @@ test.describe.serial('live matrix authenticated smoke', () => {
     await expect(
       page.getByText('Sentry is not configured. Set VITE_SENTRY_DSN to enable error tracking.')
     ).toBeVisible({ timeout: 60_000 });
+    await captureSnapshot(
+      page,
+      testInfo,
+      'live-matrix/real-routes/settings-developer-tools-sentry'
+    );
   });
 });

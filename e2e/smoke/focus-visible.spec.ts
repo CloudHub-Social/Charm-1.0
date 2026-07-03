@@ -26,6 +26,12 @@ import { installSmokeApp, stubToolbar } from './smokeApp';
 //
 // Both rules are exercised here against a real route/components so a
 // regression in either one is caught.
+//
+// snapshot-exempt: every test here asserts `getComputedStyle()` outline
+// values (width/offset/color), several against synthetic elements injected
+// via `page.evaluate` that don't exist anywhere in the real app. A
+// screenshot would show a bare, unstyled DOM node -- there's no meaningful
+// visual state here for a Sentry Snapshot to catch a regression in.
 
 test.describe('global focus-visible indicator', () => {
   test.beforeEach(async ({ page }) => {

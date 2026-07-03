@@ -8,6 +8,9 @@ const requireEnv = (value: string | undefined, name: string): string => {
   return value;
 };
 
+// snapshot-exempt: pure API contract tests against the Klipy GIF search
+// endpoint via Playwright's `request` fixture -- no browser page is ever
+// opened, so there's no UI to screenshot.
 test.describe('Klipy GIF API live integration', () => {
   test.skip(!klipyApiKey, 'KLIPY_API_KEY not set — skipping live GIF API tests');
 
