@@ -38,6 +38,7 @@ const settingsLinkFocusIdsBySection: Record<SettingsSectionId, readonly string[]
     'error-reporting',
     'file-description-placement',
     'focus-highlights',
+    'touch-spacing',
     'hide-member-events-read-only-rooms',
     'hide-membership-change',
     'hide-profile-change',

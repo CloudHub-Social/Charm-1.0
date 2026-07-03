@@ -49,6 +49,8 @@ export const ImageViewer = as<'div', ImageViewerProps>(
   ({ className, alt, src, requestClose, info, ...props }, ref) => {
     const zoomInputRef = useRef<HTMLInputElement>(null);
     const [pixelatedImageRendering] = useSetting(settingsAtom, 'pixelatedImageRendering');
+    const [showTouchSpacing] = useSetting(settingsAtom, 'showTouchSpacing');
+    const touchTargetSize = showTouchSpacing ? '500' : '300';
 
     const [isImageReady, setIsImageReady] = useState(false);
     const [isEditingZoom, setIsEditingZoom] = useState(false);
@@ -181,7 +183,12 @@ export const ImageViewer = as<'div', ImageViewerProps>(
         >
           <Header className={css.ImageViewerHeader} size="400">
             <Box className={css.ImageViewerHeaderTitle} grow="Yes" alignItems="Center" gap="200">
-              <IconButton size="500" radii="300" onClick={requestClose} aria-label="Close">
+              <IconButton
+                size={touchTargetSize}
+                radii="300"
+                onClick={requestClose}
+                aria-label="Close"
+              >
                 {sizedIcon(ArrowLeft, '200')}
               </IconButton>
               <Text size="T300" truncate>
@@ -196,7 +203,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
             >
               <IconButton
                 variant="Surface"
-                size="500"
+                size={touchTargetSize}
                 radii="Pill"
                 onClick={() => setIsPixelated(!isPixelated)}
                 aria-label="Toggle Pixelation"
@@ -215,7 +222,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
                   // (Otherwise, the Reset Zoom button does the same thing)
                   display: fitRatio !== 1 && transforms.zoom !== 1 ? 'flex' : 'none',
                 }}
-                size="500"
+                size={touchTargetSize}
                 radii="Pill"
                 onClick={() => {
                   setZoom(1);
@@ -234,7 +241,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
                       ? 'flex'
                       : 'none',
                 }}
-                size="500"
+                size={touchTargetSize}
                 radii="Pill"
                 onClick={() => {
                   resetTransforms();
@@ -249,7 +256,7 @@ export const ImageViewer = as<'div', ImageViewerProps>(
               <IconButton
                 variant={transforms.zoom < 1 ? 'Success' : 'SurfaceVariant'}
                 outlined={transforms.zoom < 1}
-                size="500"
+                size={touchTargetSize}
                 radii="Pill"
                 onClick={zoomOut}
                 aria-label="Zoom Out"
@@ -318,13 +325,13 @@ export const ImageViewer = as<'div', ImageViewerProps>(
               <IconButton
                 variant={transforms.zoom > 1 ? 'Success' : 'SurfaceVariant'}
                 outlined={transforms.zoom > 1}
-                size="500"
+                size={touchTargetSize}
                 radii="Pill"
                 onClick={zoomIn}
                 aria-label="Zoom In"
                 title="Zoom In"
               >
-                {sizedIcon(Plus, '200')}
+                {sizedIcon(Plus, showTouchSpacing ? '200' : '50')}
               </IconButton>
               <Chip
                 variant="Primary"

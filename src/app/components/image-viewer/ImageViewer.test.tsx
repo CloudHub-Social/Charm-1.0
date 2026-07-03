@@ -1,7 +1,9 @@
 /* oxlint-disable vitest/require-mock-type-parameters */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { createStore, Provider as JotaiProvider } from 'jotai';
 import FileSaver from 'file-saver';
+import { getSettings, settingsAtom, type Settings } from '$state/settings';
 import { ImageViewer } from './ImageViewer';
 
 const downloadMedia = vi.fn();
@@ -33,6 +35,16 @@ vi.mock('file-saver', () => ({
     saveAs: vi.fn(),
   },
 }));
+
+function renderWithTouchSpacing(showTouchSpacing: boolean) {
+  const store = createStore();
+  store.set(settingsAtom, { ...getSettings(), showTouchSpacing } as Settings);
+  return render(
+    <JotaiProvider store={store}>
+      <ImageViewer alt="kitten.png" src="https://example.org/kitten.png" requestClose={vi.fn()} />
+    </JotaiProvider>
+  );
+}
 
 describe('ImageViewer', () => {
   it('downloads media without passing a media token argument', async () => {
@@ -67,5 +79,22 @@ describe('ImageViewer', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  // Regression coverage for issue #530 (Touch Spacing toggle). jsdom doesn't
+  // perform layout, so pixel dimensions can't be asserted directly here
+  // (confirmed live instead, at 440x812, during this feature's debug pass).
+  // Assert only that toggling `showTouchSpacing` changes which folds
+  // IconButton `size` recipe class the close button receives, without
+  // hardcoding the actual (folds-version-specific) class name/hash.
+  it('applies a different IconButton size class to the close button when Touch Spacing is off', () => {
+    const on = renderWithTouchSpacing(true);
+    const onClassName = screen.getByRole('button', { name: 'Close' }).className;
+    on.unmount();
+
+    renderWithTouchSpacing(false);
+    const offClassName = screen.getByRole('button', { name: 'Close' }).className;
+
+    expect(offClassName).not.toBe(onClassName);
   });
 });

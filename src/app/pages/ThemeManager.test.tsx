@@ -16,6 +16,8 @@ const settings = {
   saturationLevel: 100,
   underlineLinks: false,
   reducedMotion: false,
+  showAccessibilityHighlights: true,
+  showTouchSpacing: true,
   useSystemTheme: false,
   themeRemoteLightFullUrl: undefined as string | undefined,
   themeRemoteDarkFullUrl: undefined as string | undefined,
@@ -105,6 +107,8 @@ beforeEach(() => {
   settings.saturationLevel = 100;
   settings.underlineLinks = false;
   settings.reducedMotion = false;
+  settings.showAccessibilityHighlights = true;
+  settings.showTouchSpacing = true;
   settings.useSystemTheme = false;
   settings.themeRemoteLightFullUrl = undefined;
   settings.themeRemoteDarkFullUrl = undefined;
@@ -382,5 +386,74 @@ describe('ThemeManager', () => {
     expect(document.getElementById('sable-remote-theme-style')?.textContent).toBe(
       'body { --cached-theme: 1; }'
     );
+  });
+
+  it('applies the touch-spacing-disabled class when Touch Spacing is off', () => {
+    settingsInitialized = true;
+    settings.showTouchSpacing = false;
+
+    render(
+      <AuthRouteThemeManager>
+        <div>child</div>
+      </AuthRouteThemeManager>
+    );
+
+    expect(document.body).toHaveClass('sable-a11y-touch-spacing-disabled');
+  });
+
+  it('does not apply the touch-spacing-disabled class when Touch Spacing is on', () => {
+    settingsInitialized = true;
+    settings.showTouchSpacing = true;
+
+    render(
+      <AuthRouteThemeManager>
+        <div>child</div>
+      </AuthRouteThemeManager>
+    );
+
+    expect(document.body).not.toHaveClass('sable-a11y-touch-spacing-disabled');
+  });
+
+  it('keeps the touch-spacing-disabled class after an unrelated settings-driven re-render', () => {
+    // Regression guard for the exact bug #521's accessibility-highlights
+    // toggle needed three commits to fix: this effect resets
+    // `document.body.className` outright on every theme/saturation/
+    // underline-link/reduced-motion/highlights/touch-spacing change. A class
+    // toggled by a component OUTSIDE this effect would get silently wiped on
+    // the next unrelated change. Touch Spacing's toggle lives inside this
+    // same effect (not a standalone component/effect), so it must survive a
+    // re-render triggered by a different setting in the dependency array.
+    settingsInitialized = true;
+    settings.showTouchSpacing = false;
+
+    const { rerender } = render(
+      <AuthRouteThemeManager>
+        <div>child</div>
+      </AuthRouteThemeManager>
+    );
+
+    expect(document.body).toHaveClass('sable-a11y-touch-spacing-disabled');
+
+    settings.saturationLevel = 50;
+    rerender(
+      <AuthRouteThemeManager>
+        <div>child</div>
+      </AuthRouteThemeManager>
+    );
+
+    expect(document.body).toHaveClass('sable-a11y-touch-spacing-disabled');
+  });
+
+  it('applies the highlights-disabled class when Focus Highlights is off', () => {
+    settingsInitialized = true;
+    settings.showAccessibilityHighlights = false;
+
+    render(
+      <AuthRouteThemeManager>
+        <div>child</div>
+      </AuthRouteThemeManager>
+    );
+
+    expect(document.body).toHaveClass('sable-a11y-highlights-disabled');
   });
 });

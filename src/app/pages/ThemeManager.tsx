@@ -131,6 +131,7 @@ export function AuthRouteThemeManager({ children }: { children: ReactNode }) {
   const [underlineLinks] = useSetting(settingsAtom, 'underlineLinks');
   const [reducedMotion] = useSetting(settingsAtom, 'reducedMotion');
   const [showAccessibilityHighlights] = useSetting(settingsAtom, 'showAccessibilityHighlights');
+  const [showTouchSpacing] = useSetting(settingsAtom, 'showTouchSpacing');
   const [enabledTweakUrls] = useSetting(settingsAtom, 'themeRemoteEnabledTweakFullUrls');
   const [systemTheme] = useSetting(settingsAtom, 'useSystemTheme');
   const [lightRemoteUrl] = useSetting(settingsAtom, 'themeRemoteLightFullUrl');
@@ -172,6 +173,12 @@ export function AuthRouteThemeManager({ children }: { children: ReactNode }) {
     // get wiped here and never reapplied.
     document.body.classList.toggle('sable-a11y-highlights-disabled', !showAccessibilityHighlights);
 
+    // Same reasoning and shape as Focus Highlights above: the Touch Spacing
+    // CSS (SettingTile.css.ts) defaults to ON via
+    // `body:not(.sable-a11y-touch-spacing-disabled)`, so this toggle has to
+    // live in this same effect too, not a standalone component/effect.
+    document.body.classList.toggle('sable-a11y-touch-spacing-disabled', !showTouchSpacing);
+
     if (saturation === 0) {
       document.body.style.filter = 'grayscale(1)';
     } else if (saturation && saturation < 100) {
@@ -179,7 +186,14 @@ export function AuthRouteThemeManager({ children }: { children: ReactNode }) {
     } else {
       document.body.style.filter = '';
     }
-  }, [activeTheme, saturation, underlineLinks, reducedMotion, showAccessibilityHighlights]);
+  }, [
+    activeTheme,
+    saturation,
+    underlineLinks,
+    reducedMotion,
+    showAccessibilityHighlights,
+    showTouchSpacing,
+  ]);
 
   useLayoutEffect(() => {
     if (!settingsInitialized) return;

@@ -811,6 +811,7 @@ function Accessibility() {
     settingsAtom,
     'showAccessibilityHighlights'
   );
+  const [showTouchSpacing, setShowTouchSpacing] = useSetting(settingsAtom, 'showTouchSpacing');
 
   return (
     <Box direction="Column" gap="100">
@@ -821,6 +822,14 @@ function Accessibility() {
           focusId="focus-highlights"
           description="Show visible focus rings around interactive elements when navigating with a keyboard."
           after={<Switch variant="Primary" value={showHighlights} onChange={setShowHighlights} />}
+        />
+        <SettingTile
+          title="Touch Spacing"
+          focusId="touch-spacing"
+          description="Use larger touch targets on buttons and controls. Turn off for a more compact layout."
+          after={
+            <Switch variant="Primary" value={showTouchSpacing} onChange={setShowTouchSpacing} />
+          }
         />
       </SequenceCard>
     </Box>

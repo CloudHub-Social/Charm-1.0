@@ -35,14 +35,22 @@ export const settingTileSettingLinkAction = style([
     // guarantee a tap target that meets the WCAG 2.1 AA touch-target
     // recommendation (44x44 CSS px) via minWidth/minHeight plus centering
     // the smaller icon within that box, rather than scaling the icon itself up.
-    minWidth: 44,
-    minHeight: 44,
+    // Scoped under `body:not(.sable-a11y-touch-spacing-disabled)` so it's ON
+    // by default and only suppressed once the user turns off the Touch
+    // Spacing setting (Settings > General > Accessibility), matching the
+    // Focus Highlights toggle's opt-out shape in General.css.ts.
     width: 'auto',
     height: 'auto',
     padding: 0,
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
+    selectors: {
+      'body:not(.sable-a11y-touch-spacing-disabled) &': {
+        minWidth: 44,
+        minHeight: 44,
+      },
+    },
   },
 ]);
 

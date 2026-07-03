@@ -14,7 +14,7 @@
  */
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { Provider as JotaiProvider } from 'jotai';
+import { createStore, Provider as JotaiProvider } from 'jotai';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createClient, MatrixEvent, Room } from '$types/matrix-sdk';
 import { MatrixClientProvider } from '$hooks/useMatrixClient';
@@ -23,6 +23,7 @@ import { ClientConfigProvider } from '$hooks/useClientConfig';
 import { ScreenSize, ScreenSizeProvider } from '$hooks/useScreenSize';
 import { SpecVersionsProvider } from '$hooks/useSpecVersions';
 import { ThemeContextProvider, ThemeKind } from '$hooks/useTheme';
+import { getSettings, settingsAtom, type Settings } from '$state/settings';
 import { AutoDiscoveryInfoProvider } from '$hooks/useAutoDiscoveryInfo';
 import { makeCallPreferencesAtom } from '$state/callPreferences';
 import { CallPreferencesProvider } from '$state/hooks/callPreferences';
@@ -116,8 +117,19 @@ function buildRoomFixture() {
   return { mx, room };
 }
 
-function renderRoomViewHeader(screenSize: ScreenSize = ScreenSize.Desktop) {
+/** Build a fresh jotai store pre-loaded with the given settings overrides. */
+function makeSettingsStore(overrides?: Partial<Settings>) {
+  const store = createStore();
+  store.set(settingsAtom, { ...getSettings(), ...overrides });
+  return store;
+}
+
+function renderRoomViewHeader(
+  screenSize: ScreenSize = ScreenSize.Desktop,
+  settingsOverrides?: Partial<Settings>
+) {
   const { mx, room } = buildRoomFixture();
+  const store = makeSettingsStore(settingsOverrides);
   // RoomViewHeader reads call preferences and call-start capabilities
   // directly (useCallPreferences, useCallStartCapabilities -> useLivekitSupport
   // -> useAutoDiscoveryInfo), not just through the mocked-out RoomCallButton —
@@ -126,8 +138,8 @@ function renderRoomViewHeader(screenSize: ScreenSize = ScreenSize.Desktop) {
   const callPreferencesAtom = makeCallPreferencesAtom(USER_ID);
   const autoDiscoveryInfo: AutoDiscoveryInfo = { 'm.homeserver': { base_url: mx.baseUrl } };
 
-  render(
-    <JotaiProvider>
+  const result = render(
+    <JotaiProvider store={store}>
       <MemoryRouter initialEntries={[`/home/room/${encodeURIComponent(ROOM_ID)}`]}>
         <SpecVersionsProvider value={{ versions: ['v1.11'] }}>
           <ClientConfigProvider value={{}}>
@@ -154,7 +166,7 @@ function renderRoomViewHeader(screenSize: ScreenSize = ScreenSize.Desktop) {
     </JotaiProvider>
   );
 
-  return { mx, room };
+  return { mx, room, unmount: result.unmount };
 }
 
 describe('RoomViewHeader accessible button labels', () => {
@@ -194,5 +206,48 @@ describe('RoomViewHeader accessible button labels', () => {
   it('exposes the more-options button with an accessible role and name', () => {
     renderRoomViewHeader();
     expect(screen.getByRole('button', { name: 'More Options' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Regression coverage for issue #530 (Touch Spacing toggle). jsdom doesn't
+ * perform layout, so `getBoundingClientRect()` always returns zeroes here
+ * (see the ResizeObserver note above) — pixel dimensions can't be asserted
+ * directly in this environment (confirmed live instead, at 440x812, during
+ * the debug/verification pass for this feature). What CAN be asserted: that
+ * toggling `showTouchSpacing` changes which folds IconButton `size` recipe
+ * class a button receives, without hardcoding the actual (folds-version-
+ * specific) class name/hash — asserting only that the two renders' class
+ * lists differ is robust to a folds version bump changing the hash.
+ */
+describe('RoomViewHeader Touch Spacing sizing', () => {
+  it('applies a different IconButton size class to the back button when Touch Spacing is off', () => {
+    const on = renderRoomViewHeader(ScreenSize.Mobile, { showTouchSpacing: true });
+    const onClassName = screen.getByRole('button', { name: 'Back' }).className;
+    on.unmount();
+
+    renderRoomViewHeader(ScreenSize.Mobile, { showTouchSpacing: false });
+    const offClassName = screen.getByRole('button', { name: 'Back' }).className;
+
+    expect(offClassName).not.toBe(onClassName);
+  });
+
+  it('applies a different IconButton size class to the pinned messages button when Touch Spacing is off', () => {
+    const on = renderRoomViewHeader(ScreenSize.Desktop, { showTouchSpacing: true });
+    const onClassName = screen.getByRole('button', { name: 'Pinned Messages' }).className;
+    on.unmount();
+
+    renderRoomViewHeader(ScreenSize.Desktop, { showTouchSpacing: false });
+    const offClassName = screen.getByRole('button', { name: 'Pinned Messages' }).className;
+
+    expect(offClassName).not.toBe(onClassName);
+  });
+
+  it('keeps the back button accessible by role and name regardless of Touch Spacing', () => {
+    // The a11y-label fix from #513 and the Touch Spacing toggle from #530 are
+    // independent — turning touch spacing off must not regress the button's
+    // accessible name.
+    renderRoomViewHeader(ScreenSize.Mobile, { showTouchSpacing: false });
+    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
   });
 });

@@ -5,6 +5,8 @@ import type { Room } from '$types/matrix-sdk';
 import { useCallStart, useCallJoined } from '$hooks/useCallEmbed';
 import type { CallPreferences } from '$state/callPreferences';
 import { callEmbedAtom } from '$state/callEmbed';
+import { useSetting } from '$state/hooks/settings';
+import { settingsAtom } from '$state/settings';
 
 interface RoomCallButtonProps {
   room: Room;
@@ -24,6 +26,7 @@ export function RoomCallButton({
   const startCall = useCallStart(direct);
   const callEmbed = useAtomValue(callEmbedAtom);
   const joined = useCallJoined(callEmbed);
+  const [showTouchSpacing] = useSetting(settingsAtom, 'showTouchSpacing');
 
   const isJoinedInThisRoom = joined && callEmbed?.roomId === room.roomId;
   const callStartingInThisRoom = !!callEmbed && callEmbed.roomId === room.roomId && !joined;
@@ -65,7 +68,7 @@ export function RoomCallButton({
       {(triggerRef) => (
         <IconButton
           fill="None"
-          size="500"
+          size={showTouchSpacing ? '500' : '300'}
           ref={triggerRef}
           onClick={startSelectedCall}
           disabled={startDisabled}

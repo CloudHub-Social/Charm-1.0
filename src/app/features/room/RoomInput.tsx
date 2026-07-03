@@ -361,6 +361,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [editorOldAddFile] = useSetting(settingsAtom, 'editorOldAddFile');
     const [structuredMarkdownAssist] = useSetting(settingsAtom, 'structuredMarkdownAssist');
     const [emojiAutoExpand] = useSetting(settingsAtom, 'emojiAutoExpand');
+    const [showTouchSpacing] = useSetting(settingsAtom, 'showTouchSpacing');
+    const touchTargetSize = showTouchSpacing ? '500' : '300';
 
     const [hideActivity] = useSetting(settingsAtom, 'hideActivity');
     const [mentionInReplies] = useSetting(settingsAtom, 'mentionInReplies');
@@ -2383,7 +2385,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                         setSendError(undefined);
                       }}
                       variant="SurfaceVariant"
-                      size="500"
+                      size={touchTargetSize}
                       radii="300"
                       title="Cancel scheduled send"
                       aria-label="Cancel scheduled send"
@@ -2416,12 +2418,12 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                         resetEditorHistory(editor);
                       }}
                       variant="SurfaceVariant"
-                      size="500"
+                      size={touchTargetSize}
                       radii="300"
                       aria-label="Cancel edit"
                       title="Cancel edit"
                     >
-                      <Icon src={Icons.Cross} size="200" />
+                      <Icon src={Icons.Cross} size={showTouchSpacing ? '200' : '50'} />
                     </IconButton>
                     <Box
                       direction="Row"
@@ -2479,7 +2481,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                         }
                       }}
                       variant="SurfaceVariant"
-                      size="500"
+                      size={touchTargetSize}
                       radii="300"
                       aria-label="Cancel reply"
                       title="Cancel reply"
@@ -2507,7 +2509,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       </Box>
                       <IconButton
                         variant="SurfaceVariant"
-                        size="500"
+                        size={touchTargetSize}
                         radii="300"
                         title={
                           silentReply ? 'Unmute reply notifications' : 'Mute reply notifications'
@@ -2594,7 +2596,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   void openAddMenu(evt.currentTarget);
                 }}
                 variant="SurfaceVariant"
-                size="500"
+                size={touchTargetSize}
                 radii="300"
                 title={editorOldAddFile ? 'Upload File' : 'Add'}
                 aria-label={editorOldAddFile ? 'Upload and attach a File' : 'Add new Item'}
@@ -2609,7 +2611,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               <IconButton
                 ref={micBtnRef}
                 variant={showAudioRecorder ? 'Critical' : 'SurfaceVariant'}
-                size="500"
+                size={touchTargetSize}
                 radii="300"
                 title={showAudioRecorder ? 'Stop recording' : 'Record audio message'}
                 aria-label={showAudioRecorder ? 'Stop recording' : 'Record audio message'}
@@ -2666,7 +2668,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 )}
               </IconButton>
 
-              <MarkdownFormattingToolbarToggle variant="SurfaceVariant" />
+              <MarkdownFormattingToolbarToggle variant="SurfaceVariant" size={touchTargetSize} />
               {isMobileLayout &&
                 emojiBoardAnchorRect &&
                 createPortal(
@@ -2753,7 +2755,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     onPointerDownCapture={prepareComposerOverlayTrigger}
                     onClick={() => void openEmojiBoard(EmojiBoardTab.Sticker)}
                     variant="SurfaceVariant"
-                    size="500"
+                    size={touchTargetSize}
                     radii="300"
                     title="open sticker picker"
                     aria-label="Open sticker picker"
@@ -2769,7 +2771,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     onPointerDownCapture={prepareComposerOverlayTrigger}
                     onClick={() => void openEmojiBoard(EmojiBoardTab.Gif)}
                     variant="SurfaceVariant"
-                    size="500"
+                    size={touchTargetSize}
                     radii="300"
                     title="open GIF picker"
                     aria-label="Open GIF picker"
@@ -2787,7 +2789,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   onPointerDownCapture={prepareComposerOverlayTrigger}
                   onClick={() => void openEmojiBoard(EmojiBoardTab.Emoji)}
                   variant="SurfaceVariant"
-                  size="500"
+                  size={touchTargetSize}
                   radii="300"
                   title="open emoji picker"
                   aria-label="Open emoji picker"
@@ -2959,7 +2961,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     }
                   }}
                   variant={scheduledTime ? 'Primary' : 'SurfaceVariant'}
-                  size="500"
+                  size={touchTargetSize}
                   radii="0"
                   className={
                     delayedEventsSupported && !isMobileLayout ? css.SplitSendButton : undefined
@@ -2977,7 +2979,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     aria-haspopup="menu"
                     aria-expanded={!!scheduleMenuAnchor}
                     variant={scheduledTime ? 'Primary' : 'SurfaceVariant'}
-                    size="500"
+                    size={touchTargetSize}
                     radii="0"
                     className={css.SplitChevronButton}
                   >
