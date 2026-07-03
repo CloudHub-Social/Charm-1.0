@@ -171,6 +171,7 @@ import {
   composerIcon,
   dropzoneIcon,
   File as FileIcon,
+  Image as ImagePickerIcon,
   Keyboard,
   ListBullets,
   MapPinPlusIcon,
@@ -2639,8 +2640,19 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     <Menu>
                       <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
                         {/* Ordered media/upload-first, most-specialized-last to mirror
-                            the Discord reference's attachment menu shape (photo/file
-                            actions lead, poll trails). See issue #542 P1. */}
+                            the Discord reference's attachment menu shape (photo picker
+                            leads, poll trails). See issue #542 P1. */}
+                        <MenuItem
+                          size="300"
+                          radii="300"
+                          onClick={() => {
+                            pickFile('image/*');
+                            setAddMenuAnchor(undefined);
+                          }}
+                          before={menuIcon(ImagePickerIcon)}
+                        >
+                          <Text size="B300">Add Image</Text>
+                        </MenuItem>
                         <MenuItem
                           size="300"
                           radii="300"

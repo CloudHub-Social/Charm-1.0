@@ -57,8 +57,9 @@ vi.mock('$hooks/useTypingStatusUpdater', () => ({
   useTypingStatusUpdater: () => vi.fn<() => void>(),
 }));
 
+const { mockPickFile } = vi.hoisted(() => ({ mockPickFile: vi.fn<(accept: string) => void>() }));
 vi.mock('$hooks/useFilePicker', () => ({
-  useFilePicker: () => vi.fn<() => void>(),
+  useFilePicker: () => mockPickFile,
 }));
 
 vi.mock('$hooks/useFilePasteHandler', () => ({
@@ -362,20 +363,34 @@ describe('RoomInput composer typing state (#542 P1)', () => {
 });
 
 describe('RoomInput attachment menu regrouping (#542 P1)', () => {
-  it('orders File and Location ahead of Poll to match the Discord-reference grouping', async () => {
+  it('orders Image, File and Location ahead of Poll to match the Discord-reference grouping', async () => {
     renderRoomInput();
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Add new Item' }));
 
-    const fileItem = await screen.findByText('Add File');
+    const imageItem = await screen.findByText('Add Image');
+    const fileItem = screen.getByText('Add File');
     const locationItem = screen.getByText('Add Location');
     const pollItem = screen.getByText('Create Poll');
 
+    expect(
+      imageItem.compareDocumentPosition(fileItem) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
     expect(
       fileItem.compareDocumentPosition(locationItem) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(
       locationItem.compareDocumentPosition(pollItem) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
+  });
+
+  it('the Add Image item filters the native file picker to images only', async () => {
+    renderRoomInput();
+    mockPickFile.mockClear();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Add new Item' }));
+    await user.click(await screen.findByText('Add Image'));
+
+    expect(mockPickFile).toHaveBeenCalledWith('image/*');
   });
 });
