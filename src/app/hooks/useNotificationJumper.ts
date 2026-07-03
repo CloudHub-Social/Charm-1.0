@@ -179,6 +179,7 @@ export function NotificationJumper() {
       ) {
         setIncomingCall(incomingCall);
       }
+      return;
     }
 
     const isSyncing = mx.getSyncState() === SyncState.Syncing;
