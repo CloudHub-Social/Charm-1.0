@@ -453,16 +453,23 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const micBtnRef = useRef<HTMLButtonElement>(null);
     const emojiPickerRef = useRef<HTMLDivElement>(null);
     const prevEmojiBoardTabRef = useRef<EmojiBoardTab | undefined>(emojiBoardTab);
-    // Bumped on every genuine closed→open transition. Lets a pending close
-    // animation (below) tell whether it's still closing the same "session"
-    // it started against, or whether the sheet was reopened while it was
-    // playing -- in which case it must not go on to hide the reopened sheet.
+    // Bumped whenever the sheet genuinely opens from closed, or is kept open
+    // (tab switch, reopen) while a close animation is still in flight. Lets
+    // a pending close's `.finally()` (below) tell whether it's still closing
+    // the same "session" it started against, or whether the sheet was
+    // reopened/re-engaged while it was playing -- in which case it must not
+    // go on to hide the sheet the user is now interacting with.
     const emojiBoardOpenGenerationRef = useRef(0);
     // The generation a close animation is currently in flight for, or null.
     // Scoped to the generation (rather than a plain boolean) so a dismiss
     // that arrives after a reopen isn't dropped as "already closing" -- the
     // in-flight animation belongs to a stale generation and no longer counts.
     const closingGenerationRef = useRef<number | null>(null);
+    const closeAnimationRef = useRef<Animation | null>(null);
+    // Drives pointer-events on the mobile sheet portal (below) so a rapid
+    // double-tap during the ~280ms close fade can't land a second selection
+    // on content that's already being dismissed.
+    const [isClosingMobileEmojiBoard, setIsClosingMobileEmojiBoard] = useState(false);
 
     // Slide-in animation for the mobile emoji/GIF/sticker picker — same motion
     // as the long-press context menu. Only plays when the picker opens
@@ -472,6 +479,21 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     useLayoutEffect(() => {
       const wasOpen = prevEmojiBoardTabRef.current !== undefined;
       prevEmojiBoardTabRef.current = emojiBoardTab;
+
+      if (emojiBoardTab !== undefined && closingGenerationRef.current !== null) {
+        // The sheet is being kept open/re-engaged (reopened, or switched tabs
+        // via the keyboard shortcut or the picker's own tab bar) while a
+        // previous close animation is still playing. `emojiBoardTab` never
+        // passed through `undefined` here, so the `!wasOpen` check below
+        // wouldn't catch this -- cancel the stale close immediately instead
+        // of leaving its fill-forwards effect (opacity/translateY) applied
+        // until that animation finishes on its own.
+        closeAnimationRef.current?.cancel();
+        closeAnimationRef.current = null;
+        closingGenerationRef.current = null;
+        setIsClosingMobileEmojiBoard(false);
+        emojiBoardOpenGenerationRef.current += 1;
+      }
       if (emojiBoardTab !== undefined && !wasOpen) {
         emojiBoardOpenGenerationRef.current += 1;
       }
@@ -508,21 +530,34 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       }
 
       closingGenerationRef.current = generationAtClose;
+      setIsClosingMobileEmojiBoard(true);
       const xCenter = isPhoneLayoutDevice() ? ' translateX(-50%)' : '';
       const anim = el.animate(getMobileSheetCloseKeyframes(xCenter), {
         duration: MOBILE_SHEET_ANIMATION_DURATION_MS,
         easing: MOBILE_SHEET_ANIMATION_EASING,
         fill: 'forwards',
       });
+      closeAnimationRef.current = anim;
       anim.finished
         .catch(() => undefined)
         .finally(() => {
+          // Always clear the filled effect once the animation is done playing
+          // -- "fill: forwards" otherwise leaves its final opacity/transform
+          // applied indefinitely, which could leave a later reduced-motion
+          // reopen looking invisible since nothing would create a new
+          // animation to override it.
+          anim.cancel();
+          if (closeAnimationRef.current === anim) {
+            closeAnimationRef.current = null;
+          }
           if (closingGenerationRef.current === generationAtClose) {
             closingGenerationRef.current = null;
           }
-          // If the sheet was reopened while this animation was playing, that
-          // reopen bumped the generation counter -- don't let this stale
-          // close request hide the sheet the user just reopened.
+          setIsClosingMobileEmojiBoard(false);
+          // If the sheet was reopened (or kept open via a tab switch) while
+          // this animation was playing, that bumped the generation counter --
+          // don't let this stale close request hide the sheet the user just
+          // interacted with.
           if (emojiBoardOpenGenerationRef.current !== generationAtClose) return;
           closeEmojiBoard();
         });
@@ -2753,6 +2788,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                               : getEmojiBoardWidth(window.innerWidth),
                           }),
                           display: emojiBoardTab !== undefined ? undefined : 'none',
+                          // Blocks a rapid double-tap during the close fade
+                          // from landing a second emoji/sticker/GIF selection
+                          // on content that's already being dismissed.
+                          pointerEvents: isClosingMobileEmojiBoard ? 'none' : undefined,
                         }}
                       >
                         <EmojiBoard
