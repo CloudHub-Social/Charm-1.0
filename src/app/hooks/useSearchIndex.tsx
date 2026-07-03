@@ -336,6 +336,26 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
   // can be replayed once the respawned worker reaches READY instead of being
   // silently dropped by postToWorker.
   const pendingLiveEventsRef = useRef<IndexableEvent[]>([]);
+  // Mirrors isReady but as a ref so indexEvent (a stable callback outside the
+  // lifecycle effect) can check it synchronously: the worker drops
+  // INDEX_EVENTS until INIT completes, so live events must queue until READY
+  // — not just until workerRef.current is non-null (it's set as soon as the
+  // replacement worker is constructed, well before it can accept messages).
+  const workerReadyRef = useRef(false);
+  // Bumped once per worker-lifecycle effect run (every worker instance, even
+  // failed ones). backfillRoom captures this at the start of each call and
+  // re-checks it after its async gap — if it's moved on, a restart happened
+  // mid-flight and this continuation is stale, even if the *new* worker has
+  // already re-added the same room to backfillingRoomsRef (which would
+  // otherwise make a presence-only staleness check pass incorrectly).
+  const workerGenerationRef = useRef(0);
+  // Consecutive auto-restart attempts since the last successful READY.
+  // Deliberately a ref, not part of workerRestartCount's state — resetting it
+  // on READY must not re-trigger the lifecycle effect (workerRestartCount
+  // stays monotonic; it's only the *trigger*, not the thing MAX_WORKER_AUTO_RESTARTS
+  // caps). Without this, 3 restarts over a long session permanently exhausts
+  // auto-recovery even if each one individually succeeded.
+  const consecutiveFailuresRef = useRef(0);
 
   const workerRef = useRef<Worker | null>(null);
   const pendingQueriesRef = useRef<Map<string, PendingQuery>>(new Map());
@@ -372,12 +392,14 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
         try {
           const ev = toIndexableEvent(mEvent, room.roomId);
           if (!ev) return;
-          if (workerRef.current) {
+          if (workerReadyRef.current) {
             postToWorker({ type: 'INDEX_EVENTS', events: [ev] });
           } else if (pendingLiveEventsRef.current.length < MAX_QUEUED_LIVE_EVENTS) {
-            // Worker was killed and a respawn is pending — postToWorker would
-            // silently no-op here. Buffer instead so this event isn't lost
-            // once the restarted worker resumes from persisted backfill state.
+            // Worker is down, or up but hasn't finished INIT yet (it drops
+            // INDEX_EVENTS until then) — postToWorker would either no-op or
+            // be silently ignored worker-side. Buffer instead so this event
+            // isn't lost once the (respawned) worker resumes from persisted
+            // backfill state.
             pendingLiveEventsRef.current.push(ev);
           }
         } catch (e) {
@@ -413,6 +435,10 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
   const backfillRoom = useCallback(
     async (room: Room, state: BackfillState): Promise<void> => {
       if (state.done) return;
+
+      // Snapshot which worker generation this call belongs to. Checked again
+      // after the async pagination gap below.
+      const myGeneration = workerGenerationRef.current;
 
       if (!canRunMobileBackfill()) {
         backfillingRoomsRef.current.delete(room.roomId);
@@ -519,11 +545,12 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
 
       // The worker may have died and been reset while this page was in
       // flight (a bare async call — cancelIdlesRef only stops idle callbacks
-      // that hadn't started yet). resetRuntimeState() clears this room from
-      // backfillingRoomsRef on failure; if it's gone, the restarted worker
-      // has already resumed this room from persisted state, so posting this
-      // stale page would duplicate work or clobber the fresh token/count.
-      if (!backfillingRoomsRef.current.has(room.roomId)) {
+      // that hadn't started yet). A generation check catches this even when
+      // the *new* worker has already re-scheduled backfill for this same
+      // room — a plain backfillingRoomsRef.has(room.roomId) check would pass
+      // in that case (the new call re-added it) and let this stale
+      // continuation post over the new worker's freshly-resumed state.
+      if (workerGenerationRef.current !== myGeneration) {
         pageSpan.setAttribute('backfill.stale_after_restart', true);
         pageSpan.end();
         roomSpan.setAttribute('backfill.stopped_reason', 'worker_restarted');
@@ -848,6 +875,17 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
   // ── Worker lifecycle ───────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Every effect run is a new worker generation, even on early return —
+    // this invalidates any in-flight backfillRoom call from a previous
+    // generation (e.g. one that was mid-page when idbSearchIndex got
+    // disabled) so it can't post stale state once this run completes.
+    workerGenerationRef.current += 1;
+    workerReadyRef.current = false;
+    // Drop anything buffered while the previous worker was down — carrying
+    // it across an idbSearchIndex disable/re-enable would replay events the
+    // new worker's fresh backfill will already pick up from persisted state.
+    pendingLiveEventsRef.current = [];
+
     if (!idbSearchIndex) {
       setIsReady(false);
       return () => {};
@@ -955,6 +993,7 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
       clearTimeout(initTimeout);
       setInitError(errorMsg);
       setIsReady(false);
+      workerReadyRef.current = false;
       setIsBackfilling(false);
       resetRuntimeState(errorMsg, options);
 
@@ -1037,10 +1076,11 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
         !isMimeError &&
         hasReachedReady &&
         !restartScheduled &&
-        workerRestartCount < MAX_WORKER_AUTO_RESTARTS
+        consecutiveFailuresRef.current < MAX_WORKER_AUTO_RESTARTS
       ) {
         restartScheduled = true;
-        const attempt = workerRestartCount + 1;
+        const attempt = consecutiveFailuresRef.current + 1;
+        consecutiveFailuresRef.current = attempt;
         Sentry.addBreadcrumb({
           category: 'search.index',
           message: `Scheduling search worker auto-restart (attempt ${attempt}/${MAX_WORKER_AUTO_RESTARTS})`,
@@ -1048,6 +1088,11 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
           data: { restartCount: attempt },
         });
         // Brief 2 s delay so iOS memory pressure can subside before respawning.
+        // setWorkerRestartCount is purely the trigger that re-runs this effect
+        // to spawn a fresh worker — the MAX_WORKER_AUTO_RESTARTS cap itself is
+        // tracked by consecutiveFailuresRef, which resets on a successful
+        // READY (see wrappedHandler below) so long sessions with sporadic,
+        // individually-recovered kills don't permanently exhaust it.
         restartTimerRef.current = setTimeout(() => {
           restartTimerRef.current = null;
           setWorkerRestartCount((c) => c + 1);
@@ -1074,6 +1119,10 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
         if (event.data.type === 'READY') {
           setInitError(null); // Clear any previous error only on successful READY
           hasReachedReady = true;
+          workerReadyRef.current = true;
+          // A successful respawn — don't let its restart count carry over and
+          // eat into the budget for a future, unrelated termination.
+          consecutiveFailuresRef.current = 0;
         }
       }
       originalHandler(event);
@@ -1162,11 +1211,13 @@ export function SearchIndexProvider({ children }: { children: ReactNode }) {
       detachForegroundListeners();
       if (workerRef.current !== worker) {
         setIsReady(false);
+        workerReadyRef.current = false;
         setIsBackfilling(false);
         return;
       }
 
       setIsReady(false);
+      workerReadyRef.current = false;
       setIsBackfilling(false);
       setInitError(null);
       resetRuntimeState('Search index unmounted');

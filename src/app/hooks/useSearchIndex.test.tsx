@@ -278,40 +278,36 @@ describe('SearchIndexProvider', () => {
       expect(mocks.workerInstances).toHaveLength(2);
     });
 
-    it('stops auto-restarting once MAX_WORKER_AUTO_RESTARTS is reached', async () => {
+    it('does not exhaust the restart budget across separate, individually-recovered kills', async () => {
       render(
         <SearchIndexProvider>
           <SearchIndexConsumer onContext={() => undefined} />
         </SearchIndexProvider>
       );
 
+      // Each cycle reaches READY (which resets the consecutive-failure
+      // counter) before its own kill, modeling a long session with sporadic,
+      // unrelated memory-pressure terminations rather than a crash loop.
+      // This must survive more cycles than MAX_WORKER_AUTO_RESTARTS — a
+      // fixed lifetime cap here (the pre-fix bug) would incorrectly stop
+      // recovering after the 3rd.
+      const cycles = MAX_WORKER_AUTO_RESTARTS + 2;
       // Each iteration depends on the worker respawned by the previous one,
       // so these awaits must run in sequence rather than in parallel.
-      for (let attempt = 1; attempt <= MAX_WORKER_AUTO_RESTARTS; attempt++) {
+      for (let cycle = 1; cycle <= cycles; cycle++) {
         const worker = mocks.workerInstances.at(-1);
         // oxlint-disable-next-line no-await-in-loop -- sequential by design, see comment above
         await bringToReady(worker);
         // oxlint-disable-next-line no-await-in-loop -- sequential by design, see comment above
         await act(async () => {
-          worker?.emitError({ message: `boom ${attempt}` });
+          worker?.emitError({ message: `kill ${cycle}` });
         });
         // oxlint-disable-next-line no-await-in-loop -- sequential by design, see comment above
         await act(async () => {
           await vi.advanceTimersByTimeAsync(2_000);
         });
-        expect(mocks.workerInstances).toHaveLength(attempt + 1);
+        expect(mocks.workerInstances).toHaveLength(cycle + 1);
       }
-
-      // Cap reached — one more failure must not spawn another worker.
-      const finalWorker = mocks.workerInstances.at(-1);
-      await bringToReady(finalWorker);
-      await act(async () => {
-        finalWorker?.emitError({ message: 'boom final' });
-      });
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(2_000);
-      });
-      expect(mocks.workerInstances).toHaveLength(MAX_WORKER_AUTO_RESTARTS + 1);
     });
 
     it('does not auto-restart on a MIME/stale-cache error', async () => {
