@@ -1,5 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { getMobileSheetHeights } from './mobileSheetHeights';
 import type { EmojiBoardTab } from './types';
 
@@ -28,7 +28,7 @@ export function useMobileSheetHeight(
   // frame. Depending on `active` instead means a fresh initial height is
   // computed the next time the sheet actually opens, and the dismiss path no
   // longer needs to touch the height at all.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isMobileSheet || !active) return undefined;
 
     const applyHeight = () => {

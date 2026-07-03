@@ -58,8 +58,11 @@ describe('mobile sheet animation keyframes', () => {
 });
 
 describe('prefersReducedMotion', () => {
+  const originalMatchMedia = window.matchMedia;
+
   afterEach(() => {
     document.body.classList.remove('reduced-motion');
+    window.matchMedia = originalMatchMedia;
   });
 
   it('is false when neither the OS nor the app setting request reduced motion', () => {
