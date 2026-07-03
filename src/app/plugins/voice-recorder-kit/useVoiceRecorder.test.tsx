@@ -248,4 +248,109 @@ describe('useVoiceRecorder', () => {
     // running AudioContext.
     expect(primedContext?.close).toHaveBeenCalledTimes(1);
   });
+
+  it('does not let a delayed resume() rejection from a superseded context discard a newer one', async () => {
+    // The module-level primed-context state isn't reset between tests, so a
+    // previous test can leave a context primed. Drain it via a full
+    // start/stop cycle so this test starts from a known (unprimed) baseline.
+    act(() => {
+      primeAudioContext();
+    });
+    const { result: warmup } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+    act(() => {
+      warmup.current.start();
+    });
+    await waitFor(() => {
+      expect(warmup.current.isRecording).toBe(true);
+    });
+    act(() => {
+      warmup.current.handleStop();
+    });
+    await waitFor(() => {
+      expect(warmup.current.isRecording).toBe(false);
+    });
+    createdAudioContexts = [];
+
+    // Make the first primed context's resume() controllable so we can reject
+    // it after it has already been consumed by an active recording.
+    let rejectFirstResume: ((reason?: unknown) => void) | undefined;
+    // Must be a regular function, not an arrow function, so it can be
+    // invoked with `new` — an arrow function throws when constructed, which
+    // primeAudioContext()'s try/catch would otherwise swallow silently.
+    globalThis.AudioContext = function AudioContextWithControllableResume() {
+      const context = createMockAudioContext();
+      context.resume = vi.fn<() => Promise<void>>(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectFirstResume = reject;
+          })
+      );
+      return context;
+    } as unknown as typeof AudioContext;
+
+    act(() => {
+      primeAudioContext();
+    });
+    const firstContext = createdAudioContexts[0];
+
+    // Restore normal (resolving) resume() behavior for subsequent contexts.
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext;
+
+    // The first primed context gets consumed by a recording that starts and
+    // fully finishes — matching the real UI, which never re-primes while a
+    // recording is already showing.
+    const { result } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+    act(() => {
+      result.current.start();
+    });
+    await waitFor(() => {
+      expect(result.current.isRecording).toBe(true);
+    });
+    expect(createdAudioContexts).toHaveLength(1);
+
+    act(() => {
+      result.current.handleStop();
+    });
+    await waitFor(() => {
+      expect(result.current.isRecording).toBe(false);
+    });
+    // handleStop() closes the (now-live) first context as part of normal
+    // recording teardown.
+    expect(firstContext?.close).toHaveBeenCalledTimes(1);
+
+    // A second, unrelated prime for the next recording attempt.
+    act(() => {
+      primeAudioContext();
+    });
+    const secondContext = createdAudioContexts[1];
+    expect(secondContext).not.toBe(firstContext);
+
+    // The first context's resume() finally rejects, long after that context
+    // was consumed, torn down, and superseded by the second primed context.
+    act(() => {
+      rejectFirstResume?.(new Error('resume failed'));
+    });
+    await waitFor(() => {
+      // Flushed microtasks; nothing to assert on directly, just letting the
+      // rejection handler run.
+      expect(true).toBe(true);
+    });
+
+    // The stale rejection handler must not touch the second (current)
+    // primed context or clear the shared primed-context reference out from
+    // under it.
+    expect(secondContext?.close).not.toHaveBeenCalled();
+
+    const { result: nextAttempt } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+    act(() => {
+      nextAttempt.current.start();
+    });
+    await waitFor(() => {
+      expect(nextAttempt.current.isRecording).toBe(true);
+    });
+
+    // setupAudioGraph() should still find the second context primed and
+    // reuse it rather than creating a third one.
+    expect(createdAudioContexts).toHaveLength(2);
+  });
 });

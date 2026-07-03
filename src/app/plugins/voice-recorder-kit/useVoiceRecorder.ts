@@ -48,16 +48,30 @@ function discardPrimedAudioContext(): void {
   }
 }
 
+// A resume() rejection callback closes over the specific context it was
+// registered for. If that context has since been superseded — consumed by
+// setupAudioGraph() or replaced by a later primeAudioContext() call — it's no
+// longer the shared primedAudioContext, so we leave it alone rather than
+// closing a context that may already be in active use elsewhere.
+function discardIfStillPrimed(context: AudioContext): void {
+  if (primedAudioContext !== context) return;
+  primedAudioContext = null;
+  if (context.state !== 'closed') {
+    context.close().catch(() => {});
+  }
+}
+
 export function primeAudioContext(): void {
   if (typeof window === 'undefined' || typeof AudioContext === 'undefined') return;
   try {
     if (primedAudioContext && primedAudioContext.state !== 'closed') {
-      primedAudioContext.resume().catch(discardPrimedAudioContext);
+      const existing = primedAudioContext;
+      existing.resume().catch(() => discardIfStillPrimed(existing));
       return;
     }
     const context = new AudioContext();
     primedAudioContext = context;
-    context.resume().catch(discardPrimedAudioContext);
+    context.resume().catch(() => discardIfStillPrimed(context));
   } catch {
     primedAudioContext = null;
   }
