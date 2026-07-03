@@ -14,7 +14,7 @@
  */
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { atom, createStore, Provider as JotaiProvider } from 'jotai';
+import { createStore, Provider as JotaiProvider } from 'jotai';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createClient, MatrixEvent, Room } from '$types/matrix-sdk';
 import { MatrixClientProvider } from '$hooks/useMatrixClient';
@@ -24,9 +24,9 @@ import { ScreenSize, ScreenSizeProvider } from '$hooks/useScreenSize';
 import { SpecVersionsProvider } from '$hooks/useSpecVersions';
 import { ThemeContextProvider, ThemeKind } from '$hooks/useTheme';
 import { getSettings, settingsAtom, type Settings } from '$state/settings';
-import { CallPreferencesProvider } from '$state/hooks/callPreferences';
-import type { CallPreferences, CallPreferencesAtom } from '$state/callPreferences';
 import { AutoDiscoveryInfoProvider } from '$hooks/useAutoDiscoveryInfo';
+import { makeCallPreferencesAtom } from '$state/callPreferences';
+import { CallPreferencesProvider } from '$state/hooks/callPreferences';
 import type { AutoDiscoveryInfo } from '$app/cs-api';
 import { RoomViewHeader } from './RoomViewHeader';
 
@@ -42,23 +42,6 @@ vi.mock('./RoomCallButton', () => ({
 
 const ROOM_ID = '!room:smoke.test';
 const USER_ID = '@smoke:smoke.test';
-
-// RoomViewHeader reads default call preferences directly (to pass down to
-// the mocked-out RoomCallButton), so useCallPreferences() needs a real
-// context value even though RoomCallButton itself is stubbed to `null`
-// above — the hook call happens in RoomViewHeader before that point.
-const defaultCallPreferences: CallPreferences = {
-  microphone: true,
-  video: false,
-  sound: true,
-};
-const callPreferencesAtom = atom(defaultCallPreferences) as CallPreferencesAtom;
-
-// RoomViewHeader's call-start capability check (useCallStartCapabilities ->
-// useLivekitSupport -> useAutoDiscoveryInfo) also needs a real context value.
-const autoDiscoveryInfo: AutoDiscoveryInfo = {
-  'm.homeserver': { base_url: 'https://smoke.test' },
-};
 
 /**
  * Builds a real matrix-js-sdk MatrixClient (in-memory MemoryStore, no
@@ -147,6 +130,13 @@ function renderRoomViewHeader(
 ) {
   const { mx, room } = buildRoomFixture();
   const store = makeSettingsStore(settingsOverrides);
+  // RoomViewHeader reads call preferences and call-start capabilities
+  // directly (useCallPreferences, useCallStartCapabilities -> useLivekitSupport
+  // -> useAutoDiscoveryInfo), not just through the mocked-out RoomCallButton —
+  // needs their own atom/context values, mirroring how ClientInitStorageAtom
+  // and AutoDiscovery.tsx wire them up for the real app.
+  const callPreferencesAtom = makeCallPreferencesAtom(USER_ID);
+  const autoDiscoveryInfo: AutoDiscoveryInfo = { 'm.homeserver': { base_url: mx.baseUrl } };
 
   const result = render(
     <JotaiProvider store={store}>
@@ -157,17 +147,17 @@ function renderRoomViewHeader(
               <ThemeContextProvider
                 value={{ id: 'sable-light', kind: ThemeKind.Light, classNames: [] }}
               >
-                <MatrixClientProvider value={mx}>
-                  <RoomProvider value={room}>
-                    <IsDirectRoomProvider value={false}>
-                      <CallPreferencesProvider value={callPreferencesAtom}>
-                        <AutoDiscoveryInfoProvider value={autoDiscoveryInfo}>
+                <AutoDiscoveryInfoProvider value={autoDiscoveryInfo}>
+                  <MatrixClientProvider value={mx}>
+                    <RoomProvider value={room}>
+                      <IsDirectRoomProvider value={false}>
+                        <CallPreferencesProvider value={callPreferencesAtom}>
                           <RoomViewHeader />
-                        </AutoDiscoveryInfoProvider>
-                      </CallPreferencesProvider>
-                    </IsDirectRoomProvider>
-                  </RoomProvider>
-                </MatrixClientProvider>
+                        </CallPreferencesProvider>
+                      </IsDirectRoomProvider>
+                    </RoomProvider>
+                  </MatrixClientProvider>
+                </AutoDiscoveryInfoProvider>
               </ThemeContextProvider>
             </ScreenSizeProvider>
           </ClientConfigProvider>
