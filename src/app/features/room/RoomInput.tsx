@@ -205,6 +205,7 @@ import type {
   AudioRecordingCompletePayload,
 } from './AudioMessageRecorder';
 import { AudioMessageRecorder } from './AudioMessageRecorder';
+import { bindMicHoldGesture } from './micHoldGesture';
 import { primeAudioContext } from '$plugins/voice-recorder-kit';
 import { PollCreator } from './PollCreator';
 import { sendImmediateMessage } from './sendImmediateMessage';
@@ -526,8 +527,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
 
     const [showAudioRecorder, setShowAudioRecorder] = useState(false);
     const audioRecorderRef = useRef<AudioMessageRecorderHandle>(null);
-    const micHoldStartRef = useRef(0);
-    const HOLD_THRESHOLD_MS = 400;
     const [autocompleteQuery, setAutocompleteQuery] =
       useState<AutocompleteQuery<AutocompletePrefix>>();
     const [isQuickTextReact, setQuickTextReact] = useState(false);
@@ -2633,28 +2632,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                   // await (e.g. inside the getUserMedia async path), causing the
                   // recorder to produce silence or nothing on the 2nd+ attempt.
                   primeAudioContext();
-                  micHoldStartRef.current = Date.now();
                   setShowAudioRecorder(true);
-
-                  function onUp() {
-                    cleanup();
-                    const held = Date.now() - micHoldStartRef.current;
-                    if (held >= HOLD_THRESHOLD_MS) {
-                      setTimeout(() => {
-                        audioRecorderRef.current?.stop();
-                      }, 50);
-                    } else {
-                      setTimeout(() => {
-                        audioRecorderRef.current?.cancel();
-                      }, 50);
-                    }
-                  }
-                  function cleanup() {
-                    window.removeEventListener('pointerup', onUp);
-                    window.removeEventListener('pointercancel', cleanup);
-                  }
-                  window.addEventListener('pointerup', onUp);
-                  window.addEventListener('pointercancel', cleanup);
+                  bindMicHoldGesture({ getRecorder: () => audioRecorderRef.current });
                 }}
               >
                 {showAudioRecorder ? (
