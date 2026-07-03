@@ -805,30 +805,6 @@ function SelectRightSwipeAction({ disabled }: Readonly<{ disabled?: boolean }>) 
   );
 }
 
-function Accessibility() {
-  const [showHighlights, setShowHighlights] = useSetting(settingsAtom, 'showAccessibilityHighlights');
-
-  return (
-    <Box direction="Column" gap="100">
-      <Text size="L400">Accessibility</Text>
-      <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
-        <SettingTile
-          title="Focus Highlights"
-          focusId="focus-highlights"
-          description="Show visible focus rings around interactive elements when navigating with a keyboard."
-          after={
-            <Switch
-              variant="Primary"
-              value={showHighlights}
-              onChange={setShowHighlights}
-            />
-          }
-        />
-      </SequenceCard>
-    </Box>
-  );
-}
-
 function Gestures({ isMobile }: Readonly<{ isMobile: boolean }>) {
   const [mobileGestures, setMobileGestures] = useSetting(settingsAtom, 'mobileGestures');
 
@@ -1746,7 +1722,6 @@ export function General({ requestBack, requestClose }: Readonly<GeneralProps>) {
           <PageContent>
             <Box direction="Column" gap="700">
               <DateAndTime />
-              <Accessibility />
               <Gestures isMobile={mobileOrTablet()} />
               <Editor isMobile={isPhone()} />
               <Messages />
