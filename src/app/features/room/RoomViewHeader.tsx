@@ -451,6 +451,8 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
 
   const [peopleDrawer, setPeopleDrawer] = useSetting(settingsAtom, 'isPeopleDrawer');
   const [widgetDrawer, setWidgetDrawer] = useSetting(settingsAtom, 'isWidgetDrawer');
+  const [showTouchSpacing] = useSetting(settingsAtom, 'showTouchSpacing');
+  const touchTargetSize = showTouchSpacing ? '500' : '300';
   const widgets = useRoomWidgets(room);
 
   const pinnedIds = useRoomPinnedEvents(room);
@@ -678,7 +680,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
               <Box shrink="No" alignItems="Center">
                 <IconButton
                   fill="None"
-                  size="500"
+                  size={touchTargetSize}
                   onClick={onBack}
                   style={{ position: 'relative' }}
                   aria-label={
@@ -774,7 +776,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                   {(triggerRef) => (
                     <IconButton
                       fill="None"
-                      size="500"
+                      size={touchTargetSize}
                       ref={triggerRef}
                       onClick={handleSearchClick}
                       aria-label={encryptedRoom ? 'Search (local cache)' : 'Search'}
@@ -796,7 +798,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                 {(triggerRef) => (
                   <IconButton
                     fill="None"
-                    size="500"
+                    size={touchTargetSize}
                     style={{ position: 'relative' }}
                     onClick={handleOpenPinMenu}
                     ref={triggerRef}
@@ -881,7 +883,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                 {(triggerRef) => (
                   <IconButton
                     fill="None"
-                    size="500"
+                    size={touchTargetSize}
                     ref={triggerRef}
                     onClick={() => {
                       // If a thread is open, close it and open thread browser
@@ -936,7 +938,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
               {(triggerRef) => (
                 <IconButton
                   fill="None"
-                  size="500"
+                  size={touchTargetSize}
                   ref={triggerRef}
                   onClick={() => setWidgetDrawer((d) => !d)}
                   style={{ position: 'relative' }}
@@ -987,7 +989,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
               {(triggerRef) => (
                 <IconButton
                   fill="None"
-                  size="500"
+                  size={touchTargetSize}
                   ref={triggerRef}
                   onClick={handleMemberToggle}
                   aria-label={callView ? 'Members' : peopleDrawer ? 'Hide Members' : 'Show Members'}
@@ -1011,7 +1013,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
               {(triggerRef) => (
                 <IconButton
                   fill="None"
-                  size="500"
+                  size={touchTargetSize}
                   ref={triggerRef}
                   onClick={() => {
                     setChat(!chat);
@@ -1037,7 +1039,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
             {(triggerRef) => (
               <IconButton
                 fill="None"
-                size="500"
+                size={touchTargetSize}
                 onClick={handleOpenMenu}
                 ref={triggerRef}
                 aria-haspopup="menu"

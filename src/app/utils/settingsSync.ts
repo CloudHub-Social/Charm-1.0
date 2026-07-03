@@ -20,6 +20,8 @@ export const NON_SYNCABLE_KEYS = new Set<keyof Settings>([
   'isPeopleDrawer',
   'isWidgetDrawer',
   'memberSortFilterIndex',
+  // Touch vs. mouse input preference — device-specific, not portable across devices
+  'showTouchSpacing',
   // Device-specific audio preferences
   'isNotificationSounds',
   // Call audio is device-local (speaker setup + custom files in IndexedDB)

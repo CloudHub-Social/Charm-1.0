@@ -4,9 +4,10 @@ import type * as JotaiModule from 'jotai';
 import type { Room } from '$types/matrix-sdk';
 import { RoomCallButton } from './RoomCallButton';
 
-const { startCallMock, useCallJoinedMock } = vi.hoisted(() => ({
+const { startCallMock, useCallJoinedMock, showTouchSpacingMock } = vi.hoisted(() => ({
   startCallMock: vi.fn<(...args: unknown[]) => void>(),
   useCallJoinedMock: vi.fn<() => boolean>(),
+  showTouchSpacingMock: vi.fn<() => boolean>(),
 }));
 
 vi.mock('$hooks/useCallEmbed', () => ({
@@ -22,12 +23,21 @@ vi.mock('jotai', async (importOriginal: () => Promise<typeof JotaiModule>) => {
   };
 });
 
+// RoomCallButton reads `showTouchSpacing` via useSetting, which is itself
+// built on useAtomValue — the blanket useAtomValue stub above would silently
+// resolve this to `undefined` (falsy = compact) for every test unless it's
+// mocked separately here with a value tests can control explicitly.
+vi.mock('$state/hooks/settings', () => ({
+  useSetting: () => [showTouchSpacingMock(), vi.fn<(value: boolean) => void>()],
+}));
+
 describe('RoomCallButton', () => {
   const room = { roomId: '!room:example.org' } as Room;
 
   beforeEach(() => {
     startCallMock.mockReset();
     useCallJoinedMock.mockReset().mockReturnValue(false);
+    showTouchSpacingMock.mockReset().mockReturnValue(true);
   });
 
   it('starts a voice call from the voice button', async () => {
@@ -84,5 +94,32 @@ describe('RoomCallButton', () => {
     );
 
     expect(screen.queryByRole('button', { name: /start video call/i })).toBeNull();
+  });
+
+  it('applies a different IconButton size class when Touch Spacing is off', () => {
+    showTouchSpacingMock.mockReturnValue(true);
+    const { unmount } = render(
+      <RoomCallButton
+        room={room}
+        direct
+        kind="voice"
+        defaultPreferences={{ microphone: true, video: true, sound: true }}
+      />
+    );
+    const onClassName = screen.getByRole('button', { name: /start voice call/i }).className;
+    unmount();
+
+    showTouchSpacingMock.mockReturnValue(false);
+    render(
+      <RoomCallButton
+        room={room}
+        direct
+        kind="voice"
+        defaultPreferences={{ microphone: true, video: true, sound: true }}
+      />
+    );
+    const offClassName = screen.getByRole('button', { name: /start voice call/i }).className;
+
+    expect(offClassName).not.toBe(onClassName);
   });
 });
