@@ -63,12 +63,20 @@ function discardIfStillPrimed(context: AudioContext): void {
 
 export function primeAudioContext(): void {
   if (typeof window === 'undefined' || typeof AudioContext === 'undefined') return;
+  // Always create a fresh context for this priming attempt rather than
+  // resuming whatever's already in the shared slot. Reusing one lets two
+  // concurrent attempts (e.g. the room composer and the thread drawer both
+  // priming close together) end up pointing at the very same AudioContext
+  // object, so whichever instance discards or consumes it first silently
+  // steals or kills the context the other is relying on. A fresh object per
+  // attempt is what makes primedContextAttemptRef (see useVoiceRecorder)
+  // able to tell "mine" from "someone else's".
+  if (primedAudioContext && primedAudioContext.state !== 'closed') {
+    const stale = primedAudioContext;
+    primedAudioContext = null;
+    stale.close().catch(() => {});
+  }
   try {
-    if (primedAudioContext && primedAudioContext.state !== 'closed') {
-      const existing = primedAudioContext;
-      existing.resume().catch(() => discardIfStillPrimed(existing));
-      return;
-    }
     const context = new AudioContext();
     primedAudioContext = context;
     context.resume().catch(() => discardIfStillPrimed(context));
@@ -337,11 +345,25 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       // Safari where AudioContext.resume() is only permitted within the
       // synchronous callstack of a user gesture; creating a new context here
       // (post-await) results in a permanently suspended context.
-      const audioContext =
-        primedAudioContext && primedAudioContext.state !== 'closed'
-          ? primedAudioContext
-          : new AudioContext();
-      primedAudioContext = null; // consume — don't let a stale primed context bleed into the next recording
+      //
+      // Consume only the snapshot captured for *this* attempt
+      // (primedContextAttemptRef), not whatever the shared module-level slot
+      // currently holds — that could belong to a different, concurrently
+      // primed attempt (e.g. the thread drawer's composer priming after this
+      // instance already captured its own snapshot). The `=== primedAudioContext`
+      // check confirms our snapshot hasn't since been superseded or already
+      // consumed/discarded by someone else; if it has, fall back to a fresh
+      // context rather than reusing something that's no longer "ours".
+      const ownPrimedContext = primedContextAttemptRef.current;
+      const canConsumeOwnPrime =
+        ownPrimedContext !== null &&
+        ownPrimedContext === primedAudioContext &&
+        ownPrimedContext.state !== 'closed';
+      const audioContext = canConsumeOwnPrime ? ownPrimedContext : new AudioContext();
+      if (canConsumeOwnPrime) {
+        primedAudioContext = null; // consume — don't let a stale primed context bleed into the next recording
+      }
+      primedContextAttemptRef.current = null;
       audioContextRef.current = audioContext;
       const source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
@@ -396,16 +418,22 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
 
   const internalStartRecording = useCallback(async () => {
     if (typeof window === 'undefined') return;
+    // Snapshot whichever context is primed right now, before the async gap
+    // below — see primedContextAttemptRef. Captured before the
+    // getUserMedia-support guard too: a mobile tap can call
+    // primeAudioContext() and then land on that guard (AudioContext exists
+    // but getUserMedia doesn't, e.g. an insecure context or a restrictive
+    // webview) — without a snapshot taken here, that branch has nothing to
+    // discard and the pre-warmed context is left running indefinitely.
+    primedContextAttemptRef.current = primedAudioContext;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setError('Browser does not support audio recording.');
+      discardOwnPrimedContext();
       return;
     }
 
     setError(null);
     isResumingRef.current = false;
-    // Snapshot whichever context is primed right now, before the async gap
-    // below — see primedContextAttemptRef.
-    primedContextAttemptRef.current = primedAudioContext;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -794,16 +822,19 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
 
   const handleResume = useCallback(async () => {
     if (typeof window === 'undefined') return;
+    // Snapshot whichever context is primed right now, before the async gap
+    // below — see primedContextAttemptRef. Captured before the
+    // getUserMedia-support guard too, so that branch has something to
+    // discard instead of leaving a pre-warmed context running indefinitely.
+    primedContextAttemptRef.current = primedAudioContext;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setError('Browser does not support audio recording.');
+      discardOwnPrimedContext();
       return;
     }
 
     setError(null);
     isResumingRef.current = true;
-    // Snapshot whichever context is primed right now, before the async gap
-    // below — see primedContextAttemptRef.
-    primedContextAttemptRef.current = primedAudioContext;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -952,6 +983,15 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
   }, [cleanupAudioContext, cleanupMediaRecorder, cleanupStream, onDelete, stopTimer]);
 
   const handleRestart = useCallback(() => {
+    // Not currently wired to any UI (handleRecordAgain is the exported name
+    // callers use), but handleRestart ends this same function body by
+    // calling internalStartRecording() synchronously — nothing here awaits
+    // before that call, so priming here still lands inside the synchronous
+    // callstack of whatever gesture invoked handleRestart. Priming
+    // defensively keeps this path from silently regressing to the
+    // suspended-context iOS bug if it's ever wired directly to a UI gesture
+    // without the caller remembering to prime first.
+    primeAudioContext();
     isRestartingRef.current = true;
     const mediaRecorder = mediaRecorderRef.current;
 

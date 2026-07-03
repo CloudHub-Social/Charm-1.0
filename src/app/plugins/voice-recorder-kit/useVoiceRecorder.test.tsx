@@ -468,4 +468,137 @@ describe('useVoiceRecorder', () => {
     // catch block.
     expect(primedContext?.close).toHaveBeenCalledTimes(1);
   });
+
+  it('creates a fresh context on each primeAudioContext() call rather than reusing an unconsumed one', () => {
+    act(() => {
+      primeAudioContext();
+    });
+    expect(createdAudioContexts).toHaveLength(1);
+    const first = createdAudioContexts[0];
+    expect(first?.close).not.toHaveBeenCalled();
+
+    // A second priming attempt (e.g. a different composer instance's mic
+    // button) must not resume/reuse the first — reusing would let two
+    // unrelated attempts end up pointing at the same AudioContext object.
+    act(() => {
+      primeAudioContext();
+    });
+    expect(createdAudioContexts).toHaveLength(2);
+    expect(createdAudioContexts[1]).not.toBe(first);
+    expect(first?.close).toHaveBeenCalledTimes(1);
+
+    // Drain the trailing prime so it doesn't bleed into the next test.
+    const trailing = createdAudioContexts[1];
+    act(() => {
+      trailing?.close();
+    });
+  });
+
+  it('does not let an earlier, superseded attempt steal a different attempt live primed context', async () => {
+    // Instance A primes and starts, but its getUserMedia stays pending.
+    let resolveFirstGetUserMedia: ((stream: MockStream) => void) | undefined;
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementationOnce(
+      () =>
+        new Promise<MockStream>((resolve) => {
+          resolveFirstGetUserMedia = resolve;
+        })
+    );
+    act(() => {
+      primeAudioContext();
+    });
+    const firstPrimed = createdAudioContexts[0];
+    const { result: instanceA } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+    act(() => {
+      instanceA.current.start();
+    });
+
+    // Before A's getUserMedia resolves, a different instance (e.g. the
+    // thread drawer's composer) primes its own attempt. primeAudioContext()
+    // always creates a fresh context now, so this discards A's unconsumed
+    // one rather than letting A and B share it.
+    act(() => {
+      primeAudioContext();
+    });
+    const secondPrimed = createdAudioContexts[1];
+    expect(secondPrimed).not.toBe(firstPrimed);
+    expect(firstPrimed?.close).toHaveBeenCalledTimes(1);
+
+    const { result: instanceB } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+    act(() => {
+      instanceB.current.start();
+    });
+    await waitFor(() => {
+      expect(instanceB.current.isRecording).toBe(true);
+    });
+    // Instance B correctly consumes the context it primed for itself.
+    expect(createdAudioContexts).toHaveLength(2);
+
+    // Instance A's getUserMedia finally resolves. Its own snapshot
+    // (firstPrimed) is stale — already closed and superseded by B's prime —
+    // so setupAudioGraph() must not steal instance B's live context; it
+    // falls back to creating a fresh one for A instead.
+    await act(async () => {
+      resolveFirstGetUserMedia?.(inputStream);
+    });
+    await waitFor(() => {
+      expect(instanceA.current.isRecording).toBe(true);
+    });
+    expect(createdAudioContexts).toHaveLength(3);
+    expect(createdAudioContexts[2]).not.toBe(secondPrimed);
+  });
+
+  it('discards an unconsumed primed AudioContext when getUserMedia is unsupported', async () => {
+    act(() => {
+      primeAudioContext();
+    });
+    const primedContext = createdAudioContexts[0];
+    expect(primedContext?.close).not.toHaveBeenCalled();
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {},
+    });
+
+    const { result } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+    act(() => {
+      result.current.start();
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toBeTruthy();
+    });
+
+    // The unsupported-browser guard fires before setupAudioGraph() ever gets
+    // a chance to consume the primed context, so this early return must
+    // discard it directly instead of leaving it running indefinitely.
+    expect(primedContext?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('primes a fresh context for handleRestart even though it is not directly wired to any current UI gesture', async () => {
+    const { result } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+    act(() => {
+      result.current.start();
+    });
+    await waitFor(() => {
+      expect(result.current.isRecording).toBe(true);
+    });
+    const contextsBeforeRestart = createdAudioContexts.length;
+
+    act(() => {
+      result.current.handleRestart();
+    });
+
+    // handleRestart calls primeAudioContext() synchronously at its start, so
+    // a new context should exist immediately — before internalStartRecording's
+    // own getUserMedia await resolves.
+    expect(createdAudioContexts).toHaveLength(contextsBeforeRestart + 1);
+
+    await waitFor(() => {
+      expect(result.current.isRecording).toBe(true);
+    });
+
+    // setupAudioGraph() should reuse that primed context rather than
+    // creating a second one once getUserMedia resolves.
+    expect(createdAudioContexts).toHaveLength(contextsBeforeRestart + 1);
+  });
 });
