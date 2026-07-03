@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useVoiceRecorder } from './useVoiceRecorder';
+import { primeAudioContext, useVoiceRecorder } from './useVoiceRecorder';
 
 type MockTrack = MediaStreamTrack & { stop: ReturnType<typeof vi.fn> };
 type MockStream = MediaStream & { getTracks: () => MockTrack[] };
@@ -182,5 +182,70 @@ describe('useVoiceRecorder', () => {
     expect(inputTrack.stop).toHaveBeenCalledTimes(1);
     expect(destinationTrack.stop).toHaveBeenCalledTimes(1);
     expect(recordingContext?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses a primed AudioContext instead of creating a new one, and consumes it', async () => {
+    act(() => {
+      primeAudioContext();
+    });
+    expect(createdAudioContexts).toHaveLength(1);
+    const primedContext = createdAudioContexts[0];
+
+    const { result } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+
+    act(() => {
+      result.current.start();
+    });
+
+    await waitFor(() => {
+      expect(result.current.isRecording).toBe(true);
+    });
+
+    // setupAudioGraph() should have reused the primed context rather than
+    // creating a second one.
+    expect(createdAudioContexts).toHaveLength(1);
+    expect(createdAudioContexts[0]).toBe(primedContext);
+
+    act(() => {
+      result.current.handleStop();
+    });
+
+    await waitFor(() => {
+      expect(result.current.isRecording).toBe(false);
+    });
+
+    // A subsequent prime should create a fresh context — the previous one was
+    // consumed, not left around to be reused indefinitely.
+    act(() => {
+      primeAudioContext();
+    });
+    expect(createdAudioContexts).toHaveLength(2);
+  });
+
+  it('closes an unconsumed primed AudioContext if starting fails before the audio graph is built', async () => {
+    act(() => {
+      primeAudioContext();
+    });
+    const primedContext = createdAudioContexts[0];
+    expect(primedContext?.close).not.toHaveBeenCalled();
+
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValueOnce(
+      new Error('Permission denied')
+    );
+
+    const { result } = renderHook(() => useVoiceRecorder({ autoStart: false }));
+
+    act(() => {
+      result.current.start();
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toBeTruthy();
+    });
+
+    // The primed context was never handed to setupAudioGraph(), so
+    // cleanupAudioContext() must close it directly to avoid an indefinitely
+    // running AudioContext.
+    expect(primedContext?.close).toHaveBeenCalledTimes(1);
   });
 });

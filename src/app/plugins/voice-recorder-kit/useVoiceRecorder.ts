@@ -32,16 +32,35 @@ function getSharedAudioContext(): AudioContext {
  * Call primeAudioContext() inside an onPointerDown/onClick handler to
  * pre-create and resume the context before the async recording path begins.
  * setupAudioGraph() will consume it instead of creating a new one.
+ *
+ * If the recording flow aborts before setupAudioGraph() consumes this context
+ * (permission denied, no supported codec, unmount mid-gesture), it would
+ * otherwise keep running indefinitely. cleanupAudioContext() — already called
+ * on every one of those abort paths — discards it via discardPrimedAudioContext().
  */
 let primedAudioContext: AudioContext | null = null;
 
-export function primeAudioContext(): void {
-  if (primedAudioContext && primedAudioContext.state !== 'closed') {
-    primedAudioContext.resume().catch(() => {});
-    return;
+function discardPrimedAudioContext(): void {
+  const context = primedAudioContext;
+  primedAudioContext = null;
+  if (context && context.state !== 'closed') {
+    context.close().catch(() => {});
   }
-  primedAudioContext = new AudioContext();
-  primedAudioContext.resume().catch(() => {});
+}
+
+export function primeAudioContext(): void {
+  if (typeof window === 'undefined' || typeof AudioContext === 'undefined') return;
+  try {
+    if (primedAudioContext && primedAudioContext.state !== 'closed') {
+      primedAudioContext.resume().catch(discardPrimedAudioContext);
+      return;
+    }
+    const context = new AudioContext();
+    primedAudioContext = context;
+    context.resume().catch(discardPrimedAudioContext);
+  } catch {
+    primedAudioContext = null;
+  }
 }
 
 // downsample an array of samples to a target count by averaging blocks of samples together
@@ -144,6 +163,12 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
   }, []);
 
   const cleanupAudioContext = useCallback(() => {
+    // A primed context that was never consumed by setupAudioGraph() (start
+    // aborted before the audio graph was built) would otherwise keep running
+    // indefinitely. This is a no-op once setupAudioGraph() has already nulled
+    // it out.
+    discardPrimedAudioContext();
+
     const audioContext = audioContextRef.current;
     const recordingSource = recordingSourceRef.current;
     const recordingAnalyser = recordingAnalyserRef.current;
