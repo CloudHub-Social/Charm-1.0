@@ -126,19 +126,19 @@ export function ToRoomEvent() {
     navigate(getRootPath(), { replace: true });
     // searchParams is read above via its stable rawSearchParams string form (see comment
     // near its declaration); depending on the URLSearchParams object itself would re-fire
-    // this effect on every render. activeSessionId and mDirectReady are intentionally
-    // read once (not listed as deps): they're only used to snapshot whether this click
-    // needs to defer resolution, and listing them would re-run this effect (redundantly
-    // re-navigating and re-stashing pending state) once they update — the component
-    // navigates away immediately below regardless, so a second run couldn't self-correct
-    // anyway (see needsDeferral above for why that matters here).
+    // this effect on every render. activeSessionId, mDirectReady, and mDirects are
+    // intentionally read once (not listed as deps): they're only used to snapshot whether
+    // this click needs to defer resolution, and listing them would re-run this effect
+    // (redundantly re-navigating and re-stashing pending state — with needsDeferral now
+    // false, overwriting the previously-stashed callSearchParams with undefined) once they
+    // update — the component navigates away immediately below regardless, so a second run
+    // couldn't self-correct anyway (see needsDeferral above for why that matters here).
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [
     eventId,
     jumpMode,
     joinCall,
     swClickId,
-    mDirects,
     mutedRoomId,
     navigate,
     roomId,
