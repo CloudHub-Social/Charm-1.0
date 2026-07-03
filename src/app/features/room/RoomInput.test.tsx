@@ -39,6 +39,8 @@ import { PowerLevelsContextProvider, type IPowerLevels } from '$hooks/usePowerLe
 import { getSettings, settingsAtom, type Settings } from '$state/settings';
 import { useEditor } from '$components/editor/Editor';
 import type * as UseCommandsModule from '$hooks/useCommands';
+import { roomIdToUploadItemsAtomFamily, type TUploadItem } from '$state/room/roomInputDrafts';
+import { MediaConfigProvider } from '$hooks/useMediaConfig';
 import { RoomInput } from './RoomInput';
 
 // jsdom doesn't perform layout, so focus-trap-react's tabbable-node check
@@ -216,28 +218,33 @@ function RoomInputHarness({
   room,
   settingsOverrides,
   onEditor,
+  onStore,
 }: {
   room: Room;
   settingsOverrides?: Partial<Settings>;
   onEditor?: (editor: ReturnType<typeof useEditor>) => void;
+  onStore?: (store: ReturnType<typeof createStore>) => void;
 }) {
   const editor = useEditor();
   onEditor?.(editor);
   const fileDropContainerRef = { current: null } as RefObject<HTMLElement>;
   const store = createStore();
   store.set(settingsAtom, { ...getSettings(), ...settingsOverrides });
+  onStore?.(store);
 
   return (
     <JotaiProvider store={store}>
       <QueryClientProvider client={queryClient}>
         <ClientConfigProvider value={{}}>
           <PowerLevelsContextProvider value={defaultPowerLevels}>
-            <RoomInput
-              editor={editor}
-              fileDropContainerRef={fileDropContainerRef}
-              roomId={room.roomId}
-              room={room}
-            />
+            <MediaConfigProvider value={{}}>
+              <RoomInput
+                editor={editor}
+                fileDropContainerRef={fileDropContainerRef}
+                roomId={room.roomId}
+                room={room}
+              />
+            </MediaConfigProvider>
           </PowerLevelsContextProvider>
         </ClientConfigProvider>
       </QueryClientProvider>
@@ -248,6 +255,7 @@ function RoomInputHarness({
 function renderRoomInput(settingsOverrides?: Partial<Settings>) {
   const { mx, room } = buildRoomFixture();
   let editorRef: ReturnType<typeof useEditor> | undefined;
+  let storeRef: ReturnType<typeof createStore> | undefined;
 
   const result = render(
     <MatrixClientProvider value={mx}>
@@ -258,12 +266,21 @@ function renderRoomInput(settingsOverrides?: Partial<Settings>) {
           onEditor={(editor) => {
             editorRef = editor;
           }}
+          onStore={(store) => {
+            storeRef = store;
+          }}
         />
       </RoomProvider>
     </MatrixClientProvider>
   );
 
-  return { mx, room, unmount: result.unmount, editor: editorRef as ReturnType<typeof useEditor> };
+  return {
+    mx,
+    room,
+    unmount: result.unmount,
+    editor: editorRef as ReturnType<typeof useEditor>,
+    store: storeRef as ReturnType<typeof createStore>,
+  };
 }
 
 describe('RoomInput Touch Spacing sizing', () => {
@@ -359,6 +376,24 @@ describe('RoomInput composer typing state (#542 P1)', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', sendButtonName).className).toBe(emptyClassName);
     });
+  });
+
+  it('highlights the send button when a file is attached, even with no text', () => {
+    const { room, store } = renderRoomInput();
+    const sendButtonName = { name: 'Send your composed Message' };
+    const emptyClassName = screen.getByRole('button', sendButtonName).className;
+
+    const fakeUpload: TUploadItem = {
+      file: new File(['x'], 'photo.png', { type: 'image/png' }),
+      originalFile: new File(['x'], 'photo.png', { type: 'image/png' }),
+      metadata: { markedAsSpoiler: false },
+      encInfo: undefined,
+    };
+    act(() => {
+      store.set(roomIdToUploadItemsAtomFamily(room.roomId), { type: 'PUT', item: fakeUpload });
+    });
+
+    expect(screen.getByRole('button', sendButtonName).className).not.toBe(emptyClassName);
   });
 });
 

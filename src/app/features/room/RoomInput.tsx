@@ -2874,10 +2874,24 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 <IconButton
                   ref={emojiBtnRef}
                   aria-pressed={
-                    hideStickerBtn ? !!emojiBoardTab : emojiBoardTab === EmojiBoardTab.Emoji
+                    isMobileLayout
+                      ? !!emojiBoardTab
+                      : hideStickerBtn
+                        ? !!emojiBoardTab
+                        : emojiBoardTab === EmojiBoardTab.Emoji
                   }
                   onPointerDownCapture={prepareComposerOverlayTrigger}
-                  onClick={() => void openEmojiBoard(EmojiBoardTab.Emoji)}
+                  onClick={() => {
+                    // On mobile the icon/label swap to "close picker" once any
+                    // tab is open (see title/aria-label below) -- route to the
+                    // animated mobile close instead of re-opening the Emoji tab,
+                    // which would no-op (already open) or just switch tabs.
+                    if (isMobileLayout && emojiBoardTab !== undefined) {
+                      closeMobileEmojiBoard();
+                      return;
+                    }
+                    void openEmojiBoard(EmojiBoardTab.Emoji);
+                  }}
                   variant="SurfaceVariant"
                   size={touchTargetSize}
                   radii="300"
@@ -3060,7 +3074,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       resetLongPressState();
                     }
                   }}
-                  variant={scheduledTime || hasText ? 'Primary' : 'SurfaceVariant'}
+                  variant={
+                    scheduledTime || hasText || selectedFiles.length > 0
+                      ? 'Primary'
+                      : 'SurfaceVariant'
+                  }
                   size={touchTargetSize}
                   radii="0"
                   className={

@@ -1262,17 +1262,28 @@ export function EmojiBoard({
   // Scrolling down through the tab content while the sheet is resting at its
   // min height auto-expands it to max, same as dragging the handle up. Only
   // fires while at rest (not mid-drag) so it can't fight an in-progress
-  // manual resize.
+  // manual resize. Tracks the previous scrollTop (rather than comparing
+  // against an absolute position) so a stale-but-elevated scroll position
+  // left over from before the sheet was last dragged back to min doesn't
+  // falsely read as "still scrolling down" -- see shouldAutoExpandOnScroll.
+  const lastScrollTopRef = useRef(0);
   useEffect(() => {
     if (!isMobileSheet) return undefined;
     const scrollElement = contentScrollRef.current;
     if (!scrollElement) return undefined;
 
+    lastScrollTopRef.current = scrollElement.scrollTop;
+
     const handleScroll = () => {
       const heights = getMobileSheetHeights(window.innerHeight, activeTabRef.current);
       const currentHeight = mobileSheetHeightRef.current ?? heights.initial;
       const isDragging = mobileSheetDragRef.current !== null;
-      if (shouldAutoExpandOnScroll(scrollElement.scrollTop, currentHeight, heights, isDragging)) {
+      const { scrollTop } = scrollElement;
+      const previousScrollTop = lastScrollTopRef.current;
+      lastScrollTopRef.current = scrollTop;
+      if (
+        shouldAutoExpandOnScroll(scrollTop, previousScrollTop, currentHeight, heights, isDragging)
+      ) {
         setMobileSheetHeight(heights.max);
       }
     };
