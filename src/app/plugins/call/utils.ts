@@ -24,7 +24,8 @@ export function getCallCapabilities(
   if (mx.getTurnServers().length > 0) {
     capabilities.add(MatrixCapabilities.MSC3846TurnServers);
   }
-
+  capabilities.add(MatrixCapabilities.MSC4039UploadFile);
+  capabilities.add(MatrixCapabilities.MSC4039DownloadFile);
   capabilities.add(MatrixCapabilities.MSC4157SendDelayedEvent);
   capabilities.add(MatrixCapabilities.MSC4157UpdateDelayedEvent);
   capabilities.add('moe.sable.thumbnails');

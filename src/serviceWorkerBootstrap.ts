@@ -13,8 +13,12 @@ import { appEvents } from './app/utils/appEvents';
 
 const log = createLogger('service-worker-bootstrap');
 const SW_WATCHDOG_INTERVAL_MS = 60_000;
-const SW_WATCHDOG_PING_TIMEOUT_MS = 5_000;
-const SW_WATCHDOG_MAX_MISSES = 2;
+// iOS Safari can suspend the SW process under memory pressure; restart latency
+// is typically 2–8 s and can exceed 5 s on older devices. Use a 10 s timeout
+// and require 3 consecutive misses before reloading to avoid false positives
+// caused by transient SW suspension during room navigation or image viewing.
+const SW_WATCHDOG_PING_TIMEOUT_MS = 10_000;
+const SW_WATCHDOG_MAX_MISSES = 3;
 let unsubscribeForegroundRecoveryListener: (() => void) | undefined;
 type SwRecoveryReason =
   | 'missing_worker'

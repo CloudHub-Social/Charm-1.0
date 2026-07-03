@@ -1,11 +1,13 @@
 /* eslint-disable no-console */
 import { EventType } from 'matrix-js-sdk/lib/@types/event';
+import { normalizeCallIntent } from '../app/features/call/callIntent';
 import {
   buildRoomMessageNotification,
   DEFAULT_NOTIFICATION_ICON,
   DEFAULT_NOTIFICATION_BADGE,
   resolveNotificationPreviewText,
 } from '../app/utils/notificationStyle';
+import { resolveCallNotificationCopy } from './pushCallNotificationCopy';
 
 type NotificationSettings = {
   showMessageContent: boolean;
@@ -16,8 +18,16 @@ interface MatrixPushData {
   type?: string;
   effectiveType?: string;
   effective_type?: string;
-  content?: Record<string, unknown>;
+  content?: {
+    notification_type?: string;
+    membership?: string;
+    sender_ts?: number;
+    lifetime?: number;
+    'm.call.intent'?: string;
+    'm.relates_to'?: { event_id?: string; key?: string }; // key is the m.annotation reaction emoji
+  };
   sender_display_name?: string;
+  sender_id?: string;
   room_name?: string;
   room_id?: string;
   room_avatar_url?: string;
@@ -35,6 +45,38 @@ interface MatrixPushData {
 }
 
 const resolveSilent = (): boolean => false;
+const MAX_CALL_NOTIFICATION_LIFETIME_MS = 120_000;
+
+const isCallNotificationType = (value: unknown): value is 'ring' | 'notification' =>
+  value === 'ring' || value === 'notification';
+
+const getCallTiming = (
+  content: MatrixPushData['content'],
+  originTs: number
+): { senderTs: number; expiresAt: number } => {
+  const senderTsCandidate = content?.sender_ts;
+  const lifetimeCandidate = content?.lifetime;
+
+  if (typeof senderTsCandidate !== 'number' || !Number.isFinite(senderTsCandidate)) {
+    const senderTs = originTs;
+    return {
+      senderTs,
+      expiresAt: senderTs + MAX_CALL_NOTIFICATION_LIFETIME_MS,
+    };
+  }
+
+  const senderTs = senderTsCandidate - originTs > 20_000 ? originTs : senderTsCandidate;
+  const lifetime =
+    typeof lifetimeCandidate === 'number' && Number.isFinite(lifetimeCandidate)
+      ? Math.min(Math.max(lifetimeCandidate, 0), MAX_CALL_NOTIFICATION_LIFETIME_MS)
+      : MAX_CALL_NOTIFICATION_LIFETIME_MS;
+
+  return {
+    senderTs,
+    expiresAt: senderTs + lifetime,
+  };
+};
+
 const resolveNotificationEventType = (pushData: MatrixPushData): string | undefined =>
   pushData?.effectiveType ?? pushData?.effective_type ?? pushData?.type;
 const resolveNotificationDispatchType = (pushData: MatrixPushData): string | undefined => {
@@ -61,15 +103,15 @@ export const createPushNotifications = (
     title: string,
     body: string | undefined,
     data: Record<string, unknown>,
-    silent?: boolean,
-    icon?: string,
-    badge?: string
+    options: { silent?: boolean; icon?: string; badge?: string; tagOverride?: string } = {}
   ) => {
+    const { silent, icon, badge, tagOverride } = options;
     const roomId: string | undefined = data?.room_id as string | undefined;
     // Group by room so new messages in the same room replace the previous
     // notification rather than stacking individually. renotify: true ensures
     // the user is still alerted when the existing tag is replaced.
-    const tag: string = roomId ? `room-${roomId}` : ((data?.event_id as string) ?? 'Cinny');
+    const tag: string =
+      tagOverride ?? (roomId ? `room-${roomId}` : ((data?.event_id as string) ?? 'Cinny'));
     const renotify = !!roomId;
     // `renotify` is a valid Web API property absent from TypeScript's NotificationOptions type.
     // Build the options object separately to avoid the excess-property check, then cast.
@@ -102,26 +144,60 @@ export const createPushNotifications = (
   };
 
   const handleCallNotification = async (pushData: MatrixPushData) => {
-    const content = pushData?.content as { notification_type?: string } | undefined;
-    if (content?.notification_type !== 'ring') return;
+    // Note: pushData.type is commonly `m.room.encrypted` here — the RTC notification
+    // content above is delivered in the clear alongside the encrypted event so the SW
+    // can show a call notification without decrypting. Do not bail on that type.
+    const notificationTypeRaw = pushData?.content?.notification_type;
+    if (!isCallNotificationType(notificationTypeRaw)) return;
 
+    const intentRaw =
+      typeof pushData?.content?.['m.call.intent'] === 'string'
+        ? pushData.content['m.call.intent']
+        : undefined;
+    const intentKind = normalizeCallIntent(undefined, intentRaw);
     const senderDisplayName = pushData?.sender_display_name;
     const roomName = pushData?.room_name;
-    const title = 'Incoming Call';
-    const body = senderDisplayName
-      ? `${senderDisplayName} is calling you ${roomName ? `in ${roomName}` : ''}`
-      : 'Incoming voice chat';
+    const showPreviewDetails = getNotificationSettings().showMessageContent;
+    const copy = resolveCallNotificationCopy({
+      notificationType: notificationTypeRaw,
+      intentKind,
+      senderDisplayName,
+      roomName,
+      showPreviewDetails,
+    });
+    const originTs = typeof pushData.timestamp === 'number' ? pushData.timestamp : Date.now();
+    const { senderTs, expiresAt } = getCallTiming(pushData.content, originTs);
+    // The push can arrive after the call notification's own lifetime has elapsed (device
+    // asleep, delayed/queued push delivery). resolveIncomingCallFromSearchParams and
+    // resolveIncomingCallFromNotificationData both reject an expired candidate on tap, so
+    // showing the notification here would just leave the user with a call they can't
+    // answer — skip it instead.
+    if (Date.now() >= expiresAt) return;
 
     const data = {
       type: resolveNotificationEventType(pushData),
       room_id: pushData?.room_id,
+      event_id: pushData?.event_id,
       user_id: pushData?.user_id,
+      sender_id: pushData?.sender_id,
       timestamp: Date.now(),
       isCall: true,
+      callNotificationType: notificationTypeRaw,
+      callIntentKind: intentKind,
+      callIntentRaw: intentRaw,
+      callNotificationEventId: pushData?.event_id,
+      callRefEventId: pushData?.content?.['m.relates_to']?.event_id,
+      callSenderTs: senderTs,
+      callExpiresAt: expiresAt,
       ...pushData.data,
     };
 
-    await showNotificationWithData(title, body, data, resolveSilent(), pushData?.room_avatar_url);
+    const callTag = pushData?.room_id ? `call-${pushData.room_id}` : undefined;
+    await showNotificationWithData(copy.title, copy.body, data, {
+      silent: resolveSilent(),
+      icon: pushData?.room_avatar_url,
+      tagOverride: callTag,
+    });
   };
 
   const handleRoomMessageNotification = async (pushData: MatrixPushData) => {
@@ -155,9 +231,11 @@ export const createPushNotifications = (
       notificationPayload.title,
       notificationPayload.options.body,
       data,
-      notificationPayload.options.silent ?? undefined,
-      notificationPayload.options.icon,
-      notificationPayload.options.badge
+      {
+        silent: notificationPayload.options.silent ?? undefined,
+        icon: notificationPayload.options.icon,
+        badge: notificationPayload.options.badge,
+      }
     );
   };
 
@@ -191,9 +269,11 @@ export const createPushNotifications = (
       notificationPayload.title,
       notificationPayload.options.body,
       data,
-      notificationPayload.options.silent ?? undefined,
-      notificationPayload.options.icon,
-      notificationPayload.options.badge
+      {
+        silent: notificationPayload.options.silent ?? undefined,
+        icon: notificationPayload.options.icon,
+        badge: notificationPayload.options.badge,
+      }
     );
   };
 
@@ -215,7 +295,7 @@ export const createPushNotifications = (
       ...pushData.data,
     };
 
-    await showNotificationWithData('New Invitation', body, data, resolveSilent());
+    await showNotificationWithData('New Invitation', body, data, { silent: resolveSilent() });
   };
 
   const handlePushNotificationPushData = async (pushData: MatrixPushData) => {

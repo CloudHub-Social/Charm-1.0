@@ -22,6 +22,14 @@ export const NON_SYNCABLE_KEYS = new Set<keyof Settings>([
   'memberSortFilterIndex',
   // Device-specific audio preferences
   'isNotificationSounds',
+  // Call audio is device-local (speaker setup + custom files in IndexedDB)
+  'incomingCallSoundEnabled',
+  'incomingVoiceRoomCallSoundEnabled',
+  'outgoingRingbackEnabled',
+  'callRingtoneVolume',
+  'callRingtoneId',
+  'callRingbackTone',
+  'callSoundOverrideGlobalNotifications',
   // Developer / diagnostic features
   'developerTools',
   // Per-device search index cache size limit

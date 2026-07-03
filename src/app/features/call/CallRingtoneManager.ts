@@ -1,0 +1,142 @@
+import * as Sentry from '@sentry/react';
+import { callRingtoneVolumeToGain } from './callRingtone';
+import { resolveCallToneSources, revokeUnusedCustomToneUrls } from './callToneSources';
+import type { Settings, CallRingtoneId } from '$state/settings';
+
+export type PreviewTone = 'incoming' | 'outgoing';
+
+class CallRingtoneManager {
+  private incomingAudio: HTMLAudioElement;
+  private outgoingAudio: HTMLAudioElement;
+  private previewAudio: HTMLAudioElement;
+  private revokeToneUrls: (() => void) | undefined;
+  private currentPreviewUrl: string | null = null;
+  private syncGeneration = 0;
+
+  constructor() {
+    this.incomingAudio = new Audio();
+    this.incomingAudio.loop = true;
+
+    this.outgoingAudio = new Audio();
+    this.outgoingAudio.loop = true;
+
+    this.previewAudio = new Audio();
+    this.previewAudio.loop = true;
+  }
+
+  public async syncSources(
+    callRingtoneId: CallRingtoneId,
+    callRingbackTone: CallRingtoneId,
+    callRingtoneVolume: number
+  ) {
+    // Rapid settings changes (e.g. clicking through the ringtone dropdown) fire this
+    // repeatedly without awaiting the previous call. resolveCallToneSources can read
+    // custom tones from IndexedDB, so calls can resolve out of order — without this
+    // guard, an older call finishing last would apply stale URLs and could revoke the
+    // newer call's already-applied blob URLs out from under the <audio> elements.
+    const generation = ++this.syncGeneration;
+    const resolved = await resolveCallToneSources({ callRingtoneId, callRingbackTone });
+    if (generation !== this.syncGeneration) {
+      resolved.revoke();
+      return;
+    }
+
+    this.revokeToneUrls?.();
+    this.revokeToneUrls = resolved.revoke;
+
+    const gain = callRingtoneVolumeToGain(callRingtoneVolume);
+
+    if (resolved.incomingUrl) {
+      this.incomingAudio.src = resolved.incomingUrl;
+    } else {
+      this.incomingAudio.removeAttribute('src');
+    }
+
+    if (resolved.outgoingUrl) {
+      this.outgoingAudio.src = resolved.outgoingUrl;
+    } else {
+      this.outgoingAudio.removeAttribute('src');
+    }
+
+    this.incomingAudio.volume = gain;
+    this.outgoingAudio.volume = gain;
+  }
+
+  public playIncoming(): Promise<void> {
+    if (!this.incomingAudio.src) return Promise.resolve();
+    return this.incomingAudio.play().catch((err) => {
+      if (err.name === 'AbortError') return;
+      Sentry.metrics.count('sable.call.ringtone.blocked', 1);
+      throw err;
+    });
+  }
+
+  public stopIncoming() {
+    this.incomingAudio.pause();
+    this.incomingAudio.currentTime = 0;
+  }
+
+  public playOutgoing() {
+    if (!this.outgoingAudio.src) return;
+    this.outgoingAudio.play().catch((err) => {
+      if (err.name === 'AbortError') return;
+      Sentry.metrics.count('sable.call.ringback.blocked', 1);
+    });
+  }
+
+  public stopOutgoing() {
+    this.outgoingAudio.pause();
+    this.outgoingAudio.currentTime = 0;
+  }
+
+  public async playPreview(
+    tone: PreviewTone,
+    settings: Pick<Settings, 'callRingtoneId' | 'callRingbackTone' | 'callRingtoneVolume'>
+  ) {
+    this.stopPreview();
+
+    const resolved = await resolveCallToneSources({
+      callRingtoneId: settings.callRingtoneId,
+      callRingbackTone: settings.callRingbackTone,
+    });
+    const source = tone === 'incoming' ? resolved.incomingUrl : resolved.outgoingUrl;
+
+    // Revoke whichever custom blob URL isn't the one about to play — using the
+    // dedicated helper (keyed off the raw customRingtone/customRingback object URLs)
+    // rather than re-deriving this from incomingUrl/outgoingUrl, so cleanup doesn't
+    // depend on assuming how those get resolved. Runs before the early return below so
+    // a silent-preview selection (source === null) still revokes any blob that was
+    // created for the *other* tone.
+    revokeUnusedCustomToneUrls(resolved, source);
+
+    if (!source) return;
+
+    this.currentPreviewUrl = source;
+    this.previewAudio.src = source;
+    this.previewAudio.volume = callRingtoneVolumeToGain(settings.callRingtoneVolume);
+
+    try {
+      await this.previewAudio.play();
+    } catch (err) {
+      // currentPreviewUrl is set above so a failed play() (e.g. NotAllowedError from an
+      // autoplay policy) doesn't leak this blob URL — clean up here rather than relying
+      // on every caller to call stopPreview() in their own catch block, and re-throw so
+      // callers can still distinguish error types for their own UI handling.
+      this.stopPreview();
+      throw err;
+    }
+  }
+
+  public stopPreview() {
+    this.previewAudio.pause();
+    this.previewAudio.currentTime = 0;
+    this.previewAudio.removeAttribute('src');
+
+    if (this.currentPreviewUrl?.startsWith('blob:')) {
+      URL.revokeObjectURL(this.currentPreviewUrl);
+    }
+    this.currentPreviewUrl = null;
+  }
+}
+
+export const ringtoneManager = new CallRingtoneManager();

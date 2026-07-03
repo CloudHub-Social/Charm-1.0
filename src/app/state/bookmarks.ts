@@ -30,3 +30,6 @@ export const bookmarkIdSetAtom = atom<Set<string>>((get) => {
 /** Live list of bookmark reminders from Matrix account data.
  * Maintained by useReminderSync and updated optimistically by useBookmarkReminderActions. */
 export const remindersAtom = atom<BookmarkReminder[]>([]);
+
+/** Error from the last bookmark refresh attempt, or undefined if the last refresh succeeded. */
+export const bookmarkRefreshErrorAtom = atom<Error | undefined>(undefined);

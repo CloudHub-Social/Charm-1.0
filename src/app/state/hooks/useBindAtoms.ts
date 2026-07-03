@@ -6,6 +6,8 @@ import { roomToUnreadAtom, useBindRoomToUnreadAtom } from '$state/room/roomToUnr
 import { roomToParentsAtom, useBindRoomToParentsAtom } from '$state/room/roomToParents';
 import { roomIdToTypingMembersAtom, useBindRoomIdToTypingMembersAtom } from '$state/typingMembers';
 
+// Note: bookmarks are loaded on-demand via bookmarkRepository (account data reads
+// triggered by useBookmarks hooks). No reactive atom bind is needed here.
 export const useBindAtoms = (mx: MatrixClient) => {
   useBindMDirectAtom(mx, mDirectAtom);
   useBindAllInvitesAtom(mx, allInvitesAtom);

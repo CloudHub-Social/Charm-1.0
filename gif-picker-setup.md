@@ -92,13 +92,11 @@ Breadcrumbs are added when:
 
 ### Smoke / Playwright layout tests
 
-Requires the dev server. Run:
-
-```bash
-PLAYWRIGHT_SNAPSHOT_OUTPUT_DIR=./snapshots npx playwright test e2e/smoke/gif-picker.spec.ts
-```
-
-Screenshots are written to `./snapshots/layout-harness/gif-picker/` and uploaded to Sentry on CI.
+The dedicated `e2e/smoke/gif-picker.spec.ts` layout-harness spec has been removed (it rendered
+fixture data outside the real app). GIF picker layout is currently exercised only via the live API
+test below; add a real-route `captureSnapshot()` case to `e2e/smoke/observability.spec.ts` (and
+register it in `test:e2e:snapshots` in `package.json`) if dedicated layout regression coverage is
+needed again.
 
 ### Live API tests
 

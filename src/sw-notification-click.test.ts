@@ -21,6 +21,30 @@ describe('buildNotificationClickTargetUrl', () => {
     );
   });
 
+  it('carries call metadata through the cold-launch deep link', () => {
+    expect(
+      buildNotificationClickTargetUrl(scope, {
+        user_id: '@alice:example.org',
+        room_id: '!room:example.org',
+        event_id: '$event',
+        sender_id: '@bob:example.org',
+        isCall: true,
+        callNotificationType: 'ring',
+        callIntentKind: 'video',
+        callIntentRaw: 'org.matrix.msc4143.start_ring',
+        callRefEventId: '$ref',
+        callSenderTs: 1_700_000_000_000,
+        callExpiresAt: 1_700_000_060_000,
+      })
+    ).toBe(
+      'https://charm.example/app/to/%40alice%3Aexample.org/!room%3Aexample.org/%24event' +
+        '?joinCall=true&callType=ring&callIntentKind=video' +
+        '&callIntentRaw=org.matrix.msc4143.start_ring&callRefEventId=%24ref' +
+        '&callSenderId=%40bob%3Aexample.org&callSenderTs=1700000000000' +
+        '&callExpiresAt=1700000060000&jumpMode=notification_live'
+    );
+  });
+
   it('builds invite deep links for the matching account', () => {
     expect(
       buildNotificationClickTargetUrl(scope, {
