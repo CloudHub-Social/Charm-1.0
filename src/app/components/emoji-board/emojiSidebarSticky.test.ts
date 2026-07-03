@@ -7,6 +7,26 @@ const rootDir = path.resolve(__dirname, '../../../..');
 const readWorkspaceFile = (relativePath: string): string =>
   fs.readFileSync(path.join(rootDir, relativePath), 'utf8');
 
+// Extracts the full `export const <name> = ...(...)` statement by counting
+// balanced parens from the first `(` after the declaration, rather than a
+// literal-syntax regex or a boundary against the next export. Robust to
+// formatting, generic type arguments, and export order/reordering.
+const extractExportStatement = (source: string, exportName: string): string => {
+  const declStart = source.indexOf(`export const ${exportName}`);
+  if (declStart === -1) throw new Error(`export const ${exportName} not found`);
+  const firstParen = source.indexOf('(', declStart);
+  if (firstParen === -1) throw new Error(`no opening paren found for ${exportName}`);
+  let depth = 0;
+  for (let i = firstParen; i < source.length; i += 1) {
+    if (source[i] === '(') depth += 1;
+    else if (source[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return source.slice(declStart, i + 1);
+    }
+  }
+  throw new Error(`unbalanced parens while extracting ${exportName}`);
+};
+
 describe('emoji sidebar pinned-footer contract', () => {
   it('renders the emoji group categories outside the shared scroll via a pinned anchor', () => {
     const emojiBoard = readWorkspaceFile('src/app/components/emoji-board/EmojiBoard.tsx');
@@ -67,13 +87,7 @@ describe('emoji sidebar pinned-footer contract', () => {
     // icons (e.g. a pack icon hidden under a standard-group icon). Confirmed
     // live: recreating this with real packs on a mobile viewport reproduced
     // the exact overlap, and shrink="No" fixed it.
-    //
-    // Match the whole SidebarStack export statement by its own closing
-    // `));`, rather than bounding it against wherever SidebarDivider happens
-    // to be exported next — that would break if the exports were ever
-    // reordered. This is self-contained regardless of export order.
-    const stackMatch = sidebar.match(/export const SidebarStack = as<'div'>\([\s\S]*?\)\);/);
-    expect(stackMatch).not.toBeNull();
-    expect(stackMatch![0]).toContain('shrink="No"');
+    const stackBlock = extractExportStatement(sidebar, 'SidebarStack');
+    expect(stackBlock).toContain('shrink="No"');
   });
 });
