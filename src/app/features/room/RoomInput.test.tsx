@@ -24,10 +24,12 @@
  * `size` recipe class a button receives, without hardcoding the actual
  * (folds-version-specific) class name/hash.
  */
-import type { RefObject } from 'react';
-import { render, screen } from '@testing-library/react';
+import type { ReactNode, RefObject } from 'react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createStore, Provider as JotaiProvider } from 'jotai';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Editor as SlateEditor, Transforms } from 'slate';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createClient, MatrixEvent, Room } from '$types/matrix-sdk';
 import { MatrixClientProvider } from '$hooks/useMatrixClient';
@@ -37,7 +39,16 @@ import { PowerLevelsContextProvider, type IPowerLevels } from '$hooks/usePowerLe
 import { getSettings, settingsAtom, type Settings } from '$state/settings';
 import { useEditor } from '$components/editor/Editor';
 import type * as UseCommandsModule from '$hooks/useCommands';
+import { roomIdToUploadItemsAtomFamily, type TUploadItem } from '$state/room/roomInputDrafts';
+import { MediaConfigProvider } from '$hooks/useMediaConfig';
 import { RoomInput } from './RoomInput';
+
+// jsdom doesn't perform layout, so focus-trap-react's tabbable-node check
+// (which relies on real geometry) throws when the Add menu's PopOut opens.
+// Same workaround as AutocompleteMenu.test.tsx / Verification.test.tsx.
+vi.mock('focus-trap-react', () => ({
+  default: ({ children }: { children: ReactNode }) => children,
+}));
 
 // The following hooks/subsystems are unrelated to touch-target sizing —
 // they cover file pickers, slash commands, typing indicators, scheduled
@@ -48,8 +59,9 @@ vi.mock('$hooks/useTypingStatusUpdater', () => ({
   useTypingStatusUpdater: () => vi.fn<() => void>(),
 }));
 
+const { mockPickFile } = vi.hoisted(() => ({ mockPickFile: vi.fn<(accept: string) => void>() }));
 vi.mock('$hooks/useFilePicker', () => ({
-  useFilePicker: () => vi.fn<() => void>(),
+  useFilePicker: () => mockPickFile,
 }));
 
 vi.mock('$hooks/useFilePasteHandler', () => ({
@@ -205,26 +217,34 @@ const defaultPowerLevels: Required<IPowerLevels> = {
 function RoomInputHarness({
   room,
   settingsOverrides,
+  onEditor,
+  onStore,
 }: {
   room: Room;
   settingsOverrides?: Partial<Settings>;
+  onEditor?: (editor: ReturnType<typeof useEditor>) => void;
+  onStore?: (store: ReturnType<typeof createStore>) => void;
 }) {
   const editor = useEditor();
+  onEditor?.(editor);
   const fileDropContainerRef = { current: null } as RefObject<HTMLElement>;
   const store = createStore();
   store.set(settingsAtom, { ...getSettings(), ...settingsOverrides });
+  onStore?.(store);
 
   return (
     <JotaiProvider store={store}>
       <QueryClientProvider client={queryClient}>
         <ClientConfigProvider value={{}}>
           <PowerLevelsContextProvider value={defaultPowerLevels}>
-            <RoomInput
-              editor={editor}
-              fileDropContainerRef={fileDropContainerRef}
-              roomId={room.roomId}
-              room={room}
-            />
+            <MediaConfigProvider value={{}}>
+              <RoomInput
+                editor={editor}
+                fileDropContainerRef={fileDropContainerRef}
+                roomId={room.roomId}
+                room={room}
+              />
+            </MediaConfigProvider>
           </PowerLevelsContextProvider>
         </ClientConfigProvider>
       </QueryClientProvider>
@@ -234,16 +254,33 @@ function RoomInputHarness({
 
 function renderRoomInput(settingsOverrides?: Partial<Settings>) {
   const { mx, room } = buildRoomFixture();
+  let editorRef: ReturnType<typeof useEditor> | undefined;
+  let storeRef: ReturnType<typeof createStore> | undefined;
 
   const result = render(
     <MatrixClientProvider value={mx}>
       <RoomProvider value={room}>
-        <RoomInputHarness room={room} settingsOverrides={settingsOverrides} />
+        <RoomInputHarness
+          room={room}
+          settingsOverrides={settingsOverrides}
+          onEditor={(editor) => {
+            editorRef = editor;
+          }}
+          onStore={(store) => {
+            storeRef = store;
+          }}
+        />
       </RoomProvider>
     </MatrixClientProvider>
   );
 
-  return { mx, room, unmount: result.unmount };
+  return {
+    mx,
+    room,
+    unmount: result.unmount,
+    editor: editorRef as ReturnType<typeof useEditor>,
+    store: storeRef as ReturnType<typeof createStore>,
+  };
 }
 
 describe('RoomInput Touch Spacing sizing', () => {
@@ -311,5 +348,84 @@ describe('RoomInput Touch Spacing sizing', () => {
     }).className;
 
     expect(offClassName).not.toBe(onClassName);
+  });
+});
+
+// Coverage for issue #542 P1 (Discord-reference composer/picker redesign).
+describe('RoomInput composer typing state (#542 P1)', () => {
+  it('highlights the send button once text is entered, and reverts when the composer is cleared', async () => {
+    const { editor } = renderRoomInput();
+    const sendButtonName = { name: 'Send your composed Message' };
+    const emptyClassName = screen.getByRole('button', sendButtonName).className;
+
+    // Slate's onChange (which drives the `hasText` state update) fires on a
+    // microtask after the operation is applied, not synchronously within the
+    // act() callback -- wait for the resulting re-render like the editor's
+    // own layout-effect-driven tests do (see Editor.test.tsx).
+    act(() => {
+      Transforms.insertText(editor, 'hello');
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', sendButtonName).className).not.toBe(emptyClassName);
+    });
+
+    act(() => {
+      Transforms.select(editor, SlateEditor.range(editor, []));
+      Transforms.delete(editor);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', sendButtonName).className).toBe(emptyClassName);
+    });
+  });
+
+  it('highlights the send button when a file is attached, even with no text', () => {
+    const { room, store } = renderRoomInput();
+    const sendButtonName = { name: 'Send your composed Message' };
+    const emptyClassName = screen.getByRole('button', sendButtonName).className;
+
+    const fakeUpload: TUploadItem = {
+      file: new File(['x'], 'photo.png', { type: 'image/png' }),
+      originalFile: new File(['x'], 'photo.png', { type: 'image/png' }),
+      metadata: { markedAsSpoiler: false },
+      encInfo: undefined,
+    };
+    act(() => {
+      store.set(roomIdToUploadItemsAtomFamily(room.roomId), { type: 'PUT', item: fakeUpload });
+    });
+
+    expect(screen.getByRole('button', sendButtonName).className).not.toBe(emptyClassName);
+  });
+});
+
+describe('RoomInput attachment menu regrouping (#542 P1)', () => {
+  it('orders Image, File and Location ahead of Poll to match the Discord-reference grouping', async () => {
+    renderRoomInput();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Add new Item' }));
+
+    const imageItem = await screen.findByText('Add Image');
+    const fileItem = screen.getByText('Add File');
+    const locationItem = screen.getByText('Add Location');
+    const pollItem = screen.getByText('Create Poll');
+
+    expect(
+      imageItem.compareDocumentPosition(fileItem) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      fileItem.compareDocumentPosition(locationItem) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      locationItem.compareDocumentPosition(pollItem) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('the Add Image item filters the native file picker to images only', async () => {
+    renderRoomInput();
+    mockPickFile.mockClear();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Add new Item' }));
+    await user.click(await screen.findByText('Add Image'));
+
+    expect(mockPickFile).toHaveBeenCalledWith('image/*');
   });
 });
