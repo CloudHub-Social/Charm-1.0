@@ -7,6 +7,26 @@ const rootDir = path.resolve(__dirname, '../../../..');
 const readWorkspaceFile = (relativePath: string): string =>
   fs.readFileSync(path.join(rootDir, relativePath), 'utf8');
 
+// Extracts the full `export const <name> = ...(...)` statement by counting
+// balanced parens from the first `(` after the declaration, rather than a
+// literal-syntax regex or a boundary against the next export. Robust to
+// formatting, generic type arguments, and export order/reordering.
+const extractExportStatement = (source: string, exportName: string): string => {
+  const declStart = source.indexOf(`export const ${exportName}`);
+  if (declStart === -1) throw new Error(`export const ${exportName} not found`);
+  const firstParen = source.indexOf('(', declStart);
+  if (firstParen === -1) throw new Error(`no opening paren found for ${exportName}`);
+  let depth = 0;
+  for (let i = firstParen; i < source.length; i += 1) {
+    if (source[i] === '(') depth += 1;
+    else if (source[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return source.slice(declStart, i + 1);
+    }
+  }
+  throw new Error(`unbalanced parens while extracting ${exportName}`);
+};
+
 describe('emoji sidebar pinned-footer contract', () => {
   it('renders the emoji group categories outside the shared scroll via a pinned anchor', () => {
     const emojiBoard = readWorkspaceFile('src/app/components/emoji-board/EmojiBoard.tsx');
@@ -53,5 +73,21 @@ describe('emoji sidebar pinned-footer contract', () => {
     // reservation just above, but horizontal.
     expect(layout).toContain('pinnedFooterWidth');
     expect(layout).toMatch(/paddingRight:\s*sidebar\s*\?\s*undefined\s*:\s*pinnedFooterWidth/);
+  });
+
+  it('prevents the sidebar stacks from flex-shrinking when packs push content past the pinned footer height', () => {
+    const sidebar = readWorkspaceFile('src/app/components/emoji-board/components/Sidebar.tsx');
+
+    // PinnedSidebarFooter's whole column (Recent + packs + standard groups)
+    // is one flex column taller than the footer's own maxHeight:100% once a
+    // user has enough packs. Without shrink="No" on each SidebarStack, the
+    // default flex-shrink:1 compresses every stack's box to fit — the
+    // fixed-size icon buttons inside don't shrink with it, so they overflow
+    // past their own (squished) stack and visually overlap the next stack's
+    // icons (e.g. a pack icon hidden under a standard-group icon). Confirmed
+    // live: recreating this with real packs on a mobile viewport reproduced
+    // the exact overlap, and shrink="No" fixed it.
+    const stackBlock = extractExportStatement(sidebar, 'SidebarStack');
+    expect(stackBlock).toContain('shrink="No"');
   });
 });
