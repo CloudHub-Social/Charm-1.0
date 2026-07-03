@@ -67,18 +67,13 @@ describe('emoji sidebar pinned-footer contract', () => {
     // icons (e.g. a pack icon hidden under a standard-group icon). Confirmed
     // live: recreating this with real packs on a mobile viewport reproduced
     // the exact overlap, and shrink="No" fixed it.
-    const stackStart = sidebar.indexOf('export const SidebarStack');
-    // Match either `export function SidebarDivider` or a future
-    // `export const SidebarDivider` — the slice boundary shouldn't care
-    // which export form follows, only that it marks the end of the
-    // SidebarStack block.
-    const stackEndMatch = sidebar
-      .slice(stackStart)
-      .match(/export (?:function|const) SidebarDivider/);
-    expect(stackStart).toBeGreaterThan(-1);
-    expect(stackEndMatch).not.toBeNull();
-    const stackEnd = stackStart + stackEndMatch!.index!;
-    const stackBlock = sidebar.slice(stackStart, stackEnd);
-    expect(stackBlock).toContain('shrink="No"');
+    //
+    // Match the whole SidebarStack export statement by its own closing
+    // `));`, rather than bounding it against wherever SidebarDivider happens
+    // to be exported next — that would break if the exports were ever
+    // reordered. This is self-contained regardless of export order.
+    const stackMatch = sidebar.match(/export const SidebarStack = as<'div'>\([\s\S]*?\)\);/);
+    expect(stackMatch).not.toBeNull();
+    expect(stackMatch![0]).toContain('shrink="No"');
   });
 });
