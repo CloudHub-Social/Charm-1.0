@@ -92,6 +92,7 @@ export function CommandAutocomplete({
           onKeyDown={(evt: ReactKeyboardEvent<HTMLButtonElement>) =>
             onTabPress(evt, () => handleAutocomplete(commandName))
           }
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => handleAutocomplete(commandName)}
         >
           <Box

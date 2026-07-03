@@ -620,8 +620,24 @@ export function RoomTimeline({
       const prev = prevViewportHeightRef.current;
       prevViewportHeightRef.current = newHeight;
       if (prev === 0 || newHeight === prev) return;
-      if (newHeight < prev && atBottomRef.current) {
-        vListRef.current?.scrollTo(vListRef.current.scrollSize);
+      if (newHeight < prev) {
+        const v = vListRef.current;
+        // atBottomRef may already be false if VList's onScroll fired with the
+        // new (smaller) viewportSize before this ResizeObserver callback ran.
+        // Fall back to checking the distance from bottom using the *previous*
+        // viewport height so we capture the user's position before the resize.
+        const wasAtBottom =
+          atBottomRef.current || (v != null && v.scrollSize - v.scrollOffset - prev < 100);
+        if (wasAtBottom) {
+          // The tick loop below gates on atBottomRef.current, so it must be
+          // flipped back to true here — otherwise a stale VList onScroll that
+          // already set it false leaves the settle window's tick loop unable
+          // to re-anchor to bottom on subsequent resize/scrollSize changes.
+          setAtBottom(true);
+          refreshBottomAnchorSettleWindow();
+          restartBottomAnchorTick();
+          v?.scrollTo(v.scrollSize);
+        }
       }
     });
 
@@ -678,7 +694,9 @@ export function RoomTimeline({
   }, [
     bottomAnchorRestartToken,
     getRawIndexToProcessedIndex,
+    refreshBottomAnchorSettleWindow,
     room.roomId,
+    setAtBottom,
     timelineSync.focusItem,
     isReady,
   ]);

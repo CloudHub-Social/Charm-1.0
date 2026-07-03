@@ -181,6 +181,15 @@ export type PendingNotification = {
     | 'service_worker_click'
     | 'foreground_notification'
     | 'background_notification';
+  /**
+   * Raw deep-link search params (searchParams.toString()) carrying incoming-call
+   * metadata, set only when targetSessionId differs from the session active at
+   * request time. Resolving the call immediately would read mDirects/muted-room/
+   * settings atoms for whichever session was active *before* the switch, not the
+   * target session — so resolution is deferred until NotificationJumper confirms
+   * the target session's client is actually active.
+   */
+  callSearchParams?: string;
 };
 
 export const pendingNotificationAtom = atom<PendingNotification | null>(null);
@@ -193,6 +202,7 @@ export const createPendingNotification = ({
   targetSessionId,
   swClickId,
   source,
+  callSearchParams,
 }: Omit<PendingNotification, 'requestedAt'>): PendingNotification => ({
   roomId,
   eventId,
@@ -202,6 +212,7 @@ export const createPendingNotification = ({
   requestedAt: Date.now(),
   swClickId,
   source,
+  callSearchParams,
 });
 
 // ─── In-app notification banner ────────────────────────────────────────────

@@ -51,10 +51,13 @@ export const GifHeaderShell = style({
 });
 
 export const MobileSheetHandleShell = style({
-  paddingTop: config.space.S100,
-  paddingBottom: config.space.S200,
+  // Larger vertical padding makes the drag target easier to hit on
+  // touchscreens without changing the visual pill size.
+  paddingTop: config.space.S200,
+  paddingBottom: config.space.S300,
   touchAction: 'none',
   userSelect: 'none',
+  cursor: 'ns-resize',
 });
 
 export const MobileSheetHandle = style([

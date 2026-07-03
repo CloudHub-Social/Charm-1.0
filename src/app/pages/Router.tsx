@@ -103,7 +103,6 @@ import { Create } from './client/create';
 import { ToRoomEvent } from './client/ToRoomEvent';
 import { CallStatusRenderer } from './CallStatusRenderer';
 import { TauriDeepLinkBridge } from './TauriDeepLinkBridge';
-import { SmokeMobileShell } from './SmokeMobileShell';
 
 /**
  * Returns true if there is at least one stored session.
@@ -147,16 +146,6 @@ export const createRouter = (clientConfig: ClientConfig, mobile: boolean) => {
             return redirect(getLoginPath());
           }}
         />
-        {import.meta.env.DEV && (
-          <Route
-            path="/__smoke/mobile-shell/:mode?"
-            element={
-              <AuthRouteThemeManager>
-                <SmokeMobileShell />
-              </AuthRouteThemeManager>
-            }
-          />
-        )}
         <Route
           loader={({ request }) => {
             const url = new URL(request.url);

@@ -51,24 +51,36 @@ globalStyle('#root', {
 // `src/app/features/lobby/RoomItem.tsx`); tracked as a follow-up rather
 // than done here to avoid scope-creeping this global CSS fix into
 // per-component changes.
+//
+// All three blocks are scoped under `body:not(.sable-a11y-highlights-disabled)`
+// so the rings are ON by default (matching pre-existing app-wide behaviour,
+// including on unauthenticated routes like /login that never mount any
+// settings-driven feature) and are only suppressed once the user turns off
+// the Focus Highlights setting (Settings > General > Accessibility). This
+// opt-out shape means the default case needs no JS to take effect (no
+// first-paint flash) and unauthenticated routes, which have no settings UI
+// and never toggle the class, simply keep the default rings. The disabled
+// class is toggled by AuthRouteThemeManager in ThemeManager.tsx, in the same
+// effect that already resets `document.body.className` for theme/motion/
+// underline-link settings, so the class survives those resets.
 globalStyle(
   `
-    a:focus-visible,
-    button:focus-visible,
-    select:focus-visible,
-    [role="button"]:focus-visible,
-    [role="tab"]:focus-visible,
-    [role="menuitem"]:focus-visible,
-    [role="option"]:focus-visible,
-    [role="checkbox"]:focus-visible,
-    [role="radio"]:focus-visible,
-    [role="switch"]:focus-visible,
-    [role="textbox"]:focus-visible,
-    [tabindex="0"]:focus-visible,
-    [class*="Button"]:focus-visible,
-    [class*="Chip"]:focus-visible,
-    [class*="MenuItem"]:focus-visible,
-    [class*="IconButton"]:focus-visible
+    body:not(.sable-a11y-highlights-disabled) a:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) button:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) select:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="button"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="tab"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="menuitem"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="option"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="checkbox"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="radio"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="switch"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [role="textbox"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [tabindex="0"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [class*="Button"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [class*="Chip"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [class*="MenuItem"]:focus-visible,
+    body:not(.sable-a11y-highlights-disabled) [class*="IconButton"]:focus-visible
 `,
   {
     outline: '2px solid var(--sable-primary-main) !important',
@@ -109,10 +121,10 @@ globalStyle(
 // unaffected either way and always gets its own ring from this rule.
 globalStyle(
   `
-    input:focus-visible:not(div > input),
-    textarea:focus-visible:not(div > textarea),
-    div > input:focus-visible[data-focus-ring-self],
-    div > textarea:focus-visible[data-focus-ring-self]
+    body:not(.sable-a11y-highlights-disabled) input:focus-visible:not(div > input),
+    body:not(.sable-a11y-highlights-disabled) textarea:focus-visible:not(div > textarea),
+    body:not(.sable-a11y-highlights-disabled) div > input:focus-visible[data-focus-ring-self],
+    body:not(.sable-a11y-highlights-disabled) div > textarea:focus-visible[data-focus-ring-self]
 `,
   {
     outline: '2px solid var(--sable-primary-main) !important',
@@ -135,8 +147,8 @@ globalStyle(
 // double-ring bug for a different pairing of elements.
 globalStyle(
   `
-    div:has(> input:focus-visible:not([data-focus-ring-self])),
-    div:has(> textarea:focus-visible:not([data-focus-ring-self]))
+    body:not(.sable-a11y-highlights-disabled) div:has(> input:focus-visible:not([data-focus-ring-self])),
+    body:not(.sable-a11y-highlights-disabled) div:has(> textarea:focus-visible:not([data-focus-ring-self]))
 `,
   {
     outline: '2px solid var(--sable-primary-main) !important',
@@ -144,12 +156,76 @@ globalStyle(
   }
 );
 
+// Codex post-merge review of #514 (comment_id=3515157099) flagged that the
+// global rules above use a *positive* `outlineOffset` (`2px`, drawn outside
+// the element's border box), which gets silently clipped whenever the
+// focused element sits flush (no padding) inside an `overflow: hidden`
+// ancestor — the ring is cropped on whichever edges touch the container
+// boundary. Confirmed concretely: `CutoutCard` (`src/app/components/
+// cutout-card/CutoutCard.css.ts`) sets `overflow: 'hidden'` with zero
+// padding, and both `AccountData.tsx` and `DevelopTools.tsx` render
+// `MenuItem` rows as its direct children with no gap, so a keyboard-focused
+// row loses its ring on the edges flush against the card.
+//
+// This is not a one-off: it recurs anywhere a component both clips overflow
+// and butts focusable children flush against its edge. However, matching
+// broadly on `[class*="CutoutCard"]` (an earlier version of this rule) is
+// too broad: `CutoutCard` doesn't always clip its children flush against the
+// edge — several call sites (`UserModeration.tsx`'s ban/kick/invite alerts,
+// `RoomAddress.tsx`'s published-addresses list, `PowerChip.tsx`'s error
+// card, `UserChips.tsx`'s `IgnoredUserAlert`) pass an inline
+// `style={{ padding: ... }}` that already buffers focusable children from
+// the clipped edge, so they were never at clipping risk. Forcing the inset
+// ring on those unconditionally pulled the ring inside the focused
+// element's own border box for no reason, where it can overlap the
+// element's own content (Sentry LOW severity finding on this PR,
+// comment_id=3515284845).
+//
+// Since padding is applied via an arbitrary inline `style` prop (not a CSS
+// class), a plain selector can't distinguish "this instance has padding"
+// from "this instance doesn't". `CutoutCard` (`src/app/components/
+// cutout-card/CutoutCard.tsx`) instead exposes an explicit `unpadded` prop
+// for genuinely flush/clipping-risk instances, which sets a
+// `data-focus-ring-inset` marker attribute — mirroring the existing
+// `data-focus-ring-self` opt-in pattern above rather than inventing a new
+// convention. Only `CutoutCard` instances that opt in via `unpadded` (i.e.
+// `AccountData.tsx`, `DevelopTools.tsx`) get the inset treatment; padded
+// instances keep the normal outset ring like every other focusable element.
+//
+// The global *positive* offset is intentionally left unchanged for
+// everywhere else: it reads clearly against non-clipping backgrounds, and
+// flipping it negative app-wide would draw the ring on top of/inside
+// content everywhere, a worse look for the common (non-clipped) case.
 globalStyle(
   `
-    button, 
-    [role="button"], 
-    [class*="Button"], 
-    [class*="Chip"], 
+    [data-focus-ring-inset] a:focus-visible,
+    [data-focus-ring-inset] button:focus-visible,
+    [data-focus-ring-inset] select:focus-visible,
+    [data-focus-ring-inset] [role="button"]:focus-visible,
+    [data-focus-ring-inset] [role="tab"]:focus-visible,
+    [data-focus-ring-inset] [role="menuitem"]:focus-visible,
+    [data-focus-ring-inset] [role="option"]:focus-visible,
+    [data-focus-ring-inset] [role="checkbox"]:focus-visible,
+    [data-focus-ring-inset] [role="radio"]:focus-visible,
+    [data-focus-ring-inset] [role="switch"]:focus-visible,
+    [data-focus-ring-inset] [role="textbox"]:focus-visible,
+    [data-focus-ring-inset] [tabindex="0"]:focus-visible,
+    [data-focus-ring-inset] [class*="Button"]:focus-visible,
+    [data-focus-ring-inset] [class*="Chip"]:focus-visible,
+    [data-focus-ring-inset] [class*="MenuItem"]:focus-visible,
+    [data-focus-ring-inset] [class*="IconButton"]:focus-visible
+`,
+  {
+    outlineOffset: '-2px !important',
+  }
+);
+
+globalStyle(
+  `
+    button,
+    [role="button"],
+    [class*="Button"],
+    [class*="Chip"],
     [class*="MenuItem"]
 `,
   {
