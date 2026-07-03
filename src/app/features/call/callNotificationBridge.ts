@@ -84,6 +84,11 @@ export const resolveIncomingCallFromNotificationData = (
   );
 };
 
+export const isCallDeepLinkSearchParams = (searchParams: URLSearchParams): boolean =>
+  searchParams.get('call') === '1' ||
+  searchParams.get('joinCall') === 'true' ||
+  searchParams.get('joinCall') === '1';
+
 export const resolveIncomingCallFromSearchParams = (
   searchParams: URLSearchParams,
   roomId: string,
@@ -91,11 +96,7 @@ export const resolveIncomingCallFromSearchParams = (
   isDirect: boolean,
   now = Date.now()
 ): IncomingCall | undefined => {
-  const isCallDeepLink =
-    searchParams.get('call') === '1' ||
-    searchParams.get('joinCall') === 'true' ||
-    searchParams.get('joinCall') === '1';
-  if (!isCallDeepLink) return undefined;
+  if (!isCallDeepLinkSearchParams(searchParams)) return undefined;
   if (!notificationEventId) {
     // notificationEventId is the event_id path segment of /to/:user_id/:room_id/:event_id?
     // — optional by route design (ordinary room links can omit it), but a genuine call
