@@ -110,4 +110,31 @@ test.describe('app startup smoke', () => {
       /#\/to\/%40smoke%3Asmoke\.test\/%21room%3Asmoke\.test\/%24event%3Asmoke\.test$/
     );
   });
+
+  test('preserves a persisted notification launch target across login for a logged-out cold start', async ({
+    page,
+  }, testInfo) => {
+    // Regression coverage for a real bug an automated reviewer caught:
+    // recoverNotificationLaunchPath() was only being awaited inside the
+    // router's `hasStoredSession()` branch, so a logged-out cold start never
+    // consumed the persisted launch context at all -- the notification
+    // target was silently dropped instead of becoming the post-login
+    // redirect.
+    test.skip(
+      testInfo.project.name === 'mobile-ios',
+      'Known Playwright-WebKit Cache Storage limitation, see the test above'
+    );
+    await installSmokeApp(page);
+    await seedLaunchContext(
+      page,
+      'http://127.0.0.1:4173/#/to/%40smoke%3Asmoke.test/%21room%3Asmoke.test/%24event%3Asmoke.test'
+    );
+
+    await page.goto('/');
+
+    await expect(page).toHaveURL(/#\/login\/smoke\.test\/?$/);
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('after_login_redirect_url')))
+      .toBe('/to/%40smoke%3Asmoke.test/%21room%3Asmoke.test/%24event%3Asmoke.test');
+  });
 });
