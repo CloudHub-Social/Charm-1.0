@@ -615,6 +615,12 @@ export function useIncomingCallSignaling() {
       mx.matrixRTC.off(MatrixRTCSessionManagerEvents.SessionStarted, evaluateFallbackState);
       mx.matrixRTC.off(MatrixRTCSessionManagerEvents.SessionEnded, handleSessionEnded);
       window.clearInterval(intervalId);
+      // handlers() reads from a ref reflecting *current* signaling state, not this
+      // effect instance's closure — so if mx changes (session switch) while this
+      // timeout is pending, an uncleared one would fire later and call
+      // handlers().stopOutgoingRing() against the new session, prematurely stopping an
+      // unrelated new call's ringback.
+      window.clearTimeout(outgoingRingTimeoutId);
       handlers().stopIncomingRing();
       handlers().stopOutgoingRing();
     };
