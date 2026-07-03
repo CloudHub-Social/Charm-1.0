@@ -2661,7 +2661,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 )}
               </IconButton>
 
-              <MarkdownFormattingToolbarToggle variant="SurfaceVariant" />
+              <MarkdownFormattingToolbarToggle variant="SurfaceVariant" size={touchTargetSize} />
               {isMobileLayout &&
                 emojiBoardAnchorRect &&
                 createPortal(

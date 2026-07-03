@@ -303,8 +303,10 @@ export type MarkdownFormattingToolbarToggleVariant = 'SurfaceVariant' | 'Backgro
 
 export function MarkdownFormattingToolbarToggle({
   variant,
+  size = '300',
 }: {
   variant: MarkdownFormattingToolbarToggleVariant;
+  size?: '300' | '400' | '500';
 }) {
   const [editorToolbar] = useSetting(settingsAtom, 'editorToolbar');
   const [composerToolbarOpen, setComposerToolbarOpen] = useSetting(
@@ -321,7 +323,7 @@ export function MarkdownFormattingToolbarToggle({
   return (
     <IconButton
       variant={variant}
-      size="300"
+      size={size}
       radii="300"
       title={composerToolbarOpen ? 'Hide formatting toolbar' : 'Show formatting toolbar'}
       aria-pressed={composerToolbarOpen}
