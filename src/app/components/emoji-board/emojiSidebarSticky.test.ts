@@ -54,4 +54,24 @@ describe('emoji sidebar pinned-footer contract', () => {
     expect(layout).toContain('pinnedFooterWidth');
     expect(layout).toMatch(/paddingRight:\s*sidebar\s*\?\s*undefined\s*:\s*pinnedFooterWidth/);
   });
+
+  it('prevents the sidebar stacks from flex-shrinking when packs push content past the pinned footer height', () => {
+    const sidebar = readWorkspaceFile('src/app/components/emoji-board/components/Sidebar.tsx');
+
+    // PinnedSidebarFooter's whole column (Recent + packs + standard groups)
+    // is one flex column taller than the footer's own maxHeight:100% once a
+    // user has enough packs. Without shrink="No" on each SidebarStack, the
+    // default flex-shrink:1 compresses every stack's box to fit — the fixed
+    // -size icon buttons inside don't shrink with it, so they overflow past
+    // their own (squished) stack and visually overlap the next stack's
+    // icons (e.g. a pack icon hidden under a standard-group icon). Confirmed
+    // live: recreating this with real packs on a mobile viewport reproduced
+    // the exact overlap, and shrink="No" fixed it.
+    const stackStart = sidebar.indexOf('export const SidebarStack');
+    const stackEnd = sidebar.indexOf('export function SidebarDivider');
+    expect(stackStart).toBeGreaterThan(-1);
+    expect(stackEnd).toBeGreaterThan(stackStart);
+    const stackBlock = sidebar.slice(stackStart, stackEnd);
+    expect(stackBlock).toContain('shrink="No"');
+  });
 });
