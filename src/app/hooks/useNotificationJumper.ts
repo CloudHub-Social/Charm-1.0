@@ -178,8 +178,18 @@ export function NotificationJumper() {
         !isIncomingCallSuppressed(incomingCall, mutedRoomId, incomingVoiceRoomCallSoundEnabled)
       ) {
         setIncomingCall(incomingCall);
+        // IncomingCallModal now owns navigation for this click — its handleAnswer calls
+        // navigateRoom() directly. Clear `pending` here so a later, unrelated performJump
+        // trigger (e.g. ClientEvent.Room) can't fall through to the room-navigation branch
+        // below: handledCallRef stays true forever otherwise (nothing else changes
+        // `pending` to reset it), so a stray trigger after the user declines/ignores the
+        // call would silently jump into the room anyway.
+        setPending(null);
+        return;
       }
-      return;
+      // No valid/unsuppressed incoming call to show (expired, invalid, or muted) — fall
+      // through to the normal room-navigation path below so the click still lands
+      // somewhere instead of being silently dropped.
     }
 
     const isSyncing = mx.getSyncState() === SyncState.Syncing;
