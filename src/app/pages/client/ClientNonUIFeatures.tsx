@@ -60,7 +60,7 @@ import { createDebugLogger } from '$utils/debugLogger';
 import { shouldShowNotificationInFocusMode } from '$utils/focusMode';
 import { useSlidingSyncActiveRoom } from '$hooks/useSlidingSyncActiveRoom';
 import { NotificationBanner } from '$components/notification-banner';
-import { useCallSignaling } from '$hooks/useCallSignaling';
+import { useIncomingCallSignaling } from '$hooks/useCallSignaling';
 import { getRenderableMediaUrlStats } from '$hooks/useRenderableMediaUrl';
 import { isStartupShellReady, subscribeStartupShellReady } from '$utils/perfTelemetry';
 import { isTauri } from '@tauri-apps/api/core';
@@ -194,6 +194,7 @@ function queueRoomNotificationTarget(
     swClickId?: string;
     jumpMode?: 'notification_live' | 'history_context';
     source?: 'foreground_notification' | 'service_worker_click';
+    callSearchParams?: string;
   }
 ): void {
   if (!userId) return;
@@ -205,6 +206,7 @@ function queueRoomNotificationTarget(
       targetSessionId: userId,
       swClickId: options?.swClickId,
       source: options?.source,
+      callSearchParams: options?.callSearchParams,
     })
   );
 }
@@ -1007,6 +1009,7 @@ export function HandleNotificationClick() {
         navigate: navigateUrl,
         isInvite,
         isReminder,
+        callSearchParams,
       } = data as {
         userId?: string;
         roomId?: string;
@@ -1016,6 +1019,7 @@ export function HandleNotificationClick() {
         navigate?: string;
         isInvite?: boolean;
         isReminder?: boolean;
+        callSearchParams?: string;
       };
 
       const acknowledgeHandledClick = () => {
@@ -1102,6 +1106,7 @@ export function HandleNotificationClick() {
           swClickId: typeof clickId === 'string' ? clickId : undefined,
           jumpMode: 'notification_live',
           source: 'service_worker_click',
+          callSearchParams,
         });
         return;
       }
@@ -1658,7 +1663,7 @@ function useDeferredStartupWork(delayMs = 250): boolean {
 }
 
 export function ClientNonUIFeatures({ children }: ClientNonUIFeaturesProps) {
-  useCallSignaling();
+  useIncomingCallSignaling();
   const deferredStartupWorkEnabled = useDeferredStartupWork();
   return (
     <SearchIndexProvider>

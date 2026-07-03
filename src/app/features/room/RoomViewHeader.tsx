@@ -26,7 +26,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Room, MatrixEvent } from '$types/matrix-sdk';
 import {
   Direction,
-  EventTimeline,
+  type EventTimeline,
   NotificationCountType,
   ThreadEvent,
   RoomEvent,
@@ -115,6 +115,9 @@ import { callChatAtom } from '$state/callEmbed';
 import { RoomSettingsPage } from '$state/roomSettings';
 import { roomIdToThreadBrowserAtomFamily } from '$state/room/roomToThreadBrowser';
 import { roomIdToOpenThreadAtomFamily } from '$state/room/roomToOpenThread';
+import { useCallPreferences } from '$state/hooks/callPreferences';
+import { useCallStartCapabilities } from '$hooks/useCallStartCapabilities';
+import { useCallSession, useCallMembers } from '$hooks/useCall';
 import { JumpToTime } from './jump-to-time';
 import { RoomPinMenu } from './room-pin-menu';
 import * as css from './RoomViewHeader.css';
@@ -406,6 +409,7 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
   const [pinMenuAnchor, setPinMenuAnchor] = useState<RectCords>();
   const direct = useIsDirectRoom();
   const [customDMCards] = useSetting(settingsAtom, 'customDMCards');
+  const { microphone, video, sound } = useCallPreferences();
 
   const [chat, setChat] = useAtom(callChatAtom);
   const [threadBrowserOpen, setThreadBrowserOpen] = useAtom(
@@ -413,10 +417,22 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
   );
   const [openThreadId, setOpenThread] = useAtom(roomIdToOpenThreadAtomFamily(room.roomId));
 
-  const canUseCalls = room
-    .getLiveTimeline()
-    .getState(EventTimeline.FORWARDS)
-    ?.maySendStateEvent('org.matrix.msc3401.call.member', mx.getUserId()!);
+  const callStartCapabilities = useCallStartCapabilities(room);
+  const headerCallSession = useCallSession(room);
+  const headerCallMembers = useCallMembers(room, headerCallSession);
+  const hasActiveCall = headerCallMembers.length > 0;
+  // In non-call rooms this header button is the only entry point to the call widget
+  // (Room.tsx only mounts CallView for room.isCallRoom()). canRenderCallButton blocks
+  // on missing local LiveKit support, which is correct for *starting* a call but would
+  // also hide this button — the only way in — for a room that already has an active
+  // call started by someone else, even though joining an existing call doesn't need
+  // this client's own homeserver to provide LiveKit (same reasoning as the CallView and
+  // IncomingCallModal join fixes elsewhere in this PR).
+  const canRenderCallButton = hasActiveCall
+    ? callStartCapabilities.webRTCSupported &&
+      callStartCapabilities.hasCallMemberPermission &&
+      !callStartCapabilities.inAnotherCall
+    : callStartCapabilities.canRenderCallButton;
   const [alwaysShowCallButton] = useSetting(settingsAtom, 'alwaysShowCallButton');
   const shouldShowCallButton = alwaysShowCallButton || room.getJoinedMemberCount() <= 10;
 
@@ -813,7 +829,23 @@ export function RoomViewHeader({ callView }: Readonly<{ callView?: boolean }>) {
                   </IconButton>
                 )}
               </TooltipProvider>
-              {canUseCalls && shouldShowCallButton && <RoomCallButton room={room} />}
+              {!room.isCallRoom() && canRenderCallButton && shouldShowCallButton && (
+                <>
+                  <RoomCallButton
+                    room={room}
+                    direct={direct}
+                    kind="voice"
+                    defaultPreferences={{ microphone, video, sound }}
+                  />
+                  <RoomCallButton
+                    room={room}
+                    direct={direct}
+                    kind="video"
+                    defaultPreferences={{ microphone, video, sound }}
+                    allowVideoStart
+                  />
+                </>
+              )}
               <PopOut
                 anchor={pinMenuAnchor}
                 position="Bottom"
