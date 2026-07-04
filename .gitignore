@@ -54,3 +54,10 @@ src-tauri/gen/android/app/build/
 
 # Worktrees
 .worktrees
+
+# Design sync artifacts (converter scripts, generated bundle, playwright)
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
