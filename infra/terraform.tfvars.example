@@ -1,4 +1,4 @@
 account_id    = "replace-with-cloudflare-account-id"
 zone_id       = "replace-with-cloudflare-zone-id"
-worker_name   = "charm"
-custom_domain = "charm.cloudhub.social"
+worker_name   = "charm-1"
+custom_domain = "charm-1.cloudhub.social"
