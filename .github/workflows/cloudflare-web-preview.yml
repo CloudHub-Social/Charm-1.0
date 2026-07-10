@@ -98,7 +98,7 @@ jobs:
           accountId: ${{ secrets.TF_VAR_ACCOUNT_ID }}
           command: >
             versions upload
-            -c dist/charm/wrangler.json
+            -c dist/charm_1/wrangler.json
             --preview-alias ${{ steps.alias.outputs.alias }}
             --tag ${{ steps.metadata.outputs.short_sha }}
             --message ${{ steps.metadata.outputs.short_sha }}

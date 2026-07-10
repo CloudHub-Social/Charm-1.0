@@ -81,7 +81,7 @@ jobs:
           accountId: ${{ secrets.TF_VAR_ACCOUNT_ID }}
           command: >
             deploy
-            -c dist/charm/wrangler.json
+            -c dist/charm_1/wrangler.json
             --keep-vars
             --tag ${{ steps.metadata.outputs.short_sha }}
             --message ${{ steps.metadata.outputs.short_sha }}

@@ -270,6 +270,18 @@ export default defineConfig(({ command }) => ({
       ? [
           cloudflare({
             config: {
+              // Explicit, not left to fall back to package.json's "name"
+              // ("charm" — the 2.0 repo's identity, not this repo's). That
+              // fallback caused wrangler to deploy this repo's build onto
+              // the *2.0* production Worker (also named "charm"),
+              // overwriting it — cloudflare-dev-deploy.yml's `wrangler
+              // deploy` has no --name override to catch it, it just trusts
+              // whatever name ends up in the generated wrangler.json. This
+              // also changes the plugin's per-worker dist output dir from
+              // dist/charm/ to dist/charm_1/ — see the matching path fixes
+              // in cloudflare-dev-deploy.yml, cloudflare-web-preview.yml,
+              // and infra/web/main.tf.
+              name: 'charm-1',
               compatibility_date: '2026-03-03',
               main: './worker/index.ts',
               observability: {
