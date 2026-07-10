@@ -29,7 +29,7 @@ Cloudflare API token permissions:
 
 - `Account > Workers Scripts > Edit`
 - Scope the token to the specific Cloudflare account that owns the Worker.
-- Scope the token to the specific zone that serves `charm.cloudhub.social`.
+- Scope the token to the specific zone that serves `charm-1.cloudhub.social`.
 - Do not grant Pages or DNS edit permissions here. The Worker script upload and
   custom-domain attach endpoints used by this repo accept Workers Scripts Write, and
   Cloudflare creates the DNS record for the Worker custom domain automatically.
@@ -56,7 +56,7 @@ Local setup:
 4. Export the GitLab access token as the backend password.
 5. Export the Cloudflare API token for OpenTofu.
 6. Run `pnpm run build` before `tofu plan` or `tofu apply`, because
-   `cloudflare_worker_version` uploads the built Worker module from `dist/charm/`
+   `cloudflare_worker_version` uploads the built Worker module from `dist/charm_1/`
    and static assets from `dist/client/`.
 7. Initialize the backend.
 
@@ -91,7 +91,7 @@ Preview builds:
 - It does not promote preview versions to production.
 
 ```bash
-npx wrangler versions upload -c dist/charm/wrangler.json --preview-alias pr-60
+npx wrangler versions upload -c dist/charm_1/wrangler.json --preview-alias pr-60
 ```
 
 Production deploys:
@@ -99,8 +99,8 @@ Production deploys:
 - `.github/workflows/cloudflare-web-deploy.yml` comments PR plans for `infra/web` changes.
 - That PR plan job only runs for same-repo PRs, not fork PRs, because it needs repo secrets.
 - Fast-moving production deploys are handled by `.github/workflows/cloudflare-dev-deploy.yml`.
-- Every push to `integration` that touches app or deploy inputs builds `dist/` and runs `wrangler deploy -c dist/charm/wrangler.json`.
-- That updates the production Worker served from `charm.cloudhub.social` once the custom domain has been attached.
+- Every push to `integration` that touches app or deploy inputs builds `dist/` and runs `wrangler deploy -c dist/charm_1/wrangler.json`.
+- That updates the production Worker served from `charm-1.cloudhub.social` once the custom domain has been attached.
 - Worker observability and persisted invocation logs are enabled in both OpenTofu and the generated Wrangler config.
 - The deployed Worker now runs before static asset handling and forwards each request to the
   `ASSETS` binding. This is required for Cloudflare Worker observability, trace drains,
@@ -108,7 +108,7 @@ Production deploys:
   static-assets-only.
 - Static asset headers are managed through `public/_headers`; Vite copies that file into `dist/` before Wrangler/OpenTofu upload the Worker assets.
 - The stable release path remains available through `.github/workflows/cloudflare-web-deploy.yml` on `v*` tags or manual dispatch.
-- `tofu apply` uploads the built Worker module from `dist/charm/index.js`, uploads
+- `tofu apply` uploads the built Worker module from `dist/charm_1/index.js`, uploads
   static assets from `dist/client/` through `cloudflare_worker_version`, promotes
   the version with `cloudflare_workers_deployment`, and manages the Worker custom domain.
 - To swap back to a release-only site, disable the `integration` production deploy workflow or change it back to `wrangler versions upload`, then use the OpenTofu workflow for tag/manual production deploys.

@@ -82,6 +82,7 @@ jobs:
           command: >
             deploy
             -c dist/charm_1/wrangler.json
+            --name charm-1
             --keep-vars
             --tag ${{ steps.metadata.outputs.short_sha }}
             --message ${{ steps.metadata.outputs.short_sha }}
