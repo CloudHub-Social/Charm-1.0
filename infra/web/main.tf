@@ -29,7 +29,7 @@ resource "cloudflare_worker_version" "site" {
 
   modules = [
     {
-      content_file = abspath("${path.module}/../../dist/charm/index.js")
+      content_file = abspath("${path.module}/../../dist/charm_1/index.js")
       content_type = "application/javascript+module"
       name         = "index.js"
     },
