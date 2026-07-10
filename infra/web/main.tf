@@ -7,6 +7,11 @@ resource "cloudflare_worker" "site" {
     logs = {
       enabled         = true
       invocation_logs = true
+      destinations    = ["sentry-charm-1-logs"]
+    }
+    traces = {
+      enabled      = true
+      destinations = ["sentry-charm-1-traces"]
     }
   }
 
