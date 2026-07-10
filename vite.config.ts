@@ -277,14 +277,14 @@ export default defineConfig(({ command }) => ({
                 head_sampling_rate: 1,
                 logs: {
                   enabled: true,
-                  destinations: ['sentry-logs'],
+                  destinations: ['sentry-charm-1-logs'],
                   head_sampling_rate: 1,
                   persist: true,
                   invocation_logs: true,
                 },
                 traces: {
                   enabled: true,
-                  destinations: ['sentry-traces'],
+                  destinations: ['sentry-charm-1-traces'],
                   persist: true,
                   head_sampling_rate: 1,
                 },
