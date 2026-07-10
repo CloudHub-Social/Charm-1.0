@@ -1,0 +1,46 @@
+{
+  "pkg": "folds",
+  "globalName": "folds",
+  "projectId": "3b55e337-907e-4b94-936a-d185c2822e3a",
+  "shape": "package",
+  "cssEntry": "dist/style.css",
+  "extraFonts": [
+    "../@fontsource-variable/nunito/index.css",
+    "../@fontsource/space-mono/400.css",
+    "../@fontsource/space-mono/700.css"
+  ],
+  "provider": {
+    "component": "Box",
+    "props": {
+      "className": "oq6d071w _164xfge0 dw378b0",
+      "style": { "padding": "16px", "fontFamily": "'Nunito Variable', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" }
+    }
+  },
+  "componentSrcMap": {
+    "Portal": null,
+    "DefaultReset": null,
+    "TextReset": null,
+    "Disabled": null,
+    "FocusOutline": null,
+    "Icons": null,
+    "OverlayBackdrop": null,
+    "OverlayContainerProvider": null,
+    "PopOutContainerProvider": null,
+    "TooltipContainerProvider": null
+  },
+  "dtsPropsFor": {
+    "Button": "children?: React.ReactNode; before?: React.ReactNode; after?: React.ReactNode; variant?: \"Primary\" | \"Secondary\" | \"Success\" | \"Warning\" | \"Critical\"; fill?: \"Solid\" | \"Soft\" | \"None\"; size?: \"300\" | \"400\" | \"500\"; outlined?: boolean; radii?: \"0\" | \"300\" | \"400\" | \"500\" | \"Pill\" | \"Inherit\"; disabled?: boolean; onClick?: React.MouseEventHandler; as?: React.ElementType; className?: string; style?: React.CSSProperties",
+    "Chip": "children?: React.ReactNode; before?: React.ReactNode; after?: React.ReactNode; variant?: \"Background\" | \"Surface\" | \"SurfaceVariant\" | \"Primary\" | \"Secondary\" | \"Success\" | \"Warning\" | \"Critical\"; fill?: \"Soft\" | \"None\"; size?: \"400\" | \"500\"; outlined?: boolean; radii?: \"0\" | \"300\" | \"400\" | \"500\" | \"Pill\" | \"Inherit\"; disabled?: boolean; onClick?: React.MouseEventHandler; as?: React.ElementType; className?: string; style?: React.CSSProperties",
+    "MenuItem": "children?: React.ReactNode; before?: React.ReactNode; after?: React.ReactNode; variant?: \"Background\" | \"Surface\" | \"SurfaceVariant\" | \"Primary\" | \"Secondary\" | \"Success\" | \"Warning\" | \"Critical\"; fill?: \"Soft\" | \"None\"; size?: \"300\" | \"400\"; radii?: \"0\" | \"300\" | \"400\" | \"500\" | \"Pill\" | \"Inherit\"; disabled?: boolean; onClick?: React.MouseEventHandler; as?: React.ElementType; className?: string; style?: React.CSSProperties"
+  },
+  "overrides": {
+    "Overlay": { "cardMode": "single", "primaryStory": "OpenWithBackdrop" },
+    "PopOut": { "cardMode": "single", "primaryStory": "DropdownMenu" }
+  },
+  "libOverrides": {
+    "dts.mjs": "folds ships .d.ts in dist/ without a `types` field — fork falls back to typesRoot/index.d.ts for the entry",
+    "source-kit.mjs": "repoints ./dts.mjs to the forked dts (source-kit's static import would otherwise use the unforked lib copy)"
+  },
+  "guidelinesGlob": [],
+  "readmeHeader": ".design-sync/conventions.md"
+}
