@@ -67,6 +67,14 @@ export async function requestBrowserNotificationPermission(): Promise<Notificati
   }
 }
 
+function getVapidPublicKey(clientConfig: ClientConfig): string {
+  const vapidPublicKey = clientConfig.pushNotificationDetails?.vapidPublicKey;
+  if (!vapidPublicKey) {
+    throw new Error('Web push requires pushNotificationDetails.vapidPublicKey in config.json.');
+  }
+  return vapidPublicKey;
+}
+
 export async function enablePushNotifications(
   mx: MatrixClient,
   clientConfig: ClientConfig,
@@ -79,6 +87,7 @@ export async function enablePushNotifications(
     );
     throw new UnsupportedPushEnvironmentError();
   }
+  const vapidPublicKey = getVapidPublicKey(clientConfig);
   debugLog.info('notification', 'Enabling push notifications');
   const [pushSubAtom, setPushSubscription] = pushSubscriptionAtom;
   const registration = await navigator.serviceWorker.ready;
@@ -125,7 +134,7 @@ export async function enablePushNotifications(
   debugLog.info('notification', 'Creating new push subscription');
   const newSubscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: clientConfig.pushNotificationDetails?.vapidPublicKey,
+    applicationServerKey: vapidPublicKey,
   });
 
   debugLog.info('notification', 'Push subscription created successfully', {
