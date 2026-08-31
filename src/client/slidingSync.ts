@@ -53,6 +53,8 @@ const POLL_DEADLINE_MARGIN_MS = 20_000;
 // The SDK's to_device extension takes 100 events per response, so a backlog needs several.
 const MAX_PUSH_DRAIN_POLLS = 5;
 
+const PUSH_DRAIN_TIMEOUT_MS = 120_000;
+
 const ACTIVE_ROOM_SUBSCRIPTION_KEY = 'active_room';
 const CALL_ROOM_SUBSCRIPTION_KEY = 'call_room';
 const SIDEBAR_ROOM_SUBSCRIPTION_KEY = 'sidebar_room';
@@ -718,6 +720,8 @@ export class SlidingSyncManager {
 
   private pushDrainSawEvents = false;
 
+  private pushDrainTimer: ReturnType<typeof setTimeout> | undefined;
+
   private readonly resumeWaiters = new Set<() => void>();
 
   private readonly transportStateListeners = new Set<() => void>();
@@ -1049,21 +1053,32 @@ export class SlidingSyncManager {
     if (this.disposed || this.pushDrainPollsLeft === MAX_PUSH_DRAIN_POLLS) return;
     this.pushDrainPollsLeft = MAX_PUSH_DRAIN_POLLS;
     this.pushDrainSawEvents = false;
+    if (this.pushDrainTimer !== undefined) clearTimeout(this.pushDrainTimer);
+    this.pushDrainTimer = setTimeout(() => this.endPushDrain(), PUSH_DRAIN_TIMEOUT_MS);
     debugLog.info('sync', 'Sliding sync asked to drain to-device after a push');
+    this.notifyTransportState();
+  }
+
+  private endPushDrain(): void {
+    if (this.pushDrainTimer !== undefined) {
+      clearTimeout(this.pushDrainTimer);
+      this.pushDrainTimer = undefined;
+    }
+    if (this.pushDrainPollsLeft === 0) return;
+    this.pushDrainPollsLeft = 0;
+    this.pushDrainSawEvents = false;
     this.notifyTransportState();
   }
 
   private settlePushDrain(resp: MSC3575SlidingSyncResponse): void {
     if (this.pushDrainPollsLeft === 0) return;
     const toDevice = resp.extensions?.to_device as { events?: unknown[] } | undefined;
-    const received = (toDevice?.events?.length ?? 0) > 0;
-    if (received) this.pushDrainSawEvents = true;
+    if ((toDevice?.events?.length ?? 0) > 0) {
+      this.pushDrainSawEvents = true;
+      return;
+    }
     this.pushDrainPollsLeft -= 1;
-    const drained = this.pushDrainSawEvents && !received;
-    if (!drained && this.pushDrainPollsLeft > 0) return;
-    this.pushDrainPollsLeft = 0;
-    this.pushDrainSawEvents = false;
-    this.notifyTransportState();
+    if (this.pushDrainSawEvents || this.pushDrainPollsLeft === 0) this.endPushDrain();
   }
 
   public isPaused(): boolean {
@@ -1130,6 +1145,10 @@ export class SlidingSyncManager {
     this.paused = false;
     this.pushDrainPollsLeft = 0;
     this.pushDrainSawEvents = false;
+    if (this.pushDrainTimer !== undefined) {
+      clearTimeout(this.pushDrainTimer);
+      this.pushDrainTimer = undefined;
+    }
     this.transportStateListeners.clear();
     this.releaseResumeWaiters();
     globalThis.clearTimeout(this.pollWatchdogTimer);
