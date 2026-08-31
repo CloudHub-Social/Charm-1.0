@@ -165,11 +165,13 @@ export async function ensureUnifiedPushDistributorSelection(
   distributors: string[],
   selectedDistributor: string
 ): Promise<string> {
-  const distributor =
-    selectedDistributor && distributors.includes(selectedDistributor)
-      ? selectedDistributor
-      : distributors[0];
+  if (selectedDistributor) {
+    if (!distributors.includes(selectedDistributor)) return '';
+    await saveUnifiedPushDistributor(selectedDistributor);
+    return selectedDistributor;
+  }
 
+  const distributor = distributors[0];
   if (!distributor) return '';
 
   await saveUnifiedPushDistributor(distributor);

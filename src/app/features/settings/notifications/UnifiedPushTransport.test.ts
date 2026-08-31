@@ -212,15 +212,15 @@ describe('UnifiedPush distributor state helpers', () => {
     expect(unifiedPushApi.setDistributor).toHaveBeenCalledOnce();
   });
 
-  it('replaces a stale selected distributor with the first available one', async () => {
+  it('never replaces an explicitly chosen distributor that the scan did not list', async () => {
     unifiedPushApi.setDistributor.mockResolvedValue(undefined);
     await expect(
       ensureUnifiedPushDistributorSelection(
         ['org.unifiedpush.distributor.ntfy', 'org.unifiedpush.distributor.nextpush'],
         'org.unifiedpush.distributor.removed'
       )
-    ).resolves.toBe('org.unifiedpush.distributor.ntfy');
-    expect(unifiedPushApi.setDistributor).toHaveBeenCalledWith('org.unifiedpush.distributor.ntfy');
+    ).resolves.toBe('');
+    expect(unifiedPushApi.setDistributor).not.toHaveBeenCalled();
   });
 
   it('persists a selected distributor through the transport helper', async () => {
