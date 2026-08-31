@@ -1815,7 +1815,7 @@ describe('SlidingSyncManager pause/resume', () => {
     await expect(manager.waitForResume()).resolves.toBeUndefined();
   });
 
-  it('requestPushDrain() flags a drain that clears once to-device comes back empty', () => {
+  it('keeps draining when the first poll lands before the to-device message arrives', () => {
     const manager = makeManager(makeMockMx());
     manager.attach();
     manager.pause();
@@ -1824,7 +1824,14 @@ describe('SlidingSyncManager pause/resume', () => {
     expect(manager.isDrainingPush()).toBe(true);
 
     fireLifecycle(SlidingSyncState.Complete, { extensions: { to_device: { events: [] } } });
+    expect(manager.isDrainingPush()).toBe(true);
 
+    fireLifecycle(SlidingSyncState.Complete, {
+      extensions: { to_device: { events: [{ type: 'm.room.key' }] } },
+    });
+    expect(manager.isDrainingPush()).toBe(true);
+
+    fireLifecycle(SlidingSyncState.Complete, { extensions: { to_device: { events: [] } } });
     expect(manager.isDrainingPush()).toBe(false);
   });
 

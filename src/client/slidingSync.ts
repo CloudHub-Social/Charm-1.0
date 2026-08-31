@@ -716,6 +716,8 @@ export class SlidingSyncManager {
 
   private pushDrainPollsLeft = 0;
 
+  private pushDrainSawEvents = false;
+
   private readonly resumeWaiters = new Set<() => void>();
 
   private readonly transportStateListeners = new Set<() => void>();
@@ -1046,6 +1048,7 @@ export class SlidingSyncManager {
   public requestPushDrain(): void {
     if (this.disposed || this.pushDrainPollsLeft === MAX_PUSH_DRAIN_POLLS) return;
     this.pushDrainPollsLeft = MAX_PUSH_DRAIN_POLLS;
+    this.pushDrainSawEvents = false;
     debugLog.info('sync', 'Sliding sync asked to drain to-device after a push');
     this.notifyTransportState();
   }
@@ -1053,10 +1056,13 @@ export class SlidingSyncManager {
   private settlePushDrain(resp: MSC3575SlidingSyncResponse): void {
     if (this.pushDrainPollsLeft === 0) return;
     const toDevice = resp.extensions?.to_device as { events?: unknown[] } | undefined;
-    const drained = (toDevice?.events?.length ?? 0) === 0;
+    const received = (toDevice?.events?.length ?? 0) > 0;
+    if (received) this.pushDrainSawEvents = true;
     this.pushDrainPollsLeft -= 1;
+    const drained = this.pushDrainSawEvents && !received;
     if (!drained && this.pushDrainPollsLeft > 0) return;
     this.pushDrainPollsLeft = 0;
+    this.pushDrainSawEvents = false;
     this.notifyTransportState();
   }
 
@@ -1123,6 +1129,7 @@ export class SlidingSyncManager {
     this.disposed = true;
     this.paused = false;
     this.pushDrainPollsLeft = 0;
+    this.pushDrainSawEvents = false;
     this.transportStateListeners.clear();
     this.releaseResumeWaiters();
     globalThis.clearTimeout(this.pollWatchdogTimer);
