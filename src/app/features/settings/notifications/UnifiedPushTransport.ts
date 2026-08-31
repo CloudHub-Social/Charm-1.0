@@ -150,7 +150,7 @@ export async function loadUnifiedPushDistributorState(): Promise<UnifiedPushDist
     return { distributors, selectedDistributor: savedDistributor };
   }
 
-  if (distributors.length === 1) {
+  if (!savedDistributor && distributors.length === 1) {
     const [onlyDistributor] = distributors;
     if (onlyDistributor) {
       await saveUnifiedPushDistributor(onlyDistributor);

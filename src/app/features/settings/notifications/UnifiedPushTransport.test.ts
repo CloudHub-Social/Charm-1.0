@@ -190,15 +190,18 @@ describe('UnifiedPush distributor state helpers', () => {
     expect(unifiedPushApi.setDistributor).toHaveBeenCalledOnce();
   });
 
-  it('drops a stale saved distributor that is no longer installed', async () => {
-    localStorage.setItem('unifiedpush_distributor', 'org.unifiedpush.distributor.removed');
-    unifiedPushApi.listDistributors.mockResolvedValue(['org.unifiedpush.distributor.ntfy']);
+  it('keeps a saved distributor the scan did not list instead of adopting the only other one', async () => {
+    localStorage.setItem('unifiedpush_distributor', 'org.unifiedpush.distributor.ntfy');
+    unifiedPushApi.listDistributors.mockResolvedValue(['moe.sable.client']);
 
     await expect(loadUnifiedPushDistributorState()).resolves.toEqual({
-      distributors: ['org.unifiedpush.distributor.ntfy'],
-      selectedDistributor: 'org.unifiedpush.distributor.ntfy',
+      distributors: ['moe.sable.client'],
+      selectedDistributor: '',
     });
-    expect(unifiedPushApi.setDistributor).toHaveBeenCalledWith('org.unifiedpush.distributor.ntfy');
+    expect(unifiedPushApi.setDistributor).not.toHaveBeenCalled();
+    expect(localStorage.getItem('unifiedpush_distributor')).toBe(
+      'org.unifiedpush.distributor.ntfy'
+    );
   });
 
   it('ensures a distributor selection by auto-saving the first available distributor', async () => {
