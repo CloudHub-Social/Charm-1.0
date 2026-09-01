@@ -6,6 +6,7 @@ import { useDeviceIds, useDeviceList, useSplitCurrentDevice } from '$hooks/useDe
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import {
   useDeviceVerificationStatus,
+  useVerifiedDeviceCount,
   useUnverifiedDeviceCount,
   VerificationStatus,
 } from '$hooks/useDeviceVerificationStatus';
@@ -49,6 +50,7 @@ export function Devices({ requestBack, requestClose }: DevicesProps) {
   );
 
   const otherDevicesId = useDeviceIds(otherDevices);
+  const verifiedDeviceCount = useVerifiedDeviceCount(crypto, mx.getSafeUserId(), otherDevicesId);
   const unverifiedDeviceCount = useUnverifiedDeviceCount(
     crypto,
     mx.getSafeUserId(),
@@ -111,15 +113,13 @@ export function Devices({ requestBack, requestClose }: DevicesProps) {
                     >
                       {crypto && <DeviceKeyDetails crypto={crypto} />}
                     </DeviceTile>
-                    {crossSigningActive &&
-                      verificationStatus === VerificationStatus.Unverified &&
-                      defaultSecretStorageKeyId &&
-                      defaultSecretStorageKeyContent && (
-                        <VerifyCurrentDeviceTile
-                          secretStorageKeyId={defaultSecretStorageKeyId}
-                          secretStorageKeyContent={defaultSecretStorageKeyContent}
-                        />
-                      )}
+                    {crossSigningActive && verificationStatus === VerificationStatus.Unverified && (
+                      <VerifyCurrentDeviceTile
+                        secretStorageKeyId={defaultSecretStorageKeyId}
+                        secretStorageKeyContent={defaultSecretStorageKeyContent}
+                        hasVerifiedOtherDevice={(verifiedDeviceCount ?? 0) > 0}
+                      />
+                    )}
                     {crypto && verificationStatus === VerificationStatus.Verified && (
                       <BackupRestoreTile
                         crypto={crypto}
@@ -137,9 +137,7 @@ export function Devices({ requestBack, requestClose }: DevicesProps) {
                 <OtherDevices
                   devices={otherDevices}
                   refreshDeviceList={refreshDeviceList}
-                  showVerification={
-                    crossSigningActive && verificationStatus === VerificationStatus.Verified
-                  }
+                  showVerification={crossSigningActive}
                 />
               )}
               <LocalBackup />
