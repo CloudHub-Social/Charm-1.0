@@ -37,6 +37,7 @@ import { secretStorageCanAccessSecrets } from './secretStorageAccess';
 import { PerSessionBackupDownloader } from './perSessionBackupDownload';
 import type { CryptoEventHandlerMap } from 'matrix-js-sdk/lib/crypto-api/CryptoEventHandlerMap';
 import { createDebugLogger } from '$utils/debugLogger';
+import { traceVerification, warnVerification } from '$utils/verificationTrace';
 import { EngineVerificationRequest } from '../verification/request';
 import {
   EnginePhase,
@@ -738,7 +739,7 @@ export class EngineCrypto
     }
     const request = new EngineVerificationRequest(this.#engineCall, state);
     this.#verificationRequests.set(transactionId, request);
-    engineCryptoLog.info('general', 'Surfacing an incoming verification request', {
+    traceVerification('Surfacing an incoming verification request', {
       sender,
       transactionId,
       isSelfVerification: state.isSelfVerification,
@@ -759,7 +760,7 @@ export class EngineCrypto
     await this.#receiveSyncChanges({ toDeviceEvents: [event] });
     if (!(await this.onIncomingKeyVerificationRequest(sender, transactionId))) {
       const sentAt = (event.content as { timestamp?: number } | undefined)?.timestamp;
-      engineCryptoLog.warn('general', 'The engine kept ignoring a verification request', {
+      warnVerification('The engine kept ignoring a verification request', {
         sender,
         transactionId,
         clockSkewSeconds:
@@ -835,7 +836,7 @@ export class EngineCrypto
       if (typeof message.type === 'string' && message.type.startsWith('m.key.verification.')) {
         const transactionId = (message.content as { transaction_id?: string })?.transaction_id;
         if (transactionId && message.sender) {
-          engineCryptoLog.info('general', 'Received a verification to-device event', {
+          traceVerification('Received a verification to-device event', {
             type: message.type,
             sender: message.sender,
             transactionId,
@@ -943,7 +944,9 @@ export class EngineCrypto
         userId: this.#identity.userId,
       })) ?? []) as EngineVerificationState[];
     } catch (error) {
-      engineCryptoLog.warn('general', 'Could not list pending verification requests', error);
+      warnVerification('Could not list pending verification requests', {
+        reason: error instanceof Error ? error.message : String(error),
+      });
       return;
     }
 
@@ -953,7 +956,7 @@ export class EngineCrypto
 
       const request = new EngineVerificationRequest(this.#engineCall, state);
       this.#verificationRequests.set(state.flowId, request);
-      engineCryptoLog.warn('general', 'Recovered a verification request the sync path missed', {
+      warnVerification('Recovered a verification request the sync path missed', {
         flowId: state.flowId,
         otherUserId: state.otherUserId,
         phase: state.phase,
