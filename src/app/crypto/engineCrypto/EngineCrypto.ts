@@ -719,21 +719,34 @@ export class EngineCrypto
     });
   }
 
-  async onIncomingKeyVerificationRequest(sender: string, transactionId: string): Promise<void> {
+  async onIncomingKeyVerificationRequest(sender: string, transactionId: string): Promise<boolean> {
     const state = (await this.#call('getVerificationRequest', {
       userId: sender,
       flowId: transactionId,
     })) as EngineVerificationState | null;
-    if (!state) return;
+    if (!state) return false;
 
     const existing = this.#verificationRequests.get(transactionId);
     if (existing) {
       existing.apply(state);
-      return;
+      return true;
     }
     const request = new EngineVerificationRequest(this.#engineCall, state);
     this.#verificationRequests.set(transactionId, request);
     this.emit(CryptoEvent.VerificationRequestReceived, request);
+    return true;
+  }
+
+  async #retryVerificationRequestWithKeys(
+    sender: string,
+    transactionId: string,
+    event: IToDeviceEvent
+  ): Promise<void> {
+    await this.#trackUsers([sender]);
+    await this.#sendTracked(await this.#call('queryKeysForUsers', { users: [sender] }));
+    await this.#flushOutgoingRequests();
+    await this.#receiveSyncChanges({ toDeviceEvents: [event] });
+    await this.onIncomingKeyVerificationRequest(sender, transactionId);
   }
 
   #flushOutgoingRequests(): Promise<void> {
@@ -805,11 +818,20 @@ export class EngineCrypto
         if (transactionId && message.sender) {
           if (message.type === EventType.KeyVerificationRequest) {
             // eslint-disable-next-line no-await-in-loop
-            await this.onIncomingKeyVerificationRequest(message.sender, transactionId);
+            const handled = await this.onIncomingKeyVerificationRequest(
+              message.sender,
+              transactionId
+            );
+            if (!handled) {
+              // eslint-disable-next-line no-await-in-loop
+              await this.#retryVerificationRequestWithKeys(message.sender, transactionId, message);
+            }
           } else if (message.type === EventType.KeyVerificationDone) {
             // Rust removes completed requests while consuming the event, so no state snapshot
             // exists to refresh. Keep the JS request alive long enough to expose Done.
             this.#verificationRequests.get(transactionId)?.markDone();
+            // eslint-disable-next-line no-await-in-loop
+            await this.#queryOwnKeys();
           } else {
             // Without this the verifier never learns the SAS digits arrived.
             // eslint-disable-next-line no-await-in-loop
@@ -1562,6 +1584,22 @@ export class EngineCrypto
     await this.#flushOutgoingRequests();
   }
 
+  async #signOwnDeviceIfNeeded(): Promise<void> {
+    const status = await this.getDeviceVerificationStatus(
+      this.#identity.userId,
+      this.#identity.deviceId
+    );
+    if (status?.crossSigningVerified) return;
+
+    const request = (await this.#call('device.verify', {
+      userId: this.#identity.userId,
+      deviceId: this.#identity.deviceId,
+    })) as OutgoingRequest | null;
+    if (!request) return;
+    await sendOutgoingRequest(this.#mx, request);
+    await this.#queryOwnKeys();
+  }
+
   async crossSignDevice(deviceId: string): Promise<void> {
     await this.#sendTracked(
       await this.#call('device.verify', { userId: this.#identity.userId, deviceId })
@@ -1602,6 +1640,7 @@ export class EngineCrypto
       if (!stored && (await this.#mx.secretStorage.hasKey())) {
         await this.#exportCrossSigningKeysToStorage();
       }
+      await this.#signOwnDeviceIfNeeded();
       return;
     }
 
