@@ -23,6 +23,8 @@ import { stopPropagation } from '$utils/keyboard';
 import { useAuthMetadata } from '$hooks/useAuthMetadata';
 import { getAccountManagementUrl, useAccountManagementActions } from '$hooks/useAccountManagement';
 import { ModalOverlay } from '$components/modal-overlay/ModalOverlay';
+import { verificationClockWarning } from '$utils/clockSkew';
+import { showErrorToast } from '$state/toast';
 
 type VerificationStatusBadgeProps = {
   verificationStatus: VerificationStatus;
@@ -123,6 +125,11 @@ export function VerifyCurrentDeviceTile({
     useCallback(async () => {
       const crypto = mx.getCrypto();
       if (!crypto) throw new Error('Unexpected Error! Crypto object not found.');
+      const clockWarning = await verificationClockWarning(mx.baseUrl);
+      if (clockWarning) {
+        showErrorToast(clockWarning, 8000);
+        throw new Error(clockWarning);
+      }
       return crypto.requestOwnUserVerification();
     }, [mx]),
     setRequestState
@@ -224,9 +231,13 @@ export function VerifyOtherDeviceTile({ crypto, deviceId }: VerifyOtherDeviceTil
   });
 
   const requestVerification = useAsync<VerificationRequest, Error, []>(
-    useCallback(() => {
-      const requestPromise = crypto.requestDeviceVerification(mx.getSafeUserId(), deviceId);
-      return requestPromise;
+    useCallback(async () => {
+      const clockWarning = await verificationClockWarning(mx.baseUrl);
+      if (clockWarning) {
+        showErrorToast(clockWarning, 8000);
+        throw new Error(clockWarning);
+      }
+      return crypto.requestDeviceVerification(mx.getSafeUserId(), deviceId);
     }, [mx, crypto, deviceId]),
     setRequestState
   );

@@ -27,6 +27,73 @@ const requestState = {
   isSelfVerification: true,
 };
 
+describe('pending verification request sweep', () => {
+  beforeEach(() => mockInvoke.mockReset());
+
+  it('surfaces a request the engine holds but the sync path never delivered', async () => {
+    const { mx } = clientSpy();
+    mockInvoke.mockImplementation(async (_identity, method) => {
+      if (method === 'getVerificationRequests') return [requestState];
+      return [];
+    });
+
+    const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
+    const received = vi.fn<(request: unknown) => void>();
+    crypto.on(CryptoEvent.VerificationRequestReceived, received);
+
+    crypto.onSyncCompleted({} as never);
+    await vi.waitFor(() => expect(received).toHaveBeenCalledOnce());
+  });
+
+  it('does not surface the same request twice', async () => {
+    const { mx } = clientSpy();
+    mockInvoke.mockImplementation(async (_identity, method) => {
+      if (method === 'receiveSyncChanges') {
+        return [{ type: 3, rawEvent: JSON.stringify(REQUEST_EVENT) }];
+      }
+      if (method === 'getVerificationRequest') return requestState;
+      if (method === 'getVerificationRequests') return [requestState];
+      return [];
+    });
+
+    const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
+    const received = vi.fn<(request: unknown) => void>();
+    crypto.on(CryptoEvent.VerificationRequestReceived, received);
+
+    await crypto.preprocessToDeviceMessages([REQUEST_EVENT as never]);
+    crypto.onSyncCompleted({} as never);
+    await vi.waitFor(() => expect(received).toHaveBeenCalledOnce());
+  });
+});
+
+describe('outgoing device verification request', () => {
+  beforeEach(() => mockInvoke.mockReset());
+
+  it('refreshes the target user keys before asking the engine for the device', async () => {
+    const { mx } = clientSpy();
+    const invoked: string[] = [];
+
+    mockInvoke.mockImplementation(async (_identity, method) => {
+      invoked.push(method as string);
+      if (method === 'queryKeysForUsers') {
+        return { id: 'q1', type: 1, className: 'KeysQueryRequest', body: '{}' };
+      }
+      if (method === 'device.requestVerification') {
+        return { request: { ...requestState, phase: 0 }, outgoingRequest: null };
+      }
+      return [];
+    });
+
+    const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
+    await crypto.requestDeviceVerification('@me:e.org', 'OTHER');
+
+    expect(invoked.indexOf('queryKeysForUsers')).toBeGreaterThanOrEqual(0);
+    expect(invoked.indexOf('queryKeysForUsers')).toBeLessThan(
+      invoked.indexOf('device.requestVerification')
+    );
+  });
+});
+
 describe('incoming verification request', () => {
   beforeEach(() => mockInvoke.mockReset());
 

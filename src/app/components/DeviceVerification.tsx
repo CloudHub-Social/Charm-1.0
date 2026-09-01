@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, config, Dialog, Header, IconButton, Spinner, Text } from 'folds';
 import { composerIcon, X } from '$components/icons/phosphor';
 import * as Sentry from '@sentry/react';
+import { showErrorToast } from '$state/toast';
 import {
   useVerificationRequestPhase,
   useVerificationRequestReceived,
@@ -98,6 +99,7 @@ function AutoVerificationStart({ onStart }: VerificationStartProps) {
     onStart().catch((reason: unknown) => {
       const failure = reason instanceof Error ? reason : new Error(String(reason));
       Sentry.captureException(failure, { tags: { flow: 'device-verification-start' } });
+      showErrorToast(failure.message);
       setError(failure);
     });
   }, [onStart]);

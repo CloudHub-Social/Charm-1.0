@@ -1,9 +1,11 @@
+import { useEffect } from 'react';
 import { Box, Text, Scroll } from 'folds';
 import { PageContent, SettingsSectionPage } from '$components/page';
 import { SequenceCard, SequenceCardStyle } from '$components/sequence-card';
 import { SettingTile } from '$components/setting-tile';
 import { useDeviceIds, useDeviceList, useSplitCurrentDevice } from '$hooks/useDeviceList';
 import { useMatrixClient } from '$hooks/useMatrixClient';
+import type { CryptoBackend } from '$types/matrix-sdk';
 import {
   useDeviceVerificationStatus,
   useVerifiedDeviceCount,
@@ -41,6 +43,12 @@ export function Devices({ requestBack, requestClose }: DevicesProps) {
   const crypto = mx.getCrypto();
   const crossSigningActive = useCrossSigningActive();
   const [devices, refreshDeviceList] = useDeviceList();
+
+  useEffect(() => {
+    void (crypto as CryptoBackend | undefined)?.processDeviceLists({
+      changed: [mx.getSafeUserId()],
+    });
+  }, [crypto, mx]);
 
   const [currentDevice, otherDevices] = useSplitCurrentDevice(devices);
   const verificationStatus = useDeviceVerificationStatus(
