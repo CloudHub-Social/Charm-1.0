@@ -39,6 +39,7 @@ import type { CryptoEventHandlerMap } from 'matrix-js-sdk/lib/crypto-api/CryptoE
 import { createDebugLogger } from '$utils/debugLogger';
 import { EngineVerificationRequest } from '../verification/request';
 import {
+  EnginePhase,
   SUPPORTED_VERIFICATION_METHOD_CODES,
   type EngineVerificationState,
 } from '../verification/state';
@@ -90,6 +91,8 @@ const engineCryptoLog = createDebugLogger('engine-crypto');
 const DECRYPTION_WAIT_MS = 5 * 60 * 1000;
 
 const MAX_OUTGOING_DRAIN_PASSES = 5;
+
+const VERIFICATION_SWEEP_INTERVAL_MS = 5000;
 
 const RESTORE_CHUNK_SIZE = 200;
 
@@ -320,6 +323,8 @@ export class EngineCrypto
   #trustCrossSignedDevices = true;
 
   #stopped = false;
+
+  #lastVerificationSweep = 0;
 
   #deviceIsolationMode: DeviceIsolationMode | undefined;
 
@@ -924,6 +929,37 @@ export class EngineCrypto
     // Working through a backlog: the next sync follows immediately, so batch the drain.
     if (syncState.catchingUp) return;
     void this.#flushOutgoingRequests();
+    void this.#surfacePendingVerificationRequests();
+  }
+
+  async #surfacePendingVerificationRequests(): Promise<void> {
+    const now = Date.now();
+    if (now - this.#lastVerificationSweep < VERIFICATION_SWEEP_INTERVAL_MS) return;
+    this.#lastVerificationSweep = now;
+
+    let states: EngineVerificationState[];
+    try {
+      states = ((await this.#call('getVerificationRequests', {
+        userId: this.#identity.userId,
+      })) ?? []) as EngineVerificationState[];
+    } catch (error) {
+      engineCryptoLog.warn('general', 'Could not list pending verification requests', error);
+      return;
+    }
+
+    for (const state of states) {
+      if (this.#verificationRequests.has(state.flowId)) continue;
+      if (state.phase === EnginePhase.Done || state.phase === EnginePhase.Cancelled) continue;
+
+      const request = new EngineVerificationRequest(this.#engineCall, state);
+      this.#verificationRequests.set(state.flowId, request);
+      engineCryptoLog.warn('general', 'Recovered a verification request the sync path missed', {
+        flowId: state.flowId,
+        otherUserId: state.otherUserId,
+        phase: state.phase,
+      });
+      this.emit(CryptoEvent.VerificationRequestReceived, request);
+    }
   }
 
   async markAllTrackedUsersAsDirty(): Promise<void> {
