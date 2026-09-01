@@ -240,6 +240,20 @@ type EngineDecryptedEvent = {
   forwarderDevice?: string | null;
 };
 
+const countRecipients = (body: string): number => {
+  try {
+    const messages = (JSON.parse(body) as { messages?: Record<string, Record<string, unknown>> })
+      .messages;
+    if (!messages) return 0;
+    return Object.values(messages).reduce(
+      (total, devices) => total + Object.keys(devices).length,
+      0
+    );
+  } catch {
+    return -1;
+  }
+};
+
 const isOutgoingRequest = (value: unknown): value is OutgoingRequest => {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<OutgoingRequest>;
@@ -604,7 +618,33 @@ export class EngineCrypto
       outgoingRequest?: unknown;
     };
     if (isOutgoingRequest(started.outgoingRequest)) {
-      await sendOutgoingRequest(this.#mx, started.outgoingRequest);
+      const recipients = countRecipients(started.outgoingRequest.body);
+      traceVerification('Sending a verification request', {
+        method,
+        flowId: started.request.flowId,
+        recipientDevices: recipients,
+      });
+      if (recipients === 0) {
+        warnVerification('The verification request reaches no device', {
+          method,
+          flowId: started.request.flowId,
+        });
+      }
+      try {
+        await sendOutgoingRequest(this.#mx, started.outgoingRequest);
+      } catch (error) {
+        warnVerification('The verification request could not be sent', {
+          method,
+          flowId: started.request.flowId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    } else {
+      warnVerification('The engine returned no verification request to send', {
+        method,
+        flowId: started.request.flowId,
+      });
     }
     await this.#flushOutgoingRequests();
 

@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CryptoEvent, EventType, type MatrixClient } from '$types/matrix-sdk';
 import { engineInvoke } from '../olmMachine/engineInvoke';
+import { traceVerification, warnVerification } from '$utils/verificationTrace';
 import { EngineCrypto } from './EngineCrypto';
+
+vi.mock('$utils/verificationTrace', () => ({
+  traceVerification: vi.fn<(message: string, data?: unknown) => void>(),
+  warnVerification: vi.fn<(message: string, data?: unknown) => void>(),
+}));
 
 vi.mock('../olmMachine/engineInvoke', () => ({
   engineInvoke: vi.fn<(...args: never[]) => Promise<unknown>>(),
@@ -26,6 +32,75 @@ const requestState = {
   phase: 1,
   isSelfVerification: true,
 };
+
+describe('sending a verification request', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    vi.mocked(traceVerification).mockClear();
+    vi.mocked(warnVerification).mockClear();
+  });
+
+  it('reports when the request reaches no device', async () => {
+    const { mx } = clientSpy();
+    mockInvoke.mockImplementation(async (_identity, method) => {
+      if (method === 'queryKeysForUsers') {
+        return { id: 'q1', type: 1, className: 'KeysQueryRequest', body: '{}' };
+      }
+      if (method === 'device.requestVerification') {
+        return {
+          request: requestState,
+          outgoingRequest: {
+            id: 'txn',
+            type: 3,
+            body: JSON.stringify({ messages: {} }),
+            event_type: 'm.key.verification.request',
+            txn_id: 'txn',
+          },
+        };
+      }
+      return [];
+    });
+
+    const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
+    await crypto.requestDeviceVerification('@me:e.org', 'OTHER');
+
+    expect(warnVerification).toHaveBeenCalledWith(
+      'The verification request reaches no device',
+      expect.objectContaining({ flowId: '$f' })
+    );
+  });
+
+  it('stays quiet when the request has a recipient', async () => {
+    const { mx } = clientSpy();
+    mockInvoke.mockImplementation(async (_identity, method) => {
+      if (method === 'queryKeysForUsers') {
+        return { id: 'q1', type: 1, className: 'KeysQueryRequest', body: '{}' };
+      }
+      if (method === 'device.requestVerification') {
+        return {
+          request: requestState,
+          outgoingRequest: {
+            id: 'txn',
+            type: 3,
+            body: JSON.stringify({ messages: { '@me:e.org': { OTHER: {} } } }),
+            event_type: 'm.key.verification.request',
+            txn_id: 'txn',
+          },
+        };
+      }
+      return [];
+    });
+
+    const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
+    await crypto.requestDeviceVerification('@me:e.org', 'OTHER');
+
+    expect(warnVerification).not.toHaveBeenCalled();
+    expect(traceVerification).toHaveBeenCalledWith(
+      'Sending a verification request',
+      expect.objectContaining({ recipientDevices: 1 })
+    );
+  });
+});
 
 describe('pending verification request sweep', () => {
   beforeEach(() => mockInvoke.mockReset());
