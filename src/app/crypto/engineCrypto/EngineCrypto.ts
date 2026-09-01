@@ -1795,6 +1795,7 @@ export class EngineCrypto
         { ...key.keyInfo, key: key.privateKey }
       );
       await this.#mx.secretStorage.setDefaultKeyId(keyId);
+      this.#mx.cryptoCallbacks?.cacheSecretStorageKey?.(keyId, keyInfo, key.privateKey);
       engineCryptoLog.info('general', 'Created a new secret storage key', {
         keyId,
         algorithm: keyInfo.algorithm,

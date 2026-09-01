@@ -49,7 +49,7 @@ describe('incoming verification request', () => {
     });
 
     const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
-    const received = vi.fn();
+    const received = vi.fn<(request: unknown) => void>();
     crypto.on(CryptoEvent.VerificationRequestReceived, received);
 
     await crypto.preprocessToDeviceMessages([REQUEST_EVENT as never]);
@@ -73,7 +73,7 @@ describe('incoming verification request', () => {
     });
 
     const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
-    const received = vi.fn();
+    const received = vi.fn<(request: unknown) => void>();
     crypto.on(CryptoEvent.VerificationRequestReceived, received);
 
     await crypto.preprocessToDeviceMessages([REQUEST_EVENT as never]);
