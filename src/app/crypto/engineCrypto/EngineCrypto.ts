@@ -753,9 +753,12 @@ export class EngineCrypto
     await this.#flushOutgoingRequests();
     await this.#receiveSyncChanges({ toDeviceEvents: [event] });
     if (!(await this.onIncomingKeyVerificationRequest(sender, transactionId))) {
+      const sentAt = (event.content as { timestamp?: number } | undefined)?.timestamp;
       engineCryptoLog.warn('general', 'The engine kept ignoring a verification request', {
         sender,
         transactionId,
+        clockSkewSeconds:
+          typeof sentAt === 'number' ? Math.round((Date.now() - sentAt) / 1000) : null,
       });
     }
   }
@@ -1931,6 +1934,8 @@ export class EngineCrypto
   }
 
   async requestDeviceVerification(userId: string, deviceId: string): Promise<VerificationRequest> {
+    await this.#sendTracked(await this.#call('queryKeysForUsers', { users: [userId] }));
+    await this.#flushOutgoingRequests();
     return this.#startVerification('device.requestVerification', {
       userId,
       deviceId,

@@ -27,6 +27,34 @@ const requestState = {
   isSelfVerification: true,
 };
 
+describe('outgoing device verification request', () => {
+  beforeEach(() => mockInvoke.mockReset());
+
+  it('refreshes the target user keys before asking the engine for the device', async () => {
+    const { mx } = clientSpy();
+    const invoked: string[] = [];
+
+    mockInvoke.mockImplementation(async (_identity, method) => {
+      invoked.push(method as string);
+      if (method === 'queryKeysForUsers') {
+        return { id: 'q1', type: 1, className: 'KeysQueryRequest', body: '{}' };
+      }
+      if (method === 'device.requestVerification') {
+        return { request: { ...requestState, phase: 0 }, outgoingRequest: null };
+      }
+      return [];
+    });
+
+    const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
+    await crypto.requestDeviceVerification('@me:e.org', 'OTHER');
+
+    expect(invoked.indexOf('queryKeysForUsers')).toBeGreaterThanOrEqual(0);
+    expect(invoked.indexOf('queryKeysForUsers')).toBeLessThan(
+      invoked.indexOf('device.requestVerification')
+    );
+  });
+});
+
 describe('incoming verification request', () => {
   beforeEach(() => mockInvoke.mockReset());
 
