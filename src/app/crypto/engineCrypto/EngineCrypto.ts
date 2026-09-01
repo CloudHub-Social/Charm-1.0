@@ -733,6 +733,12 @@ export class EngineCrypto
     }
     const request = new EngineVerificationRequest(this.#engineCall, state);
     this.#verificationRequests.set(transactionId, request);
+    engineCryptoLog.info('general', 'Surfacing an incoming verification request', {
+      sender,
+      transactionId,
+      isSelfVerification: state.isSelfVerification,
+      phase: state.phase,
+    });
     this.emit(CryptoEvent.VerificationRequestReceived, request);
     return true;
   }
@@ -746,7 +752,12 @@ export class EngineCrypto
     await this.#sendTracked(await this.#call('queryKeysForUsers', { users: [sender] }));
     await this.#flushOutgoingRequests();
     await this.#receiveSyncChanges({ toDeviceEvents: [event] });
-    await this.onIncomingKeyVerificationRequest(sender, transactionId);
+    if (!(await this.onIncomingKeyVerificationRequest(sender, transactionId))) {
+      engineCryptoLog.warn('general', 'The engine kept ignoring a verification request', {
+        sender,
+        transactionId,
+      });
+    }
   }
 
   #flushOutgoingRequests(): Promise<void> {
@@ -816,6 +827,11 @@ export class EngineCrypto
       if (typeof message.type === 'string' && message.type.startsWith('m.key.verification.')) {
         const transactionId = (message.content as { transaction_id?: string })?.transaction_id;
         if (transactionId && message.sender) {
+          engineCryptoLog.info('general', 'Received a verification to-device event', {
+            type: message.type,
+            sender: message.sender,
+            transactionId,
+          });
           if (message.type === EventType.KeyVerificationRequest) {
             // eslint-disable-next-line no-await-in-loop
             const handled = await this.onIncomingKeyVerificationRequest(
