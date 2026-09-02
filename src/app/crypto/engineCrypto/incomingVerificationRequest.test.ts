@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CryptoEvent, EventType, type MatrixClient } from '$types/matrix-sdk';
 import { engineInvoke } from '../olmMachine/engineInvoke';
-import { traceVerification, warnVerification } from '$utils/verificationTrace';
+import { traceVerification, warnToDevice, warnVerification } from '$utils/verificationTrace';
 import { EngineCrypto } from './EngineCrypto';
 
 vi.mock('$utils/verificationTrace', () => ({
   traceVerification: vi.fn<(message: string, data?: unknown) => void>(),
+  warnToDevice: vi.fn<(message: string, data?: unknown) => void>(),
   warnVerification: vi.fn<(message: string, data?: unknown) => void>(),
 }));
 
@@ -32,6 +33,36 @@ const requestState = {
   phase: 1,
   isSelfVerification: true,
 };
+
+describe('unreadable to-device events', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    vi.mocked(warnToDevice).mockClear();
+  });
+
+  it('reports one the engine could not decrypt instead of dropping it silently', async () => {
+    const { mx } = clientSpy();
+    mockInvoke.mockImplementation(async (_identity, method) => {
+      if (method === 'receiveSyncChanges') {
+        return [
+          {
+            type: 1,
+            rawEvent: JSON.stringify({ type: 'm.room.encrypted', sender: '@me:e.org' }),
+          },
+        ];
+      }
+      return [];
+    });
+
+    const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
+    await crypto.preprocessToDeviceMessages([REQUEST_EVENT as never]);
+
+    expect(warnToDevice).toHaveBeenCalledWith(
+      'Dropped a to-device event the engine could not read',
+      expect.objectContaining({ sender: '@me:e.org', type: 'm.room.encrypted' })
+    );
+  });
+});
 
 describe('sending a verification request', () => {
   beforeEach(() => {

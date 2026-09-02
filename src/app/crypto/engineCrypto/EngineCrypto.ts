@@ -37,7 +37,7 @@ import { secretStorageCanAccessSecrets } from './secretStorageAccess';
 import { PerSessionBackupDownloader } from './perSessionBackupDownload';
 import type { CryptoEventHandlerMap } from 'matrix-js-sdk/lib/crypto-api/CryptoEventHandlerMap';
 import { createDebugLogger } from '$utils/debugLogger';
-import { traceVerification, warnVerification } from '$utils/verificationTrace';
+import { traceVerification, warnToDevice, warnVerification } from '$utils/verificationTrace';
 import { EngineVerificationRequest } from '../verification/request';
 import {
   EnginePhase,
@@ -921,8 +921,15 @@ export class EngineCrypto
         });
       } else if (event.type === ProcessedToDeviceEventType.PlainText) {
         received.push({ message, encryptionInfo: null });
+      } else {
+        // Dropped like js-sdk's backend does, but an unreadable one carries no type, so a
+        // verification request lost here is invisible everywhere else.
+        warnToDevice('Dropped a to-device event the engine could not read', {
+          sender: message.sender ?? 'unknown',
+          type: message.type ?? 'unknown',
+          processed: event.type,
+        });
       }
-      // Undecryptable and invalid events are dropped, as js-sdk's own backend does.
     }
 
     return received;
