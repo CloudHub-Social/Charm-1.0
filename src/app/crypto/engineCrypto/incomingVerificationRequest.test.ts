@@ -102,6 +102,41 @@ describe('sending a verification request', () => {
   });
 });
 
+describe('stale verification requests', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    vi.mocked(traceVerification).mockClear();
+  });
+
+  it('cancels an existing pending flow before starting a new one', async () => {
+    const { mx } = clientSpy();
+    const invoked: string[] = [];
+    mockInvoke.mockImplementation(async (_identity, method) => {
+      invoked.push(method as string);
+      if (method === 'receiveSyncChanges') {
+        return [{ type: 3, rawEvent: JSON.stringify(REQUEST_EVENT) }];
+      }
+      if (method === 'getVerificationRequest') return requestState;
+      if (method === 'queryKeysForUsers') {
+        return { id: 'q1', type: 1, className: 'KeysQueryRequest', body: '{}' };
+      }
+      if (method === 'device.requestVerification') {
+        return { request: { ...requestState, flowId: '$new' }, outgoingRequest: null };
+      }
+      return [];
+    });
+
+    const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
+    await crypto.preprocessToDeviceMessages([REQUEST_EVENT as never]);
+    await crypto.requestDeviceVerification('@me:e.org', 'OTHER');
+
+    expect(invoked).toContain('verificationRequest.cancel');
+    expect(invoked.indexOf('verificationRequest.cancel')).toBeLessThan(
+      invoked.indexOf('device.requestVerification')
+    );
+  });
+});
+
 describe('pending verification request sweep', () => {
   beforeEach(() => mockInvoke.mockReset());
 

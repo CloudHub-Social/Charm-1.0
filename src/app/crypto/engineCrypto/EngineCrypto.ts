@@ -2005,7 +2005,22 @@ export class EngineCrypto
     return request;
   }
 
+  async #cancelStaleRequests(userId: string): Promise<void> {
+    const stale = [...this.#verificationRequests.values()].filter(
+      (request) => request.otherUserId === userId && request.pending
+    );
+    for (const request of stale) {
+      traceVerification('Cancelling a stale verification request', {
+        flowId: request.transactionId ?? null,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await request.cancel().catch(() => undefined);
+      if (request.transactionId) this.#verificationRequests.delete(request.transactionId);
+    }
+  }
+
   async requestOwnUserVerification(): Promise<VerificationRequest> {
+    await this.#cancelStaleRequests(this.#identity.userId);
     return this.#startVerification('userIdentity.requestVerification', {
       userId: this.#identity.userId,
       methods: SUPPORTED_VERIFICATION_METHOD_CODES,
@@ -2013,6 +2028,7 @@ export class EngineCrypto
   }
 
   async requestDeviceVerification(userId: string, deviceId: string): Promise<VerificationRequest> {
+    await this.#cancelStaleRequests(userId);
     await this.#sendTracked(await this.#call('queryKeysForUsers', { users: [userId] }));
     await this.#flushOutgoingRequests();
     return this.#startVerification('device.requestVerification', {

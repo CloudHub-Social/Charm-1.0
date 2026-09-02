@@ -272,6 +272,7 @@ export function DeviceVerification({ request, onExit }: DeviceVerificationProps)
       requestClose={handleCancel}
       dismissOnClickOutside={false}
       escapeDeactivates={false}
+      deactivateCloses={false}
     >
       <Dialog variant="Surface">
         <Header style={DialogHeaderStyles} variant="Surface" size="500">

@@ -18,7 +18,13 @@ vi.mock('$hooks/useMatrixClient', () => ({
 }));
 
 vi.mock('$components/modal-overlay/ModalOverlay', () => ({
-  ModalOverlay: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ModalOverlay: ({
+    children,
+    deactivateCloses,
+  }: {
+    children: React.ReactNode;
+    deactivateCloses?: boolean;
+  }) => <div data-deactivate-closes={String(deactivateCloses)}>{children}</div>,
 }));
 
 const pendingRequest = {
@@ -49,6 +55,20 @@ describe('ReceiveSelfDeviceVerification', () => {
     renderReceiver();
 
     await waitFor(() => expect(screen.getByText('Device Verification')).toBeInTheDocument());
+  });
+
+  it('does not treat unmounting as the user cancelling', async () => {
+    const cancel = vi.fn<() => Promise<void>>(async () => undefined);
+    getVerificationRequestsToDeviceInProgress.mockReturnValue([{ ...pendingRequest, cancel }]);
+
+    const { unmount } = renderReceiver();
+    await waitFor(() => expect(screen.getByText('Device Verification')).toBeInTheDocument());
+    expect(
+      screen.getByText('Device Verification').closest('[data-deactivate-closes]')
+    ).toHaveAttribute('data-deactivate-closes', 'false');
+
+    unmount();
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it('ignores a request this device started', async () => {
