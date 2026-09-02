@@ -779,6 +779,7 @@ export class EngineCrypto
     }
     const request = new EngineVerificationRequest(this.#engineCall, state);
     this.#verificationRequests.set(transactionId, request);
+    if (state.phase === EnginePhase.Done || state.phase === EnginePhase.Cancelled) return true;
     traceVerification('Surfacing an incoming verification request', {
       sender,
       transactionId,
@@ -2013,17 +2014,45 @@ export class EngineCrypto
   }
 
   async #cancelStaleRequests(userId: string): Promise<void> {
-    const stale = [...this.#verificationRequests.values()].filter(
-      (request) => request.otherUserId === userId && request.pending
-    );
-    for (const request of stale) {
-      traceVerification('Cancelling a stale verification request', {
-        flowId: request.transactionId ?? null,
+    let states: EngineVerificationState[] = [];
+    try {
+      states = ((await this.#call('getVerificationRequests', { userId })) ??
+        []) as EngineVerificationState[];
+    } catch (error) {
+      warnVerification('Could not list stale verification requests', {
+        reason: error instanceof Error ? error.message : String(error),
       });
-      // eslint-disable-next-line no-await-in-loop
-      await request.cancel().catch(() => undefined);
-      if (request.transactionId) this.#verificationRequests.delete(request.transactionId);
     }
+
+    const stale = new Map<string, EngineVerificationRequest>();
+    for (const state of states) {
+      if (state.phase === EnginePhase.Done || state.phase === EnginePhase.Cancelled) continue;
+      stale.set(
+        state.flowId,
+        this.#verificationRequests.get(state.flowId) ??
+          new EngineVerificationRequest(this.#engineCall, state)
+      );
+    }
+    for (const request of this.#verificationRequests.values()) {
+      if (request.otherUserId === userId && request.pending && request.transactionId) {
+        stale.set(request.transactionId, request);
+      }
+    }
+
+    for (const [flowId, request] of stale) {
+      traceVerification('Cancelling a stale verification request', { flowId });
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await request.cancel();
+        this.#verificationRequests.delete(flowId);
+      } catch (error) {
+        warnVerification('Could not cancel a stale verification request', {
+          flowId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    await this.#flushOutgoingRequests();
   }
 
   async requestOwnUserVerification(): Promise<VerificationRequest> {

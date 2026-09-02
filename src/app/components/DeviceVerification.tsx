@@ -62,12 +62,16 @@ type VerificationAcceptProps = {
   onAccept: () => Promise<void>;
 };
 function VerificationAccept({ onAccept }: VerificationAcceptProps) {
-  const [acceptState, accept] = useAsyncCallback(onAccept);
+  const [acceptState, accept] = useAsyncCallback<void, Error, []>(onAccept);
 
   const accepting = acceptState.status === AsyncStatus.Loading;
   return (
     <Box direction="Column" gap="400">
-      <Text>Click accept to start the verification process.</Text>
+      <Text>
+        {acceptState.status === AsyncStatus.Error
+          ? acceptState.error.message
+          : 'Click accept to start the verification process.'}
+      </Text>
       <Button
         variant="Primary"
         fill="Solid"
@@ -317,7 +321,12 @@ export function ReceiveSelfDeviceVerification() {
   const mx = useMatrixClient();
   const [request, setRequest] = useState<VerificationRequest>();
 
-  useVerificationRequestReceived(setRequest);
+  useVerificationRequestReceived(
+    useCallback((received: VerificationRequest) => {
+      if (!received.isSelfVerification || received.initiatedByMe || !received.pending) return;
+      setRequest(received);
+    }, [])
+  );
 
   useEffect(() => {
     if (request) return undefined;
