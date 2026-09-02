@@ -291,3 +291,59 @@ describe('incoming verification request', () => {
     expect(received).toHaveBeenCalledOnce();
   });
 });
+
+describe('stale verification requests the JS map never saw', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    vi.mocked(traceVerification).mockClear();
+  });
+
+  it('cancels a pending flow the engine reports on its own', async () => {
+    const { mx } = clientSpy();
+    const cancelled: string[] = [];
+    mockInvoke.mockImplementation(async (_identity, method, args) => {
+      if (method === 'getVerificationRequests') {
+        return [{ ...requestState, flowId: '$ghost' }];
+      }
+      if (method === 'verificationRequest.cancel') {
+        cancelled.push((args as { flowId: string }).flowId);
+        return null;
+      }
+      if (method === 'queryKeysForUsers') {
+        return { id: 'q1', type: 1, className: 'KeysQueryRequest', body: '{}' };
+      }
+      if (method === 'device.requestVerification') {
+        return { request: { ...requestState, flowId: '$new' }, outgoingRequest: null };
+      }
+      return [];
+    });
+
+    const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
+    await crypto.requestDeviceVerification('@me:e.org', 'OTHER');
+
+    expect(cancelled).toEqual(['$ghost']);
+  });
+});
+
+describe('already terminal incoming request', () => {
+  beforeEach(() => mockInvoke.mockReset());
+
+  it('does not raise a modal for a flow the engine already cancelled', async () => {
+    const { mx } = clientSpy();
+    mockInvoke.mockImplementation(async (_identity, method) => {
+      if (method === 'receiveSyncChanges') {
+        return [{ type: 3, rawEvent: JSON.stringify(REQUEST_EVENT) }];
+      }
+      if (method === 'getVerificationRequest') return { ...requestState, phase: 5 };
+      return [];
+    });
+
+    const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
+    const received = vi.fn<(request: unknown) => void>();
+    crypto.on(CryptoEvent.VerificationRequestReceived, received);
+
+    await crypto.preprocessToDeviceMessages([REQUEST_EVENT as never]);
+
+    expect(received).not.toHaveBeenCalled();
+  });
+});
