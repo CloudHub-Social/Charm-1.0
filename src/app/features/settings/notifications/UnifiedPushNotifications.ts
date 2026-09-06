@@ -9,6 +9,7 @@ import {
   resolveNotificationPreviewText,
   ENCRYPTED_MESSAGE_PREVIEW,
 } from '$utils/notificationStyle';
+import { fetch } from '$utils/fetch';
 import { getMxIdLocalPart } from '$utils/matrix';
 import { getStateEvent } from '$utils/room/hierarchy';
 import { createDebugLogger } from '$utils/debugLogger';
@@ -170,13 +171,27 @@ export async function discoverPushGateway(endpoint: string): Promise<string> {
     return UP_PUBLIC_GATEWAY;
   }
 
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
-    const response = await fetch(candidate, { method: 'GET' });
-    if (!response.ok) return UP_PUBLIC_GATEWAY;
-    const body = (await response.json()) as { unifiedpush?: { gateway?: unknown } };
-    if (body?.unifiedpush?.gateway === 'matrix') return candidate;
+    return await Promise.race([
+      (async () => {
+        const response = await fetch(candidate, { method: 'GET', signal: controller.signal });
+        if (!response.ok) return UP_PUBLIC_GATEWAY;
+        const body = (await response.json()) as { unifiedpush?: { gateway?: unknown } };
+        return body?.unifiedpush?.gateway === 'matrix' ? candidate : UP_PUBLIC_GATEWAY;
+      })(),
+      new Promise<string>((resolve) => {
+        timeoutId = setTimeout(() => {
+          resolve(UP_PUBLIC_GATEWAY);
+          controller.abort();
+        }, 5000);
+      }),
+    ]);
   } catch {
     // Unreachable or not JSON: the provider does not proxy.
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
   return UP_PUBLIC_GATEWAY;
 }
