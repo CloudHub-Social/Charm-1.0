@@ -206,6 +206,50 @@ describe('UnifiedPushNotifications', () => {
     expect(matrixClient.getRoom).not.toHaveBeenCalled();
   });
 
+  it('delivers wrapped gateway pushes with the account on the envelope', async () => {
+    await listenAndPush({
+      notification: {
+        type: 'm.room.message',
+        room_id: '!room:example.com',
+        event_id: '$wrapped',
+        content: { body: 'gateway message' },
+      },
+    });
+
+    await vi.waitFor(() =>
+      expect(notificationsApi.sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ body: expect.stringContaining('gateway message') })
+      )
+    );
+  });
+
+  it('delivers ntfy Matrix gateway pushes whose account is in device default_payload', async () => {
+    await listenForUnifiedPushMessages(() => makeSettings() as never);
+    pushHandler({
+      message: JSON.stringify({
+        notification: {
+          room_id: '!room:example.com',
+          event_id: '$ntfy',
+          type: 'm.room.message',
+          content: { body: 'ntfy message' },
+          devices: [
+            {
+              pushkey: 'https://ntfy.sh/up123?up=1',
+              data: {
+                default_payload: { user_id: '@user:example.com' },
+              },
+            },
+          ],
+        },
+      }),
+    });
+    await vi.waitFor(() =>
+      expect(notificationsApi.sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ body: expect.stringContaining('ntfy message') })
+      )
+    );
+  });
+
   it('posts an encrypted baseline before a hanging local decryption completes', async () => {
     matrixClient.getRoom.mockReturnValue(makeRoom());
     let resolveDecryption!: (content: Record<string, unknown>) => void;
@@ -763,6 +807,27 @@ describe('UnifiedPushNotifications', () => {
       'https://matrix.gateway.unifiedpush.org/_matrix/push/v1/notify'
     );
     vi.unstubAllGlobals();
+  });
+
+  it('finishes registration even when gateway discovery never answers', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => {}))
+    );
+    try {
+      let result: unknown;
+      void tryEnableUnifiedPush(matrixClient as never).then((value) => {
+        result = value;
+      });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(result).toMatchObject({
+        status: 'registered',
+        gatewayUrl: 'https://matrix.gateway.unifiedpush.org/_matrix/push/v1/notify',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps the gateway webpush pusher when the homeserver does not support MSC4174', async () => {
