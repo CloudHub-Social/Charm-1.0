@@ -673,10 +673,15 @@ async function handleRichPushPayload(
       });
 
       const roomId: string | undefined = pushData?.room_id;
+      const currentRoom = roomId ? settings.mx.getRoom(roomId) : undefined;
       const roomName: string =
-        pushData?.room_name ?? pushData?.sender_display_name ?? 'Unknown Room';
-      const senderName: string | undefined = pushData?.sender_display_name;
+        pushData?.room_name || currentRoom?.name || pushData?.sender_display_name || 'Unknown Room';
       const senderId: string | undefined = pushData?.sender;
+      const senderName =
+        pushData?.sender_display_name ||
+        (senderId
+          ? currentRoom?.getMember(senderId)?.name || getMxIdLocalPart(senderId) || senderId
+          : undefined);
       const isSilent = !settings.notificationSoundEnabled;
 
       if (!roomId) {
@@ -748,10 +753,9 @@ async function handleRichPushPayload(
           cache.messages = cache.messages.slice(-MAX_MESSAGES);
         }
 
-        const currentRoom = settings.mx.getRoom(roomId);
-        if (currentRoom) {
-          cache.isGroupConversation = (currentRoom.getJoinedMemberCount() ?? 0) > 2;
-        }
+        cache.isGroupConversation =
+          Boolean(pushData?.room_name || currentRoom?.name) ||
+          (currentRoom?.getJoinedMemberCount() ?? 0) > 2;
 
         try {
           await postRoomNotification(userId, roomId, cache, isSilent, {
@@ -966,11 +970,16 @@ async function handleMinimalPushPayload(
   }
 
   const room = settings.mx.getRoom(roomId);
-  const roomName = room?.name ?? pushData?.sender_display_name ?? 'Unknown Room';
+  const roomName =
+    room?.name || pushData?.room_name || pushData?.sender_display_name || 'Unknown Room';
   const isEncryptedRoom = room ? !!getStateEvent(room, EventType.RoomEncryption) : false;
 
-  let senderName: string | undefined;
-  let senderId: string | undefined;
+  let senderId = pushData?.sender;
+  let senderName =
+    pushData?.sender_display_name ||
+    (senderId
+      ? room?.getMember(senderId)?.name || getMxIdLocalPart(senderId) || senderId
+      : undefined);
   let previewText: string | undefined;
   let inMemoryStillEncrypted = false;
   if (room && eventId) {
@@ -1023,9 +1032,8 @@ async function handleMinimalPushPayload(
       cache.messages = cache.messages.slice(-MAX_MESSAGES);
     }
 
-    if (room) {
-      cache.isGroupConversation = (room.getJoinedMemberCount() ?? 0) > 2;
-    }
+    cache.isGroupConversation =
+      Boolean(pushData?.room_name || room?.name) || (room?.getJoinedMemberCount() ?? 0) > 2;
 
     try {
       await postRoomNotification(userId, roomId, cache, !settings.notificationSoundEnabled, {
