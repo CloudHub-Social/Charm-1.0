@@ -250,6 +250,28 @@ describe('UnifiedPushNotifications', () => {
     );
   });
 
+  it.each(['m.room.encrypted', 'm.room.message'])(
+    'uses the cached room name when a %s push omits it',
+    async (type) => {
+      matrixClient.getRoom.mockReturnValue(makeRoom());
+      await listenAndPush(
+        {
+          ...encryptedPush('$room-title'),
+          type,
+          room_name: undefined,
+          sender_display_name: 'Alice',
+        },
+        makeSettings({ showEncryptedMessageContent: false })
+      );
+
+      await vi.waitFor(() =>
+        expect(notificationsApi.sendNotification).toHaveBeenCalledWith(
+          expect.objectContaining({ title: 'Room' })
+        )
+      );
+    }
+  );
+
   it('posts an encrypted baseline before a hanging local decryption completes', async () => {
     matrixClient.getRoom.mockReturnValue(makeRoom());
     let resolveDecryption!: (content: Record<string, unknown>) => void;
@@ -282,7 +304,7 @@ describe('UnifiedPushNotifications', () => {
     await vi.waitFor(() => expect(notificationsApi.sendNotification).toHaveBeenCalledTimes(2));
   });
 
-  it('posts message notifications as a conversation on the high-importance channel', async () => {
+  it('keeps the room header for a named two-member conversation', async () => {
     matrixClient.getRoom.mockReturnValue(makeRoom());
 
     await listenAndPush({
@@ -298,9 +320,66 @@ describe('UnifiedPushNotifications', () => {
     await vi.waitFor(() => expect(notificationsApi.sendNotification).toHaveBeenCalledOnce());
     expect(notificationsApi.sendNotification.mock.calls[0]?.[0]).toMatchObject({
       channelId: 'messages.v2',
-      groupConversation: false,
+      groupConversation: true,
       messages: [{ body: 'hello', senderName: 'Alice', senderKey: '@alice:example.com' }],
     });
+  });
+
+  it('keeps the sender identity when a rich push omits its display name', async () => {
+    matrixClient.getRoom.mockReturnValue(makeRoom());
+    await listenAndPush(
+      {
+        ...encryptedPush('$sender'),
+        sender: '@alice:example.com',
+      },
+      makeSettings({ showEncryptedMessageContent: false })
+    );
+
+    await vi.waitFor(() =>
+      expect(notificationsApi.sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Room',
+          body: 'alice: Encrypted message',
+          extra: {
+            user_id: '@user:example.com',
+            room_id: '!room:example.com',
+            event_id: '$sender',
+          },
+          messages: [
+            expect.objectContaining({ senderName: 'alice', senderKey: '@alice:example.com' }),
+          ],
+        })
+      )
+    );
+  });
+
+  it('keeps room and sender data from an event-ID payload', async () => {
+    await listenAndPush(
+      {
+        room_id: '!minimal:example.com',
+        event_id: '$minimal',
+        room_name: 'Project',
+        sender_display_name: 'Alice',
+        sender: '@alice:example.com',
+      },
+      makeSettings({ showMessageContent: false })
+    );
+
+    await vi.waitFor(() =>
+      expect(notificationsApi.sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Project',
+          messages: [
+            expect.objectContaining({ senderName: 'Alice', senderKey: '@alice:example.com' }),
+          ],
+          extra: {
+            user_id: '@user:example.com',
+            room_id: '!minimal:example.com',
+            event_id: '$minimal',
+          },
+        })
+      )
+    );
   });
 
   it('posts invitations on their own channel', async () => {
