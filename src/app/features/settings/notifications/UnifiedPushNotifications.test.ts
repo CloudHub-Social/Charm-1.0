@@ -437,6 +437,41 @@ describe('UnifiedPushNotifications', () => {
     });
   });
 
+  it('retries an immediate missing-room-key failure until the key arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      matrixClient.getRoom.mockReturnValue(makeRoom());
+      let attempts = 0;
+      matrixClient.getCrypto.mockReturnValue({
+        decryptEvent: vi
+          .fn<() => Promise<Record<string, unknown>>>()
+          .mockImplementation(async () => {
+            attempts += 1;
+            if (attempts === 1) throw new Error('MissingRoomKey');
+            return {
+              clearEvent: {
+                type: 'm.room.message',
+                content: { body: 'retried message' },
+              },
+            };
+          }),
+      });
+
+      await listenAndPush(encryptedPush('$missing-key-retry:example.com'));
+      await vi.waitFor(() => expect(notificationsApi.sendNotification).toHaveBeenCalledOnce());
+      expect(attempts).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.waitFor(() => expect(notificationsApi.sendNotification).toHaveBeenCalledTimes(2));
+      expect(notificationsApi.sendNotification.mock.calls[1]?.[0]).toMatchObject({
+        body: 'You: retried message',
+        silent: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('deduplicates rich encrypted pushes before decryption', async () => {
     matrixClient.getRoom.mockReturnValue(makeRoom());
 

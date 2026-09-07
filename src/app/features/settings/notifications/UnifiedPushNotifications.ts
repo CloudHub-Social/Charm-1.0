@@ -3,6 +3,8 @@ import {
   type MatrixClient,
   MatrixEvent,
   MatrixEventEvent,
+  type CryptoApi,
+  type CryptoBackend,
 } from '$types/matrix-sdk';
 import { EventType } from 'matrix-js-sdk/lib/@types/event';
 import {
@@ -454,9 +456,7 @@ async function resolvePreviewEvent(
   try {
     const evt = await mx.fetchRoomEvent(roomId, eventId);
     const mEvent = new MatrixEvent(evt);
-    if (mEvent.isEncrypted()) {
-      await mx.decryptEventIfNeeded(mEvent);
-    }
+    if (mEvent.isEncrypted()) await mx.decryptEventIfNeeded(mEvent).catch(() => undefined);
     return mEvent;
   } catch (error) {
     unifiedPushLog.warn(
@@ -494,30 +494,52 @@ function holdsPlaintext(event: MatrixEvent): boolean {
   );
 }
 
-/**
- * Runs `apply` as soon as `event` holds plaintext: right away when it is already
- * decrypted, or later once the Megolm key arrives — a backgrounded app routinely
- * receives the push before the to-device key, and the SDK retries decryption on
- * its own when the key lands.
- */
-function whenDecrypted(event: MatrixEvent, apply: () => Promise<void>): void {
+const DECRYPT_RETRY_DELAYS_MS = [1000, 2000, 5000, 10_000, 30_000, 60_000] as const;
+
+const supportsEventDecryption = (crypto: CryptoApi | undefined): crypto is CryptoBackend =>
+  !!crypto && 'decryptEvent' in crypto && typeof crypto.decryptEvent === 'function';
+
+function whenDecrypted(event: MatrixEvent, apply: () => Promise<void>, mx: MatrixClient): void {
   if (holdsPlaintext(event)) {
     void apply();
     return;
   }
 
+  let retryIndex = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let finished = false;
+  const retryDeadline = Date.now() + ENCRYPTED_PREVIEW_RETRY_WINDOW_MS;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    event.off(MatrixEventEvent.Decrypted, onDecrypted);
+    clearTimeout(retryTimer);
+  };
   const onDecrypted = () => {
     if (!holdsPlaintext(event)) return;
-    event.off(MatrixEventEvent.Decrypted, onDecrypted);
-    clearTimeout(retryWindowTimer);
+    finish();
     void apply();
   };
 
   event.on(MatrixEventEvent.Decrypted, onDecrypted);
-  const retryWindowTimer = setTimeout(() => {
-    event.off(MatrixEventEvent.Decrypted, onDecrypted);
+  const retry = () => {
+    if (finished) return;
+    const remaining = retryDeadline - Date.now();
+    if (remaining > 0) {
+      const crypto = mx.getCrypto();
+      if (supportsEventDecryption(crypto)) {
+        void event.attemptDecryption(crypto, { isRetry: true }).catch(() => undefined);
+      }
+      const delay = DECRYPT_RETRY_DELAYS_MS[retryIndex] ?? 60_000;
+      retryTimer = setTimeout(retry, Math.min(delay, remaining));
+      retryIndex += 1;
+      return;
+    }
+    finish();
     unifiedPushLog.warn('notification', 'Encrypted preview never decrypted within retry window');
-  }, ENCRYPTED_PREVIEW_RETRY_WINDOW_MS);
+  };
+  retryTimer = setTimeout(retry, DECRYPT_RETRY_DELAYS_MS[0]);
+  retryIndex += 1;
 }
 
 const roomNotifId = (userId: string, roomId: string) => hashCode(`${userId}\u0000${roomId}`);
@@ -919,16 +941,17 @@ function scheduleEncryptedPreviewEnrichment(
   };
 
   const fallBackToSdkDecryption = (): void => {
-    whenDecrypted(decrypted, () =>
-      applyDecryptedPreview({
-        content: decrypted.getContent(),
-        eventType: decrypted.getType(),
-        sender: decrypted.getSender(),
-      })
+    whenDecrypted(
+      decrypted,
+      () =>
+        applyDecryptedPreview({
+          content: decrypted.getContent(),
+          eventType: decrypted.getType(),
+          sender: decrypted.getSender(),
+        }),
+      initialSettings.mx
     );
-    void initialSettings.mx.decryptEventIfNeeded(decrypted).catch(() => {
-      unifiedPushLog.warn('notification', 'Encrypted preview decryption failed');
-    });
+    void initialSettings.mx.decryptEventIfNeeded(decrypted).catch(() => undefined);
   };
 
   // The engine reads the crypto store directly, so it answers without waiting on the SDK
@@ -1138,7 +1161,7 @@ async function handleMinimalPushPayload(
             }
           });
 
-        whenDecrypted(fetched, applyFetchedPreview);
+        whenDecrypted(fetched, applyFetchedPreview, settings.mx);
       })
       .catch((error) => {
         unifiedPushLog.warn(
