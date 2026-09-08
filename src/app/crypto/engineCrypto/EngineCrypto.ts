@@ -374,8 +374,6 @@ export class EngineCrypto
 
   #deviceCreationTimeMs: number | null | undefined;
 
-  #hasBackupDecryptionKey: boolean | undefined;
-
   readonly #eventsPendingKey = new Map<string, Set<MatrixEvent>>();
 
   readonly #backupDownloader: PerSessionBackupDownloader;
@@ -1243,11 +1241,13 @@ export class EngineCrypto
     return this.#deviceCreationTimeMs;
   }
 
-  async #hasSessionBackupKey(): Promise<boolean> {
-    if (this.#hasBackupDecryptionKey === undefined) {
-      this.#hasBackupDecryptionKey = (await this.getSessionBackupPrivateKey()) !== null;
-    }
-    return this.#hasBackupDecryptionKey;
+  async #hasSessionBackupKey(backupInfo: KeyBackupInfo): Promise<boolean> {
+    const keys = (await this.#call('getBackupKeys')) as EngineBackupKeys | null;
+    return (
+      !!keys?.decryptionKeyBase64 &&
+      keys.backupVersion === backupInfo.version &&
+      EngineCrypto.#keyMatchesBackup(keys.decryptionKeyBase64, backupInfo)
+    );
   }
 
   async #throwIfHistorical(event: MatrixEvent, details: Record<string, string>): Promise<void> {
@@ -1263,7 +1263,7 @@ export class EngineCrypto
       );
     }
 
-    const usable = await this.#hasSessionBackupKey();
+    const usable = await this.#hasSessionBackupKey(backupInfo);
     throw new DecryptionError(
       usable
         ? DecryptionFailureCode.HISTORICAL_MESSAGE_WORKING_BACKUP
@@ -2082,7 +2082,6 @@ export class EngineCrypto
 
   async storeSessionBackupPrivateKey(key: Uint8Array, version: string): Promise<void> {
     await this.#call('saveBackupDecryptionKey', { decryptionKey: encodeBase64(key), version });
-    this.#hasBackupDecryptionKey = true;
     this.emit(CryptoEvent.KeyBackupDecryptionKeyCached, version);
   }
 
@@ -2272,7 +2271,6 @@ export class EngineCrypto
 
   async #disableKeyBackup(): Promise<void> {
     await this.#call('disableBackup');
-    this.#hasBackupDecryptionKey = undefined;
     this.emit(CryptoEvent.KeyBackupStatus, false);
   }
 

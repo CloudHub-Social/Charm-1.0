@@ -1007,7 +1007,7 @@ describe('UnifiedPushNotifications', () => {
     await vi.waitFor(() => expect(acknowledgeWebPushPusher).toHaveBeenCalledOnce());
   });
 
-  it('clears the UnifiedPush registration timeout after successful registration', async () => {
+  it('clears the gateway discovery timeout after successful registration', async () => {
     vi.useFakeTimers();
 
     try {
@@ -1016,6 +1016,42 @@ describe('UnifiedPushNotifications', () => {
       });
 
       expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits for the plugin registration deadline instead of racing it', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveRegistration!: (result: {
+        status: 'registered';
+        permissionState: 'granted';
+        endpoint: string;
+        distributor: string;
+      }) => void;
+      unifiedPushTransport.registerUnifiedPushTransport.mockReturnValue(
+        new Promise((resolve) => {
+          resolveRegistration = resolve;
+        })
+      );
+
+      let result: unknown;
+      const registration = tryEnableUnifiedPush(matrixClient as never).then((value) => {
+        result = value;
+      });
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(result).toBeUndefined();
+
+      resolveRegistration({
+        status: 'registered',
+        permissionState: 'granted',
+        endpoint: 'https://up.example/device',
+        distributor: 'org.unifiedpush.distributor.ntfy',
+      });
+      await registration;
+      expect(result).toMatchObject({ status: 'registered' });
     } finally {
       vi.useRealTimers();
     }

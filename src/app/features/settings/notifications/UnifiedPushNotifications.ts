@@ -17,7 +17,7 @@ import { getStateEvent } from '$utils/room/hierarchy';
 import { createDebugLogger } from '$utils/debugLogger';
 import type { DecryptedPushEvent } from '$app/crypto/pushDecrypt';
 import { decryptPushEventNatively } from '$app/crypto/pushDecrypt';
-import { pushAccount, type PushAccount } from './pushAccount';
+import { pushAccount } from './pushAccount';
 import {
   registerUnifiedPushTransport,
   type UnifiedPushRegistrationResult,
@@ -68,8 +68,6 @@ type UnifiedPushPayload = {
   notification?: unknown;
   [key: string]: unknown;
 };
-
-const UP_REGISTER_TIMEOUT_MS = 30_000;
 
 // Android freezes a channel's importance at creation, so raising `messages` from
 // Default to High needs a new id. Mirrored in the plugin's UnifiedPushNotifier.
@@ -136,30 +134,6 @@ export type EnableUnifiedPushResult =
     }
   | Exclude<UnifiedPushRegistrationResult, { status: 'registered' }>;
 
-async function registerUnifiedPushWithTimeout(
-  vapid?: string,
-  embeddedServerUrl?: string,
-  account?: PushAccount
-): Promise<UnifiedPushRegistrationResult> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error('UnifiedPush registration timed out'));
-    }, UP_REGISTER_TIMEOUT_MS);
-  });
-
-  try {
-    return await Promise.race([
-      registerUnifiedPushTransport(vapid, embeddedServerUrl, account),
-      timeout,
-    ]);
-  } finally {
-    if (timeoutId !== undefined) {
-      clearTimeout(timeoutId);
-    }
-  }
-}
-
 /**
  * A provider that speaks the Matrix push protocol answers `/_matrix/push/v1/notify`
  * with `unifiedpush.gateway == "matrix"`. Preferring it keeps delivery on the provider
@@ -208,7 +182,7 @@ export async function tryEnableUnifiedPush(
   // MSC4174: subscribe with the homeserver VAPID key when it pushes directly.
   const webPushSupport = await getWebPushServerSupport(mx);
   const vapid = webPushSupport.supported ? webPushSupport.vapidPublicKey : config?.vapidPublicKey;
-  const registration = await registerUnifiedPushWithTimeout(
+  const registration = await registerUnifiedPushTransport(
     vapid,
     trimConfigValue(config?.unifiedPushEmbeddedServerUrl) ?? DEFAULT_EMBEDDED_GATEWAY,
     pushAccount(mx)
