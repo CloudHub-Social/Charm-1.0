@@ -45,7 +45,7 @@ import {
   type EngineVerificationState,
 } from '../verification/state';
 import { engineInvoke, type EngineIdentity } from '../olmMachine/engineInvoke';
-import { sendOutgoingRequest, type OutgoingRequest } from './outgoing';
+import { RequestType, sendOutgoingRequest, type OutgoingRequest } from './outgoing';
 import { createCoalescedRunner } from './coalescedRunner';
 import type {
   BackupDecryptor,
@@ -357,6 +357,8 @@ export class EngineCrypto
   readonly #roomsWithTrackedMembers = new Set<string>();
 
   #claimChain: Promise<unknown> = Promise.resolve();
+
+  #keyQueryChain: Promise<unknown> = Promise.resolve();
 
   readonly #encryptionChains = new Map<string, Promise<unknown>>();
 
@@ -754,13 +756,20 @@ export class EngineCrypto
 
   async #sendTracked(request: unknown): Promise<void> {
     if (!isOutgoingRequest(request)) return;
-    const response = await sendOutgoingRequest(this.#mx, request);
-    if (typeof request.id !== 'string') return;
-    await this.#call('markRequestAsSent', {
-      requestId: request.id,
-      requestType: request.type,
-      response,
-    });
+    const send = async () => {
+      const response = await sendOutgoingRequest(this.#mx, request);
+      if (typeof request.id !== 'string') return;
+      await this.#call('markRequestAsSent', {
+        requestId: request.id,
+        requestType: request.type,
+        response,
+      });
+    };
+    if (request.type !== RequestType.KeysQuery) return send();
+
+    const next = this.#keyQueryChain.catch(() => undefined).then(send);
+    this.#keyQueryChain = next;
+    await next;
   }
 
   async onIncomingKeyVerificationRequest(sender: string, transactionId: string): Promise<boolean> {
@@ -832,13 +841,7 @@ export class EngineCrypto
         // Sequential: the engine's queue is ordered and later requests can depend on
         // earlier ones having landed.
         // eslint-disable-next-line no-await-in-loop
-        const response = await sendOutgoingRequest(this.#mx, request);
-        // eslint-disable-next-line no-await-in-loop
-        await this.#call('markRequestAsSent', {
-          requestId: request.id,
-          requestType: request.type,
-          response,
-        });
+        await this.#sendTracked(request);
         sent += 1;
       } catch (error) {
         // Loud: a request the engine never marks sent is retried on every sync forever.
@@ -1089,18 +1092,23 @@ export class EngineCrypto
     return this.#serializeForRoom(room.roomId, () => this.#encryptEventInner(event, room));
   }
 
-  async #encryptEventInner(event: MatrixEvent, room: Room): Promise<void> {
-    // The megolm session has to reach every device in the room before the event does.
+  async #prepareRoomForEncryption(room: Room): Promise<string[]> {
     const members = await room.getEncryptionTargetMembers();
     const users = members.map((member) => member.userId);
 
-    if (this.#roomsWithTrackedMembers.has(room.roomId)) {
-      void this.#flushOutgoingRequests();
-    } else {
+    if (!this.#roomsWithTrackedMembers.has(room.roomId)) {
       await this.#trackUsers(users);
-      await this.#flushOutgoingRequests();
+      await this.#sendTracked(await this.#call('queryKeysForUsers', { users }));
       this.#roomsWithTrackedMembers.add(room.roomId);
     }
+
+    void this.#flushOutgoingRequests();
+    return users;
+  }
+
+  async #encryptEventInner(event: MatrixEvent, room: Room): Promise<void> {
+    // The megolm session has to reach every device in the room before the event does.
+    const users = await this.#prepareRoomForEncryption(room);
 
     await this.#ensureSessionsForUsers(users);
 
@@ -1493,11 +1501,8 @@ export class EngineCrypto
 
   prepareToEncrypt(room: Room): void {
     void this.#serializeForRoom(room.roomId, async () => {
-      const members = await room.getEncryptionTargetMembers();
-      const users = members.map((member) => member.userId);
-      await this.#trackUsers(users);
+      const users = await this.#prepareRoomForEncryption(room);
       await this.#ensureSessionsForUsers(users);
-      await this.#flushOutgoingRequests();
     }).catch((error: unknown) => engineCryptoLog.warn('general', 'prepareToEncrypt failed', error));
   }
 
