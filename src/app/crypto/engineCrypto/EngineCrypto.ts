@@ -362,6 +362,8 @@ export class EngineCrypto
 
   readonly #encryptionChains = new Map<string, Promise<unknown>>();
 
+  readonly #roomKeyInvalidations = new Map<string, Promise<unknown>>();
+
   readonly #backupUpload = createCoalescedRunner(
     () =>
       this.#uploadRoomKeysToBackup().catch((error: unknown) => {
@@ -721,7 +723,9 @@ export class EngineCrypto
       event.getStateKey() !== this.#identity.userId &&
       event.getContent().membership !== KnownMembership.Join
     ) {
-      void this.forceDiscardSession(event.getRoomId() ?? '');
+      void this.forceDiscardSession(event.getRoomId() ?? '').catch((error: unknown) =>
+        engineCryptoLog.warn('general', 'Could not invalidate room session', error)
+      );
     }
   }
 
@@ -1025,6 +1029,7 @@ export class EngineCrypto
     this.#eventsPendingKey.clear();
     this.#roomsWithTrackedMembers.clear();
     this.#encryptionChains.clear();
+    this.#roomKeyInvalidations.clear();
     this.#claimChain = Promise.resolve();
     this.#backupDownloader.stop();
   }
@@ -1092,7 +1097,7 @@ export class EngineCrypto
     return this.#serializeForRoom(room.roomId, () => this.#encryptEventInner(event, room));
   }
 
-  async #prepareRoomForEncryption(room: Room): Promise<string[]> {
+  async #prepareRoomForEncryption(room: Room): Promise<void> {
     const members = await room.getEncryptionTargetMembers();
     const users = members.map((member) => member.userId);
 
@@ -1103,12 +1108,6 @@ export class EngineCrypto
     }
 
     void this.#flushOutgoingRequests();
-    return users;
-  }
-
-  async #encryptEventInner(event: MatrixEvent, room: Room): Promise<void> {
-    // The megolm session has to reach every device in the room before the event does.
-    const users = await this.#prepareRoomForEncryption(room);
 
     await this.#ensureSessionsForUsers(users);
 
@@ -1121,20 +1120,33 @@ export class EngineCrypto
       // eslint-disable-next-line no-await-in-loop
       await this.#sendTracked(request);
     }
+  }
 
-    const encrypted = (await this.#call('encryptRoomEvent', {
-      roomId: room.roomId,
-      eventType: event.getType(),
-      content: JSON.stringify(event.getContent()),
-    })) as string;
+  async #encryptEventInner(event: MatrixEvent, room: Room): Promise<void> {
+    while (true) {
+      const invalidation = this.#roomKeyInvalidations.get(room.roomId);
+      if (invalidation) await invalidation;
 
-    const own = await this.getOwnDeviceKeys();
-    event.makeEncrypted(
-      'm.room.encrypted',
-      JSON.parse(encrypted) as Record<string, unknown>,
-      own.curve25519,
-      own.ed25519
-    );
+      await this.#prepareRoomForEncryption(room);
+      if (this.#roomKeyInvalidations.get(room.roomId) !== invalidation) continue;
+
+      const encrypted = (await this.#call('encryptRoomEvent', {
+        roomId: room.roomId,
+        eventType: event.getType(),
+        content: JSON.stringify(event.getContent()),
+      })) as string;
+
+      const own = await this.getOwnDeviceKeys();
+      if (this.#roomKeyInvalidations.get(room.roomId) !== invalidation) continue;
+
+      event.makeEncrypted(
+        'm.room.encrypted',
+        JSON.parse(encrypted) as Record<string, unknown>,
+        own.curve25519,
+        own.ed25519
+      );
+      return;
+    }
   }
 
   async decryptEvent(event: MatrixEvent): Promise<EventDecryptionResult> {
@@ -1501,13 +1513,18 @@ export class EngineCrypto
 
   prepareToEncrypt(room: Room): void {
     void this.#serializeForRoom(room.roomId, async () => {
-      const users = await this.#prepareRoomForEncryption(room);
-      await this.#ensureSessionsForUsers(users);
+      const invalidation = this.#roomKeyInvalidations.get(room.roomId);
+      if (invalidation) await invalidation;
+      await this.#prepareRoomForEncryption(room);
     }).catch((error: unknown) => engineCryptoLog.warn('general', 'prepareToEncrypt failed', error));
   }
 
   async forceDiscardSession(roomId: string): Promise<void> {
-    await this.#call('invalidateGroupSession', { roomId });
+    const invalidation = (this.#roomKeyInvalidations.get(roomId) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => this.#call('invalidateGroupSession', { roomId }));
+    this.#roomKeyInvalidations.set(roomId, invalidation);
+    await invalidation;
   }
 
   async getEncryptionInfoForEvent(event: MatrixEvent): Promise<EventEncryptionInfo | null> {
