@@ -4,7 +4,10 @@ import { NotificationTransportRuntimeFeature } from './NotificationTransportRunt
 
 const mocks = vi.hoisted(() => ({
   enable: vi.fn<(...args: unknown[]) => Promise<{ endpoint: string }>>(),
-  config: { pushTransport: { unifiedPushEmbeddedServerUrl: 'https://push.example' } },
+  config: { pushTransport: { unifiedPushEmbeddedServerUrl: 'https://push.example' } } as {
+    pushTransport?: { unifiedPushEmbeddedServerUrl?: string };
+    pushNotificationDetails?: { unifiedPushEmbeddedServerUrl?: string };
+  },
   overrides: {} as { unifiedPushEmbeddedServerUrl?: string },
   mx: {},
   setSetting: vi.fn<() => void>(),
@@ -41,6 +44,7 @@ vi.mock('./NativePushNotifications', () => ({
 beforeEach(() => {
   mocks.enable.mockReset().mockResolvedValue({ endpoint: 'https://push.example/topic' });
   mocks.overrides = {};
+  mocks.config = { pushTransport: { unifiedPushEmbeddedServerUrl: 'https://push.example' } };
 });
 
 it('keeps the configured built-in server during startup registration', async () => {
@@ -55,6 +59,19 @@ it('keeps the configured built-in server during startup registration', async () 
 
 it('uses the saved built-in server override during startup registration', async () => {
   mocks.overrides = { unifiedPushEmbeddedServerUrl: 'https://custom.example' };
+  render(<NotificationTransportRuntimeFeature />);
+  await waitFor(() =>
+    expect(mocks.enable).toHaveBeenCalledWith(
+      mocks.mx,
+      expect.objectContaining({ unifiedPushEmbeddedServerUrl: 'https://custom.example' })
+    )
+  );
+});
+
+it('falls back to the built-in server from the push notification details', async () => {
+  mocks.config = {
+    pushNotificationDetails: { unifiedPushEmbeddedServerUrl: 'https://custom.example' },
+  };
   render(<NotificationTransportRuntimeFeature />);
   await waitFor(() =>
     expect(mocks.enable).toHaveBeenCalledWith(
