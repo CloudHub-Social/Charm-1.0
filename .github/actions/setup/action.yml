@@ -55,6 +55,12 @@ runs:
       env:
         INPUTS_INSTALL_COMMAND: ${{ inputs.install-command }}
 
+    - name: Disable unused Chrome APT repository
+      if: ${{ runner.os == 'Linux' && inputs.tauri == 'true' }}
+      shell: bash
+      # Chrome index sync failures must not block Tauri's system dependencies.
+      run: sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
+
     - name: Install Tauri build dependencies
       if: ${{ inputs.tauri == 'true' }}
       shell: bash
