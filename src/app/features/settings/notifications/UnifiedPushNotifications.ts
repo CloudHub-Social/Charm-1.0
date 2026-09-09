@@ -5,6 +5,7 @@ import {
   MatrixEventEvent,
   type CryptoApi,
   type CryptoBackend,
+  type IContent,
 } from '$types/matrix-sdk';
 import { EventType } from 'matrix-js-sdk/lib/@types/event';
 import {
@@ -15,8 +16,6 @@ import { fetch } from '$utils/fetch';
 import { getMxIdLocalPart } from '$utils/matrix';
 import { getStateEvent } from '$utils/room/hierarchy';
 import { createDebugLogger } from '$utils/debugLogger';
-import type { DecryptedPushEvent } from '$app/crypto/pushDecrypt';
-import { decryptPushEventNatively } from '$app/crypto/pushDecrypt';
 import { pushAccount } from './pushAccount';
 import {
   registerUnifiedPushTransport,
@@ -411,6 +410,12 @@ type NotifMessage = {
   text: string;
   timestamp: number;
   sender?: NotifPerson;
+};
+
+type DecryptedPushEvent = {
+  eventType: string;
+  content: IContent;
+  sender?: string;
 };
 
 function hashCode(str: string): number {
@@ -914,37 +919,17 @@ function scheduleEncryptedPreviewEnrichment(
     });
   };
 
-  const fallBackToSdkDecryption = (): void => {
-    whenDecrypted(
-      decrypted,
-      () =>
-        applyDecryptedPreview({
-          content: decrypted.getContent(),
-          eventType: decrypted.getType(),
-          sender: decrypted.getSender(),
-        }),
-      initialSettings.mx
-    );
-    void initialSettings.mx.decryptEventIfNeeded(decrypted).catch(() => undefined);
-  };
-
-  // The engine reads the crypto store directly, so it answers without waiting on the SDK
-  // pipeline; it returns null exactly in the late-key case the SDK path retries.
-  void decryptPushEventNatively(initialSettings.mx.getUserId(), initialSettings.mx.getDeviceId(), {
-    roomId,
-    eventId,
-    sender: pushData.sender,
-    content: encryptedContent,
-  })
-    .then((plaintext) => {
-      if (plaintext) {
-        void applyDecryptedPreview(plaintext);
-        return;
-      }
-      fallBackToSdkDecryption();
-    })
-    // Without this the preview would stay at its "Encrypted message" baseline forever.
-    .catch(fallBackToSdkDecryption);
+  whenDecrypted(
+    decrypted,
+    () =>
+      applyDecryptedPreview({
+        content: decrypted.getContent(),
+        eventType: decrypted.getType(),
+        sender: decrypted.getSender(),
+      }),
+    initialSettings.mx
+  );
+  void initialSettings.mx.decryptEventIfNeeded(decrypted).catch(() => undefined);
 }
 
 async function handleMinimalPushPayload(

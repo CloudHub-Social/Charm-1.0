@@ -56,6 +56,8 @@ const matrixClient = vi.hoisted(() => ({
 const invoke = vi.hoisted(() =>
   vi.fn<(cmd: string, args?: Record<string, unknown>) => Promise<unknown>>()
 );
+const isTauri = vi.hoisted(() => vi.fn<() => boolean>(() => false));
+const engineDecryptPush = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 
 const getWebPushServerSupport = vi.hoisted(() =>
   vi.fn<() => Promise<WebPushSupportModule.WebPushServerSupport>>()
@@ -84,8 +86,10 @@ vi.mock('./TauriNotificationsApiClient', () => ({
 vi.mock('@tauri-apps/api/core', () => ({
   addPluginListener,
   invoke,
-  isTauri: () => false,
+  isTauri,
 }));
+
+vi.mock('$generated/tauri/commands', () => ({ engineDecryptPush }));
 
 vi.mock('$utils/fetch', () => ({
   fetch: (...args: Parameters<typeof globalThis.fetch>) => globalThis.fetch(...args),
@@ -135,6 +139,7 @@ describe('UnifiedPushNotifications', () => {
     matrixClient.setPusher.mockClear();
     matrixClient.getPushers.mockResolvedValue({ pushers: [] });
     matrixClient.getCrypto.mockReturnValue(undefined);
+    isTauri.mockReturnValue(false);
     matrixClient.decryptEventIfNeeded.mockImplementation(async (event) => {
       const crypto = matrixClient.getCrypto();
       const mEvent = event as {
@@ -435,6 +440,24 @@ describe('UnifiedPushNotifications', () => {
       silent: true,
       id: (baseline as Record<string, unknown>).id,
     });
+  });
+
+  it('uses the SDK crypto backend for encrypted previews on Tauri', async () => {
+    matrixClient.getRoom.mockReturnValue(makeRoom());
+    isTauri.mockReturnValue(true);
+    const decryptEvent = vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+      clearEvent: {
+        type: 'm.room.message',
+        content: { body: 'SDK decrypted message' },
+      },
+    });
+    matrixClient.getCrypto.mockReturnValue({ decryptEvent });
+
+    await listenAndPush(encryptedPush('$tauri-sdk:example.com'));
+
+    await vi.waitFor(() => expect(notificationsApi.sendNotification).toHaveBeenCalledTimes(2));
+    expect(decryptEvent).toHaveBeenCalledOnce();
+    expect(engineDecryptPush).not.toHaveBeenCalled();
   });
 
   it('retries an immediate missing-room-key failure until the key arrives', async () => {
