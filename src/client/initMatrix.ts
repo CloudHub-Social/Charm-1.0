@@ -35,11 +35,7 @@ import { pushSessionToSW } from '../sw-session';
 import { assertAuthMetadataIssuer, createSessionTokenRefresher } from './oidcTokenRefresher';
 import { revokeOAuthToken } from './oauthTokenRevocation';
 import { clearSecretStorageKeys, cryptoCallbacks } from './secretStorageKeys';
-import {
-  installRustCrypto,
-  isLegacyWasmCryptoStoreError,
-  rustEngineEnabled,
-} from '$app/crypto/install';
+import { ensureSdkCryptoCanStart } from '$app/crypto/install';
 import type { SlidingSyncDiagnostics } from './slidingSync';
 import {
   prepareSlidingSyncTimelines,
@@ -490,20 +486,7 @@ const initializeClient = async (
     startupSyncStore(mx, getSessionStoreName(session).sync)
   );
   const cryptoPromise = measureStartupPhase('rust_crypto', async () => {
-    let nativeEngine: boolean;
-    try {
-      nativeEngine = await rustEngineEnabled(cryptoDatabasePrefix);
-    } catch (error) {
-      if (!isLegacyWasmCryptoStoreError(error)) throw error;
-      await mx.initRustCrypto({ cryptoDatabasePrefix });
-      error.client = mx;
-      throw error;
-    }
-
-    if (nativeEngine) {
-      await installRustCrypto(mx);
-      return;
-    }
+    await ensureSdkCryptoCanStart(session.userId, session.deviceId);
     await mx.initRustCrypto({ cryptoDatabasePrefix });
   });
   const [syncStoreResult, cryptoResult] = await Promise.allSettled([
@@ -516,7 +499,7 @@ const initializeClient = async (
     return { ok: false, error: syncStoreResult.reason, phase: 'sync_store' };
   }
   if (cryptoResult.status === 'rejected') {
-    if (!isLegacyWasmCryptoStoreError(cryptoResult.reason)) mx.stopClient();
+    mx.stopClient();
     return { ok: false, error: cryptoResult.reason, phase: 'rust_crypto' };
   }
 
