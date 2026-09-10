@@ -38,7 +38,7 @@ vi.mock('./versionsCache', () => ({
   wasUnstableFeatureCached: vi.fn<() => boolean>().mockReturnValue(false),
 }));
 
-import { initClient } from './initMatrix';
+import { initClient, releaseCryptoStore } from './initMatrix';
 
 const session = (userId: string): Session => ({
   baseUrl: 'https://example.org',
@@ -127,20 +127,31 @@ describe('initClient SDK crypto initialization', () => {
   it('preserves local stores when SDK crypto initialization reports an identity mismatch', async () => {
     const mismatch = new Error("Account in the store doesn't match account in the constructor");
     const failedSession = session('@mismatch:example.org');
-    const cryptoDatabase = `${getSessionStoreName(failedSession).rustCryptoPrefix}::matrix-sdk-crypto`;
+    const storeName = getSessionStoreName(failedSession);
+    const cryptoDatabase = `${storeName.rustCryptoPrefix}::matrix-sdk-crypto`;
     await storeSentinel(cryptoDatabase);
     initRustCrypto.mockRejectedValueOnce(mismatch);
     const deleteDatabase = vi.spyOn(indexedDB, 'deleteDatabase');
     vi.stubGlobal('location', { reload: vi.fn<() => void>() });
 
-    await expect(initClient(failedSession)).rejects.toMatchObject({
-      message: expect.stringContaining('Stored encryption keys'),
-      cause: mismatch,
-    });
+    await expect(initClient(failedSession)).resolves.toBeDefined();
 
+    expect(initRustCrypto).toHaveBeenLastCalledWith({
+      cryptoDatabasePrefix: storeName.rustCryptoPrefixPerDevice,
+    });
     expect(await readSentinel(cryptoDatabase)).toBe('preserved');
     expect(deleteDatabase).not.toHaveBeenCalled();
     expect(window.location.reload).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a non-mismatch failure on the device scoped retry', async () => {
+    const failedSession = session('@mismatch-then-broken:example.org');
+    initRustCrypto
+      .mockRejectedValueOnce(new Error("account in the store doesn't match"))
+      .mockRejectedValueOnce(new Error('SDK startup failed'));
+
+    await expect(initClient(failedSession)).rejects.toThrow('SDK startup failed');
+    expect(initRustCrypto).toHaveBeenCalledTimes(2);
   });
 
   it('shares an in-flight SDK crypto initialization for the same session', async () => {
@@ -171,6 +182,21 @@ describe('initClient SDK crypto initialization', () => {
 
     cryptoStartup.resolve();
     await first;
+  });
+
+  it('does not hand a new device the previous device crypto store', async () => {
+    const onOldDevice: Session = { ...session('@relogin:example.org'), deviceId: 'OLDDEVICE' };
+    const onNewDevice: Session = { ...onOldDevice, deviceId: 'NEWDEVICE' };
+
+    releaseCryptoStore(await initClient(onOldDevice));
+    initRustCrypto.mockClear();
+    initRustCrypto.mockRejectedValueOnce(new Error("account in the store doesn't match"));
+
+    await expect(initClient(onNewDevice)).resolves.toBeDefined();
+
+    expect(initRustCrypto).toHaveBeenLastCalledWith({
+      cryptoDatabasePrefix: getSessionStoreName(onNewDevice).rustCryptoPrefixPerDevice,
+    });
   });
 
   it('allows a retry after an initialization failure', async () => {
