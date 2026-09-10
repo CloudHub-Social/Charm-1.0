@@ -1186,6 +1186,23 @@ export async function setEncryptedContentAllowed(allowed: boolean): Promise<void
 }
 
 const TAKE_PUSH_DIAGNOSTICS = 'plugin:notifications|take_push_diagnostics';
+const IS_IGNORING_BATTERY_OPTIMIZATIONS = 'plugin:notifications|is_ignoring_battery_optimizations';
+const REQUEST_IGNORE_BATTERY_OPTIMIZATIONS =
+  'plugin:notifications|request_ignore_battery_optimizations';
+
+export async function isIgnoringBatteryOptimizations(): Promise<boolean | null> {
+  if (!isTauri()) return null;
+  try {
+    return await invoke<boolean>(IS_IGNORING_BATTERY_OPTIMIZATIONS);
+  } catch {
+    return null;
+  }
+}
+
+export async function requestIgnoreBatteryOptimizations(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke(REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+}
 
 export type PushDiagnostics = {
   counts: Record<string, number>;
