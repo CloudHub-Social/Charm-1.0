@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MatrixClient } from '$types/matrix-sdk';
 import type { Session } from '$state/sessions';
+import { getSessionStoreName } from '$state/sessions';
 import type * as MatrixSdkModule from 'matrix-js-sdk/lib/matrix';
 
 const { isTauri, invoke, initRustCrypto } = vi.hoisted(() => ({
@@ -46,6 +47,50 @@ const session = (userId: string): Session => ({
   accessToken: 'access-token',
 });
 
+const storeSentinel = async (name: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const request = indexedDB.open(name, 1);
+    request.addEventListener('error', () => reject(request.error));
+    request.addEventListener('upgradeneeded', () => {
+      request.result.createObjectStore('sentinels');
+    });
+    request.addEventListener('success', () => {
+      const database = request.result;
+      const transaction = database.transaction('sentinels', 'readwrite');
+      transaction.objectStore('sentinels').put('preserved', 'crypto');
+      transaction.addEventListener('complete', () => {
+        database.close();
+        resolve();
+      });
+      transaction.addEventListener('error', () => {
+        database.close();
+        reject(transaction.error);
+      });
+    });
+  });
+
+const readSentinel = async (name: string): Promise<unknown> =>
+  new Promise((resolve, reject) => {
+    const request = indexedDB.open(name);
+    request.addEventListener('error', () => reject(request.error));
+    request.addEventListener('success', () => {
+      const database = request.result;
+      const transaction = database.transaction('sentinels');
+      const get = transaction.objectStore('sentinels').get('crypto');
+      get.addEventListener('success', () => resolve(get.result));
+      get.addEventListener('error', () => reject(get.error));
+      transaction.addEventListener('complete', () => database.close());
+    });
+  });
+
+const createDeferred = (): { promise: Promise<void>; resolve: () => void } => {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
 describe('initClient SDK crypto initialization', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -77,5 +122,63 @@ describe('initClient SDK crypto initialization', () => {
     expect(initRustCrypto).not.toHaveBeenCalled();
     expect(invoke.mock.calls.some(([command]) => command === 'engine_open')).toBe(false);
     expect(invoke.mock.calls.some(([command]) => command === 'engine_wipe')).toBe(false);
+  });
+
+  it('preserves local stores when SDK crypto initialization reports an identity mismatch', async () => {
+    const mismatch = new Error("Account in the store doesn't match account in the constructor");
+    const failedSession = session('@mismatch:example.org');
+    const cryptoDatabase = `${getSessionStoreName(failedSession).rustCryptoPrefix}::matrix-sdk-crypto`;
+    await storeSentinel(cryptoDatabase);
+    initRustCrypto.mockRejectedValueOnce(mismatch);
+    const deleteDatabase = vi.spyOn(indexedDB, 'deleteDatabase');
+    vi.stubGlobal('location', { reload: vi.fn<() => void>() });
+
+    await expect(initClient(failedSession)).rejects.toMatchObject({
+      message: expect.stringContaining('Stored encryption keys'),
+      cause: mismatch,
+    });
+
+    expect(await readSentinel(cryptoDatabase)).toBe('preserved');
+    expect(deleteDatabase).not.toHaveBeenCalled();
+    expect(window.location.reload).not.toHaveBeenCalled();
+  });
+
+  it('shares an in-flight SDK crypto initialization for the same session', async () => {
+    const cryptoStartup = createDeferred();
+    initRustCrypto.mockImplementation(() => cryptoStartup.promise);
+    const pendingSession = session('@in-flight:example.org');
+
+    const clients = Promise.all([initClient(pendingSession), initClient({ ...pendingSession })]);
+
+    await vi.waitFor(() => expect(initRustCrypto).toHaveBeenCalledTimes(1));
+    cryptoStartup.resolve();
+
+    const [first, second] = await clients;
+    expect(first).toBe(second);
+  });
+
+  it('rejects a conflicting session while encrypted storage is initializing', async () => {
+    const cryptoStartup = createDeferred();
+    initRustCrypto.mockImplementation(() => cryptoStartup.promise);
+    const pendingSession = session('@in-flight-conflict:example.org');
+    const first = initClient(pendingSession);
+
+    await vi.waitFor(() => expect(initRustCrypto).toHaveBeenCalledTimes(1));
+    await expect(
+      initClient({ ...pendingSession, accessToken: 'different-access-token' })
+    ).rejects.toThrow('A different session is already initializing encrypted storage');
+    expect(initRustCrypto).toHaveBeenCalledTimes(1);
+
+    cryptoStartup.resolve();
+    await first;
+  });
+
+  it('allows a retry after an initialization failure', async () => {
+    const failedSession = session('@retry-after-failure:example.org');
+    initRustCrypto.mockRejectedValueOnce(new Error('SDK startup failed'));
+
+    await expect(initClient(failedSession)).rejects.toThrow('SDK startup failed');
+    await expect(initClient({ ...failedSession })).resolves.toBeDefined();
+    expect(initRustCrypto).toHaveBeenCalledTimes(2);
   });
 });

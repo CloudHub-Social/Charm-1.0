@@ -68,6 +68,10 @@ const presenceSyncByClient = new WeakMap<MatrixClient, PresenceSyncManager>();
 // application to prevent that, so track which client owns each store.
 const liveClientByCryptoStore = new Map<string, MatrixClient>();
 const cryptoStoreByClient = new WeakMap<MatrixClient, string>();
+const inFlightClientInitializationByCryptoStore = new Map<
+  string,
+  { sessionIdentity: string; promise: Promise<MatrixClient> }
+>();
 
 export const getCryptoStoreOwner = (storeKey: string): MatrixClient | undefined =>
   liveClientByCryptoStore.get(storeKey);
@@ -374,6 +378,18 @@ const isMismatch = (err: unknown): boolean => {
   );
 };
 
+const getSessionInitializationIdentity = (session: Session): string =>
+  JSON.stringify({
+    baseUrl: session.baseUrl,
+    userId: session.userId,
+    deviceId: session.deviceId,
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken,
+    fallbackSdkStores: session.fallbackSdkStores,
+    oidcIssuer: session.oidc?.issuer,
+    oidcClientId: session.oidc?.clientId,
+  });
+
 type BuiltClient = {
   mx: MatrixClient;
   indexedDBStore: IndexedDBStore;
@@ -506,39 +522,12 @@ const initializeClient = async (
   return { ok: true, mx };
 };
 
-export const initClient = async (session: Session): Promise<MatrixClient> => {
+const initializeSession = async (session: Session): Promise<MatrixClient> => {
   const storeName = getSessionStoreName(session);
   debugLog.info('sync', 'Initializing Matrix client', {
     userId: session.userId,
     baseUrl: session.baseUrl,
   });
-
-  const wipeAllStores = async () => {
-    log.warn('initClient: wiping all stores for', session.userId);
-    debugLog.warn('sync', 'Wiping all stores due to mismatch', {
-      userId: session.userId,
-    });
-    Sentry.addBreadcrumb({
-      category: 'crypto',
-      message: 'Crypto store mismatch — wiping local stores and retrying',
-      level: 'warning',
-    });
-    Sentry.metrics.count('sable.crypto.store_wipe', 1);
-    await deleteSessionStores(storeName);
-    try {
-      const allDbs = await window.indexedDB.databases();
-      await Promise.all(
-        allDbs.map(async ({ name }) => {
-          if (name && name.includes(session.userId)) {
-            log.warn('initClient: also wiping db', name);
-            await deleteDatabase(name);
-          }
-        })
-      );
-    } catch {
-      // databases() not available in all browsers
-    }
-  };
 
   const initStartTime = performance.now();
   let initOutcome = 'success';
@@ -554,14 +543,18 @@ export const initClient = async (session: Session): Promise<MatrixClient> => {
         throw result.error;
       }
 
-      log.warn(`initClient: mismatch during ${result.phase} — wiping and reloading:`, result.error);
-      debugLog.warn('sync', 'Client initialization mismatch - wiping stores and reloading', {
+      log.warn(
+        `initClient: mismatch during ${result.phase}; preserving local stores`,
+        result.error
+      );
+      debugLog.warn('sync', 'Client initialization mismatch - preserving local stores', {
         phase: result.phase,
         error: result.error,
       });
-      await wipeAllStores();
-      window.location.reload();
-      throw result.error;
+      throw new Error(
+        'Stored encryption keys belong to a different session. Local data has been preserved.',
+        { cause: result.error }
+      );
     }
 
     result.mx.setMaxListeners(50);
@@ -578,6 +571,28 @@ export const initClient = async (session: Session): Promise<MatrixClient> => {
       attributes: { phase: 'client_init', outcome: initOutcome },
     });
   }
+};
+
+export const initClient = (session: Session): Promise<MatrixClient> => {
+  const cryptoStoreKey = getSessionStoreName(session).rustCryptoPrefix;
+  const sessionIdentity = getSessionInitializationIdentity(session);
+  const inFlight = inFlightClientInitializationByCryptoStore.get(cryptoStoreKey);
+  if (inFlight) {
+    if (inFlight.sessionIdentity === sessionIdentity) return inFlight.promise;
+    return Promise.reject(
+      new Error(
+        'A different session is already initializing encrypted storage. Retry after it finishes.'
+      )
+    );
+  }
+
+  const promise = initializeSession(session).finally(() => {
+    if (inFlightClientInitializationByCryptoStore.get(cryptoStoreKey)?.promise === promise) {
+      inFlightClientInitializationByCryptoStore.delete(cryptoStoreKey);
+    }
+  });
+  inFlightClientInitializationByCryptoStore.set(cryptoStoreKey, { sessionIdentity, promise });
+  return promise;
 };
 
 export type StartClientConfig = {
