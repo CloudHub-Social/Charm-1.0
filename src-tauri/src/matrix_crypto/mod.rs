@@ -74,36 +74,6 @@ impl CryptoEngineState {
             .remove(account)
             .is_some())
     }
-
-    pub fn close_account_if(&self, account: &str, machine: &Arc<OlmMachine>) -> Result<(), String> {
-        let removed = {
-            let mut machines = self.machines.lock().map_err(|e| e.to_string())?;
-            match machines.get(account) {
-                Some(current) if Arc::ptr_eq(current, machine) => {
-                    machines.remove(account);
-                    true
-                }
-                _ => false,
-            }
-        };
-
-        if !removed {
-            return Ok(());
-        }
-
-        if let Some(listeners) = self
-            .listeners
-            .lock()
-            .map_err(|e| e.to_string())?
-            .remove(account)
-        {
-            for listener in listeners {
-                listener.abort();
-            }
-        }
-
-        Ok(())
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -386,29 +356,6 @@ mod tests {
 
         let _ = engines().close_account(&account_key(user.as_str(), device.as_str()));
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[tokio::test]
-    async fn close_account_if_leaves_a_machine_it_does_not_own() {
-        let user: &matrix_sdk::ruma::UserId = "@race:example.org".try_into().unwrap();
-        let device: &matrix_sdk::ruma::DeviceId = "RACEDEVICE".into();
-        let account = account_key(user.as_str(), device.as_str());
-
-        let mine = Arc::new(OlmMachine::new(user, device).await);
-        let theirs = Arc::new(OlmMachine::new(user, device).await);
-
-        let state = CryptoEngineState::default();
-        state
-            .machines
-            .lock()
-            .unwrap()
-            .insert(account.clone(), Arc::clone(&theirs));
-
-        state.close_account_if(&account, &mine).unwrap();
-        assert!(state.machine(user.as_str(), device.as_str()).is_ok());
-
-        state.close_account_if(&account, &theirs).unwrap();
-        assert!(state.machine(user.as_str(), device.as_str()).is_err());
     }
 
     #[tokio::test]
