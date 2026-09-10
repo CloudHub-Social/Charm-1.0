@@ -428,10 +428,11 @@ describe('resolvePollTimeoutMs', () => {
   });
 });
 
-const makeKeyBackupMx = (syncState: SyncState | null) => {
+const makeKeyBackupMx = (syncState: SyncState | null, clientRunning = true) => {
   const checkKeyBackupAndEnable = vi.fn<() => Promise<null>>().mockResolvedValue(null);
   const listeners = new Set<(state: SyncState) => void>();
   const mx = {
+    clientRunning,
     getSyncState: () => syncState,
     getCrypto: () => ({ checkKeyBackupAndEnable }),
     on: (_event: ClientEvent, cb: (state: SyncState) => void) => listeners.add(cb),
@@ -463,6 +464,16 @@ describe('recheckKeyBackupAfterInitialSync', () => {
     recheckKeyBackupAfterInitialSync(mx);
 
     expect(checkKeyBackupAndEnable).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the re-check once the client has stopped', () => {
+    const { mx, checkKeyBackupAndEnable, emitSync, listeners } = makeKeyBackupMx(null, false);
+
+    recheckKeyBackupAfterInitialSync(mx);
+    emitSync(SyncState.Prepared);
+
+    expect(checkKeyBackupAndEnable).not.toHaveBeenCalled();
+    expect(listeners.size).toBe(0);
   });
 
   it('re-checks only once and stops listening', () => {

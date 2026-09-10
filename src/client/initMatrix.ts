@@ -81,6 +81,9 @@ export const claimCryptoStore = (mx: MatrixClient, storeKey: string): void => {
   cryptoStoreByClient.set(mx, storeKey);
 };
 
+export const getClientCryptoStore = (mx: MatrixClient): string | undefined =>
+  cryptoStoreByClient.get(mx);
+
 export const releaseCryptoStore = (mx: MatrixClient): void => {
   const storeKey = cryptoStoreByClient.get(mx);
   if (storeKey === undefined) return;
@@ -176,6 +179,7 @@ const startPresenceAfterInitialSync = (
 export const recheckKeyBackupAfterInitialSync = (mx: MatrixClient): void => {
   const recheck = () => {
     mx.removeListener(ClientEvent.Sync, onSync);
+    if (!mx.clientRunning) return;
     const crypto = mx.getCrypto();
     if (!crypto) return;
     crypto.checkKeyBackupAndEnable().catch((error: unknown) => {
@@ -342,6 +346,9 @@ const deleteSessionStores = async (storeName: SessionStoreName): Promise<void> =
     deleteDatabase(storeName.sync),
     deleteDatabase(storeName.crypto),
     deleteDatabase(`${storeName.rustCryptoPrefix}::matrix-sdk-crypto`),
+    deleteDatabase(`${storeName.rustCryptoPrefix}::matrix-sdk-crypto-meta`),
+    deleteDatabase(`${storeName.rustCryptoPrefixPerDevice}::matrix-sdk-crypto`),
+    deleteDatabase(`${storeName.rustCryptoPrefixPerDevice}::matrix-sdk-crypto-meta`),
   ]);
 };
 
@@ -544,17 +551,27 @@ const initializeSession = async (session: Session): Promise<MatrixClient> => {
       }
 
       log.warn(
-        `initClient: mismatch during ${result.phase}; preserving local stores`,
+        `initClient: mismatch during ${result.phase}; retrying on a device scoped crypto store`,
         result.error
       );
-      debugLog.warn('sync', 'Client initialization mismatch - preserving local stores', {
+      debugLog.warn('sync', 'Client initialization mismatch - using device scoped crypto store', {
         phase: result.phase,
         error: result.error,
       });
-      throw new Error(
-        'Stored encryption keys belong to a different session. Local data has been preserved.',
-        { cause: result.error }
-      );
+
+      evictPreviousCryptoStoreOwner(storeName.rustCryptoPrefixPerDevice);
+      const perDevice = await initializeClient(session, storeName.rustCryptoPrefixPerDevice);
+      if (!perDevice.ok) {
+        debugLog.error('sync', 'Failed to initialize client on device scoped crypto store', {
+          phase: perDevice.phase,
+          error: perDevice.error,
+        });
+        throw perDevice.error;
+      }
+
+      perDevice.mx.setMaxListeners(50);
+      claimCryptoStore(perDevice.mx, storeName.rustCryptoPrefixPerDevice);
+      return perDevice.mx;
     }
 
     result.mx.setMaxListeners(50);
@@ -876,7 +893,9 @@ export const logoutClient = async (mx: MatrixClient, session?: Session) => {
     destroyLocalNotificationCache(session.userId);
     clearLocalNotificationCache(session.userId);
     const storeName: SessionStoreName = getSessionStoreName(session);
-    await mx.clearStores({ cryptoDatabasePrefix: storeName.rustCryptoPrefix });
+    await mx.clearStores({
+      cryptoDatabasePrefix: getClientCryptoStore(mx) ?? storeName.rustCryptoPrefix,
+    });
     await deleteSessionStores(storeName);
     await wipeNativeCryptoStore(session);
   } else {
