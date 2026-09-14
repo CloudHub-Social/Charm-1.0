@@ -797,21 +797,21 @@ export const getReactCustomHtmlParser = (
             <dl {...props} className={css.DescriptionList}>
               {renderChildren()}
             </dl>
-          )
+          );
         }
         if (name === 'dt') {
           return (
             <dt {...props} className={css.DescriptionTerm}>
               {renderChildren()}
             </dt>
-          )
+          );
         }
         if (name === 'dd') {
           return (
             <dd {...props} className={css.DescriptionDetails}>
               {renderChildren()}
             </dd>
-          )
+          );
         }
 
         if (name === 'code') {
