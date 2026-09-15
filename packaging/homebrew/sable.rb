@@ -3,8 +3,7 @@ cask 'sable' do
   version '1.20.0'
   sha256 '0000000000000000000000000000000000000000000000000000000000000000'
 
-  url "https://github.com/SableClient/Sable/releases/download/v#{version}/Sable-#{version}-macos-universal.dmg",
-      verified: 'github.com/SableClient/Sable/'
+  url "https://github.com/SableClient/Sable/releases/download/v#{version}/Sable-#{version}-macos-universal.dmg"
   name 'Sable'
   desc 'Client for the Matrix chat network'
   homepage 'https://sable.moe/'
