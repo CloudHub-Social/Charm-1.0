@@ -22,9 +22,10 @@ cask 'sable' do
 
   # The DMG is neither signed nor notarized, so Gatekeeper would refuse to open
   # it. Drop the quarantine flag the download picked up.
-  postflight do
-    system_command '/usr/bin/xattr',
-                   args: ['-dr', 'com.apple.quarantine', "#{appdir}/Sable.app"]
+  postflight_steps do
+    on_macos do
+      run '/usr/bin/xattr', args: ['-dr', 'com.apple.quarantine', "#{appdir}/Sable.app"]
+    end
   end
 
   uninstall quit: 'moe.sable.client'
