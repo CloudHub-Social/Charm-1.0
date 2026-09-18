@@ -1,5 +1,11 @@
 # Sable Client Changelog
 
+## 1.22.3 (2026-09-18)
+
+### Fixes
+
+* Enable native FCM push on Android by adding the Firebase app config. by @eleboucher in #2110
+
 ## 1.22.1 (2026-09-18)
 
 ### Fixes
