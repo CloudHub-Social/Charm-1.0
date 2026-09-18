@@ -23,7 +23,7 @@ cask 'sable' do
   # it. Drop the quarantine flag the download picked up.
   postflight_steps do
     on_macos do
-      run '/usr/bin/xattr', args: ['-dr', 'com.apple.quarantine', "#{appdir}/Sable.app"]
+      run '/usr/bin/xattr', args: ['-dr', 'com.apple.quarantine', '{{appdir}}/Sable.app']
     end
   end
 
