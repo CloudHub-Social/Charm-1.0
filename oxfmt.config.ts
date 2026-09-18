@@ -10,6 +10,8 @@ export default {
     'node_modules',
     'src/app/generated',
     'src-tauri/ios-project.yml',
+    // Copied verbatim from the Firebase console; formatting it would drift.
+    'src-tauri/gen/android/app/google-services.json',
     'package.json',
     'pnpm-lock.yaml',
     'LICENSE',

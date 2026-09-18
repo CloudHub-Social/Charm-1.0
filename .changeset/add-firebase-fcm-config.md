@@ -1,0 +1,5 @@
+---
+default: patch
+---
+
+Enable native FCM push on Android by adding the Firebase app config.
