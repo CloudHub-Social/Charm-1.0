@@ -1,5 +1,11 @@
 # Sable Client Changelog
 
+## 1.22.1 (2026-09-18)
+
+### Fixes
+
+* Cap update banner changelog text so the update is updateable. by @7w1 in #2106
+
 ## 1.22.0 (2026-09-17)
 
 ### Features
