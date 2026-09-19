@@ -80,7 +80,7 @@ const callEmbeddedDir = 'node_modules/@sableclient/sable-call-embedded/dist';
 const copyFiles = {
   targets: [
     {
-      src: callEmbeddedDir,
+      src: [callEmbeddedDir, `!${callEmbeddedDir}/**/*.map`],
       dest: 'public/element-call',
       rename: { stripBase: callEmbeddedDir.split('/').length },
     },
