@@ -258,6 +258,8 @@ jobs:
       ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      # Release tags only: excludes nightly and unparseable tags (empty version).
+      IS_RELEASE: ${{ startsWith(needs.setup-release.outputs.tag, 'v') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -325,7 +327,7 @@ jobs:
 
       # Must run before the Google build: they share one Gradle output directory.
       - name: Build FOSS Android APK
-        if: ${{ needs.setup-release.outputs.nightly != 'true' }}
+        if: ${{ env.IS_RELEASE == 'true' }}
         shell: bash
         env:
           SABLE_FOSS: '1'
@@ -367,7 +369,7 @@ jobs:
           subject-path: |
             src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
             src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
-            ${{ needs.setup-release.outputs.nightly != 'true' && 'android-artifacts/*.apk' || '' }}
+            ${{ env.IS_RELEASE == 'true' && 'android-artifacts/*.apk' || '' }}
 
       - name: Attach Android bundles to release
         shell: bash
