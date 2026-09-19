@@ -1199,3 +1199,88 @@ jobs:
           git commit -m "sable ${VERSION}"
           # The tap may still be an empty repository on the first run.
           git push origin HEAD:refs/heads/main
+
+  distribute-flathub:
+    name: Open the Flathub update PR
+    needs: [setup-release, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: ${{ needs.setup-release.outputs.nightly != 'true' }}
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.setup-release.outputs.tag }}
+      VERSION: ${{ needs.setup-release.outputs.version }}
+    steps:
+      - name: Bump the Flathub manifest
+        shell: bash
+        env:
+          FLATHUB_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+        run: |
+          if [ -z "${FLATHUB_TOKEN:-}" ]; then
+            echo "::notice::FLATHUB_TOKEN is not set; skipping the Flathub PR."
+            exit 0
+          fi
+          git clone --depth 1 \
+            "https://x-access-token:${FLATHUB_TOKEN}@github.com/flathub/moe.sable.client.git" flathub
+
+          gh release view "$TAG" --json assets \
+            --jq '.assets[] | select(.name | test("-linux-(x86_64|aarch64)\\.tar\\.gz$"))
+                  | "\(.name) \(.digest)"' > assets.txt
+
+          # The manifest pins these two by content, read from dev.
+          for name in moe.sable.client.metainfo.xml moe.sable.client.desktop; do
+            curl -fsSL "https://raw.githubusercontent.com/SableClient/Sable/dev/packaging/flatpak/$name" \
+              | sha256sum | awk -v n="$name" '{print n, "sha256:" $1}' >> assets.txt
+          done
+
+          VERSION="$VERSION" python3 - flathub/moe.sable.client.yml assets.txt <<'PY'
+          import os, re, sys
+
+          manifest, digests = sys.argv[1], sys.argv[2]
+          version = os.environ["VERSION"]
+          sha = {}
+          for line in open(digests):
+              name, digest = line.split()
+              sha[name] = digest.removeprefix("sha256:")
+
+          text = open(manifest).read()
+          for arch in ("x86_64", "aarch64"):
+              name = f"Sable-{version}-linux-{arch}.tar.gz"
+              url = f"https://github.com/SableClient/Sable/releases/download/v{version}/{name}"
+              text, count = re.subn(
+                  rf"url: \S*Sable-\S+-linux-{arch}\.tar\.gz\n(\s+)sha256: \w+",
+                  lambda m: f"url: {url}\n{m.group(1)}sha256: {sha[name]}",
+                  text,
+              )
+              if count != 1:
+                  sys.exit(f"expected one {arch} source, found {count}")
+
+          for name in ("moe.sable.client.metainfo.xml", "moe.sable.client.desktop"):
+              text, count = re.subn(
+                  rf"(url: \S*/packaging/flatpak/{re.escape(name)}\n\s+)sha256: \w+",
+                  lambda m: f"{m.group(1)}sha256: {sha[name]}",
+                  text,
+              )
+              if count != 1:
+                  sys.exit(f"expected one {name} source, found {count}")
+
+          open(manifest, "w").write(text)
+          PY
+
+          cd flathub
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add moe.sable.client.yml
+          if git diff --cached --quiet; then
+            echo "Nothing changed; skipping the Flathub PR."
+            exit 0
+          fi
+          git checkout -b "update-${VERSION}"
+          git commit -m "Update Sable to ${VERSION}"
+          git push origin "update-${VERSION}"
+          gh pr create --repo flathub/moe.sable.client \
+            --base master --head "update-${VERSION}" \
+            --title "Update Sable to ${VERSION}" \
+            --body "Bumps the x86_64 and aarch64 release tarballs to ${VERSION}."
