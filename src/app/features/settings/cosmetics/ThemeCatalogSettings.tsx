@@ -1245,7 +1245,9 @@ export function ThemeCatalogSettings({ mode, onBrowseOpenChange }: ThemeCatalogS
                                 onApplyLight={
                                   systemTheme ? () => applyFavoriteToLight(row) : undefined
                                 }
-                                onApplyDark={systemTheme ? () => applyFavoriteToDark(row) : undefined}
+                                onApplyDark={
+                                  systemTheme ? () => applyFavoriteToDark(row) : undefined
+                                }
                                 onApplyManual={
                                   !systemTheme ? () => applyFavoriteToManual(row) : undefined
                                 }
