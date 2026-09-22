@@ -456,13 +456,18 @@ type ClientInitializationResult =
   | { ok: true; mx: MatrixClient }
   | { ok: false; error: unknown; phase: 'sync_store' | 'rust_crypto' };
 
+const isUnreadableSyncSnapshot = (error: unknown): boolean => {
+  if (error instanceof TypeError) return error.message.includes('nextBatch');
+  return error instanceof Error && error.message === 'selectQuery failed for sync';
+};
+
 export const startupSyncStore = async (mx: MatrixClient, dbName: string): Promise<void> => {
   try {
     await mx.store.startup();
     return;
   } catch (error) {
     await mx.store.destroy();
-    if (!(error instanceof Error) || error.message !== 'selectQuery failed for sync') throw error;
+    if (!isUnreadableSyncSnapshot(error)) throw error;
     debugLog.warn('sync', 'Rebuilding unreadable sync snapshot', { error });
   }
 
