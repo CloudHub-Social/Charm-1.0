@@ -1232,9 +1232,9 @@ jobs:
             --jq '.assets[] | select(.name | test("-linux-(x86_64|aarch64)\\.tar\\.gz$"))
                   | "\(.name) \(.digest)"' > assets.txt
 
-          # The manifest pins these two by content, read from dev.
+          # The manifest pins these two by content, read from the release tag.
           for name in moe.sable.client.metainfo.xml moe.sable.client.desktop; do
-            curl -fsSL "https://raw.githubusercontent.com/SableClient/Sable/dev/packaging/flatpak/$name" \
+            curl -fsSL "https://raw.githubusercontent.com/SableClient/Sable/${TAG}/packaging/flatpak/$name" \
               | sha256sum | awk -v n="$name" '{print n, "sha256:" $1}' >> assets.txt
           done
 
@@ -1261,9 +1261,10 @@ jobs:
                   sys.exit(f"expected one {arch} source, found {count}")
 
           for name in ("moe.sable.client.metainfo.xml", "moe.sable.client.desktop"):
+              url = f"https://raw.githubusercontent.com/SableClient/Sable/v{version}/packaging/flatpak/{name}"
               text, count = re.subn(
-                  rf"(url: \S*/packaging/flatpak/{re.escape(name)}\n\s+)sha256: \w+",
-                  lambda m: f"{m.group(1)}sha256: {sha[name]}",
+                  rf"url: \S*/packaging/flatpak/{re.escape(name)}\n(\s+)sha256: \w+",
+                  lambda m: f"url: {url}\n{m.group(1)}sha256: {sha[name]}",
                   text,
               )
               if count != 1:
