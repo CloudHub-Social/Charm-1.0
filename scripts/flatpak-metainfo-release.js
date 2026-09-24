@@ -15,9 +15,12 @@ if (!version || !/^\d+\.\d+\.\d+/.test(version)) {
 }
 
 const changelog = readFileSync('CHANGELOG.md', 'utf8');
-const date = changelog.match(
-  new RegExp(`\\n## ${version.replaceAll('.', '\\.')} \\((\\d{4}-\\d{2}-\\d{2})\\)`)
-)?.[1];
+const heading = `\n## ${version} (`;
+const start = changelog.indexOf(heading);
+const date =
+  start === -1
+    ? undefined
+    : changelog.slice(start + heading.length).match(/^(\d{4}-\d{2}-\d{2})\)/)?.[1];
 if (!date) {
   console.error(`No "## ${version} (YYYY-MM-DD)" section in CHANGELOG.md`);
   process.exit(1);
