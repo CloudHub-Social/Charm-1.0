@@ -18,6 +18,7 @@ finish-args:
   - --device=all
   - --talk-name=org.freedesktop.secrets
   - --talk-name=org.freedesktop.Notifications
+  - --own-name=moe.sable.client.SingleInstance
   - --talk-name=org.kde.StatusNotifierWatcher
   - --filesystem=xdg-download
   - --env=XCURSOR_PATH=/run/host/user-share/icons:/run/host/share/icons

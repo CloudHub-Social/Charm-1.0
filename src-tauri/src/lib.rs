@@ -417,10 +417,10 @@ pub fn run() {
                 app.deep_link().register_all()?;
             }
 
-            #[cfg(all(feature = "cef", target_os = "linux"))]
-            deep_link_ipc::drain_pending_urls(app.handle());
-
             show_or_create_main_window(app.handle())?;
+
+            #[cfg(all(feature = "cef", target_os = "linux"))]
+            deep_link_ipc::drain_pending_launches(app.handle());
 
             // Failsafe: if the frontend never calls show() (hung webview), force-show
             // the window after 5s so the app isn't invisible forever.
