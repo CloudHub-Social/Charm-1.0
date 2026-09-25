@@ -42,6 +42,27 @@ fn is_cef_views() -> bool {
 }
 
 fn main() {
+    // CEF must not initialize in a second instance.
+    #[cfg(all(feature = "cef", target_os = "linux"))]
+    let _deep_link_guard = {
+        if let app_lib::deep_link_ipc::ForwardResult::Forwarded =
+            app_lib::deep_link_ipc::try_forward_to_primary()
+        {
+            return;
+        }
+
+        let guard = app_lib::deep_link_ipc::bind_and_listen();
+        if guard.is_none()
+            && matches!(
+                app_lib::deep_link_ipc::try_forward_to_primary(),
+                app_lib::deep_link_ipc::ForwardResult::Forwarded
+            )
+        {
+            return;
+        }
+        guard
+    };
+
     // CEF (Chromium) runtime, Linux only. Must run before anything else — CEF
     // re-execs this binary for its subprocesses.
     #[cfg(all(feature = "cef", target_os = "linux"))]
@@ -115,14 +136,6 @@ fn main() {
         // Subprocess — hand off to CEF and exit.
         if std::env::args().any(|arg| arg.starts_with("--type=")) {
             tauri_runtime_cef::run_cef_helper_process();
-            return;
-        }
-
-        // Deep-link relaunch: forward to the running primary and exit before
-        // CEF init (a second instance can't hold the CEF cache lock).
-        if let app_lib::deep_link_ipc::ForwardResult::Forwarded =
-            app_lib::deep_link_ipc::try_forward_deep_links()
-        {
             return;
         }
 
@@ -308,10 +321,6 @@ fn main() {
             }
         }
     }
-
-    // Deep-link primary: hold the forwarding socket for the process lifetime.
-    #[cfg(all(feature = "cef", target_os = "linux"))]
-    let _deep_link_guard = app_lib::deep_link_ipc::bind_and_listen();
 
     app_lib::run();
 }
