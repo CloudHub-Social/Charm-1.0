@@ -42,27 +42,6 @@ fn is_cef_views() -> bool {
 }
 
 fn main() {
-    // CEF must not initialize in a second instance.
-    #[cfg(all(feature = "cef", target_os = "linux"))]
-    let _deep_link_guard = {
-        if let app_lib::deep_link_ipc::ForwardResult::Forwarded =
-            app_lib::deep_link_ipc::try_forward_to_primary()
-        {
-            return;
-        }
-
-        let guard = app_lib::deep_link_ipc::bind_and_listen();
-        if guard.is_none()
-            && matches!(
-                app_lib::deep_link_ipc::try_forward_to_primary(),
-                app_lib::deep_link_ipc::ForwardResult::Forwarded
-            )
-        {
-            return;
-        }
-        guard
-    };
-
     // CEF (Chromium) runtime, Linux only. Must run before anything else — CEF
     // re-execs this binary for its subprocesses.
     #[cfg(all(feature = "cef", target_os = "linux"))]
@@ -238,6 +217,26 @@ fn main() {
             });
         });
     }
+
+    #[cfg(all(feature = "cef", target_os = "linux"))]
+    let _deep_link_guard = {
+        if let app_lib::deep_link_ipc::ForwardResult::Forwarded =
+            app_lib::deep_link_ipc::try_forward_to_primary()
+        {
+            return;
+        }
+
+        let guard = app_lib::deep_link_ipc::bind_and_listen();
+        if guard.is_none()
+            && matches!(
+                app_lib::deep_link_ipc::try_forward_to_primary(),
+                app_lib::deep_link_ipc::ForwardResult::Forwarded
+            )
+        {
+            return;
+        }
+        guard
+    };
 
     // Force X11/XWayland: the tray's GTK needs it, and the CEF runtime's Wayland
     // window path is unstable (crate verified on X11 only).
