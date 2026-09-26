@@ -332,6 +332,8 @@ jobs:
         env:
           SABLE_FOSS: '1'
         run: |
+          # Reproducible builds: rebuilders have no Sentry secrets.
+          unset VITE_SENTRY_DSN VITE_SENTRY_ENVIRONMENT SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT
           # tauri-build validates every file in capabilities/, so the geolocation
           # permissions must be absent, not just unreferenced.
           rm src-tauri/capabilities/geolocation.json
